@@ -68,6 +68,11 @@ pub struct App {
     /// When the window was asked for (dev log: how long the first frame took).
     pub app_asked: Option<Instant>,
     app_focus: bool,
+    /// Frames left before the panel hides after the window was opened from
+    /// it: the window shows first, so the app always has a window on screen
+    /// and macOS doesn't hand focus back to the app before (the window
+    /// opened behind other apps).
+    panel_hide_in: u8,
     pending_shape: bool,
     screenshot: Option<PathBuf>,
     frame: u64,
@@ -157,6 +162,7 @@ impl App {
             app_open: false,
             app_asked: None,
             app_focus: false,
+            panel_hide_in: 0,
             pending_shape: true,
             screenshot: opts.screenshot,
             frame: 0,
@@ -477,7 +483,10 @@ impl App {
                 let x = (right - size.x).max(8.0);
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(Pos2::new(x, anchor.y + 6.0)));
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
-                crate::kit::native::set_dock_icon(false);
+                // the app window may still be open (or minimized) behind the
+                // panel: it keeps its Dock icon. Dropping it made macOS pull
+                // a minimized window back up, and an open one look quit
+                crate::kit::native::set_dock_icon(self.app_open || self.setup.is_some());
             }
             Mode::Window | Mode::Setup | Mode::FdaHelp => {
                 let pos = Pos2::new(((screen.x - size.x) / 2.0).max(0.0), ((screen.y - size.y) / 2.0).max(30.0));
@@ -515,7 +524,8 @@ impl App {
         self.app_asked = Some(Instant::now());
         crate::kit::native::set_dock_icon(true);
         if self.visible {
-            self.hide(ctx);
+            self.panel_hide_in = 2;
+            ctx.request_repaint();
         }
     }
 
@@ -820,6 +830,14 @@ impl eframe::App for App {
         let off_before = (self.tools_off.clone(), crate::kit::sound::on());
         if self.app_open {
             self.app_viewport(&ctx);
+            if self.panel_hide_in > 0 {
+                self.panel_hide_in -= 1;
+                if self.panel_hide_in == 0 && self.visible && self.mode == Mode::Panel {
+                    self.hide(&ctx);
+                } else {
+                    ctx.request_repaint();
+                }
+            }
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
             self.prewarm_app(&ctx);
         }
@@ -980,7 +998,8 @@ impl App {
         self.app_asked = Some(Instant::now());
         crate::kit::native::set_dock_icon(true);
         if self.visible {
-            self.hide(ctx);
+            self.panel_hide_in = 2;
+            ctx.request_repaint();
         }
     }
 
