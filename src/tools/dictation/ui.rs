@@ -570,12 +570,7 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
                 cx.toast("Copied");
             }
             if hero_button(ui, Pos2::new(cx0 + off, bc.y), id.with("done"), "Done", None, Lead::None, Some(BLUE()), true, bw).clicked() && !d.demo {
-                d.try_last = None;
-                d.try_note = None;
-                d.try_armed = false;
-                if !d.history.items.is_empty() {
-                    d.try_done = Some((std::time::Instant::now(), fr));
-                }
+                d.finish_try(fr);
             }
         }
         // no shortcut set: hold the button instead

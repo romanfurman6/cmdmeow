@@ -217,6 +217,15 @@ pub struct Dictation {
 }
 
 impl Dictation {
+    /// Done on the try-it take: the field clears, and if the take was saved
+    /// (History on), the field turns into its History entry.
+    pub(super) fn finish_try(&mut self, field: egui::Rect) {
+        let take = self.try_last.take();
+        self.try_note = None;
+        self.try_armed = false;
+        let saved = take.is_some_and(|t| self.history.items.first().is_some_and(|h| h.at == t.at && h.text == t.text));
+        self.try_done = saved.then(|| (Instant::now(), field));
+    }
     pub fn new(env: &ToolEnv) -> Self {
         let (jobs, job_rx) = channel();
         let (heard_tx, heard) = channel();
@@ -975,6 +984,33 @@ mod tests {
         d.follow(Link::Stop);
         d.follow(Link::Cancel);
         assert!(matches!(d.phase, Phase::Idle));
+    }
+
+    #[test]
+    fn done_turns_a_saved_take_into_its_history_entry() {
+        let field = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(480.0, 112.0));
+        let older = Said { at: 1, text: "an older one".into(), app: String::new(), secs: 2.0 };
+        let take = Said { at: 2, text: "hello there".into(), app: String::new(), secs: 2.0 };
+
+        // History on: the take is the newest entry
+        let mut d = demo();
+        d.history = History::default();
+        d.history.add(older.clone());
+        d.history.add(take.clone());
+        d.try_last = Some(take.clone());
+        d.try_armed = true;
+        d.finish_try(field);
+        assert!(d.try_last.is_none() && !d.try_armed);
+        assert_eq!(d.try_done.map(|(_, f)| f), Some(field));
+
+        // History off: older entries stay, but none of them is the take
+        let mut d = demo();
+        d.history = History::default();
+        d.history.add(older);
+        d.try_last = Some(take);
+        d.finish_try(field);
+        assert!(d.try_last.is_none());
+        assert!(d.try_done.is_none());
     }
 
     fn demo() -> Dictation {
