@@ -400,21 +400,6 @@ fn step_dots(p: &egui::Painter, full: Rect, steps: usize, from: usize, step: usi
     crate::kit::brand::draw_mascot(p, r, cat_color().gamma_multiply(fade), (0.0, twitch(t, HOP + 0.15)));
 }
 
-/// A soft vertical band of `col`, brightest at `x` and `w` wide, inside `clip`.
-fn glow_band(p: &egui::Painter, clip: Rect, x: f32, w: f32, col: Color32) {
-    let p = p.with_clip_rect(clip.intersect(p.clip_rect()));
-    let mut m = egui::Mesh::default();
-    for (xx, c) in [(x - w / 2.0, Color32::TRANSPARENT), (x, col), (x + w / 2.0, Color32::TRANSPARENT)] {
-        m.colored_vertex(Pos2::new(xx, clip.top()), c);
-        m.colored_vertex(Pos2::new(xx, clip.bottom()), c);
-    }
-    m.add_triangle(0, 1, 2);
-    m.add_triangle(1, 3, 2);
-    m.add_triangle(2, 3, 4);
-    m.add_triangle(3, 5, 4);
-    p.add(m);
-}
-
 /// The whole setup screen in `full` (the app window, or the root in screenshots).
 /// Says whether the person finished it.
 pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
@@ -1785,34 +1770,38 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
             }));
         }
     }
-    y += tile_h + sp::XL + sp::M;
-    // AI Usage: every agent it follows
-    let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, BLUE()));
-    y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
-    for k in 0..n {
-        let m = &ai::PROVIDERS[k];
-        let a = ease((t - 0.2 - 0.05 * k as f32) / 0.4);
-        let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
-        let main = set.main == m.id;
-        let on = set.is_on(m.id) || main;
-        let resp = tile(ui, r, k, on && found[k], a);
-        let cb = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
-        // the main agent is always followed; one not on this Mac has
-        // nothing to follow, so no box (a ticked one read as "on", M1)
-        if !found[k] {
-            continue;
-        }
-        let box_ = checkbox(ui, cb, ui.scope_id().with(("setup-track", m.id)), on, true);
-        let box_ = if main { box_.on_hover_text("The AI Check agent is always followed") } else { box_ };
-        if (box_.clicked() || resp.clicked()) && !main {
-            let id = m.id.to_string();
-            let was_on = set.is_on(m.id);
-            change = Some(Box::new(move |s| {
-                s.off.retain(|x| *x != id);
-                if was_on {
-                    s.off.push(id);
-                }
-            }));
+    // AI Usage: every agent it follows; only when that tool was picked
+    // (ticking agents for a tool left off did nothing, M1)
+    let usage_on = app.demo || app.tool_index(claude::ID).is_some_and(|i| app.tool_on(i));
+    if usage_on {
+        y += tile_h + sp::XL + sp::M;
+        let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, BLUE()));
+        y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
+        for k in 0..n {
+            let m = &ai::PROVIDERS[k];
+            let a = ease((t - 0.2 - 0.05 * k as f32) / 0.4);
+            let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
+            let main = set.main == m.id;
+            let on = set.is_on(m.id) || main;
+            let resp = tile(ui, r, k, on && found[k], a);
+            let cb = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
+            // the main agent is always followed; one not on this Mac has
+            // nothing to follow, so no box (a ticked one read as "on", M1)
+            if !found[k] {
+                continue;
+            }
+            let box_ = checkbox(ui, cb, ui.scope_id().with(("setup-track", m.id)), on, true);
+            let box_ = if main { box_.on_hover_text("The AI Check agent is always followed") } else { box_ };
+            if (box_.clicked() || resp.clicked()) && !main {
+                let id = m.id.to_string();
+                let was_on = set.is_on(m.id);
+                change = Some(Box::new(move |s| {
+                    s.off.retain(|x| *x != id);
+                    if was_on {
+                        s.off.push(id);
+                    }
+                }));
+            }
         }
     }
     if let Some(f) = change {
