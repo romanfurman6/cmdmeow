@@ -49,6 +49,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD_DIR/$BIN" "$APP/Contents/MacOS/$BIN"
 cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# the cat's sounds (src/kit/cat)
+if [[ -d assets/cat ]]; then cp -R assets/cat "$APP/Contents/Resources/cat"; fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

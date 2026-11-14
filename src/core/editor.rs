@@ -790,6 +790,9 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         }
     }
     y = card.bottom() + 28.0;
+    p.text(Pos2::new(x, y), Align2::LEFT_TOP, "Cat", bold(15.0), TEXT());
+    y += 28.0;
+    y = cat_card(app, ui, Pos2::new(x, y), w) + 28.0;
     p.text(Pos2::new(x, y), Align2::LEFT_TOP, "Permissions", bold(15.0), TEXT());
     y += 28.0;
     let list = super::onboard::rows(app);
@@ -816,6 +819,56 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     p.text(Pos2::new(x + w, y + 15.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
     y + 30.0 + 24.0
+}
+
+/// What the cat reacts to (see [`crate::kit::cat`]): a switch each, and
+/// when the big cat shows on screen. Returns the card's bottom.
+fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
+    use crate::kit::cat::{self, Show};
+    let p = ui.painter().clone();
+    let row_h = 44.0;
+    let before = if app.demo { cat::Prefs::default() } else { cat::prefs() };
+    let mut prefs = before.clone();
+    let switches: [(&str, &mut bool); 6] = [
+        ("Purr when petted", &mut prefs.purr),
+        ("Hiss when slapped", &mut prefs.hiss),
+        ("Meow on low battery", &mut prefs.meow),
+        ("Eat on the charger", &mut prefs.eat),
+        ("Greet when the lid opens", &mut prefs.greet),
+        ("Watch the pointer", &mut prefs.watch),
+    ];
+    let card = Rect::from_min_size(at, Vec2::new(w, row_h * (switches.len() + 1) as f32));
+    glass_card(&p, card, R_CARD, 0.0, false);
+    let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * row_h), Vec2::new(w, row_h));
+    let label = |r: Rect, text: &str| {
+        if r.top() > card.top() {
+            hairline(&p, Pos2::new(r.left() + 16.0, r.top()), Pos2::new(r.right() - 16.0, r.top()));
+        }
+        p.text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, text, font(13.0), TEXT());
+    };
+    let n = switches.len();
+    for (k, (text, on)) in switches.into_iter().enumerate() {
+        let r = row(k);
+        label(r, text);
+        let sw = Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
+        if switch(ui, sw, ui.scope_id().with(("cat", k)), *on, true).clicked() {
+            *on = !*on;
+        }
+    }
+    let r = row(n);
+    label(r, "Show on screen");
+    let shows = [Show::Always, Show::FirstTime, Show::Off];
+    let seg = Rect::from_min_size(Pos2::new(r.right() - 12.0 - 216.0, r.center().y - 13.0), Vec2::new(216.0, 26.0));
+    let picked = shows.iter().position(|s| *s == prefs.show).unwrap_or(1);
+    if let Some(i) = segmented(ui, seg, ui.scope_id().with("cat-show"), &["Always", "First time", "Off"], picked) {
+        prefs.show = shows[i];
+        // "First time" starts over: every reaction shows once more
+        prefs.seen.clear();
+    }
+    if prefs != before && !app.demo {
+        cat::set_prefs(prefs);
+    }
+    card.bottom()
 }
 
 /// "Remove Cmd+Meow": a second click within a few seconds removes the app
