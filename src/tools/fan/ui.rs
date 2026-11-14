@@ -226,7 +226,7 @@ pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let fh = 52.0;
     if !s.loaded {
         spinner(&p, Pos2::new(rect.center().x, fy + fh / 2.0), 8.0, t, TEXT_DIM());
-        crate::kit::glass::animate(ui.ctx());
+        crate::kit::glass::poll(ui.ctx());
     } else if s.fans.is_empty() {
         let r = Rect::from_min_size(Pos2::new(x0, fy), Vec2::new(x1 - x0, fh));
         p.rect_filled(r, 10.0, white(10));

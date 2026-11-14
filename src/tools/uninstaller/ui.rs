@@ -535,7 +535,7 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
     if !a.sized {
         spinner(&p, Pos2::new(x0 + 8.0, y + 10.0), 7.0, ctx.input(|i| i.time), ACCENT());
         p.text(Pos2::new(x0 + 24.0, y + 10.0), Align2::LEFT_CENTER, "Finding its files…", font(13.0), TEXT_DIM());
-        crate::kit::glass::animate(&ctx);
+        crate::kit::glass::poll(&ctx);
         return;
     }
     // size
@@ -770,7 +770,7 @@ fn working(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     modal_card(&p, m);
     spinner(&p, Pos2::new(m.left() + 30.0, m.center().y), 9.0, ctx.input(|i| i.time), ACCENT());
     text_fit(&p, Pos2::new(m.left() + 52.0, m.center().y), Align2::LEFT_CENTER, &line, font(13.0), TEXT(), m.width() - 70.0);
-    crate::kit::glass::animate(&ctx);
+    crate::kit::glass::poll(&ctx);
 }
 
 /// The last removal, for the bar and the drop zone.

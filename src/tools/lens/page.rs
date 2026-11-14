@@ -577,14 +577,10 @@ fn mapping(app: &mut App, ui: &mut Ui, r: Rect, root: &Path, rows: &[scan::LiveR
     if rows.is_empty() {
         p.text(area.center(), Align2::CENTER_CENTER, "Looking inside…", font(13.0), TEXT_FAINT());
     }
-    // keep animating only while something is still gliding
-    let moving = drawn.iter().any(|(pa, (rr, _))| app.lens_rows.get(pa).is_none_or(|(a, _)| (a.min - rr.min).length() > 0.3 || (a.max - rr.max).length() > 0.3));
     app.lens_rows = drawn;
-    if moving {
-        ctx.request_repaint();
-    } else {
-        crate::kit::glass::animate(&ctx);
-    }
+    // rows glide at the animation pace (~60 fps), not as fast as the display
+    // goes (asking for every frame ran a scan at 120 fps on a ProMotion Mac)
+    crate::kit::glass::animate(&ctx);
 
     // under the list: what's under the pointer, or what's being measured
     match hovered {
@@ -1354,7 +1350,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     };
     if updating || peek.is_some() {
         spinner(&p, Pos2::new(hint.left() - 12.0, hr.center().y), 5.0, ctx.input(|i| i.time), tint::DISK_MAP());
-        crate::kit::glass::animate(&ctx);
+        crate::kit::glass::poll(&ctx);
     }
     // the view switch in the middle of the header, away from the map's state
     let seg_w = 186.0;

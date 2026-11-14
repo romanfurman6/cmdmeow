@@ -583,6 +583,14 @@ pub fn animate(ctx: &egui::Context) {
     ctx.request_repaint_after(ANIM_FRAME);
 }
 
+/// Look again a few times a second while waiting on work that shows a
+/// [`spinner`]: the spinner turns by itself (natively, or egui asks for its
+/// own frames), so the window only needs passes to notice the work ending.
+#[track_caller]
+pub fn poll(ctx: &egui::Context) {
+    ctx.request_repaint_after(std::time::Duration::from_millis(250));
+}
+
 /// Beat for loops that only decorate (fan blades, the setup cards): 30 fps,
 /// on a fixed clock so frames land evenly on 60 and 120 Hz displays. A
 /// frame redraws the whole window, so at 60 fps one turning fan kept an

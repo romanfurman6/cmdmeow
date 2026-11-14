@@ -161,7 +161,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let rb = Rect::from_center_size(Pos2::new(rect.right() - 27.0 - 34.0, rect.top() + 29.0), Vec2::splat(26.0));
     if busy {
         spinner(&p, rb.center(), 6.0, t, TEXT_DIM());
-        crate::kit::glass::animate(&ctx);
+        crate::kit::glass::poll(&ctx);
     } else if round_button(ui, rb, Icon::Refresh, "Refresh limits").clicked() {
         backend::request_refresh();
         cx.toast(format!("Asking {} for your limits…", cl.provider));
