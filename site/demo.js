@@ -32,7 +32,7 @@
     // Tabs are the goals. A goal's tools play through once, then stop.
     // Pointing at the card or clicking a tool stops it.
     const tabs = $$('.gtabs .ttab', root), texts = $$('.gws .scene', root), cards = $$('.cards .scene', root);
-    let goal = 0, step = 0, timer = 0, held = false;
+    let goal = 0, step = 0, timer = 0, held = false, touched = false;
     const swap = (list, on) => list.forEach(s => { const was = s.classList.contains('on'); s.classList.toggle('on', s === on); s.classList.toggle('out', was && s !== on); });
     const steps = () => $$('.st2', texts[goal]);
     const mine = () => cards.filter(c => +c.dataset.g === goal);
@@ -49,22 +49,22 @@
     };
     const pick = g => {
       goal = g;
-      tabs.forEach((t, j) => { t.classList.toggle('on', j === g); t.setAttribute('aria-selected', j === g); });
+      tabs.forEach((t, j) => { t.classList.toggle('on', j === g); t.setAttribute('aria-pressed', j === g); });
       swap(texts, texts[g]);
     };
     const open = g => { held = false; pick(g); show(0); play(); };
     const hold = () => { held = true; clearTimeout(timer); steps().forEach(b => b.classList.remove('tick')); };
-    tabs.forEach((t, g) => { t.type = 'button'; t.setAttribute('role', 'tab'); t.addEventListener('click', () => open(g)); });
-    texts.forEach(tx => $$('.st2', tx).forEach((b, i) => { b.type = 'button'; b.addEventListener('click', () => { hold(); show(i); }); }));
+    tabs.forEach((t, g) => { t.type = 'button'; t.addEventListener('click', () => { touched = true; open(g); }); });
+    texts.forEach(tx => $$('.st2', tx).forEach((b, i) => { b.type = 'button'; b.addEventListener('click', () => { touched = true; hold(); show(i); }); }));
     const stage = root.querySelector('.cards');
     stage.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') hold(); });
     pick(0); show(0);
     // The first pass starts when the section scrolls in, not before
-    new IntersectionObserver((e, o) => { if (e[0].isIntersecting) { o.disconnect(); if (!held) open(0); } }, { threshold: .35 }).observe(stage);
+    new IntersectionObserver((e, o) => { if (e[0].isIntersecting) { o.disconnect(); if (!held && !touched) open(0); } }, { threshold: .35 }).observe(stage);
 
     // Other parts of the page can open a tool here
     const AT = { cleanup: [0, 0], diskmap: [0, 1], uninstall: [0, 2], capture: [1, 0], video: [1, 1], sharing: [1, 2], clipboard: [2, 0], dictation: [3, 0], health: [4, 0], fans: [4, 0], startup: [4, 1], displays: [4, 2], claude: [5, 0], awake: [5, 1] };
-    window.cmShow = key => { const at = AT[key]; if (!at) return; hold(); pick(at[0]); show(at[1]); root.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' }); };
+    window.cmShow = key => { const at = AT[key]; if (!at) return; touched = true; hold(); pick(at[0]); show(at[1]); root.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' }); };
   }
 
   // Hero panel: a widget opens its tool in the demo
@@ -72,8 +72,9 @@
   $$('.app.pnl .wd').forEach(w => {
     const k = (w.querySelector('.dm, .kh b, .cl3 > span:last-child') || {}).textContent;
     const to = w.dataset.to || go[(k || '').trim()]; if (!to || !window.cmShow) return;
-    w.classList.add('link');
+    w.classList.add('link'); w.tabIndex = 0; w.setAttribute('role', 'button');
     w.addEventListener('click', () => window.cmShow(to));
+    w.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.cmShow(to); } });
   });
 
   // One bar: the menu bar icons jump into Cmd+Meow, each becomes a live widget.
