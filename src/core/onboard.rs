@@ -1497,7 +1497,9 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         .interactable(false)
         .show(&ctx, |ui| {
             ui.multiply_opacity(a);
-            ui.set_clip_rect(Rect::from_min_size(Pos2::new(-pad, off - pad), Vec2::new(native_w + 2.0 * pad, h / scale)));
+            // inside the panel's padding top and bottom, clear of its round
+            // corners: a widget cut there fades out instead of crossing the edge
+            ui.set_clip_rect(Rect::from_min_max(Pos2::new(-pad, off), Pos2::new(native_w + pad, off + h / scale - 2.0 * pad)));
             for (&(owner, wid_s, size), rect) in placed.iter().zip(&rects) {
                 let tid = app.tools[owner].id();
                 let Some(tool) = samples.iter_mut().find(|t| t.id() == tid) else { continue };
@@ -1505,7 +1507,9 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
                 // it moves to its new place, and drops in when it's new
                 let x = ctx.animate_value_with_time(wid.with("x"), rect.left(), 0.25);
                 let y = ctx.animate_value_with_time(wid.with("y"), rect.top(), 0.25);
-                let d = appear(&ctx, wid.with("in"), now, 0.36, demo);
+                // a new widget waits for the others to slide out of its way
+                // (0.25 s), then fades in: no two layouts over each other
+                let d = ((appear(&ctx, wid.with("in"), now, 0.66, demo) - 0.5) / 0.5).clamp(0.0, 1.0);
                 let r = Rect::from_min_size(Pos2::new(x, y - (1.0 - d) * 14.0), rect.size());
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, wid_s, "sample")));
                 child.multiply_opacity(d);
@@ -1529,11 +1533,12 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         mesh.add_triangle(0, 2, 3);
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with(("fade", at_top)))).add(mesh);
     };
+    let edge = pad * scale;
     if full_h - off * scale > h + 0.5 {
-        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - 40.0), Pos2::new(panel.right() - 1.0, panel.bottom() - 1.0)), false);
+        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - edge - 40.0), Pos2::new(panel.right() - 1.0, panel.bottom() - edge)), false);
     }
     if off > 0.5 {
-        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.top() + 1.0), Pos2::new(panel.right() - 1.0, panel.top() + 32.0)), true);
+        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.top() + edge), Pos2::new(panel.right() - 1.0, panel.top() + edge + 32.0)), true);
     }
     // what a sample widget asks for (open a page…) goes nowhere
     let _ = cx.take_actions();

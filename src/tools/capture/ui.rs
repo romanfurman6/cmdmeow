@@ -137,7 +137,8 @@ pub fn card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     y += MODE_H + sp::M;
     // the newest images in the screenshot folder; history when it has none
     c.refresh_files();
-    let items: Vec<Item> = if c.files.is_empty() { c.store.shots.iter().filter(|s| s.kind != Kind::Recording).take(4).map(Item::from_shot).collect() } else { c.files.iter().take(4).map(|f| Item::from_file(c, f)).collect() };
+    // pictures only: recordings in the same folder are the Video widget's
+    let items: Vec<Item> = if c.files.is_empty() { c.store.shots.iter().filter(|s| s.kind != Kind::Recording).take(4).map(Item::from_shot).collect() } else { c.files.iter().filter(|f| !folder::is_video(&f.path)).take(4).map(|f| Item::from_file(c, f)).collect() };
     let row = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, rect.bottom() - sp::M));
     recent_row(c, ui, &p, id, row, &items, 4, Act::Edit, "click to edit");
 }
