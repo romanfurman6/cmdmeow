@@ -48,19 +48,28 @@ fn kinds(app: &App) -> Vec<Kind> {
 /// The setup window's state while it is open.
 pub struct Setup {
     pub step: usize,
-    /// When the current step appeared (its animations count from here).
-    since: f64,
+    /// Seconds the current step has been on screen (its animations count
+    /// from here). It only moves while the window is in front and drawing,
+    /// at most a frame's worth at a time: a slow first frame or a macOS
+    /// prompt over the window no longer skips the animation.
+    clock: f32,
+    /// When the clock last moved (NaN before the step's first frame).
+    last: f64,
     /// The step before this one: the cat on the step dots hops from there.
     from: usize,
     /// The Tools step shows every tool with a switch, not the goals.
     pub all_tools: bool,
     /// Screenshots: the goal card the pointer "is on" (its preview shows).
     pub demo_hover: Option<usize>,
+    /// The tools again, with sample data, for the Tools step's preview: the
+    /// live ones would read the person's folders (Capture's Recent list
+    /// lists ~/Desktop, and macOS asked about it on a hover).
+    samples: Option<Vec<Box<dyn super::tool::Tool>>>,
 }
 
 impl Setup {
     pub fn new(step: usize) -> Self {
-        Setup { step, since: f64::NEG_INFINITY, from: step, all_tools: false, demo_hover: None }
+        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, demo_hover: None, samples: None }
     }
 }
 
@@ -118,6 +127,10 @@ pub struct PermWatch {
     pub demo: Option<HashMap<Perm, Status>>,
     /// Open at login, as last read (None until the first read lands).
     login: Option<bool>,
+    /// A macOS question was just answered: bring setup back in front (macOS
+    /// handed focus to whatever was behind, often System Settings left open
+    /// by an earlier row).
+    refocus: bool,
     /// macOS answers slowly enough to drop frames, so reads run off the ui thread.
     bg: std::sync::Arc<std::sync::Mutex<Bg>>,
 }
@@ -186,6 +199,9 @@ impl PermWatch {
         let before = self.status.insert(perm, s);
         if s == Status::Allowed && before.is_some_and(|b| b != Status::Allowed) {
             self.allowed_at.insert(perm, now);
+        }
+        if perm.answered_in_place() && self.asked.contains_key(&perm) && s != Status::NotAsked && before != Some(s) {
+            self.refocus = true;
         }
         // allowed, or refused a while after asking: the wait is over
         if s == Status::Allowed || (s == Status::Denied && self.asked.get(&perm).is_some_and(|t| now - t > 3.0)) {
@@ -260,6 +276,11 @@ impl PermWatch {
     /// The status once a read has landed (None before that).
     pub fn known(&self, p: Perm) -> Option<Status> {
         self.status.get(&p).copied()
+    }
+
+    /// A macOS question was answered since the last call (see `refocus`).
+    pub fn take_refocus(&mut self) -> bool {
+        std::mem::take(&mut self.refocus)
     }
 
     /// Ask for a system permission (the spinner shows until it flips).
@@ -378,16 +399,23 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let steps = kinds.len();
     let step = step.min(steps - 1);
     let kind = kinds[step];
-    // a step's animations start when it can be seen: not while the window
-    // is still hidden or covered (they would play to nobody)
-    let unseen = ctx.input(|i| i.viewport().occluded == Some(true) || i.viewport().minimized == Some(true));
-    if let Some(s) = app.setup.as_mut() {
-        if s.since == f64::NEG_INFINITY && !unseen {
-            s.since = now;
-        }
+    if app.perm_watch.take_refocus() && !app.demo {
+        crate::kit::native::activate();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
-    let since = app.setup.as_ref().map(|s| s.since).unwrap_or(now);
-    let t = if since == f64::NEG_INFINITY { 0.0 } else { (now - since) as f32 };
+    // a step's animations run while it can be seen: not while the window
+    // is hidden, covered or behind a macOS prompt, nor during its first
+    // frames (macOS shows them late), else they play to nobody
+    let seen = ctx.input(|i| i.viewport().occluded != Some(true) && i.viewport().minimized != Some(true) && i.viewport().focused != Some(false)) && (app.demo || super::shell::first_frames_shown());
+    let mut t = 0.0;
+    if let Some(s) = app.setup.as_mut() {
+        let dt = if s.last.is_nan() { 0.0 } else { (now - s.last).clamp(0.0, 0.05) as f32 };
+        s.last = now;
+        if seen {
+            s.clock += dt;
+        }
+        t = s.clock;
+    }
     // screenshots show each step settled, not mid-animation
     let t = if app.demo { t + 5.0 } else { t };
     // setup lives in the app window: a centered column when that is wider
@@ -437,10 +465,6 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         let r = Rect::from_min_size(Pos2::new(bar.right() - w, bar.center().y - 16.0), Vec2::new(w, 32.0));
         // nothing to set up with no tool on
         let can = kind != Kind::Tools || (0..app.tools.len()).any(|i| app.tool_on(i));
-        if kind == Kind::Tools {
-            let left = bar.left() + 70.0 + sp::L;
-            cost_line(app, ui, Rect::from_min_max(Pos2::new(left, bar.top()), Pos2::new(r.left() - sp::L, bar.bottom())));
-        }
         if pill_button(ui, r, label, BTN_PRIMARY, can).clicked() && can {
             if kind == Kind::Ready {
                 finish = if needs_restart(app) { Finish::Restart } else { Finish::Panel };
@@ -461,8 +485,12 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // setup is an immediate window drawn in the (hidden) root's pass: ask
     // the root for the frames too, or after a click the window kept showing
     // the old step until it was resized (first launch, M1)
-    let animating = t < 2.5 || app.perm_watch.busy(now) || next;
-    if animating {
+    let animating = (seen && t < 2.5) || app.perm_watch.busy(now) || next;
+    if !seen && t < 2.5 {
+        // waiting to be seen: look again soon, without drawing flat out
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        ctx.request_repaint_after_for(std::time::Duration::from_millis(100), egui::ViewportId::ROOT);
+    } else if animating {
         ctx.request_repaint();
         ctx.request_repaint_of(egui::ViewportId::ROOT);
     } else {
@@ -484,7 +512,8 @@ fn go(app: &mut App, step: usize) {
     if let Some(s) = app.setup.as_mut() {
         s.from = s.step;
         s.step = step.min(last);
-        s.since = f64::NEG_INFINITY;
+        s.clock = 0.0;
+        s.last = f64::NAN;
         if !app.demo {
             let f = step_file();
             if let Some(d) = f.parent() {
@@ -718,33 +747,6 @@ fn goal_tools(app: &App, g: &Goal) -> Vec<usize> {
     g.tools.iter().filter_map(|id| app.tool_index(id)).collect()
 }
 
-/// What the switched-on tools will take: permissions (required first, then
-/// optional), bytes to download, and global shortcuts.
-#[derive(Debug, Default, PartialEq)]
-pub struct Cost {
-    pub must: Vec<Perm>,
-    pub may: Vec<Perm>,
-    pub download: u64,
-    pub keys: Vec<String>,
-}
-
-fn cost(app: &App) -> Cost {
-    use crate::core::tool::ModelState;
-    let rows = rows(app);
-    let must = rows.iter().filter(|r| !r.optional).map(|r| r.perm).collect();
-    let may = rows.iter().filter(|r| r.optional).map(|r| r.perm).collect();
-    let download = models(app).iter().filter(|r| !matches!(r.model.state, ModelState::Ready | ModelState::OnFirstUse)).map(|r| r.model.bytes).sum();
-    let mut keys: Vec<String> = Vec::new();
-    for i in (0..app.tools.len()).filter(|&i| app.tool_on(i)) {
-        for (_, k) in app.tools[i].setup_shortcuts() {
-            if !keys.contains(&k) {
-                keys.push(k);
-            }
-        }
-    }
-    Cost { must, may, download, keys }
-}
-
 /// 0→1 over `dur` seconds from when `id` was first drawn (again): things
 /// that just appeared drop or pop in. Screenshots show them settled.
 fn appear(ctx: &egui::Context, id: egui::Id, now: f64, dur: f32, demo: bool) -> f32 {
@@ -796,13 +798,10 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usiz
     let cw = (area.width() - gap) / 2.0;
     // three rows fill the step
     let ch = ((area.height() - sp::L - gap * 2.0) / 3.0).clamp(96.0, 116.0);
-    // the cards' loops run at the decorative pace and rest when the pointer
-    // does (60 fps here cost ~18% CPU); screenshots catch them mid-way. The
-    // clock wraps at a multiple of every loop's period, so f32 stays exact.
-    let now = if app.demo { 2.0 } else { (crate::kit::glass::ambient_clock(ui.ctx()) % 32760.0) as f32 };
-    if !app.demo {
-        crate::kit::glass::ambient(ui.ctx());
-    }
+    // a card's loop plays only while the pointer is on it (all six at once
+    // was too busy); otherwise it rests where it stopped, first at the pose
+    // screenshots show
+    let wall = ui.ctx().input(|i| i.time);
     let mut flip = None;
     let mut hot = None;
     for (k, goal) in GOALS.iter().enumerate() {
@@ -819,6 +818,7 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usiz
         let s = ui.ctx().animate_bool_with_time(id.with("on"), picked, 0.18);
         let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
         let r = r.translate(Vec2::new(0.0, -hov));
+        let now = if app.demo { 2.0 } else { loop_clock(ui.ctx(), id.with("loop"), wall, resp.hovered()) };
         let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(BLUE(), 0.10), s);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
         p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(BLUE(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
@@ -887,6 +887,23 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usiz
         }
     }
     hot
+}
+
+/// A goal card's loop time: it runs while `on` (the pointer is on the card)
+/// at the decorative pace, and holds still otherwise.
+fn loop_clock(ctx: &egui::Context, id: egui::Id, wall: f64, on: bool) -> f32 {
+    let (mut t, last) = ctx.data_mut(|d| d.get_temp::<(f32, f64)>(id)).unwrap_or((2.0, wall));
+    if on {
+        t += (wall - last).clamp(0.0, 0.1) as f32;
+        // wraps at a multiple of every loop's period, so f32 stays exact
+        t %= 32760.0;
+        // ~30 fps while the pointer is on it, even when it holds still
+        // (setup draws in the root's pass: ask the root too)
+        ctx.request_repaint_after(std::time::Duration::from_millis(33));
+        ctx.request_repaint_after_for(std::time::Duration::from_millis(33), egui::ViewportId::ROOT);
+    }
+    ctx.data_mut(|d| d.insert_temp(id, (t, wall)));
+    t
 }
 
 /// A value through `(phase, value)` keys, eased between neighbours; holds
@@ -1405,28 +1422,33 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32, hot: Option<Vec<us
     }
 }
 
-/// The real panel widgets of `list` (each at its biggest size up to Medium),
-/// scaled to fit `area`'s width, stacked from the top.
+/// The panel widgets of `list` (each at its biggest size up to Medium),
+/// scaled to fit `area`'s width, stacked from the top. They are drawn by
+/// copies of the tools holding sample data: a hover must not touch the
+/// person's files or ask macOS for anything.
 fn preview(app: &mut App, ui: &mut Ui, area: Rect, list: &[usize]) {
     use crate::core::panel;
     use crate::core::tool::Size;
     let ctx = ui.ctx().clone();
     let now = ctx.input(|i| i.time);
+    let Some(mut samples) = app.setup.as_mut().map(|s| s.samples.take().unwrap_or_else(|| crate::tools::all(&crate::core::tool::ToolEnv { ctx: ctx.clone(), demo: true }))) else { return };
     let native_w = panel::inner_width();
     let scale = (area.width() / native_w).min(1.0);
     let mut y = area.top();
+    let mut cx = app.cx();
     for &i in list {
-        let Some(spec) = app.tools[i].widgets().into_iter().next() else { continue };
+        let tid = app.tools[i].id();
+        let Some(tool) = samples.iter_mut().find(|t| t.id() == tid) else { continue };
+        let Some(spec) = tool.widgets().into_iter().next() else { continue };
         let size = [Size::S24, Size::S14, Size::S12, Size::S11].into_iter().find(|s| spec.sizes.contains(s)).unwrap_or(spec.size);
         let native = panel::size_px(size, native_w);
         let h = native.y * scale;
         if y + h > area.bottom() {
             break;
         }
-        let id = ui.scope_id().with(("setup-preview", app.tools[i].id()));
+        let id = ui.scope_id().with(("setup-preview", tid));
         let d = appear(&ctx, id.with("in"), now, 0.25, app.demo);
         let target = Pos2::new(area.left() + (1.0 - d) * 10.0, y);
-        let mut cx = app.cx();
         // drawn at the panel's own size on a layer of its own, then scaled down
         let layer = egui::Area::new(id)
             .order(egui::Order::Foreground)
@@ -1437,122 +1459,19 @@ fn preview(app: &mut App, ui: &mut Ui, area: Rect, list: &[usize]) {
                 ui.multiply_opacity(d);
                 let r = Rect::from_min_size(Pos2::ZERO, native);
                 ui.set_clip_rect(r.expand(2.0));
-                panel::draw_at(app, ui, Some(i), spec.id, size, r, None, &mut cx);
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, spec.id, "sample")));
+                // a sample that fails stays blank; the live tool isn't stopped for it
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tool.widget_ui(spec.id, size, &mut child, r, &mut cx)));
             })
             .response
             .layer_id;
         ctx.set_transform_layer(layer, egui::emath::TSTransform::new(target.to_vec2(), scale));
         y += h + sp::S;
     }
-}
-
-/// The Tools step's bottom bar, between Back and Continue: the permissions
-/// the switched-on tools will ask for (required with their names, optional
-/// as dashed icons), the download, and the shortcuts they take.
-fn cost_line(app: &App, ui: &mut Ui, area: Rect) {
-    let p = ui.painter().clone();
-    let ctx = ui.ctx().clone();
-    let now = ctx.input(|i| i.time);
-    let c = cost(app);
-    enum Item {
-        Perm(Perm, bool),
-        Down(u64),
-        Keys(String),
-    }
-    let mut items: Vec<Item> = c.must.iter().map(|&q| Item::Perm(q, false)).collect();
-    items.extend(c.may.iter().map(|&q| Item::Perm(q, true)));
-    if c.download > 0 {
-        items.push(Item::Down(c.download));
-    }
-    items.extend(c.keys.iter().cloned().map(Item::Keys));
-    let h = 26.0;
-    let gap = 6.0;
-    let label = |it: &Item, named: bool| -> Option<String> {
-        match it {
-            Item::Perm(q, false) if named => Some(q.name().to_string()),
-            Item::Down(b) => Some(human_bytes(*b)),
-            _ => None,
-        }
-    };
-    let width = |it: &Item, named: bool| -> f32 {
-        match it {
-            Item::Keys(k) => p.layout_no_wrap(k.clone(), font(13.0), TEXT()).size().x + 14.0,
-            _ => {
-                let tw = label(it, named).map(|s| p.layout_no_wrap(s, font(12.0), TEXT()).size().x + 6.0).unwrap_or(0.0);
-                14.0 + tw + 16.0
-            }
-        }
-    };
-    // one row: with the permissions' names when they fit, else icons only
-    // (their names show on hover, and on the Permissions step)
-    let lay = |named: bool| -> Vec<Vec<(usize, f32)>> {
-        let mut rows: Vec<Vec<(usize, f32)>> = vec![Vec::new()];
-        let mut x = 0.0;
-        for (k, it) in items.iter().enumerate() {
-            let w = width(it, named);
-            if x > 0.0 && x + w > area.width() {
-                rows.push(Vec::new());
-                x = 0.0;
-            }
-            rows.last_mut().unwrap().push((k, w));
-            x += w + gap;
-        }
-        rows
-    };
-    let mut named = true;
-    let mut rows = lay(true);
-    if rows.len() > 1 {
-        named = false;
-        rows = lay(false);
-    }
-    let total = rows.len() as f32 * h + (rows.len() as f32 - 1.0) * gap;
-    let mut y = area.center().y - total / 2.0;
-    for row in rows {
-        let mut x = area.left();
-        for (k, w) in row {
-            let it = &items[k];
-            let key = match it {
-                Item::Perm(q, _) => q.name().to_string(),
-                Item::Down(_) => "download".to_string(),
-                Item::Keys(s) => s.clone(),
-            };
-            let id = ui.scope_id().with(("setup-cost", key.as_str()));
-            let d = appear(&ctx, id, now, 0.28, app.demo);
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-            let r = Rect::from_center_size(r.center(), r.size() * (0.8 + 0.2 * pop(d)));
-            match it {
-                Item::Keys(s) => {
-                    // one cap per shortcut, its keys in a row
-                    let c = Rect::from_center_size(r.center(), Vec2::new(r.width(), 22.0 * r.height() / h));
-                    p.rect_filled(c, 5.0, white(26).gamma_multiply(d));
-                    p.rect_filled(Rect::from_min_max(Pos2::new(c.left() + 1.0, c.bottom() - 1.5), Pos2::new(c.right() - 1.0, c.bottom())), CornerRadius::same(2), Color32::from_black_alpha((90.0 * d) as u8));
-                    p.text(c.center() - Vec2::new(0.0, 0.75), Align2::CENTER_CENTER, s, font(13.0), TEXT().gamma_multiply(d));
-                }
-                _ => {
-                    let optional = matches!(it, Item::Perm(_, true));
-                    if optional {
-                        dashed_rect(&p, r, 8.0, TEXT_MUTED().gamma_multiply(d));
-                    } else {
-                        p.rect_filled(r, 8.0, CARD().gamma_multiply(d));
-                        p.rect_stroke(r, 8.0, Stroke::new(1.0, CARD_EDGE().gamma_multiply(d)), StrokeKind::Inside);
-                    }
-                    let ic = match it {
-                        Item::Perm(q, _) => q.icon(),
-                        _ => Icon::Down,
-                    };
-                    let ir = Rect::from_min_size(Pos2::new(r.left() + 8.0, r.center().y - 7.0), Vec2::splat(14.0));
-                    icon(&p, ic, ir, if optional { TEXT_FAINT() } else { TEXT_DIM() }.gamma_multiply(d));
-                    if let Some(s) = label(it, named) {
-                        p.text(Pos2::new(ir.right() + 6.0, r.center().y), Align2::LEFT_CENTER, s, font(12.0), TEXT().gamma_multiply(d));
-                    }
-                    if let Item::Perm(q, _) = it {
-                        ui.interact(r, id.with("tip"), Sense::hover()).on_hover_text(q.name());
-                    }
-                }
-            }
-            x += w + gap;
-        }
-        y += h + gap;
+    // what a sample widget asks for (open a page…) goes nowhere
+    let _ = cx.take_actions();
+    if let Some(s) = app.setup.as_mut() {
+        s.samples = Some(samples);
     }
 }
 
@@ -1582,11 +1501,12 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     use crate::kit::ai::{self, settings};
     let p = ui.painter().clone();
     let set = settings::get();
-    let head = body.top() + 6.0;
-    let g = p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "AI agents", bold(22.0), TEXT());
-    let sub = text_wrap(&p, Pos2::new(body.left(), g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "Main does AI Check in Cleanup, Uninstaller, Startup, Disk Map and Mac Health. Tracked agents show in AI Usage.", ty::body(), TEXT_DIM(), body.width().min(560.0), 3);
+    // a column in the middle of the step (left-aligned it left the right half empty)
     let w = body.width().min(560.0);
-    let x = body.left();
+    let x = body.center().x - w / 2.0;
+    let head = body.top() + 6.0;
+    let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, "AI agents", bold(22.0), TEXT());
+    let sub = text_wrap(&p, Pos2::new(x, g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "Main does AI Check in Cleanup, Uninstaller, Startup, Disk Map and Mac Health. Tracked agents show in AI Usage.", ty::body(), TEXT_DIM(), w, 3);
     let col_track = x + w - sp::L - 8.0;
     let col_main = col_track - 56.0;
     let top = sub.bottom() + sp::XL;
@@ -1695,11 +1615,13 @@ fn has_models_step(app: &App) -> bool {
 fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     use crate::core::tool::ModelState;
     let p = ui.painter().clone();
-    let head = body.top() + 6.0;
-    let g = p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "Download models", bold(22.0), TEXT());
-    let sub = text_wrap(&p, Pos2::new(body.left(), g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "They run on this Mac. Each one says which tool uses it. The download keeps going if you continue.", ty::body(), TEXT_DIM(), body.width().min(560.0), 3);
-    let list = models(app);
+    // a column in the middle of the step (left-aligned it left the right half empty)
     let w = body.width().min(620.0);
+    let x = body.center().x - w / 2.0;
+    let head = body.top() + 6.0;
+    let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, "Download models", bold(22.0), TEXT());
+    let sub = text_wrap(&p, Pos2::new(x, g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "They run on this Mac. Each one says which tool uses it. The download keeps going if you continue.", ty::body(), TEXT_DIM(), w, 3);
+    let list = models(app);
     let mut y = sub.bottom() + sp::XL;
     let mut start: Option<(usize, &'static str)> = None;
     for (k, row) in list.iter().enumerate() {
@@ -1708,7 +1630,7 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         // two lines (the model, then the tools it's for), a third for the bar or an error
         let third = matches!(m.state, ModelState::Downloading { .. } | ModelState::Unpacking | ModelState::Failed(_));
         let row_h = if third { 86.0 } else { 66.0 };
-        let r = Rect::from_min_size(Pos2::new(body.left(), y + (1.0 - a) * 8.0), Vec2::new(w, row_h));
+        let r = Rect::from_min_size(Pos2::new(x, y + (1.0 - a) * 8.0), Vec2::new(w, row_h));
         y += row_h + sp::S;
         glass_card(&p, r, R_CARD, 0.0, false);
         let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 18.0), Vec2::splat(30.0));
@@ -1718,6 +1640,9 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let right = r.right() - 14.0;
         let line1 = r.top() + 22.0;
         let line2 = r.top() + 44.0;
+        // a two-line row's status or button sits on its middle; with a
+        // third line (the bar) it stays on the first
+        let side = if third { line1 } else { r.center().y };
         let title = p.text(Pos2::new(tx, line1), Align2::LEFT_CENTER, m.name, bold(13.0), TEXT());
         p.text(Pos2::new(title.right() + 8.0, line1), Align2::LEFT_CENTER, human_bytes(m.bytes), font(12.0), TEXT_FAINT());
         // which tools use it, and for what
@@ -1728,11 +1653,11 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let mut button: Option<&str> = None;
         match &m.state {
             ModelState::Ready => {
-                check(&p, Pos2::new(right - 12.0, line1), 12.0, GREEN());
-                p.text(Pos2::new(right, line2), Align2::RIGHT_CENTER, "On this Mac", font(12.0), GREEN());
+                let t = p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "On this Mac", font(12.0), GREEN());
+                check(&p, Pos2::new(t.left() - 12.0, side), 12.0, GREEN());
             }
             ModelState::OnFirstUse => {
-                p.text(Pos2::new(right, line2), Align2::RIGHT_CENTER, "Downloads on first use", font(12.0), TEXT_FAINT());
+                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "Downloads on first use", font(12.0), TEXT_FAINT());
             }
             ModelState::Downloading { done, total } => {
                 let total = if *total > 0 { *total } else { m.bytes };
@@ -1741,18 +1666,12 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 // the bar fills smoothly between progress reports
                 let f = ui.ctx().animate_value_with_time(ui.scope_id().with(("setup-model", m.id)), f, 0.25);
                 p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 3.0, BLUE());
-                p.text(Pos2::new(right, line1), Align2::RIGHT_CENTER, format!("{} of {} · {:.0}%", human_bytes(*done), human_bytes(total), f * 100.0), font(12.0), TEXT_DIM());
-                // the cat trots along on the front of the fill
-                let now = ui.ctx().input(|i| i.time);
-                let hop = ((now * 9.0).sin().abs() * 2.5) as f32;
-                let cx = bar.left() + bar.width() * f;
-                let cat = Rect::from_min_max(Pos2::new(cx - 6.0, bar.top() - 13.0 - hop), Pos2::new(cx + 6.0, bar.top() - 1.0 - hop));
-                crate::kit::brand::draw_mascot(&p, cat, cat_color(), (0.0, 0.0));
-                crate::kit::glass::animate(ui.ctx());
+                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, format!("{} of {} · {:.0}%", human_bytes(*done), human_bytes(total), f * 100.0), font(12.0), TEXT_DIM());
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
             }
             ModelState::Unpacking => {
                 p.rect_filled(bar, 3.0, BLUE());
-                p.text(Pos2::new(right, line1), Align2::RIGHT_CENTER, "Unpacking", font(12.0), TEXT_DIM());
+                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "Unpacking", font(12.0), TEXT_DIM());
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
             }
             ModelState::Failed(e) => {
@@ -1763,7 +1682,7 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         }
         if let Some(label) = button {
             let bw = button_width(&p, label, BTN_SECONDARY);
-            let b = Rect::from_min_size(Pos2::new(right - bw, line1 - 13.0), Vec2::new(bw, 26.0));
+            let b = Rect::from_min_size(Pos2::new(right - bw, side - 13.0), Vec2::new(bw, 26.0));
             if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() {
                 start = Some((i, m.id));
             }
@@ -1962,6 +1881,8 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
                 Perm::Own { .. } => "",
                 _ => "System Settings",
             };
+            // macOS asks right here; Settings isn't involved
+            let hint = if r.perm.answered_in_place() { "" } else { hint };
             p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, hint, font(12.0), TEXT_FAINT());
         } else {
             let err = app.perm_watch.own_err.get(&r.perm).filter(|e| !e.is_empty());
@@ -2342,6 +2263,22 @@ mod tests {
             assert!(t.setup_models().is_empty(), "{} downloads", t.id());
         }
         assert_eq!(need, vec![Perm::FullDisk]);
+    }
+
+    #[test]
+    fn an_answered_macos_question_brings_setup_back() {
+        let mut w = PermWatch::default();
+        w.apply(Perm::Camera, Status::NotAsked, 0.0);
+        w.asked.insert(Perm::Camera, 1.0);
+        w.apply(Perm::Camera, Status::NotAsked, 1.5);
+        assert!(!w.take_refocus(), "still asking");
+        w.apply(Perm::Camera, Status::Allowed, 2.0);
+        assert!(w.take_refocus());
+        assert!(!w.take_refocus(), "once");
+        // Full Disk Access is switched on in System Settings: leave it in front
+        w.asked.insert(Perm::FullDisk, 3.0);
+        w.apply(Perm::FullDisk, Status::Allowed, 4.0);
+        assert!(!w.take_refocus());
     }
 
     #[test]
