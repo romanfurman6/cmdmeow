@@ -116,11 +116,12 @@ fi
 LOGIN_KC="$HOME/Library/Keychains/login.keychain-db"
 KEY_NOTE="Keychain ($SERVICE)"
 if ! security find-generic-password -s "$SERVICE" -a key "$DEV_KC" >/dev/null 2>&1; then
-  if security find-generic-password -s "$SERVICE" -a key "$LOGIN_KC" >/dev/null 2>&1 && [[ "${RESET_KEY:-0}" != 1 ]]; then
-    # A key in the login keychain can't be read without its password, and
-    # replacing it makes history sealed with it unreadable: keep it unless
-    # asked. Rebuilds then ask for the login password once each.
-    KEY_NOTE="Keychain skipped: $SERVICE key is in the login keychain (RESET_KEY=1 replaces it, old history is lost)"
+  if security find-generic-password -s "$SERVICE" -a key "$LOGIN_KC" >/dev/null 2>&1 && [[ "${KEEP_KEY:-0}" == 1 ]]; then
+    # A key in the login keychain can't be read without its password. By
+    # default it is replaced (this only runs on SIP-off test Macs, where
+    # history is disposable) so rebuilds never ask for a password; KEEP_KEY=1
+    # keeps it and its history, and rebuilds then ask once each.
+    KEY_NOTE="Keychain skipped: $SERVICE key kept in the login keychain (KEEP_KEY=1)"
   else
     security delete-generic-password -s "$SERVICE" -a key "$LOGIN_KC" >/dev/null 2>&1 || true
     security add-generic-password -s "$SERVICE" -a key -X "$(openssl rand -hex 32)" -T "$APP" "$DEV_KC"
