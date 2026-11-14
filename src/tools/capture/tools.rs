@@ -42,9 +42,11 @@ impl Tool for Sharing {
         c.settings.shortcut(Command::Share).map(|s| vec![("Share last capture", s.display())]).unwrap_or_default()
     }
     /// Its shortcut, like Screenshot and Video (before storage is set up
-    /// the shortcut opens Sharing).
+    /// the shortcut opens Sharing). With both of them off there's nothing
+    /// new to share and Capture isn't running, so no shortcut either.
     fn sidebar_meta(&self) -> String {
-        key(&self.0.borrow(), Command::Share)
+        let c = self.0.borrow();
+        if c.shot_on || c.video_on { key(&c, Command::Share) } else { String::new() }
     }
     fn set_on(&mut self, on: bool) {
         self.0.borrow_mut().set_share_on(on);

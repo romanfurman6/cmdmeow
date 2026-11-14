@@ -274,7 +274,8 @@ impl Capture {
                 .into_iter()
                 .filter(|(c, _)| match c {
                     Command::Record => video,
-                    Command::Share => share,
+                    // only while Capture runs (one of the two is on)
+                    Command::Share => share && (shot || video),
                     _ => shot,
                 })
                 .collect();
@@ -1251,5 +1252,15 @@ mod tests {
         c.windows(&c.ctx.clone(), &mut cx);
         assert!(c.queue.is_empty());
         assert_eq!(cx.take_actions(), vec![Action::OpenPage { tool: ID.into(), route: "history".into() }]);
+    }
+
+    #[test]
+    fn share_shortcut_without_storage_opens_sharing() {
+        let mut c = demo();
+        c.settings.share = Default::default();
+        c.queue.push((Command::Share, 0));
+        let mut cx = Cx::new(None);
+        c.windows(&c.ctx.clone(), &mut cx);
+        assert_eq!(cx.take_actions(), vec![Action::OpenPage { tool: SHARING_ID.into(), route: String::new() }]);
     }
 }
