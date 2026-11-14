@@ -513,7 +513,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
             answer_items(app, &asks, v);
         }
         let area = Rect::from_min_max(Pos2::new(lc.left(), lc.top() + LABEL_H + sp::S), lc.max);
-        scroll_rows(ui, area, format!("asks-{:?}", app.clean_group), asks.len(), ASK_H, sp::S, |ui, k, rr| ask_card(app, ui, asks[k], rr));
+        scroll_rows(ui, area, format!("asks-{:?}", app.clean_group), asks.len(), |_, _| ASK_H, sp::S, |ui, k, rr| ask_card(app, ui, asks[k], rr));
     }
 
     // AI Check tips go under the right column
@@ -526,9 +526,11 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
 
     // right: what will go (Safe) and what stays (Kept)
     if right.is_positive() {
-        let row_h = sp::ROW2_H;
-        let need = |n: usize| if n == 0 { 0.0 } else { LABEL_H + sp::S + n as f32 * row_h + 8.0 };
-        let (mut safe_h, mut kept_h) = (need(safe.len()), need(kept.len()));
+        // a reason that doesn't fit on one line wraps and makes its row taller
+        let items = app.clean.lock_ok().items.clone();
+        let row_h = |idx: &[usize], k: usize, w: f32| row_height(&p, &items[idx[k]], w);
+        let need = |idx: &[usize]| if idx.is_empty() { 0.0 } else { LABEL_H + sp::S + (0..idx.len()).map(|k| row_h(idx, k, right.width())).sum::<f32>() + 8.0 };
+        let (mut safe_h, mut kept_h) = (need(&safe), need(&kept));
         let gap = if safe_h > 0.0 && kept_h > 0.0 { sp::L } else { 0.0 };
         if safe_h + kept_h + gap > right.height() {
             kept_h = kept_h.min(if safe_h > 0.0 { right.height() * 0.4 } else { right.height() });
@@ -550,14 +552,14 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
             }
             let card = Rect::from_min_max(Pos2::new(safe_r.left(), safe_r.top() + LABEL_H + sp::S), safe_r.max);
             glass_card(&p, card, R_CARD, 0.0, false);
-            scroll_rows(ui, card.shrink2(Vec2::new(0.0, 4.0)), format!("safe-{:?}", app.clean_group), safe.len(), row_h, 0.0, |ui, k, rr| safe_row(app, ui, safe[k], rr));
+            scroll_rows(ui, card.shrink2(Vec2::new(0.0, 4.0)), format!("safe-{:?}", app.clean_group), safe.len(), |k, w| row_h(&safe, k, w), 0.0, |ui, k, rr| safe_row(app, ui, safe[k], rr));
         }
         if !kept.is_empty() {
             let kr = Rect::from_min_size(Pos2::new(right.left(), safe_r.bottom() + gap), Vec2::new(right.width(), kept_h));
             section_label(&p, kr.left_top(), "Kept", TEXT_DIM(), kept.len(), sum(&kept));
             let card = Rect::from_min_max(Pos2::new(kr.left(), kr.top() + LABEL_H + sp::S), kr.max);
             glass_card(&p, card, R_CARD, 0.0, false);
-            scroll_rows(ui, card.shrink2(Vec2::new(0.0, 4.0)), format!("kept-{:?}", app.clean_group), kept.len(), row_h, 0.0, |ui, k, rr| kept_row(app, ui, kept[k], rr));
+            scroll_rows(ui, card.shrink2(Vec2::new(0.0, 4.0)), format!("kept-{:?}", app.clean_group), kept.len(), |k, w| row_h(&kept, k, w), 0.0, |ui, k, rr| kept_row(app, ui, kept[k], rr));
         }
         // under the lists, right after the last one
         let mut ty_ = right.top() + safe_h + gap + kept_h + sp::M;
@@ -620,20 +622,23 @@ fn section_label(p: &egui::Painter, at: Pos2, title: &str, col: Color32, n: usiz
     t.union(s)
 }
 
-/// A scrolling list of `n` rows of `row_h` in `area`; only the rows in view are drawn.
-fn scroll_rows(ui: &mut Ui, area: Rect, salt: String, n: usize, row_h: f32, gap: f32, mut f: impl FnMut(&mut Ui, usize, Rect)) {
+/// A scrolling list of `n` rows in `area`, row `k` `row_h(k, width)` tall;
+/// only the rows in view are drawn.
+fn scroll_rows(ui: &mut Ui, area: Rect, salt: String, n: usize, row_h: impl Fn(usize, f32) -> f32, gap: f32, mut f: impl FnMut(&mut Ui, usize, Rect)) {
     if n == 0 || !area.is_positive() {
         return;
     }
     let mut child = ui.new_child(UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(area.intersect(ui.clip_rect()));
-    // when it scrolls, the rows stop short of the scroll bar
-    let w = area.width() - if scrolls(area.height(), n, row_h, gap) { sp::M } else { 0.0 };
+    // when it scrolls, the rows stop short of the scroll bar (and may wrap
+    // more in the narrower width)
+    let w = area.width() - if scrolls(area.height(), (0..n).map(|k| row_h(k, area.width())), gap) { sp::M } else { 0.0 };
     ScrollArea::vertical().id_salt(salt).auto_shrink([false, false]).show(&mut child, |ui| {
         ui.spacing_mut().item_spacing.y = gap;
         for k in 0..n {
             // never past the scroll gutter (sp::SCROLL_GUTTER) either
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(w.min(ui.available_width()), row_h), Sense::hover());
+            let rw = w.min(ui.available_width());
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(rw, row_h(k, rw)), Sense::hover());
             if ui.is_rect_visible(rect) {
                 f(ui, k, rect);
             }
@@ -641,9 +646,10 @@ fn scroll_rows(ui: &mut Ui, area: Rect, salt: String, n: usize, row_h: f32, gap:
     });
 }
 
-/// Whether `n` rows of `row_h`, `gap` apart, are taller than `h`.
-fn scrolls(h: f32, n: usize, row_h: f32, gap: f32) -> bool {
-    n as f32 * row_h + n.saturating_sub(1) as f32 * gap > h + 0.5
+/// Whether rows `hs` tall, `gap` apart, are taller than `h`.
+fn scrolls(h: f32, hs: impl Iterator<Item = f32>, gap: f32) -> bool {
+    let (n, sum) = hs.fold((0usize, 0.0f32), |(n, s), x| (n + 1, s + x));
+    sum + n.saturating_sub(1) as f32 * gap > h + 0.5
 }
 
 /// Answer questions: Clean ticks them, Keep remembers them as kept.
@@ -736,16 +742,53 @@ fn row_extras(ui: &mut Ui, rr: Rect, it: &Item, path_tip: bool) {
     }
 }
 
-/// The reason on one line; the whole of it on hover when it doesn't fit.
-fn reason_line(ui: &mut Ui, pos: Pos2, align: Align2, it: &Item, color: Color32, max_w: f32) {
+/// Each line a wrapped reason adds to a Safe / Kept row.
+const REASON_LINE: f32 = 16.0;
+
+/// The room for the reason in a Safe / Kept row `w` wide: after the
+/// checkbox (or lock), before the size, the "Permanent" chip and Undo.
+fn reason_room(p: &egui::Painter, it: &Item, w: f32) -> f32 {
+    let size_w = p.layout_no_wrap(human_bytes(it.bytes), ty::title(), TEXT()).size().x;
+    let chip_w = if it.permanent { p.layout_no_wrap("Permanent".into(), bold(11.0), TEXT()).size().x + 16.0 + sp::S } else { 0.0 };
+    let lead = 4.0 + sp::M + 16.0 + sp::M;
+    let undo = if undoable(it) { UNDO_W } else { 0.0 };
+    (w - 4.0 - sp::M - size_w - sp::M - chip_w - lead - undo).max(60.0)
+}
+
+/// Room left for "Undo" after the reason.
+const UNDO_W: f32 = 60.0;
+
+/// The reason wrapped to the row's room: the app's own words are never cut.
+fn reason_galley(p: &egui::Painter, it: &Item, room: f32, color: Color32) -> std::sync::Arc<egui::Galley> {
+    p.layout(it.reason.clone(), ty::label(), color, room)
+}
+
+/// A Safe / Kept row's height for width `w`: taller by a line for each line
+/// the reason wraps onto.
+fn row_height(p: &egui::Painter, it: &Item, w: f32) -> f32 {
     if it.reason.is_empty() {
-        return;
+        return sp::ROW2_H;
     }
-    let p = ui.painter().clone();
-    let r = text_fit(&p, pos, align, &it.reason, ty::label(), color, max_w);
-    if p.layout_no_wrap(it.reason.clone(), ty::label(), color).size().x > max_w {
-        let _ = ui.interact(r, ui.scope_id().with(("why", &it.path)), Sense::hover()).on_hover_text(&it.reason);
-    }
+    let lines = reason_galley(p, it, reason_room(p, it, w), TEXT_DIM()).rows.len().max(1);
+    sp::ROW2_H + (lines - 1) as f32 * REASON_LINE
+}
+
+/// Title and wrapped reason of a Safe / Kept row, centred in `rr`; returns
+/// the reason's rect (Undo goes after its last line).
+fn row_text(p: &egui::Painter, rr: Rect, x: f32, title_right: f32, it: &Item, title_col: Color32, reason_col: Color32) -> Option<Rect> {
+    let room = reason_room(p, it, rr.width() + 8.0);
+    let g = (!it.reason.is_empty()).then(|| reason_galley(p, it, room, reason_col));
+    let th = line_h(p, &ty::body());
+    let gh = g.as_ref().map(|g| g.size().y).unwrap_or(0.0);
+    let block = th + if g.is_some() { sp::LINE_GAP + gh } else { 0.0 };
+    let top = rr.center().y - block / 2.0;
+    text_fit(p, Pos2::new(x, top + th / 2.0), Align2::LEFT_CENTER, &it.title, ty::body(), title_col, title_right - x);
+    g.map(|g| {
+        let at = Pos2::new(x, top + th + sp::LINE_GAP);
+        let r = Rect::from_min_size(at, g.size());
+        p.galley(at, g, reason_col);
+        r
+    })
 }
 
 /// One question: name and size, what it is, the path; under them a strip
@@ -839,24 +882,22 @@ fn safe_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
         right = chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "Permanent", CHIP_RISK()).left() - sp::S;
     }
     let x = cb.right() + sp::M;
-    let (ly1, ly2) = two_lines_y(&p, rr.center().y, &ty::body(), &ty::label());
-    text_fit(&p, Pos2::new(x, ly1), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT(), right - x);
-    let rw = undo_link(app, ui, i, &it, Pos2::new(x, ly2), right - x);
-    reason_line(ui, Pos2::new(x, ly2), Align2::LEFT_CENTER, &it, TEXT_DIM(), rw);
+    let reason = row_text(&p, rr, x, right, &it, TEXT(), TEXT_DIM());
+    undo_link(app, ui, i, &it, x, reason);
 }
 
-/// "Undo" after the reason of an answered question; the width left for the
-/// reason before it.
-fn undo_link(app: &mut App, ui: &mut Ui, i: usize, it: &Item, at: Pos2, w: f32) -> f32 {
+/// "Undo" after the reason of an answered question (after its last line).
+fn undo_link(app: &mut App, ui: &mut Ui, i: usize, it: &Item, x: f32, reason: Option<Rect>) {
     if !undoable(it) {
-        return w;
+        return;
     }
+    let Some(r) = reason else { return };
     let p = ui.painter().clone();
-    let rw = p.layout_no_wrap(it.reason.clone(), ty::label(), TEXT_DIM()).size().x.min(w - 60.0);
-    if link(ui, Pos2::new(at.x + rw + sp::S, at.y), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
+    let last_w = p.layout(it.reason.clone(), ty::label(), TEXT_DIM(), r.width().max(1.0) + 0.5).rows.last().map(|row| row.rect().width()).unwrap_or(0.0);
+    let ly = r.bottom() - line_h(&p, &ty::label()) / 2.0;
+    if link(ui, Pos2::new(x + last_w + sp::S, ly), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
         undo_item(app, i);
     }
-    rw
 }
 
 /// One kept item: a lock, the name, the size, dimmed.
@@ -868,10 +909,8 @@ fn kept_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
     icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(rr.left() + sp::M + 8.0, rr.center().y), Vec2::splat(14.0)), TEXT_FAINT());
     let sz = p.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::body(), TEXT_DIM());
     let x = rr.left() + sp::M + 16.0 + sp::M;
-    let (ly1, ly2) = two_lines_y(&p, rr.center().y, &ty::body(), &ty::label());
-    text_fit(&p, Pos2::new(x, ly1), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT_DIM(), sz.left() - sp::M - x);
-    let rw = undo_link(app, ui, i, &it, Pos2::new(x, ly2), sz.left() - sp::M - x);
-    reason_line(ui, Pos2::new(x, ly2), Align2::LEFT_CENTER, &it, TEXT_FAINT(), rw);
+    let reason = row_text(&p, rr, x, sz.left() - sp::M, &it, TEXT_DIM(), TEXT_FAINT());
+    undo_link(app, ui, i, &it, x, reason);
 }
 
 fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
@@ -1169,9 +1208,11 @@ mod tests {
 
     #[test]
     fn rows_leave_room_for_the_scroll_bar_only_when_they_scroll() {
-        assert!(!scrolls(200.0, 2, 84.0, 8.0));
-        assert!(!scrolls(176.0, 2, 84.0, 8.0));
-        assert!(scrolls(200.0, 3, 84.0, 8.0));
-        assert!(!scrolls(0.0, 0, 84.0, 8.0));
+        let rows = |n: usize| std::iter::repeat_n(84.0, n);
+        assert!(!scrolls(200.0, rows(2), 8.0));
+        assert!(!scrolls(176.0, rows(2), 8.0));
+        assert!(scrolls(200.0, rows(3), 8.0));
+        assert!(!scrolls(0.0, rows(0), 8.0));
+        assert!(scrolls(100.0, [52.0, 68.0].into_iter(), 0.0), "a wrapped row counts its extra line");
     }
 }
