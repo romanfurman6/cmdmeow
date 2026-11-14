@@ -287,8 +287,10 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         let id = ui.scope_id().with("dict-rows");
         for (k, s) in d.history.items.iter().enumerate() {
             let rr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, heights[k] - ROW_GAP));
-            let resp = ui.interact(rr, id.with(k), Sense::click());
-            let h = ui.ctx().animate_bool(id.with(("h", k)), resp.hovered());
+            // keyed by the entry, not its row: a removed entry's hover stays with it
+            let key = id.with((s.at, s.text.as_str()));
+            let resp = ui.interact(rr, key, Sense::click());
+            let h = ui.ctx().animate_bool(key.with("h"), resp.hovered());
             // e: how far in the entry is (1 = in place)
             let (e, glow, field) = match morph {
                 Some((e, g, f)) => (e, g, Some(f)),
@@ -305,11 +307,11 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
                     let from = f.shrink(sp::L).min;
                     let to = Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP);
                     paragraph(&p, from.lerp(to, e), &s.text, font(15.0 + (13.0 - 15.0) * e), TEXT(), (f.width() - 2.0 * sp::L) + (tw - (f.width() - 2.0 * sp::L)) * e);
-                    // the entry's own bits come in as the field lands
+                    // the entry's own bits ride on the moving card and come in as it lands
                     p.multiply_opacity(((e - 0.6) / 0.4).clamp(0.0, 1.0));
                     let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
-                    p.text(Pos2::new(rr.left() + PAD, rr.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
-                    let cr = Rect::from_min_size(Pos2::new(rr.right() - PAD - 64.0, rr.center().y - 13.0), Vec2::new(64.0, 26.0));
+                    p.text(Pos2::new(at.left() + PAD, at.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
+                    let cr = Rect::from_min_size(Pos2::new(at.right() - PAD - 64.0, at.center().y - 13.0), Vec2::new(64.0, 26.0));
                     liquid_capsule(&p, cr, None, 0.0, 1.0);
                     p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
                     y += heights[k];
