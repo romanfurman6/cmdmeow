@@ -26,7 +26,9 @@ find_id() {
 
 if [[ ! -f "$KC" ]]; then
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
+  made=0
+  # a half-made keychain would pass the check above on every later run
+  trap 'rm -rf "$tmp"; [[ $made == 1 ]] || security delete-keychain "$KC" 2>/dev/null || rm -f "$KC"' EXIT
   cat > "$tmp/cfg" <<EOF
 [req]
 distinguished_name = dn
@@ -49,6 +51,7 @@ EOF
   security import "$tmp/id.p12" -k "$KC" -P "$PASS" -T /usr/bin/codesign -f pkcs12 >/dev/null
   # let codesign use the key without a dialog
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PASS" "$KC" >/dev/null
+  made=1
   echo "Created $NAME in $KC" >&2
 fi
 

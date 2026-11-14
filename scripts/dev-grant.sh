@@ -113,13 +113,22 @@ else
   SERVICE="Cmd+Meow history"
 fi
 "$(dirname "$0")/dev-signing.sh" >/dev/null # makes and unlocks the dev keychain
+LOGIN_KC="$HOME/Library/Keychains/login.keychain-db"
+KEY_NOTE="Keychain ($SERVICE)"
 if ! security find-generic-password -s "$SERVICE" -a key "$DEV_KC" >/dev/null 2>&1; then
-  # a key in the login keychain can't be read without its password: start a
-  # new one (history sealed with the old key is not read again)
-  security delete-generic-password -s "$SERVICE" -a key "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1 || true
-  security add-generic-password -s "$SERVICE" -a key -X "$(openssl rand -hex 32)" -T "$APP" "$DEV_KC"
+  if security find-generic-password -s "$SERVICE" -a key "$LOGIN_KC" >/dev/null 2>&1 && [[ "${RESET_KEY:-0}" != 1 ]]; then
+    # A key in the login keychain can't be read without its password, and
+    # replacing it makes history sealed with it unreadable: keep it unless
+    # asked. Rebuilds then ask for the login password once each.
+    KEY_NOTE="Keychain skipped: $SERVICE key is in the login keychain (RESET_KEY=1 replaces it, old history is lost)"
+  else
+    security delete-generic-password -s "$SERVICE" -a key "$LOGIN_KC" >/dev/null 2>&1 || true
+    security add-generic-password -s "$SERVICE" -a key -X "$(openssl rand -hex 32)" -T "$APP" "$DEV_KC"
+  fi
 fi
-CDHASH="$(codesign -dvvv "$APP" 2>&1 | sed -n 's/^CDHash=//p')"
-security set-generic-password-partition-list -s "$SERVICE" -a key -S "apple-tool:,apple:,cdhash:$CDHASH" -k "$DEV_KC_PASS" "$DEV_KC" >/dev/null
+if security find-generic-password -s "$SERVICE" -a key "$DEV_KC" >/dev/null 2>&1; then
+  CDHASH="$(codesign -dvvv "$APP" 2>&1 | sed -n 's/^CDHash=//p')"
+  security set-generic-password-partition-list -s "$SERVICE" -a key -S "apple-tool:,apple:,cdhash:$CDHASH" -k "$DEV_KC_PASS" "$DEV_KC" >/dev/null
+fi
 
-echo "Granted $BUNDLE_ID: ${SYSTEM_SERVICES[*]#kTCCService} ${USER_SERVICES[*]#kTCCService} AppleEvents(System Events, Finder), Keychain ($SERVICE)"
+echo "Granted $BUNDLE_ID: ${SYSTEM_SERVICES[*]#kTCCService} ${USER_SERVICES[*]#kTCCService} AppleEvents(System Events, Finder), $KEY_NOTE"
