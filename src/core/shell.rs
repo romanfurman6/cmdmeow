@@ -465,7 +465,11 @@ impl App {
                 None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             },
             // setup shows in the app window: screenshots at its size
-            Mode::Setup => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
+            // (CMDMEOW_SHOT_W / CMDMEOW_SHOT_H=<pt> check other window sizes)
+            Mode::Setup => {
+                let pt = |k: &str, d: f32| std::env::var(k).ok().filter(|_| self.screenshot.is_some()).and_then(|v| v.parse().ok()).unwrap_or(d);
+                Vec2::new(pt("CMDMEOW_SHOT_W", m::APP_WIDTH), pt("CMDMEOW_SHOT_H", m::APP_HEIGHT))
+            }
             Mode::FdaHelp => Vec2::new(360.0, 132.0),
         }
     }
