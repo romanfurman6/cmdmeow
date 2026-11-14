@@ -18,18 +18,6 @@ pub enum Kind {
     Recording,
 }
 
-impl Kind {
-    pub fn label(self) -> &'static str {
-        match self {
-            Kind::Area => "Area",
-            Kind::Window => "Window",
-            Kind::Screen => "Screen",
-            Kind::Edited => "Edited",
-            Kind::Recording => "Recording",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Shot {
     /// Unique, also the file stem: milliseconds since the epoch.

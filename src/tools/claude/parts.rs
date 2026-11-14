@@ -39,12 +39,12 @@ pub fn pace_label(l: &Limit) -> Option<(&'static str, Color32)> {
     })
 }
 
-/// "Out Sat 14:00" when the current rate runs out before the reset, else
+/// "Runs out Sat 14:00" when the current rate runs out before the reset, else
 /// when it resets.
 pub fn forecast(l: &Limit) -> String {
     let now = now();
     match pace::of_limit(l, now).and_then(|p| p.out_at) {
-        Some(at) => format!("Out {}", alerts::when(at, now)),
+        Some(at) => format!("Runs out {}", alerts::when(at, now)),
         None => l.resets_at.map(|r| format!("Resets {}", alerts::when(r, now))).unwrap_or_else(|| reset_short(&l.resets)),
     }
 }
@@ -91,7 +91,7 @@ pub fn fresh(i: &UsageInfo) -> (String, Color32) {
     if i.stale {
         (format!("As of {t}"), AMBER())
     } else {
-        (t.to_string(), TEXT_FAINT())
+        (format!("Updated {t}"), TEXT_FAINT())
     }
 }
 

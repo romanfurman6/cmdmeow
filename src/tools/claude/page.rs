@@ -306,7 +306,7 @@ fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
     let tx = c.x + rr + sp::L;
     let w = inner.right() - tx;
     // pace over the forecast, the block centred on the ring; the forecast
-    // wraps ("Out tomorrow" / "23:40") rather than being cut
+    // wraps ("Runs out tomorrow" / "23:40") rather than being cut
     let fc = parts::forecast(l);
     let fg = p.layout(fc.clone(), ty::label(), TEXT_DIM(), w);
     let pace = parts::pace_label(l);
@@ -585,7 +585,7 @@ fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: 
         text_fit(&p, row.left_top(), Align2::LEFT_TOP, &backend::short_label(&l.label), ty::label(), TEXT_SOFT(), 120.0);
         p.text(Pos2::new(row.right(), row.top()), Align2::RIGHT_TOP, format!("{:.0}%", l.pct), ty::title(), TEXT());
         let fc = parts::forecast(l);
-        let col = if fc.starts_with("Out") { RED() } else { TEXT_DIM() };
+        let col = if fc.starts_with("Runs out") { RED() } else { TEXT_DIM() };
         text_fit(&p, Pos2::new(row.right() - 44.0, row.top() + 1.0), Align2::RIGHT_TOP, &fc, ty::label(), col, row.width() - 170.0);
         parts::pace_bar(&p, Rect::from_min_size(Pos2::new(row.left(), row.top() + 22.0), Vec2::new(row.width(), 5.0)), l);
         y += 38.0;

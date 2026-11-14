@@ -167,6 +167,9 @@ pub struct Row {
     pub optional: bool,
     /// (tool index) of the enabled tools that need it.
     pub tools: Vec<usize>,
+    /// The bar on a locked page: the row says what is missing ("Needs Full
+    /// Disk Access") instead of naming the permission and why it's asked.
+    pub locked: bool,
 }
 
 /// What the enabled tools need, required rows first, in a stable order.
@@ -182,7 +185,7 @@ pub fn rows(app: &App) -> Vec<Row> {
                     r.optional &= n.optional;
                     r.tools.push(i);
                 }
-                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i] }),
+                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i], locked: false }),
             }
         }
     }
@@ -914,22 +917,8 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
             p.circle_filled(cc, 9.0 * z, BLUE());
             check(&p, cc, 7.0 * z, ON_ACTION);
         }
-        // and what it will ask macOS for, bottom right
-        let mut px = inner.right();
-        let mut need: Vec<Perm> = Vec::new();
-        for &i in &idx {
-            for n in app.tools[i].needs() {
-                if !n.optional && !need.contains(&n.perm) {
-                    need.push(n.perm);
-                }
-            }
-        }
-        for perm in need.iter().rev() {
-            let ir = Rect::from_min_size(Pos2::new(px - 13.0, ny - 6.5), Vec2::splat(13.0));
-            icon(&p, perm.icon(), ir, TEXT_FAINT());
-            ui.interact(ir, id.with(("perm", perm.name())), Sense::hover()).on_hover_text(perm.name());
-            px -= 17.0;
-        }
+        // what each tool asks macOS for is on the Permissions step, in words
+        let px = inner.right();
         let nx = inner.left() + 26.0;
         text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal.name, bold(14.0), TEXT(), px - nx - 6.0);
         if resp.clicked() {
@@ -1412,14 +1401,7 @@ fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
             tool_chip(&p, chip, b.icon, if o { b.color } else { tint::NEUTRAL() });
             let sw = Rect::from_min_size(Pos2::new(r.right() - 38.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
             let tx = chip.right() + 10.0;
-            let name = text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, app.tools[i].name(), font(13.0), lerp_color(TEXT_DIM(), TEXT(), a * o as u8 as f32).gamma_multiply(a.max(0.3)), sw.left() - tx - 60.0);
-            let mut gx = name.right() + 8.0;
-            for n in app.tools[i].needs() {
-                let ir = Rect::from_min_size(Pos2::new(gx, r.center().y - 6.0), Vec2::splat(12.0));
-                icon(&p, n.perm.icon(), ir, if n.optional { TEXT_MUTED() } else { TEXT_FAINT() });
-                ui.interact(ir, id.with(("perm", n.perm.name())), Sense::hover()).on_hover_text(n.perm.name());
-                gx += 16.0;
-            }
+            text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, app.tools[i].name(), font(13.0), lerp_color(TEXT_DIM(), TEXT(), a * o as u8 as f32).gamma_multiply(a.max(0.3)), sw.left() - tx - 60.0);
             if switch(ui, sw, id.with("sw"), o, true).clicked() || resp.clicked() {
                 flip = Some((i, !o));
             }
@@ -1747,7 +1729,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     // AI Check: one agent
     let mut y = head + 22.0 + sp::XL;
     let cleanup_chip = app.tool_index(cleanup::ID).map(|i| app.tools[i].badge().color).unwrap_or(BLUE());
-    y = section(ui, y, Icon::Sparkle, cleanup_chip, "AI Check", "Asks it what's safe to remove", &[cleanup::ID, uninstaller::ID, startup::ID, lens::ID, system::ID]);
+    y = section(ui, y, Icon::Sparkle, cleanup_chip, "AI Check", "Checks what's safe to remove", &[]);
     for k in 0..n {
         let m = &ai::PROVIDERS[k];
         let a = ease((t - 0.05 * k as f32) / 0.4);
@@ -1993,9 +1975,8 @@ fn permissions_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64) {
                 ui.ctx().request_repaint();
             }
         }
-        None => {
-            p.text(c, Align2::CENTER_CENTER, format!("{done}/{}", req.len()), mono(11.0), TEXT());
-        }
+        // the ring's arc is the progress; no bare "1/2" inside it
+        None => {}
     }
     p.text(Pos2::new(c.x + 36.0, c.y), Align2::LEFT_CENTER, "Permissions", bold(22.0), TEXT());
     let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 56.0), body.max);
@@ -2056,8 +2037,6 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
     let head = if list.iter().any(|r| r.optional) { 26.0 } else { 0.0 };
     let row_h = ((area.height() - head - 6.0 * n) / n).clamp(38.0, 46.0);
     let mut ask: Option<Perm> = None;
-    // the reasons line up in one column, after the longest row of tool icons
-    let max_tools = list.iter().map(|r| r.tools.len()).max().unwrap_or(0) as f32;
     for (k, r) in list.iter().enumerate() {
         if r.optional && !opt_head {
             opt_head = true;
@@ -2085,18 +2064,20 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         };
         p.rect_filled(ib, 8.0, white(16));
         icon(&p, r.perm.icon(), ib.shrink(7.0), tint);
-        p.text(Pos2::new(ib.right() + 12.0, rr.center().y), Align2::LEFT_CENTER, r.perm.name(), bold(13.0), TEXT().gamma_multiply(a));
-        // the tools that want it
-        for (n, &i) in r.tools.iter().enumerate() {
-            let gx = ib.right() + 190.0 + n as f32 * 22.0;
-            icon(&p, app.tools[i].badge().icon, Rect::from_min_size(Pos2::new(gx, rr.center().y - 7.0), Vec2::splat(14.0)), TEXT_MUTED());
-        }
+        let name = if r.locked && !ok { format!("Needs {}", r.perm.name()) } else { r.perm.name().to_string() };
+        p.text(Pos2::new(ib.right() + 12.0, rr.center().y), Align2::LEFT_CENTER, name, bold(13.0), TEXT().gamma_multiply(a));
         // status on the right
         let right = rr.right() - 12.0;
-        // why it's asked, after the tools' icons (the status keeps its room)
-        let why_x = ib.right() + 190.0 + max_tools * 22.0 + 10.0;
+        // why it's asked, in one column (the status keeps its room); the
+        // tools that want it are named on hover, not drawn as a row of icons
+        let why_x = ib.right() + 190.0;
+        if !r.tools.is_empty() {
+            let names: Vec<&str> = r.tools.iter().map(|&i| app.tools[i].name()).collect();
+            let hr = Rect::from_min_max(Pos2::new(ib.left(), rr.top()), Pos2::new(right - 210.0, rr.bottom()));
+            ui.interact(hr, ui.scope_id().with(("perm-used-by", k)), Sense::hover()).on_hover_text(format!("Used by {}", names.join(", ")));
+        }
         let why_w = right - 210.0 - why_x;
-        if why_w > 60.0 && !r.perm.why().is_empty() {
+        if why_w > 60.0 && !r.locked && !r.perm.why().is_empty() {
             text_fit(&p, Pos2::new(why_x, rr.center().y), Align2::LEFT_CENTER, r.perm.why(), font(12.0), TEXT_FAINT().gamma_multiply(a), why_w);
         }
         if ok {

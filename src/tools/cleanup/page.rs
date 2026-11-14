@@ -227,10 +227,9 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     let t = ctx.input(|i| i.time);
     let who = st.agent.map(|a| a.name()).unwrap_or("AI");
     let sub = match phase {
-        Phase::Judging => format!("Step 2 of 2 · Checking with {who}"),
+        Phase::Judging => format!("Checking with {who}…"),
         Phase::Cleaning => "Cleaning…".into(),
-        _ if !st.with_ai => "Looking for junk".into(),
-        _ => "Step 1 of 2 · Looking for junk".into(),
+        _ => "Scanning…".into(),
     };
     let btns = page_header(&p, r, "Cleanup", &sub, TEXT_DIM());
     // Stop: back to the start; Skip: the results now, by the built-in rules
@@ -516,8 +515,14 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         scroll_rows(ui, area, format!("asks-{:?}", app.clean_group), asks.len(), |_, _| ASK_H, sp::S, |ui, k, rr| ask_card(app, ui, asks[k], rr));
     }
 
-    // AI Check tips go under the right column
-    let tips = if right.is_positive() { app.ai.tips() } else { Vec::new() };
+    // AI Check tips go under the right column; a tip about a Safe item sits
+    // on that item's row instead, so the list and the tip never disagree
+    let tips: Vec<aicheck::Rec> = if right.is_positive() {
+        let g = app.clean.lock_ok();
+        app.ai.tips().into_iter().filter(|t| !safe.iter().any(|&i| g.items[i].path.display().to_string() == t.key)).collect()
+    } else {
+        Vec::new()
+    };
     let tip_w = right.width();
     let tip_hs: Vec<f32> = tips.iter().map(|t| tip_height(&p, t, tip_w)).collect();
     // at most a third of the column, so the lists always keep room
@@ -527,7 +532,8 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     // right: what will go (Safe) and what stays (Kept)
     if right.is_positive() {
         // a reason that doesn't fit on one line wraps and makes its row taller
-        let items = app.clean.lock_ok().items.clone();
+        let row_tips = app.ai.tips();
+        let items: Vec<Item> = app.clean.lock_ok().items.iter().map(|it| with_row_tip(it, &row_tips)).collect();
         let row_h = |idx: &[usize], k: usize, w: f32| row_height(&p, &items[idx[k]], w);
         let need = |idx: &[usize]| if idx.is_empty() { 0.0 } else { LABEL_H + sp::S + (0..idx.len()).map(|k| row_h(idx, k, right.width())).sum::<f32>() + 8.0 };
         let (mut safe_h, mut kept_h) = (need(&safe), need(&kept));
@@ -862,8 +868,28 @@ fn ask_card(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
 }
 
 /// One safe item: checkbox, name, size.
+/// The AI Check tip about this item, if any (matched by path).
+fn row_tip(it: &Item, tips: &[aicheck::Rec]) -> Option<aicheck::Rec> {
+    let key = it.path.display().to_string();
+    tips.iter().find(|t| t.key == key).cloned()
+}
+
+/// The item with its reason replaced by the agent's tip ("Xcode: keep. You
+/// built MyApp today"), so heights and drawing agree.
+fn with_row_tip(it: &Item, tips: &[aicheck::Rec]) -> Item {
+    let mut it = it.clone();
+    if let Some(t) = row_tip(&it, tips) {
+        let verdict = if t.action == "keep" { "keep" } else { "clean" };
+        it.reason = if t.why.is_empty() { format!("{}: {verdict}", t.name) } else { format!("{}: {verdict}. {}", t.name, t.why) };
+    }
+    it
+}
+
 fn safe_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
-    let it = app.clean.lock_ok().items[i].clone();
+    let tips = app.ai.tips();
+    let raw = app.clean.lock_ok().items[i].clone();
+    let tip = row_tip(&raw, &tips);
+    let it = with_row_tip(&raw, &tips);
     let p = ui.painter().clone();
     let rr = rr.shrink2(Vec2::new(4.0, 0.0));
     row_extras(ui, rr, &it, true);
@@ -882,8 +908,25 @@ fn safe_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
         right = chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "Permanent", CHIP_RISK()).left() - sp::S;
     }
     let x = cb.right() + sp::M;
-    let reason = row_text(&p, rr, x, right, &it, TEXT(), TEXT_DIM());
-    undo_link(app, ui, i, &it, x, reason);
+    let reason = row_text(&p, rr, x, right, &it, TEXT(), if tip.is_some() { tint::HEALTH() } else { TEXT_DIM() });
+    match (tip, reason) {
+        // the tip's action after its last line, like Undo
+        (Some(t), Some(r)) => {
+            let last_w = p.layout(it.reason.clone(), ty::label(), TEXT_DIM(), r.width().max(1.0) + 0.5).rows.last().map(|row| row.rect().width()).unwrap_or(0.0);
+            let ly = r.bottom() - line_h(&p, &ty::label()) / 2.0;
+            if link(ui, Pos2::new(x + last_w + sp::S, ly), Align2::LEFT_CENTER, &t.label, 12.0).clicked() {
+                if t.action == "keep" {
+                    answer_items(app, &[i], Verdict::Keep);
+                } else {
+                    let mut g = app.clean.lock_ok();
+                    let it = &mut g.items[i];
+                    it.selected = !it.hard_keep && !it.permanent;
+                }
+                app.ai.done(&t);
+            }
+        }
+        _ => undo_link(app, ui, i, &it, x, reason),
+    }
 }
 
 /// "Undo" after the reason of an answered question (after its last line).

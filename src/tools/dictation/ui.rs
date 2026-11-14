@@ -663,9 +663,11 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     }
 
     // download
-    label(p, card, 2, "Speech model");
-    let y = row_y(card, 2);
+    // the picked model's own row: named after it, so it's plain which one
+    // the download or Ready is about
     let engine = d.settings.engine;
+    label(p, card, 2, engine.name());
+    let y = row_y(card, 2);
     let right = card.right() - 12.0;
     match &d.download {
         Some(dl) if dl.engine == engine => {
@@ -802,7 +804,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let x0 = col.left();
     p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "After", bold(15.0), TEXT());
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 2);
-    let rows: [(&str, &mut bool); 2] = [("Put the clipboard back", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
+    let rows: [(&str, &mut bool); 2] = [("Restore clipboard", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
     for (k, (l, on)) in rows.into_iter().enumerate() {
         label(p, card, k, l);
         let y = row_y(card, k);

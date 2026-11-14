@@ -226,9 +226,10 @@ fn hero_text(e: &Engine, st: State, now: i64) -> (String, String, String) {
         State::Agent => {
             let n = e.working(now).len();
             let screen = if e.settings.agent_screen { "screen on" } else { "screen can sleep" };
+            // says who holds it: the Keep awake switch is off in this state
             (
-                "Awake".into(),
-                format!("{} is working · {n} session{}", e.agent_name(), if n == 1 { "" } else { "s" }),
+                format!("Awake for {}", e.agent_name()),
+                format!("{n} session{} working", if n == 1 { "" } else { "s" }),
                 format!("{} · {screen}", e.awake_since.map(|s| span_text(now - s)).unwrap_or_default()),
             )
         }
@@ -595,6 +596,14 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         }
         i += 1;
         line(i);
+        // its screen switch right under it, so the two screen rows don't read
+        // as one setting twice
+        let c = e.settings.agent_screen;
+        if switch_row(ui, p, row(i), id.with("cscreen"), &format!("Keep the screen on for {agent}"), c) {
+            e.change(now, |s| s.agent_screen = !c);
+        }
+        i += 1;
+        line(i);
         let r1 = row(i);
         let labels: Vec<String> = GRACE_CHOICES.iter().map(|m| format!("{m} min")).collect();
         let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
@@ -607,19 +616,12 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         i += 1;
         line(i);
     }
-    let (m, c) = (e.settings.manual_screen, e.settings.agent_screen);
-    if switch_row(ui, p, row(i), id.with("mscreen"), "Keep the screen on", m) {
+    let m = e.settings.manual_screen;
+    if switch_row(ui, p, row(i), id.with("mscreen"), "Keep the screen on with Keep awake", m) {
         e.change(now, |s| s.manual_screen = !m);
     }
     i += 1;
     line(i);
-    if !agent.is_empty() {
-        if switch_row(ui, p, row(i), id.with("cscreen"), &format!("Keep the screen on for {agent}"), c) {
-            e.change(now, |s| s.agent_screen = !c);
-        }
-        i += 1;
-        line(i);
-    }
     shortcut_row(ui, p, row(i), e, keys, now, id.with("key"));
 }
 

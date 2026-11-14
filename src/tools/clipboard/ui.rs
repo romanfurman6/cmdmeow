@@ -304,7 +304,8 @@ pub fn page(c: &mut Clipboard, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let (sub, sub_col) = match (c.tab, c.pause_label()) {
         (Tab::Settings, _) => ("Stays on this Mac".to_string(), TEXT_DIM()),
         (_, Some(l)) => (format!("{l} · {n} items"), AMBER()),
-        _ => (format!("Recording · {n} item{} · {pinned} pinned · {}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk())), TEXT_DIM()),
+        // the normal state needs no word; only Paused is said
+        _ => (format!("{n} item{} · {pinned} pinned · {}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk())), TEXT_DIM()),
     };
     let btns = page_header(&p, r, "Clipboard", &sub, sub_col);
     let mut right = btns.right();

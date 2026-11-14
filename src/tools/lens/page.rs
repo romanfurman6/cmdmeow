@@ -447,8 +447,8 @@ fn mapping(app: &mut App, ui: &mut Ui, r: Rect, root: &Path, rows: &[scan::LiveR
     p.text(Pos2::new(hr.left() + 32.0 + tw, hr.center().y), Align2::LEFT_CENTER, human_bytes(measured), font(13.0), TEXT_FAINT());
     let nb = button_width(&p, "Stop", BTN_SECONDARY);
     let stop_r = Rect::from_min_size(Pos2::new(hr.right() - 20.0 - nb, hr.center().y - 15.0), Vec2::new(nb, 30.0));
-    let done = rows.iter().filter(|x| x.done).count();
-    let hint_text = format!("{} / {} · {} files", done, rows.len(), group_digits(app.lens.files.load(Ordering::Relaxed)));
+    // the rows below show which folders are done; the header only counts files
+    let hint_text = format!("{} files", group_digits(app.lens.files.load(Ordering::Relaxed)));
     let hint = p.text(Pos2::new(stop_r.left() - 14.0, hr.center().y), Align2::RIGHT_CENTER, hint_text, font(12.0), TEXT_DIM());
     let t = now as f32;
     let c = Pos2::new(hint.left() - 12.0, hr.center().y);
@@ -1338,7 +1338,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let nb = button_width(&p, btn, BTN_SECONDARY);
     let new_r = Rect::from_min_size(Pos2::new(hr.right() - 20.0 - nb, hr.center().y - 15.0), Vec2::new(nb, 30.0));
     let when = match (*app.lens.when.lock_ok(), updating, peek) {
-        (_, _, Some((done, all))) => format!("{done} / {all}"),
+        (_, _, Some((done, all))) => format!("{done} of {all} folders"),
         (_, true, _) => "Updating…".to_string(),
         (_, _, _) if partial => "Stopped · partial map".to_string(),
         (Some(w), _, _) if app.lens_freed > 0 => format!("{} freed · Mapped {}", human_bytes(app.lens_freed), ago(w)),
@@ -1348,7 +1348,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     // the map's state sits right against its action: a stopped map is an
     // amber "Partial map" chip next to Map again
     let hint = if partial && !busy {
-        chip(&p, Pos2::new(new_r.left() - 8.0, hr.center().y), Align2::RIGHT_CENTER, "Partial map", (with_alpha(AMBER(), 0.16), AMBER()))
+        let cr = chip(&p, Pos2::new(new_r.left() - 8.0, hr.center().y), Align2::RIGHT_CENTER, "Partial map", (with_alpha(AMBER(), 0.16), AMBER()));
+        ui.interact(cr, ui.scope_id().with("lens-partial-why"), Sense::hover()).on_hover_text("The scan was stopped before it finished");
+        cr
     } else {
         p.text(Pos2::new(new_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, when, font(12.0), TEXT_DIM())
     };

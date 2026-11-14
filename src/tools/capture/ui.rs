@@ -309,9 +309,10 @@ enum Src {
 
 impl Item {
     fn from_shot(s: &Shot) -> Item {
+        // one kind of fact under every picture: its size (the kind is the
+        // filter above the grid)
         let meta = match s.kind {
-            Kind::Window | Kind::Screen | Kind::Edited => s.kind.label().to_string(),
-            Kind::Area => format!("{}×{}", s.w, s.h),
+            Kind::Window | Kind::Screen | Kind::Edited | Kind::Area => format!("{}×{}", s.w, s.h),
             Kind::Recording => format!("Video · {}", record::timeline::clock_label(s.secs.unwrap_or(0.0) as f64)),
         };
         let what = if s.kind == Kind::Recording { "Recording" } else { "Capture" };

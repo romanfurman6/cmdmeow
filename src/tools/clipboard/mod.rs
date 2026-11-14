@@ -435,9 +435,6 @@ impl Tool for Clipboard {
             self.stop_watching();
         }
     }
-    fn sidebar_meta(&self) -> String {
-        if self.paused() { "Paused".into() } else { String::new() }
-    }
     fn widgets(&self) -> Vec<WidgetSpec> {
         vec![WidgetSpec { id: CARD, title: "Clipboard", about: "Your latest clips; click one to copy it again.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }

@@ -93,7 +93,7 @@ struct Spec {
     /// Busiest apps on the network (a card of their own, over the facts).
     apps: Vec<Fact>,
     /// On/off rows under the cards: label, hint, state, what a click does.
-    switches: Vec<(&'static str, String, bool, Action)>,
+    switches: Vec<(String, String, bool, Action)>,
     /// The charge limit row above the switches: the selected index in
     /// [`charge::LIMITS`].
     limit: Option<usize>,
@@ -241,8 +241,9 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             }
             sp.limit = Some(charge::LIMITS.iter().position(|l| *l == c.policy.limit).unwrap_or(0));
             if c.policy.active() {
-                sp.switches.push(("Sailing", format!("Resume below {}%", c.policy.resume_below()), c.policy.sailing, Action::ToggleSailing));
-                sp.switches.push(("Heat protection", format!("Pause at {:.0} °C", charge::HEAT_C), c.policy.heat, Action::ToggleHeat));
+                // named by what it does; off, charging starts again right under the limit
+                sp.switches.push((format!("Charge again below {}%", c.policy.limit.saturating_sub(charge::SAIL_GAP)), String::new(), c.policy.sailing, Action::ToggleSailing));
+                sp.switches.push(("Heat protection".into(), format!("Pause at {:.0} °C", charge::HEAT_C), c.policy.heat, Action::ToggleHeat));
             }
             if c.needs_helper() || c.installing {
                 sp.buttons = vec![("Install helper", BTN_PRIMARY, Action::InstallHelper)];
@@ -289,9 +290,10 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 sub.push_str(&format!(" · {}", s.wifi.phy));
             }
             let mut sp = Spec::new(Icon::Wifi, tint::HEALTH(), title, sub);
-            let up = human_rate(s.net_up);
-            let (n, u) = split_num(&up);
-            sp.hero = Some((n, u, format!("up · {} down", human_rate(s.net_down))));
+            // download first, like the widget and the per-app rows
+            let down = human_rate(s.net_down);
+            let (n, u) = split_num(&down);
+            sp.hero = Some((n, u, format!("↓ · {} ↑", human_rate(s.net_up))));
             sp.speed = true;
             let dash = |v: &str| if v.is_empty() { "—".to_string() } else { v.to_string() };
             for a in &s.apps {
@@ -318,8 +320,8 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                     None => sp.legend.push(Legend { color: TEXT_FAINT(), label: d.name.clone(), value: "–".into(), value_col: TEXT_FAINT() }),
                 }
             }
-            sp.switches.push(("Low battery alerts", String::new(), crate::kit::notify::shown(s.bt_prefs.alerts), Action::ToggleAlerts));
-            sp.switches.push(("Show in menu bar", String::new(), s.bt_prefs.menu_bar, Action::ToggleMenuBar));
+            sp.switches.push(("Low battery alerts".into(), String::new(), crate::kit::notify::shown(s.bt_prefs.alerts), Action::ToggleAlerts));
+            sp.switches.push(("Show in menu bar".into(), String::new(), s.bt_prefs.menu_bar, Action::ToggleMenuBar));
             sp.buttons = vec![("Bluetooth Settings", BTN_SECONDARY, Action::OpenBluetooth)];
             sp
         }
@@ -554,7 +556,7 @@ fn switches(ui: &mut Ui, sp: &Spec, x0: f32, w: f32, y: f32) -> Action {
             hairline(&p, Pos2::new(rr.left() + 12.0, rr.top()), Pos2::new(rr.right() - 12.0, rr.top()));
         }
         let sr = Rect::from_min_size(Pos2::new(rr.right() - 12.0 - 36.0, rr.center().y - 10.0), Vec2::new(36.0, 20.0));
-        if switch(ui, sr, ui.scope_id().with(("sheet-switch", *label)), *on, true).clicked() {
+        if switch(ui, sr, ui.scope_id().with(("sheet-switch", k)), *on, true).clicked() {
             action = *act;
         }
         let tw = sr.left() - rr.left() - 24.0;
