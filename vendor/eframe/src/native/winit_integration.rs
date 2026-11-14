@@ -74,7 +74,7 @@ impl LastPaint {
     /// Whether this pass draws what is already on screen (same shapes, scale
     /// and size, no texture changes). Remembers the pass either way.
     pub fn same(&mut self, shapes: &[egui::epaint::ClippedShape], pixels_per_point: f32, size: [u32; 2], textures_idle: bool) -> bool {
-        if paint_always() {
+        if paint_always() || painting_everything() {
             return false;
         }
         // a window that went without passes for a while may have been hidden
@@ -132,6 +132,22 @@ impl LastPaint {
         }
         self.last_pass = Some(Instant::now());
     }
+}
+
+/// Until when every pass of every window is painted (see [`paint_everything_for`]).
+static PAINT_ALL_UNTIL: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+
+/// Paint every pass of every window for a while, whatever it draws: after a
+/// change that may leave a frame on screen drawn half with the old state (a
+/// theme switch rebuilds the fonts mid-pass), so the next passes replace it.
+pub fn paint_everything_for(d: core::time::Duration) {
+    if let Ok(mut u) = PAINT_ALL_UNTIL.lock() {
+        *u = Some(Instant::now() + d);
+    }
+}
+
+fn painting_everything() -> bool {
+    PAINT_ALL_UNTIL.lock().ok().and_then(|u| *u).is_some_and(|t| Instant::now() < t)
 }
 
 fn paint_always() -> bool {

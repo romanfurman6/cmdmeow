@@ -102,6 +102,13 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, opts: Options) -> Self {
         install_fonts(&cc.egui_ctx);
+        {
+            let ctx = cc.egui_ctx.clone();
+            crate::kit::native::watch_theme(move || {
+                note_theme();
+                ctx.request_repaint();
+            });
+        }
         let ctx = cc.egui_ctx.clone();
         let demo = opts.screenshot.is_some();
         // screenshots stay silent; otherwise sounds are on until switched off
@@ -732,7 +739,13 @@ impl eframe::App for App {
         // A pass too soon after the last check asks for one more later
         const THEME_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
         let since = self.theme_checked.map(|t| t.elapsed());
-        if since.is_some_and(|d| d < THEME_EVERY) && self.frame > 3 {
+        // the system just said it switched (or we did): look every pass for
+        // a moment, as the app's own appearance may follow a beat later
+        let noted = THEME_NOTED.with(|n| n.get().is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1500)));
+        if noted {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        if !noted && since.is_some_and(|d| d < THEME_EVERY) && self.frame > 3 {
             ctx.request_repaint_after(THEME_EVERY - since.unwrap_or_default());
         } else {
             self.theme_checked = Some(Instant::now());
@@ -1106,8 +1119,21 @@ fn sync_theme(ctx: &egui::Context, live: bool) {
         if live {
             crate::kit::native::set_appearance(light);
         }
+        // the new fonts take over mid-pass, so a window may show one frame
+        // drawn half with the old ones: paint every window anew for a moment
+        eframe::paint_everything_for(std::time::Duration::from_millis(600));
+        note_theme();
         ctx.request_repaint();
     }
+}
+
+thread_local! {
+    /// When the system last said it switched between light and dark.
+    static THEME_NOTED: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+fn note_theme() {
+    THEME_NOTED.with(|n| n.set(Some(Instant::now())));
 }
 
 fn install_fonts(ctx: &egui::Context) {

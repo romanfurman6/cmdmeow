@@ -273,6 +273,24 @@ mod mac {
             .map_err(|e| e.localizedDescription().to_string())?;
         out.and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())).ok_or_else(|| "Moved, but the Trash didn't say where".to_string())
     }
+
+    /// Call `f` (on the main thread) when the system switches between light
+    /// and dark. Our windows pin their own appearance, so they get no event
+    /// of their own for it.
+    pub fn watch_theme(f: impl Fn() + 'static) {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        use objc2_foundation::NSString;
+        let block = block2::RcBlock::new(move |_note: std::ptr::NonNull<AnyObject>| f());
+        let name = NSString::from_str("AppleInterfaceThemeChangedNotification");
+        unsafe {
+            let center: Retained<AnyObject> = msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
+            let queue: Retained<AnyObject> = msg_send![class!(NSOperationQueue), mainQueue];
+            let token: Option<Retained<AnyObject>> = msg_send![&*center, addObserverForName: &*name, object: Option::<&AnyObject>::None, queue: &*queue, usingBlock: &*block];
+            // observed for the app's whole life
+            std::mem::forget(token);
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -290,6 +308,7 @@ mod other {
         false
     }
     pub fn set_appearance(_light: bool) {}
+    pub fn watch_theme(_f: impl Fn() + 'static) {}
     pub fn debug_windows() -> String {
         String::new()
     }

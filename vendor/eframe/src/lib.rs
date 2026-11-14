@@ -242,6 +242,14 @@ pub fn take_paint_counts() -> (u32, u32) {
     (p[0].swap(0, Ordering::Relaxed), p[1].swap(0, Ordering::Relaxed))
 }
 
+/// Cmd+Meow patch: paint every pass of every window for `d`, even passes
+/// that draw what is already on screen.
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(feature = "glow", feature = "wgpu_no_default_features"))]
+pub fn paint_everything_for(d: std::time::Duration) {
+    native::winit_integration::paint_everything_for(d);
+}
+
 // ----------------------------------------------------------------------------
 
 /// Attach an [`egui_inspection::InspectionPlugin`] to `ctx` when enabled via the environment.

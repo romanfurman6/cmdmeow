@@ -93,6 +93,20 @@ pub struct SharedState {
 
     /// Passed on to each [`egui_winit::State`]. See [`NativeOptions::clipboard_shortcuts`].
     clipboard_shortcuts: bool,
+
+    /// Cmd+Meow patch: texture changes from passes of a window that wasn't
+    /// painted (the hidden panel, while the app window drawn inside its pass
+    /// is open). Textures are shared by every window, so whichever window
+    /// paints next applies these first; applied later than newer changes, a
+    /// stale glyph atlas patch garbled text.
+    unpainted_deltas: TexturesDelta,
+}
+
+impl Drop for SharedState {
+    fn drop(&mut self) {
+        // Avoid debug panic when dropping unapplied deltas on teardown
+        self.unpainted_deltas.clear();
+    }
 }
 
 pub type Viewports = egui::OrderedViewportIdMap<Viewport>;
@@ -378,6 +392,7 @@ impl<'app> WgpuWinitApp<'app> {
             focused_viewport: Some(ViewportId::ROOT),
             resized_viewport: None,
             clipboard_shortcuts: self.native_options.clipboard_shortcuts,
+            unpainted_deltas: Default::default(),
         }));
 
         {
@@ -787,6 +802,7 @@ impl WgpuWinitRunning<'_> {
             viewports,
             painter,
             viewport_from_window,
+            unpainted_deltas,
             ..
         } = &mut *shared_mut;
 
@@ -798,7 +814,11 @@ impl WgpuWinitRunning<'_> {
             viewport_output,
         } = full_output;
 
-        pending_deltas.append(textures_delta);
+        // older changes first: those another window's pass left unpainted
+        let mut older = std::mem::take(unpainted_deltas);
+        older.append(std::mem::take(pending_deltas));
+        older.append(textures_delta);
+        *pending_deltas = older;
 
         remove_viewports_not_in(viewports, painter, viewport_from_window, &viewport_output);
 
@@ -892,6 +912,8 @@ impl WgpuWinitRunning<'_> {
             vsync_secs
         } else {
             viewport.last_paint.on_screen(false);
+            // not painted: the next window that paints applies these
+            unpainted_deltas.append(std::mem::take(pending_deltas));
             0.0
         };
 
@@ -1298,6 +1320,7 @@ fn render_immediate_viewport(
         viewports,
         painter,
         viewport_from_window,
+        unpainted_deltas,
         ..
     } = &mut *shared_mut;
 
@@ -1305,7 +1328,11 @@ fn render_immediate_viewport(
         warn!("Viewport disappeared unexpectedly!");
         return;
     };
-    viewport.pending_delta.append(textures_delta);
+    // older changes first: those another window's pass left unpainted
+    let mut older = std::mem::take(unpainted_deltas);
+    older.append(std::mem::take(&mut viewport.pending_delta));
+    older.append(textures_delta);
+    viewport.pending_delta = older;
 
     viewport.info.events.clear(); // they should have been processed
     let (Some(egui_winit), Some(window)) = (&mut viewport.egui_winit, &viewport.window) else {
