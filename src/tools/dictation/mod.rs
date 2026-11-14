@@ -209,6 +209,11 @@ pub struct Dictation {
     try_armed: bool,
     /// Sample data (screenshots): what the try-it field shows.
     try_fake: Option<ui::Shown>,
+    /// Done was pressed on the take: when, and where the field was, so the
+    /// field turns into the newest History entry.
+    try_done: Option<(Instant, egui::Rect)>,
+    /// Where the try-it field was last drawn.
+    try_field: egui::Rect,
 }
 
 impl Dictation {
@@ -266,6 +271,8 @@ impl Dictation {
             try_focused: false,
             try_armed: false,
             try_fake: None,
+            try_done: None,
+            try_field: egui::Rect::NOTHING,
         }
     }
 
@@ -931,6 +938,17 @@ impl Tool for Dictation {
                     "dictation-try-download" => ui::Shown::Downloading { frac: 0.44, done: 212_000_000, total: crate::kit::parakeet::BYTES, unpacking: false },
                     _ => ui::Shown::Idle,
                 });
+                Some(View::Page)
+            }
+            // Done on the first take: the field turns into the History entry
+            // (CMDMEOW_DICT_T picks the moment, in seconds)
+            "dictation-try-finish" => {
+                self.tab = Tab::History;
+                self.history = History::default();
+                self.history.add(Said { at: chrono::Local::now().timestamp(), text: "Okay, this is my first dictation and it already works.".into(), app: String::new(), secs: 4.0 });
+                let at = std::env::var("CMDMEOW_DICT_T").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.2);
+                let field = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(480.0, 112.0));
+                self.try_done = Some((Instant::now() - Duration::from_secs_f32(at), field));
                 Some(View::Page)
             }
             _ => None,
