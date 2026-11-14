@@ -61,7 +61,14 @@ pub struct LastPaint {
     last_pass: Option<Instant>,
     /// The display's refresh rate and when it was looked up.
     refresh: Option<(u32, Instant)>,
+    /// Since when the window has been on screen (None: hidden, or not told).
+    on_screen_since: Option<Instant>,
 }
+
+/// How long a window that just came on screen is painted every pass: frames
+/// painted while it was hidden, or while macOS was ordering it in, may never
+/// reach the screen, so a skip right then left it blank for up to a second.
+const SETTLE: core::time::Duration = core::time::Duration::from_millis(500);
 
 impl LastPaint {
     /// Whether this pass draws what is already on screen (same shapes, scale
@@ -73,8 +80,10 @@ impl LastPaint {
         // a window that went without passes for a while may have been hidden
         // or closed and shown again, and macOS may have dropped its pixels
         let recent = self.last_pass.is_some_and(|t| t.elapsed() < core::time::Duration::from_millis(250));
+        let settled = self.on_screen_since.is_none_or(|t| t.elapsed() >= SETTLE);
         let same = textures_idle
             && recent
+            && settled
             && self.shown.as_ref().is_some_and(|(s, p, z, at)| at.elapsed().as_secs_f32() < 1.0 && *p == pixels_per_point && *z == size && s.as_slice() == shapes);
         if !same {
             self.shown = Some((shapes.to_vec(), pixels_per_point, size, Instant::now()));
@@ -86,6 +95,17 @@ impl LastPaint {
     /// The window was hidden (or not drawn): paint the next pass whatever it shows.
     pub fn forget(&mut self) {
         self.shown = None;
+    }
+
+    /// Whether the window is on screen now (visible, not minimized). Once
+    /// it comes on screen, every pass is painted for [`SETTLE`].
+    pub fn on_screen(&mut self, on: bool) {
+        if !on {
+            self.forget();
+            self.on_screen_since = None;
+        } else if self.on_screen_since.is_none() {
+            self.on_screen_since = Some(Instant::now());
+        }
     }
 
     /// Call after each pass (after [`Self::same`]). A painted pass waits for the display (vsync);
@@ -311,7 +331,7 @@ pub(crate) fn on_accesskit_window_event(
 
 #[cfg(test)]
 mod last_paint_tests {
-    use super::LastPaint;
+    use super::{LastPaint, SETTLE};
     use egui::epaint::{ClippedShape, Shape};
     use egui::{Color32, Pos2, Rect};
 
@@ -354,6 +374,24 @@ mod last_paint_tests {
         // closed and reopened: no passes in between
         lp.last_pass = lp.last_pass.map(|t| t - std::time::Duration::from_millis(400));
         assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+    }
+
+    #[test]
+    fn a_window_that_just_came_on_screen_is_painted_every_pass_for_a_moment() {
+        let mut lp = LastPaint::default();
+        // painted while hidden (the first frame of a reopened window)
+        lp.on_screen(false);
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+        lp.on_screen(true);
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true), "just shown: painted");
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true), "still settling: painted");
+        lp.on_screen_since = lp.on_screen_since.map(|t| t - SETTLE);
+        lp.on_screen(true);
+        lp.pace(false, || None);
+        assert!(lp.same(&shapes(0.0), 2.0, [10, 10], true), "settled: skipped again");
+        lp.on_screen(false);
+        lp.on_screen(true);
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true), "hidden and shown again: painted");
     }
 
     #[test]

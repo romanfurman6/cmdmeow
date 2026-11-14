@@ -735,7 +735,7 @@ impl WgpuWinitRunning<'_> {
 
                 if let Some(viewport) = viewports.get_mut(&viewport_id) {
                     viewport.info.events.clear(); // they should have been processed
-                    viewport.last_paint.forget();
+                    viewport.last_paint.on_screen(false);
                     if let Viewport {
                         window: Some(window),
                         egui_winit: Some(egui_winit),
@@ -827,6 +827,7 @@ impl WgpuWinitRunning<'_> {
         let vsync_secs = if is_visible {
             let size = window.inner_size();
             let wants_shot = viewport.actions_requested.iter().any(|a| matches!(a, ActionRequested::Screenshot(_)));
+            viewport.last_paint.on_screen(!winit_integration::is_invisible_or_minimized(window));
             let same = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], pending_deltas.is_empty());
             let skip = same && !wants_shot;
             viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
@@ -890,7 +891,7 @@ impl WgpuWinitRunning<'_> {
 
             vsync_secs
         } else {
-            viewport.last_paint.forget();
+            viewport.last_paint.on_screen(false);
             0.0
         };
 
@@ -1324,9 +1325,7 @@ fn render_immediate_viewport(
 
     // Cmd+Meow patch: a pass that changes nothing on screen isn't painted
     let size = window.inner_size();
-    if !viewport.info.visible().unwrap_or(true) {
-        viewport.last_paint.forget();
-    }
+    viewport.last_paint.on_screen(viewport.info.visible().unwrap_or(true) && !winit_integration::is_invisible_or_minimized(window));
     let skip = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty());
     viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
     if !skip {
