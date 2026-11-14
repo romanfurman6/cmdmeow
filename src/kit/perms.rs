@@ -534,11 +534,7 @@ mod imp {
             Perm::SystemEvents => {
                 std::thread::spawn(|| {
                     // the question needs System Events running
-                    // started once per run: a user who quits it isn't overruled
-        if SE_STARTED.swap(true, Ordering::AcqRel) {
-            return 1;
-        }
-        let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
+                    let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
                     std::thread::sleep(std::time::Duration::from_millis(600));
                     // a "Don't Allow" just shows on the row (its button then
                     // opens Settings); opening Settings here took over the screen
