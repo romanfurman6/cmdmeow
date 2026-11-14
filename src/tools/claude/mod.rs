@@ -254,3 +254,41 @@ impl Tool for Claude {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::keychain;
+    use crate::kit::ai::{self, claude::Connect};
+    use crate::kit::perms::Status;
+
+    #[test]
+    fn keychain_row_and_status() {
+        let set = |state: &str, main: &str, off: &[&str]| {
+            let (state, main, off) = (state.to_string(), main.to_string(), off.iter().map(|s| s.to_string()).collect());
+            ai::settings::update(false, move |s| {
+                s.claude_keychain = state;
+                s.main = main;
+                s.off = off;
+            });
+        };
+        // connected: the row shows as allowed while Claude is tracked
+        set("ok", "claude", &[]);
+        assert!(keychain::wanted(false));
+        assert_eq!(keychain::status(), Status::Allowed);
+        set("ok", "codex", &["claude"]);
+        assert!(!keychain::wanted(false));
+        set("denied", "claude", &[]);
+        assert_eq!(keychain::status(), Status::Denied);
+        set("", "claude", &[]);
+        assert_eq!(keychain::status(), Status::NotAsked);
+        // screenshots always show it
+        assert!(keychain::wanted(true));
+        // no sign-in in the Keychain (always so off macOS): nothing is remembered
+        if !cfg!(target_os = "macos") {
+            assert!(!keychain::wanted(false));
+            assert_eq!(ai::claude::connect_keychain(), Connect::Missing);
+            assert_eq!(ai::settings::get().claude_keychain, "");
+        }
+        set("", "claude", &[]);
+    }
+}

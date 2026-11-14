@@ -100,7 +100,7 @@ static HANDED: std::sync::Mutex<Option<ClaudeCreds>> = std::sync::Mutex::new(Non
 /// and only while a window is open, in case macOS asks again (someone is
 /// there to answer). A Deny is remembered until they connect again.
 fn read_keychain() -> Option<ClaudeCreds> {
-    if super::settings::get().claude_keychain != "ok" || !crate::kit::activity::visible() {
+    if !may_read(&super::settings::get().claude_keychain, crate::kit::activity::visible()) {
         return None;
     }
     match account::read_claude_keychain() {
@@ -111,6 +111,12 @@ fn read_keychain() -> Option<ClaudeCreds> {
         }
         KeychainRead::Missing | KeychainRead::Failed => None,
     }
+}
+
+/// Whether the provider may read the Keychain on its own: only once the
+/// person allowed it, and only with a window open.
+fn may_read(state: &str, visible: bool) -> bool {
+    state == "ok" && visible
 }
 
 /// What connecting to Claude Code's sign-in gave.
@@ -444,6 +450,16 @@ mod tests {
     use super::super::{read_on, LogTail};
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn keychain_only_after_consent() {
+        // never before the person pressed Allow / Connect, never after a Deny
+        assert!(!may_read("", true));
+        assert!(!may_read("denied", true));
+        // allowed, but nobody there to answer a prompt
+        assert!(!may_read("ok", false));
+        assert!(may_read("ok", true));
+    }
 
     #[test]
     fn usage_text() {
