@@ -269,11 +269,17 @@ mod imp {
             });
         }
 
+        /// Grow or shrink around the centre, kept on its screen.
         pub fn set_diameter(&self, d: f32) {
             let d = d as f64;
             let f = self.window.frame();
             let c = NSPoint::new(f.origin.x + f.size.width / 2.0, f.origin.y + f.size.height / 2.0);
-            self.window.setFrame_display(NSRect::new(NSPoint::new(c.x - d / 2.0, c.y - d / 2.0), NSSize::new(d, d)), true);
+            let (mut x, mut y) = (c.x - d / 2.0, c.y - d / 2.0);
+            if let Some(v) = self.window.screen().map(|s| s.visibleFrame()) {
+                x = x.min(v.origin.x + v.size.width - d).max(v.origin.x);
+                y = y.min(v.origin.y + v.size.height - d).max(v.origin.y);
+            }
+            self.window.setFrame_display(NSRect::new(NSPoint::new(x, y), NSSize::new(d, d)), true);
             self.lay_out(d);
         }
     }

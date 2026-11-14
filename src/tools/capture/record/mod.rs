@@ -123,6 +123,8 @@ pub struct Recorder {
     pub camera: Option<camera::Camera>,
     /// Said once that the camera sends no picture.
     camera_warned: bool,
+    /// What the picker showed last, to open on it again.
+    last_source: Source,
     pub mics: Vec<sys::Device>,
     pub cams: Vec<sys::Device>,
     /// The device list open in the picker.
@@ -152,7 +154,7 @@ impl Recorder {
         // unframed copies of videos that are gone (and old projects)
         #[cfg(not(test))]
         let _ = std::thread::Builder::new().name("cmdmeow-prune".into()).spawn(|| crate::tools::capture::video::compose::prune(&projects_dir()));
-        Recorder { phase: Phase::Idle, displays: Vec::new(), camera: None, camera_warned: false, mics: Vec::new(), cams: Vec::new(), menu: None, meter: None, meter_for: None, saved: None, tx, rx, last_area: None, out: Vec::new(), folder: PathBuf::new(), last_display: Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0)), ctx }
+        Recorder { phase: Phase::Idle, displays: Vec::new(), camera: None, camera_warned: false, last_source: Source::Display, mics: Vec::new(), cams: Vec::new(), menu: None, meter: None, meter_for: None, saved: None, tx, rx, last_area: None, out: Vec::new(), folder: PathBuf::new(), last_display: Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0)), ctx }
     }
 
     pub fn idle(&self) -> bool {
@@ -197,6 +199,7 @@ impl Recorder {
         self.menu = None;
         let display = sys::display_at(&self.displays, sys::mouse());
         self.phase = Phase::Pick(Pick { source: Source::Display, display, windows: Vec::new(), drag: None, area: self.last_area, frames: 0 });
+        self.set_source(self.last_source);
         if s.camera {
             self.show_camera(s);
         }
@@ -211,6 +214,7 @@ impl Recorder {
 
     pub fn set_source(&mut self, src: Source) {
         if let Phase::Pick(p) = &mut self.phase {
+            self.last_source = src;
             p.source = src;
             p.drag = None;
             if src == Source::Window {
