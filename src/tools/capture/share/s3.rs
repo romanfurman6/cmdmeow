@@ -1,4 +1,4 @@
-//! S3-compatible storage (Hetzner Object Storage, AWS S3, MinIO…): request
+//! S3-compatible storage (Cloudflare R2, Hetzner, AWS S3, MinIO…): request
 //! signing (AWS Signature V4), uploading a file and the link to it.
 
 use hmac::{Hmac, Mac};
@@ -7,6 +7,9 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
+
+/// Cloudflare R2's S3 endpoints end with this.
+pub const R2_HOST: &str = ".r2.cloudflarestorage.com";
 
 /// Where files go.
 #[derive(Clone, Debug, PartialEq)]
@@ -18,6 +21,9 @@ pub struct Bucket {
     pub name: String,
     pub access_key: String,
     pub secret: String,
+    /// Where public files are read from, when that isn't the bucket's own
+    /// host ("https://pub-….r2.dev", a custom domain). Empty: the bucket.
+    pub public_url: String,
 }
 
 impl Bucket {
@@ -34,7 +40,9 @@ impl Bucket {
             Some(rest) if !name.is_empty() && rest.contains('.') => rest.to_string(),
             _ => host,
         };
-        let region = if region.trim().is_empty() {
+        let region = if region.trim().is_empty() && host.ends_with(R2_HOST) {
+            "auto".to_string()
+        } else if region.trim().is_empty() {
             let labels: Vec<&str> = host.split('.').collect();
             match labels.as_slice() {
                 ["s3", r, ..] if host.ends_with("amazonaws.com") => r.to_string(),
@@ -44,17 +52,63 @@ impl Bucket {
         } else {
             region.trim().to_string()
         };
-        Bucket { host, region, name: name.to_string(), access_key: access_key.trim().to_string(), secret: secret.trim().to_string() }
+        Bucket { host, region, name: name.to_string(), access_key: access_key.trim().to_string(), secret: secret.trim().to_string(), public_url: String::new() }
     }
 
-    /// The bucket's own host ("bucket.fsn1.your-objectstorage.com").
+    /// With public files read from `url` ("pub-….r2.dev" or a domain; the
+    /// scheme is optional). Empty keeps the bucket's own host.
+    pub fn public_at(mut self, url: &str) -> Bucket {
+        let u = url.trim().trim_end_matches('/');
+        self.public_url = if u.is_empty() || u.contains("://") { u.to_string() } else { format!("https://{u}") };
+        self
+    }
+
+    /// Cloudflare R2: no ACLs (public files come from the bucket's public
+    /// URL) and path-style requests.
+    pub fn is_r2(&self) -> bool {
+        self.host.ends_with(R2_HOST)
+    }
+
+    /// The bucket's own host ("bucket.fsn1.your-objectstorage.com"); R2
+    /// keeps the bucket in the path instead.
     pub fn bucket_host(&self) -> String {
-        format!("{}.{}", self.name, self.host)
+        if self.is_r2() {
+            self.host.clone()
+        } else {
+            format!("{}.{}", self.name, self.host)
+        }
+    }
+
+    /// The request path of `key` in the bucket.
+    fn path(&self, key: &str) -> String {
+        if self.is_r2() {
+            format!("/{}/{}", self.name, encode(key, false))
+        } else {
+            format!("/{}", encode(key, false))
+        }
+    }
+
+    /// The request path of the bucket itself (for `?cors`).
+    fn root(&self) -> String {
+        if self.is_r2() {
+            format!("/{}", self.name)
+        } else {
+            "/".into()
+        }
     }
 
     /// The plain link to `key` (works when the object is public).
     pub fn url(&self, key: &str) -> String {
-        format!("https://{}/{}", self.bucket_host(), encode(key, false))
+        if self.public_url.is_empty() {
+            format!("https://{}{}", self.bucket_host(), self.path(key))
+        } else {
+            format!("{}/{}", self.public_url, encode(key, false))
+        }
+    }
+
+    /// Public links need a public URL on R2 (it has no per-file ACL).
+    pub fn public_ready(&self) -> bool {
+        !self.is_r2() || !self.public_url.is_empty()
     }
 
     pub fn ready(&self) -> bool {
@@ -98,10 +152,10 @@ pub fn put_file(b: &Bucket, key: &str, file: &Path, content_type: &str, public: 
         ("x-amz-content-sha256".into(), hash.clone()),
         ("x-amz-date".into(), amz_date.clone()),
     ];
-    if public {
+    if public && !b.is_r2() {
         headers.push(("x-amz-acl".into(), "public-read".into()));
     }
-    let path = format!("/{}", encode(key, false));
+    let path = b.path(key);
     let auth = authorization(b, "PUT", &path, "", &mut headers, &hash, &amz_date);
     let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_connect(Some(Duration::from_secs(20))).build());
     let mut req = agent.put(&format!("https://{}{}", b.bucket_host(), path));
@@ -136,7 +190,7 @@ pub fn delete(b: &Bucket, key: &str) -> Result<(), String> {
     const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let amz_date = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
     let mut headers: Vec<(String, String)> = vec![("host".into(), b.bucket_host()), ("x-amz-content-sha256".into(), EMPTY.into()), ("x-amz-date".into(), amz_date.clone())];
-    let path = format!("/{}", encode(key, false));
+    let path = b.path(key);
     let auth = authorization(b, "DELETE", &path, "", &mut headers, EMPTY, &amz_date);
     let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_connect(Some(Duration::from_secs(20))).build());
     let mut req = agent.delete(&format!("https://{}{}", b.bucket_host(), path));
@@ -169,7 +223,7 @@ pub fn presign_get(b: &Bucket, key: &str, secs: u64, now: chrono::DateTime<chron
     ];
     q.sort();
     let query: String = q.iter().map(|(k, v)| format!("{}={}", encode(k, true), encode(v, true))).collect::<Vec<_>>().join("&");
-    let path = format!("/{}", encode(key, false));
+    let path = b.path(key);
     let canonical = format!("GET\n{path}\n{query}\nhost:{}\n\nhost\nUNSIGNED-PAYLOAD", b.bucket_host());
     let sig = signature(b, &amz_date, &canonical);
     format!("https://{}{path}?{query}&X-Amz-Signature={sig}", b.bucket_host())
@@ -185,8 +239,9 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
     let now = chrono::Utc::now();
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
     let mut headers: Vec<(String, String)> = vec![("host".into(), b.bucket_host()), ("x-amz-content-sha256".into(), empty.clone()), ("x-amz-date".into(), amz_date.clone())];
-    let auth = authorization(b, "GET", "/", "cors=", &mut headers, &empty, &amz_date);
-    let mut req = agent.get(&format!("https://{}/?cors", b.bucket_host()));
+    let root = b.root();
+    let auth = authorization(b, "GET", &root, "cors=", &mut headers, &empty, &amz_date);
+    let mut req = agent.get(&format!("https://{}{root}?cors", b.bucket_host()));
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
@@ -210,8 +265,8 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
         ("x-amz-content-sha256".into(), hash.clone()),
         ("x-amz-date".into(), amz_date.clone()),
     ];
-    let auth = authorization(b, "PUT", "/", "cors=", &mut headers, &hash, &amz_date);
-    let mut req = agent.put(&format!("https://{}/?cors", b.bucket_host()));
+    let auth = authorization(b, "PUT", &root, "cors=", &mut headers, &hash, &amz_date);
+    let mut req = agent.put(&format!("https://{}{root}?cors", b.bucket_host()));
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
@@ -291,7 +346,7 @@ fn hex(b: &[u8]) -> String {
 
 /// URI-encode as S3 wants: everything but A–Z a–z 0–9 - _ . ~ (and `/`
 /// unless `slash`).
-fn encode(s: &str, slash: bool) -> String {
+pub(super) fn encode(s: &str, slash: bool) -> String {
     let mut out = String::new();
     for &c in s.as_bytes() {
         match c {
@@ -369,7 +424,7 @@ mod tests {
     use super::*;
 
     fn example() -> Bucket {
-        Bucket { host: "s3.amazonaws.com".into(), region: "us-east-1".into(), name: "examplebucket".into(), access_key: "AKIAIOSFODNN7EXAMPLE".into(), secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into() }
+        Bucket { host: "s3.amazonaws.com".into(), region: "us-east-1".into(), name: "examplebucket".into(), access_key: "AKIAIOSFODNN7EXAMPLE".into(), secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into(), public_url: String::new() }
     }
 
     #[test]
@@ -403,6 +458,24 @@ mod tests {
         // a pasted bucket URL, either style
         assert_eq!(Bucket::new("https://clips.fsn1.your-objectstorage.com/", "", "clips", "k", "s").host, "fsn1.your-objectstorage.com");
         assert_eq!(Bucket::new("https://fsn1.your-objectstorage.com/clips", "", " clips ", "k", "s").bucket_host(), "clips.fsn1.your-objectstorage.com");
+    }
+
+    #[test]
+    fn r2_signs_path_style_with_region_auto_and_links_to_its_public_url() {
+        let b = Bucket::new("https://0123abcd.r2.cloudflarestorage.com", "", "clips", "k", "s");
+        assert!(b.is_r2());
+        assert_eq!((b.region.as_str(), b.bucket_host().as_str()), ("auto", "0123abcd.r2.cloudflarestorage.com"));
+        assert_eq!(b.path("a b/c.mp4"), "/clips/a%20b/c.mp4");
+        assert_eq!(b.root(), "/clips");
+        assert!(!b.public_ready());
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-14T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        assert!(presign_get(&b, "x.png", 60, now).starts_with("https://0123abcd.r2.cloudflarestorage.com/clips/x.png?X-Amz-Algorithm"));
+        let b = b.public_at("pub-9f.r2.dev/");
+        assert!(b.public_ready());
+        assert_eq!(b.url("a b/c.mp4"), "https://pub-9f.r2.dev/a%20b/c.mp4");
+        // a region typed by hand still wins; other storages keep their own host
+        assert_eq!(Bucket::new("x.r2.cloudflarestorage.com", "weur", "c", "k", "s").region, "weur");
+        assert!(Bucket::new("fsn1.your-objectstorage.com", "", "c", "k", "s").public_ready());
     }
 
     #[test]
