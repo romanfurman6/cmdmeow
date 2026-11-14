@@ -79,6 +79,8 @@ pub struct App {
     /// on its first frames macOS can still hand focus back to the app that
     /// was in front before the menu bar click.
     app_focus_until: Option<Instant>,
+    /// The app window closed: when its Dock icon goes.
+    dock_off_at: Option<Instant>,
     /// The panel waits for the app window to take focus before it hides;
     /// hiding it first left the app with no window, so macOS activated the
     /// previous app and the new window opened behind it.
@@ -182,6 +184,7 @@ impl App {
             theme_checked: None,
             app_focus: false,
             app_focus_until: None,
+            dock_off_at: None,
             panel_hide_after_open: None,
             pending_shape: true,
             screenshot: opts.screenshot,
@@ -219,6 +222,9 @@ impl App {
             app.app_focus = true;
         }
         crate::kit::native::set_dock_icon(app.mode == Mode::Window || app.app_open || demo);
+        if !demo {
+            crate::kit::native::install_window_menu();
+        }
         app
     }
 
@@ -498,6 +504,56 @@ impl App {
         }
     }
 
+    /// Where the panel's top-left corner goes: under the menu bar icon,
+    /// kept on screen.
+    fn panel_pos(&self, ctx: &egui::Context, size: Vec2) -> Pos2 {
+        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
+        let anchor = self.anchor.unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
+        let right = (anchor.x + m::PANEL_WIDTH / 2.0).clamp(m::PANEL_WIDTH, screen.x - 8.0);
+        Pos2::new((right - size.x).max(8.0), anchor.y + 6.0)
+    }
+
+    /// The panel drifted from its spot (macOS moves it down 26 pt now and
+    /// then, as it shows or the theme switches): put it back. Checked every
+    /// pass the panel is on screen; it's an input read and a compare.
+    fn keep_panel_in_place(&mut self, ctx: &egui::Context) {
+        if self.mode != Mode::Panel || !self.visible || self.screenshot.is_some() || self.pending_shape {
+            return;
+        }
+        let Some(at) = ctx.input(|i| i.viewport().outer_rect) else { return };
+        let want = self.panel_pos(ctx, self.window_size(ctx));
+        // only a drop straight down: a panel macOS placed elsewhere on
+        // purpose (another display) is left where it is
+        if (at.min.x - want.x).abs() <= 2.0 && (at.min.y - want.y).abs() > 2.0 {
+            ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(want));
+            // look again next frame: the move shows when the window reports it
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
+    }
+
+    /// The panel opened by itself (after setup's restart), before any click
+    /// on the menu bar icon said where the icon is: ask the icon.
+    fn find_tray_anchor(&mut self, ctx: &egui::Context) {
+        if self.anchor.is_some() || self.mode != Mode::Panel || !self.visible {
+            return;
+        }
+        let Some(rect) = self.tray.as_ref().and_then(|t| t.rect()) else { return };
+        if rect.size.width == 0 || rect.size.height == 0 {
+            return;
+        }
+        let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
+        let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
+        let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
+        // right after launch the icon isn't in the menu bar yet (it sits
+        // at the screen's bottom-left): ask again in a moment
+        if rect.position.x <= 0.0 || bottom > 60.0 {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            return;
+        }
+        self.anchor = Some(Pos2::new(cx, bottom));
+        self.pending_shape = true;
+    }
+
     /// Resize/move the window for the current mode.
     pub fn reshape(&mut self, ctx: &egui::Context) {
         let size = self.window_size(ctx);
@@ -508,10 +564,7 @@ impl App {
         let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
         match self.mode {
             Mode::Panel => {
-                let anchor = self.anchor.unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
-                let right = (anchor.x + m::PANEL_WIDTH / 2.0).clamp(m::PANEL_WIDTH, screen.x - 8.0);
-                let x = (right - size.x).max(8.0);
-                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(Pos2::new(x, anchor.y + 6.0)));
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(self.panel_pos(ctx, size)));
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
                 // the app window may still be open (or minimized) behind the
                 // panel: it keeps its Dock icon. Dropping it made macOS pull
@@ -695,6 +748,17 @@ impl eframe::App for App {
         // neither the panel nor the window is on screen (a tool's own small
         // windows, like a pinned capture, show none of it); this heartbeat
         // still runs the ticks and keeps the menu-bar title current
+        if let Some(at) = self.dock_off_at {
+            const DOCK_OFF_AFTER: std::time::Duration = std::time::Duration::from_millis(300);
+            if self.app_open {
+                self.dock_off_at = None;
+            } else if at.elapsed() >= DOCK_OFF_AFTER {
+                self.dock_off_at = None;
+                crate::kit::native::set_dock_icon(false);
+            } else {
+                ctx.request_repaint_after(DOCK_OFF_AFTER - at.elapsed());
+            }
+        }
         let on_screen = self.visible || self.app_open || self.setup.is_some();
         crate::kit::activity::set_visible(on_screen);
         if !on_screen {
@@ -705,11 +769,13 @@ impl eframe::App for App {
             self.hide(ctx);
         }
         self.handle_tray(ctx);
+        self.find_tray_anchor(ctx);
         self.update_tray_title();
         if self.pending_shape {
             self.pending_shape = false;
             self.reshape(ctx);
         }
+        self.keep_panel_in_place(ctx);
         // closing the window keeps the app in the menu bar
         if ctx.input(|i| i.viewport().close_requested()) && self.screenshot.is_none() && !QUIT.load(std::sync::atomic::Ordering::SeqCst) {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
@@ -1028,13 +1094,19 @@ impl App {
                 } else {
                     vctx.send_viewport_cmd(ViewportCommand::Focus);
                     crate::kit::native::activate();
+                    // macOS may refuse to activate an app it didn't see
+                    // the user ask for (setup on first launch): the window
+                    // still comes to the front instead of opening behind
+                    crate::kit::native::bring_app_window_front();
                     vctx.request_repaint_after(std::time::Duration::from_millis(50));
                 }
             }
             if vctx.input(|i| i.viewport().close_requested()) {
                 // closing during setup only hides it: the menu bar brings it back
                 self.app_open = false;
-                crate::kit::native::set_dock_icon(false);
+                // the Dock icon goes a moment later: dropping it while macOS
+                // still flashes the menu title (⌘W) left "Window" highlighted
+                self.dock_off_at = Some(Instant::now());
                 return;
             }
             crate::kit::native::apply_glass(16.0);
