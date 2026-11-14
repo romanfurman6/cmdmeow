@@ -97,24 +97,13 @@ pub fn pill(d: &mut Dictation, ctx: &egui::Context) {
         mac::float(PILL_TITLE);
         let r = ui.max_rect().shrink(1.0);
         let p = ui.painter().clone();
-        p.rect_filled(r, r.height() / 2.0, Color32::from_rgba_unmultiplied(24, 24, 26, 242));
-        p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
+        pill_bg(&p, r);
         let cy = r.center().y;
         match &d.phase {
-            Phase::Listening { .. } => {
-                let pulse = 0.55 + 0.45 * (0.5 + 0.5 * (t * 5.0).sin()) as f32;
-                p.circle_filled(Pos2::new(r.left() + 16.0, cy), 4.5, with_alpha(LIVE, pulse));
-                let tr = p.text(Pos2::new(r.right() - 13.0, cy), Align2::RIGHT_CENTER, clock(phase_secs), mono(12.0), TEXT_SOFT());
-                bars(&p, Rect::from_min_max(Pos2::new(r.left() + 28.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0)), &levels, white(225));
-            }
+            Phase::Listening { .. } => pill_listening(&p, r, t, phase_secs, &levels),
             Phase::Working { since, expect, done, .. } => {
-                // like a video render: the take's bars light up left to right
                 let f = super::work_progress(since.elapsed().as_secs_f32(), *expect, done.load(std::sync::atomic::Ordering::Relaxed));
-                spinner(&p, Pos2::new(r.left() + 17.0, cy), 6.5, t, TEXT_SOFT());
-                let tr = p.text(Pos2::new(r.right() - 13.0, cy), Align2::RIGHT_CENTER, format!("{}%", (f * 100.0) as u32), mono(12.0), TEXT_SOFT());
-                let br = Rect::from_min_max(Pos2::new(r.left() + 32.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0));
-                bars(&p, br, &levels, white(70));
-                bars(&p.with_clip_rect(Rect::from_min_max(Pos2::new(br.left() - 2.0, r.top()), Pos2::new(br.left() + br.width() * f, r.bottom()))), br, &levels, white(225));
+                pill_working(&p, r, t, f, &levels);
             }
             Phase::Showing { note: Note::Pasted, .. } => {
                 icon(&p, Icon::Check, Rect::from_center_size(r.center(), Vec2::splat(16.0)), GREEN());
@@ -132,6 +121,31 @@ pub fn pill(d: &mut Dictation, ctx: &egui::Context) {
             Phase::Idle => {}
         }
     });
+}
+
+fn pill_bg(p: &egui::Painter, r: Rect) {
+    p.rect_filled(r, r.height() / 2.0, Color32::from_rgba_unmultiplied(24, 24, 26, 242));
+    p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
+}
+
+/// The pill while it listens: a pulsing dot, the voice, the time.
+fn pill_listening(p: &egui::Painter, r: Rect, t: f64, secs: f32, levels: &[f32]) {
+    let cy = r.center().y;
+    let pulse = 0.55 + 0.45 * (0.5 + 0.5 * (t * 5.0).sin()) as f32;
+    p.circle_filled(Pos2::new(r.left() + 16.0, cy), 4.5, with_alpha(LIVE, pulse));
+    let tr = p.text(Pos2::new(r.right() - 13.0, cy), Align2::RIGHT_CENTER, clock(secs), mono(12.0), TEXT_SOFT());
+    bars(p, Rect::from_min_max(Pos2::new(r.left() + 28.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0)), levels, white(225));
+}
+
+/// The pill while the model works: like a video render, the take's bars
+/// light up left to right.
+fn pill_working(p: &egui::Painter, r: Rect, t: f64, f: f32, levels: &[f32]) {
+    let cy = r.center().y;
+    spinner(p, Pos2::new(r.left() + 17.0, cy), 6.5, t, TEXT_SOFT());
+    let tr = p.text(Pos2::new(r.right() - 13.0, cy), Align2::RIGHT_CENTER, format!("{}%", (f * 100.0) as u32), mono(12.0), TEXT_SOFT());
+    let br = Rect::from_min_max(Pos2::new(r.left() + 32.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0));
+    bars(p, br, levels, white(70));
+    bars(&p.with_clip_rect(Rect::from_min_max(Pos2::new(br.left() - 2.0, r.top()), Pos2::new(br.left() + br.width() * f, r.bottom()))), br, levels, white(225));
 }
 
 /// The voice as bars, newest on the right, mirrored around the middle.
@@ -338,10 +352,11 @@ fn sample_levels() -> Vec<f32> {
     (0..64).map(|k| 0.25 + 0.6 * ((k as f32 * 0.55).sin() * (k as f32 * 0.21).cos()).abs()).collect()
 }
 
-/// The first visit: a mic and a field. Click the field, press the
-/// shortcut and talk: the take lands in the field (not pasted anywhere),
-/// so they see dictation work right here. Without a shortcut, a Hold to
-/// talk button stands in.
+/// The first visit: just a field, as in any app. Click it, press the
+/// shortcut and talk: the pill shows up over the field as it would
+/// anywhere, and the words land in the field (not pasted anywhere), so
+/// they see dictation work right here. Without a shortcut, a Hold to talk
+/// button stands in.
 fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     use crate::kit::empty::{hero_button, keycaps, keycaps_width, Lead, HERO_H};
     d.try_seen = Some(std::time::Instant::now());
@@ -355,32 +370,19 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     let key = d.shortcut_label();
     let keys = (!key.is_empty()).then_some(key.as_str());
     let field_w = (body.width() - 2.0 * sp::PAGE_EDGE).min(480.0);
-    let (dot, field_h, hint_h) = (64.0, 112.0, 24.0);
+    let (field_h, hint_h) = (112.0, 24.0);
     let button = match &state {
         Shown::NeedModel { .. } | Shown::Downloading { .. } | Shown::Done(_) => true,
         _ => keys.is_none(),
     };
-    let block = dot + sp::XL + field_h + sp::L + hint_h + if button { sp::XL + HERO_H } else { 0.0 };
+    // the pill's room above the field is kept, so nothing moves when it shows
+    let pill_room = PILL_H + 6.0;
+    let block = pill_room + field_h + sp::L + hint_h + if button { sp::XL + HERO_H } else { 0.0 };
     let top = body.center().y - block / 2.0 - sp::L;
     let cx0 = body.center().x;
 
-    // the mic, red while it listens, a tick once the words are in
-    let c = Pos2::new(cx0, top + dot / 2.0);
-    let (glyph, col) = match &state {
-        Shown::Listening { .. } => (Icon::Mic, LIVE),
-        Shown::Done(_) => (Icon::Check, BLUE()),
-        _ => (Icon::Mic, TINT()),
-    };
-    if let Shown::Listening { .. } = state {
-        // a soft ring breathing out of it
-        let k = (t * 0.9).fract() as f32;
-        p.circle_filled(c, dot / 2.0 + 18.0 * k, with_alpha(LIVE, 0.22 * (1.0 - k)));
-    }
-    p.circle_filled(c, dot / 2.0, with_alpha(col, 0.15));
-    icon(&p, glyph, Rect::from_center_size(c, Vec2::splat(28.0)), col);
-
     // the field: a click puts the caret in it
-    let fr = Rect::from_min_size(Pos2::new(cx0 - field_w / 2.0, top + dot + sp::XL), Vec2::new(field_w, field_h));
+    let fr = Rect::from_min_size(Pos2::new(cx0 - field_w / 2.0, top + pill_room), Vec2::new(field_w, field_h));
     let quiet = matches!(state, Shown::NeedModel { .. } | Shown::Downloading { .. });
     let field = ui.interact(fr, id.with("field"), if quiet { Sense::hover() } else { Sense::click() });
     if field.clicked() {
@@ -391,12 +393,9 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     if field.hovered() && !quiet {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
-    let armed = d.try_armed || matches!(state, Shown::Listening { .. } | Shown::Working { .. });
-    let edge = match &state {
-        Shown::Listening { .. } => Some(LIVE),
-        Shown::Idle | Shown::Done(_) if armed => Some(TINT()),
-        _ => None,
-    };
+    let talking = matches!(state, Shown::Listening { .. } | Shown::Working { .. });
+    let armed = d.try_armed || talking;
+    let edge = if armed && !quiet { Some(TINT()) } else { None };
     if let Some(e) = edge {
         p.rect_stroke(fr.expand(4.0), R_CARD + 4.0, Stroke::new(4.0, with_alpha(e, 0.08)), StrokeKind::Outside);
     }
@@ -411,55 +410,62 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     p.rect_stroke(fr, R_CARD, Stroke::new(1.0, rim), StrokeKind::Inside);
     let inner = fr.shrink(sp::L);
     let line_y = inner.top() + 10.0;
-    match &state {
-        Shown::Idle if armed => {
-            // a blinking caret, as in any empty field
-            if (t * 1.8).fract() < 0.5 {
-                p.rect_filled(Rect::from_min_size(Pos2::new(inner.left(), inner.top() + 1.0), Vec2::new(2.0, 18.0)), 1.0, TINT());
-            }
-            p.text(Pos2::new(inner.left() + 6.0, line_y), Align2::LEFT_CENTER, "Say something", font(15.0), TEXT_MUTED());
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    let caret = |x: f32| {
+        // a blinking caret, as in any field that has the keys
+        if (t * 1.8).fract() < 0.5 {
+            p.rect_filled(Rect::from_min_size(Pos2::new(x, inner.top() + 1.0), Vec2::new(2.0, 18.0)), 1.0, TINT());
         }
-        Shown::Idle => {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    };
+    match &state {
+        Shown::Idle | Shown::Listening { .. } | Shown::Working { .. } if armed => {
+            caret(inner.left());
+            if !talking {
+                p.text(Pos2::new(inner.left() + 6.0, line_y), Align2::LEFT_CENTER, "Say something", font(15.0), TEXT_MUTED());
+            }
+        }
+        Shown::Idle | Shown::Listening { .. } | Shown::Working { .. } => {
             p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, "Click here", font(15.0), TEXT_MUTED());
         }
         Shown::NeedModel { .. } | Shown::Downloading { .. } => {
             p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, "Say something", font(15.0), with_alpha(TEXT(), 0.24));
         }
-        Shown::Listening { .. } => {
-            let lv = if d.demo { sample_levels() } else { d.levels.clone() };
-            let br = Rect::from_center_size(inner.center(), Vec2::new(inner.width(), 48.0));
-            bars(&p, br, &lv, LIVE);
-        }
-        Shown::Working { frac } => {
-            // like the pill: the take's bars light up left to right
-            let lv = if d.demo { sample_levels() } else { d.levels.clone() };
-            let br = Rect::from_center_size(inner.center(), Vec2::new(inner.width(), 48.0));
-            bars(&p, br, &lv, with_alpha(TEXT(), 0.25));
-            bars(&p.with_clip_rect(Rect::from_min_max(Pos2::new(br.left() - 2.0, fr.top()), Pos2::new(br.left() + br.width() * frac, fr.bottom()))), br, &lv, TEXT_SOFT());
-        }
         Shown::Done(s) => {
-            let n = s.text.split_whitespace().count();
-            p.text(inner.min, Align2::LEFT_TOP, format!("{} · {:.0} s · {}", ago(s.at), s.secs.max(1.0), words(n)), font(11.0), TEXT_FAINT());
-            text_wrap(&p, Pos2::new(inner.left(), inner.top() + 14.0 + sp::LINE_GAP), Align2::LEFT_TOP, &s.text, font(15.0), TEXT(), inner.width(), 3);
+            text_wrap(&p, Pos2::new(inner.left(), inner.top()), Align2::LEFT_TOP, &s.text, font(15.0), TEXT(), inner.width(), 4);
         }
         Shown::Problem(m) => {
             text_wrap(&p, inner.center(), Align2::CENTER_CENTER, m, font(14.0), AMBER(), inner.width(), 2);
         }
     }
 
-    // one line under the field: what the shortcut does now
+    // the pill, where it shows in any app: over the field's left edge
+    let pr = Rect::from_min_size(Pos2::new(fr.left(), fr.top() - 6.0 - PILL_H), Vec2::new(PILL_W, PILL_H));
+    let lv = || if d.demo { sample_levels() } else { d.levels.clone() };
+    match &state {
+        Shown::Listening { secs, .. } => {
+            pill_bg(&p, pr);
+            pill_listening(&p, pr, t, *secs, &lv());
+        }
+        Shown::Working { frac } => {
+            pill_bg(&p, pr);
+            pill_working(&p, pr, t, *frac, &lv());
+        }
+        _ => {}
+    }
+
+    // one line under the field: what to press now
     let hy = fr.bottom() + sp::L + hint_h / 2.0;
     if let Some(k) = keys {
-        let (before, after) = match &state {
-            Shown::Idle | Shown::Problem(_) if armed => ("Press", "and talk".to_string()),
-            Shown::Idle | Shown::Problem(_) => ("Click the field, then press", String::new()),
-            Shown::Listening { tapped: false, secs } => ("Release", format!("to stop · {}", clock(*secs))),
-            Shown::Listening { tapped: true, secs } => ("Press", format!("to stop · {}", clock(*secs))),
-            Shown::Done(_) => ("Press", "to try again".to_string()),
-            _ => ("", String::new()),
+        // (words before, keys, words after); "Enter or" goes before ⌥D
+        let line: Option<(&str, String)> = match &state {
+            Shown::Idle | Shown::Problem(_) if armed => Some(("Press", "and talk".into())),
+            Shown::Idle | Shown::Problem(_) => Some(("Click the field, then press", String::new())),
+            Shown::Listening { tapped: false, .. } => Some(("Release", "to finish".into())),
+            Shown::Listening { tapped: true, .. } => Some(("Press Enter or", "to finish".into())),
+            Shown::Done(_) => Some(("Press", "to try again".into())),
+            _ => None,
         };
-        if !before.is_empty() {
+        if let Some((before, after)) = line {
             let f = font(13.0);
             let gap = 6.0;
             let bw = p.layout_no_wrap(before.to_string(), f.clone(), TEXT_DIM()).size().x;
