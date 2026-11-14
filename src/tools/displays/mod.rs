@@ -232,9 +232,9 @@ mod tests {
     }
 
     #[test]
-    fn the_built_in_panel_is_shown_but_not_counted() {
+    fn the_built_in_panel_is_shown_but_not_adjustable() {
         let d = demo();
-        assert_eq!(d.sidebar_meta(), "2");
+        assert_eq!(d.screens().iter().filter(|s| s.adjustable()).count(), 2);
         assert!(d.screens().iter().any(|s| s.builtin && !s.adjustable()));
     }
 

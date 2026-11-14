@@ -2073,10 +2073,13 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         let why_x = ib.right() + 190.0;
         if !r.tools.is_empty() {
             let names: Vec<&str> = r.tools.iter().map(|&i| app.tools[i].name()).collect();
-            let hr = Rect::from_min_max(Pos2::new(ib.left(), rr.top()), Pos2::new(right - 210.0, rr.bottom()));
+            let hr = Rect::from_min_max(Pos2::new(ib.left(), rr.top()), Pos2::new(right - 150.0, rr.bottom()));
             ui.interact(hr, ui.scope_id().with(("perm-used-by", k)), Sense::hover()).on_hover_text(format!("Used by {}", names.join(", ")));
         }
-        let why_w = right - 210.0 - why_x;
+        // the status keeps only the room it needs: a check is narrow, a
+        // button or the waiting hint wider (never cut the reason, R10)
+        let status_w = if ok { 40.0 } else if waiting { 230.0 } else { 150.0 };
+        let why_w = right - status_w - why_x;
         if why_w > 60.0 && !r.locked && !r.perm.why().is_empty() {
             text_fit(&p, Pos2::new(why_x, rr.center().y), Align2::LEFT_CENTER, r.perm.why(), font(12.0), TEXT_FAINT().gamma_multiply(a), why_w);
         }

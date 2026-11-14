@@ -287,6 +287,9 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         let st = e.state(now);
         (st, ring_frac(&e, st, now), hero_text(&e, st, now), e.manual_since.is_some(), e.agent_name())
     };
+    // a widget's switch shows the agent's hold itself, so its title stays
+    // short ("Awake for Claude" is the page's, where the switch is manual)
+    let (title, reason) = if st == State::Agent { ("Awake".to_string(), format!("{agent} · {reason}")) } else { (title, reason) };
     let lk = look(st);
     // the ring carries the state; the card stays the same as every other one
     let resp = tile::card(ui, rect, id, false);
