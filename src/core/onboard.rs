@@ -2274,8 +2274,20 @@ pub fn help_card(ui: &mut Ui, full: Rect, now: f64, perm: Perm) -> bool {
     let x = Rect::from_min_size(Pos2::new(full.right() - 26.0, full.bottom() - 26.0), Vec2::splat(18.0));
     let r = ui.interact(x, ui.scope_id().with("fda-help-close"), Sense::click());
     icon(&p, Icon::Close, x.shrink(3.0), if r.hovered() { TEXT() } else { TEXT_MUTED() });
-    ui.ctx().request_repaint();
+    // it can stay up for minutes, and each of its frames redraws setup too:
+    // move at the decorative pace, and sleep while the switch holds still
+    let wait = help_wait(cycle).map_or(std::time::Duration::from_secs_f32(1.0 / 30.0), std::time::Duration::from_secs_f32);
+    ui.ctx().request_repaint_after(wait);
+    ui.ctx().request_repaint_after_for(wait, egui::ViewportId::ROOT);
     r.clicked()
+}
+
+/// Seconds the help card's loop holds still from `cycle` (0..1 of its
+/// 2.4 s), or None while the pointer or the switch moves.
+fn help_wait(cycle: f32) -> Option<f32> {
+    // the pointer comes in (0..0.25), the switch flips on (..0.5), holds,
+    // and flips back off (0.85..1)
+    (0.5..0.85).contains(&cycle).then(|| (0.85 - cycle) * 2.4)
 }
 
 
@@ -2356,6 +2368,14 @@ mod tests {
     fn keycaps_split_modifiers_from_the_key() {
         assert_eq!(caps("⌘⇧2"), vec!["⌘", "⇧", "2"]);
         assert_eq!(caps("⌥Space"), vec!["⌥", "Space"]);
+    }
+
+    #[test]
+    fn the_help_card_sleeps_while_its_switch_holds() {
+        assert_eq!(help_wait(0.1), None, "pointer moving");
+        assert_eq!(help_wait(0.4), None, "switch flipping");
+        assert!((help_wait(0.5).unwrap() - 0.84).abs() < 1e-3);
+        assert_eq!(help_wait(0.9), None, "switch flipping back");
     }
 
     #[test]
