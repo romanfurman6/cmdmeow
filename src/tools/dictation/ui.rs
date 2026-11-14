@@ -214,12 +214,15 @@ fn latest(d: &Dictation, ui: &mut Ui, r: Rect, n: usize) {
         text_fit(p, r.center(), Align2::CENTER_CENTER, &format!("Hold {} and speak", d.shortcut_label()), font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    let lh = (r.height() / n as f32).min(26.0);
+    // two items (the Row size) get two lines each, so a sentence isn't cut
+    // to its first words; longer lists stay one line per item
+    let rows = if n <= 2 { 2 } else { 1 };
+    let lh = if n <= 2 { r.height() / n as f32 } else { (r.height() / n as f32).min(26.0) };
     let top = r.center().y - lh * items.len() as f32 / 2.0;
     for (k, s) in items.iter().enumerate() {
         let y = top + lh * (k as f32 + 0.5);
         let ag = p.text(Pos2::new(r.right(), y), Align2::RIGHT_CENTER, ago(s.at), font(11.0), TEXT_FAINT());
-        text_fit(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0);
+        text_wrap(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0, rows);
     }
 }
 
