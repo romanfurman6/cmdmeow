@@ -145,7 +145,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .bars.b-open .mpn { opacity: 1; transform: none; }
 .mph { padding: 0 4px 12px; font-size: 13px; }
 .wgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.wg { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-width: 0; min-height: 82px; padding: 10px; border-radius: 13px; background: rgba(255,255,255,.035); box-shadow: inset 0 0 0 1px rgba(255,255,255,.05); }
+.wg { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 5px; min-width: 0; min-height: 82px; padding: 10px; border-radius: 13px; background: rgba(255,255,255,.035); box-shadow: inset 0 0 0 1px rgba(255,255,255,.05); }
 .wg.s2 { grid-column: span 2; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; }
 .wg.s4 { grid-column: span 4; flex-direction: row; align-items: center; min-height: 56px; gap: 10px; }
 .wg > * { opacity: 0; transition: opacity .25s ease; }
@@ -161,7 +161,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .wr .rb { fill: none; stroke: rgba(255,255,255,.1); stroke-width: 3.5; }
 .wr .rf { fill: none; stroke: var(--g); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 100.5; stroke-dashoffset: 100.5; transition: stroke-dashoffset 1.1s cubic-bezier(.3,0,.2,1) .15s; }
 .wg.on .wr .rf { stroke-dashoffset: var(--o); }
-.wt { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 11px; }
+.wt { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 11px; }
 .wt .dm { color: rgba(255,255,255,.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wt b { font-size: 13px; font-weight: 500; color: #fff; white-space: nowrap; }
 .wbtn { margin-left: auto; padding: 6px 10px; border-radius: 8px; background: var(--lime); color: #10140c; font-size: 11.5px; }
@@ -169,13 +169,11 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .wg.on .rec { animation: blink 1.2s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .25; } }
 .wg.on .wi .i[viewBox] { transform-origin: center; }
-.wg.on[data-i="4"] .wi svg { animation: spin 1.4s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 .bars2 { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 6px 10px; align-items: center; font-size: 11.5px; }
 .bars2 > span:not(.num):not(.lb) { height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
 .bars2 i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--cyan, #6FD6E8); transition: width 1.1s cubic-bezier(.3,0,.2,1) .2s; }
 .wg.on .bars2 i { width: var(--w); }
-.wave2 { display: flex; align-items: center; gap: 2px; height: 14px; }
+.wave2 { display: flex; align-items: center; gap: 2px; height: 12px; }
 .wave2 i { width: 3px; height: 4px; border-radius: 2px; background: #F7B267; }
 .wg.on .wave2 i { animation: wv .8s ease-in-out infinite alternate; } .wave2 i:nth-child(2) { animation-delay: -.2s !important; } .wave2 i:nth-child(3) { animation-delay: -.5s !important; } .wave2 i:nth-child(4) { animation-delay: -.1s !important; } .wave2 i:nth-child(5) { animation-delay: -.65s !important; }
 @keyframes wv { to { height: 14px; } }
@@ -240,7 +238,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 
 @media (min-width: 861px) and (max-width: 1180px) { .hero { max-width: calc(100vw - 470px); } .hero h1 { font-size: clamp(44px, 6vw, 72px); line-height: 1.05; } .hero .sub { font-size: 22px; line-height: 30px; } }
 
-@media (prefers-reduced-motion: reduce) { .wg.on, .wg.on::after, .wg.on[data-i="4"] .wi svg, .wg.on .rec, .wg.on .wave2 i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .wg.on, .wg.on::after, .wg.on .rec, .wg.on .wave2 i { animation: none; } }
 
 /* Widgets in "One place": Studio Display like the app (name and level, sun and slider); Claude rows named */
 .wg .dsr { display: flex; align-items: center; gap: 8px; margin-top: 2px; color: rgba(255,255,255,.55); } .wg .dsr .i { flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
