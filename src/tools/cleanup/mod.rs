@@ -94,7 +94,7 @@ impl Tool for Cleanup {
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let g = self.clean.lock_ok().clone();
         let (value, sub, frac) = match g.phase {
-            engine::Phase::Results => (human_bytes(g.total()), "found · ready to review".to_string(), None),
+            engine::Phase::Results => (human_bytes(g.total()), "to review".to_string(), None),
             engine::Phase::Scanning | engine::Phase::Judging => ("Scanning…".into(), g.current.clone(), Some(g.progress)),
             engine::Phase::Cleaning => ("Cleaning…".into(), g.current.clone(), Some(g.progress)),
             engine::Phase::Done => (human_bytes(g.cleaned_bytes), "cleaned".into(), None),
