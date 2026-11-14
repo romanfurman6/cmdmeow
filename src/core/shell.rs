@@ -324,14 +324,17 @@ impl App {
                 self.mode = Mode::Setup;
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
-                // the full list, with a few more tools on (the cost line fills up)
+                // a few goals picked ("setup-tools" shows none, as a fresh install);
+                // the full list with a few more
+                use crate::tools::*;
+                let picked = [cleanup::ID, lens::ID, uninstaller::ID, clipboard::ID, capture::ID, capture::VIDEO_ID, capture::SHARING_ID];
                 let all = view == "setup-tools-all";
-                let more = [crate::tools::capture::ID, crate::tools::capture::VIDEO_ID, crate::tools::dictation::ID, crate::tools::system::ID];
+                let more = [dictation::ID, system::ID];
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
                     // AI Usage on: the Sign-ins step (3a) shows
-                    let on = super::onboard::ON_AT_FIRST.contains(&id) || (all && more.contains(&id)) || (view == "setup-models" && id == crate::tools::dictation::ID) || (view == "setup-signins" && id == crate::tools::claude::ID);
+                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id)) || (view == "setup-models" && id == dictation::ID) || (view == "setup-signins" && id == claude::ID);
                     self.set_tool_on(i, on);
                 }
                 // which steps exist depends on the tools just switched on
@@ -340,8 +343,6 @@ impl App {
                 if all || view == "setup-tools-preview" {
                     let mut s = super::onboard::Setup::new(1);
                     s.all_tools = all;
-                    // the pointer on "Screenshots & video"
-                    s.demo_hover = (!all).then_some(1);
                     self.setup = Some(s);
                 }
                 return;
