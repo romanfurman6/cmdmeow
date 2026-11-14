@@ -510,8 +510,9 @@ impl App {
         Pos2::new((right - size.x).max(8.0), anchor.y + 6.0)
     }
 
-    /// The panel drifted from its spot (macOS moved it down by the menu
-    /// bar's height after the first light/dark switch): put it back.
+    /// The panel drifted from its spot (macOS moves it down 26 pt now and
+    /// then, as it shows or the theme switches): put it back. Checked every
+    /// pass the panel is on screen; it's an input read and a compare.
     fn keep_panel_in_place(&mut self, ctx: &egui::Context) {
         if self.mode != Mode::Panel || !self.visible || self.screenshot.is_some() || self.pending_shape {
             return;
@@ -522,6 +523,8 @@ impl App {
         // purpose (another display) is left where it is
         if (at.min.x - want.x).abs() <= 2.0 && (at.min.y - want.y).abs() > 2.0 {
             ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(want));
+            // look again next frame: the move shows when the window reports it
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
 
@@ -538,6 +541,12 @@ impl App {
         let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
         let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
         let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
+        // right after launch the icon isn't in the menu bar yet (it sits
+        // at the screen's bottom-left): ask again in a moment
+        if rect.position.x <= 0.0 || bottom > 60.0 {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            return;
+        }
         self.anchor = Some(Pos2::new(cx, bottom));
         self.pending_shape = true;
     }
@@ -752,6 +761,7 @@ impl eframe::App for App {
             self.pending_shape = false;
             self.reshape(ctx);
         }
+        self.keep_panel_in_place(ctx);
         // closing the window keeps the app in the menu bar
         if ctx.input(|i| i.viewport().close_requested()) && self.screenshot.is_none() && !QUIT.load(std::sync::atomic::Ordering::SeqCst) {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
@@ -813,7 +823,6 @@ impl eframe::App for App {
             if self.screenshot.is_none() {
                 crate::kit::native::apply_glass(r);
             }
-            self.keep_panel_in_place(&ctx);
         }
         // CMDMEOW_SELF_SHOT=<dir>: open the panel, then let screencapture
         // (run by the app, so with its Screen Recording permission) save the

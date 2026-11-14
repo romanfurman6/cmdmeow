@@ -346,9 +346,10 @@ mod imp {
         if r != -600 {
             return se_code(r);
         }
-        // started once per run: a user who quits it isn't overruled
+        // started once per run: a user who quits it isn't overruled.
+        // Not running says nothing about access: keep the last answer
         if SE_STARTED.swap(true, Ordering::AcqRel) {
-            return 1;
+            return SE.load(Ordering::Relaxed).max(1);
         }
         let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
         for _ in 0..10 {
@@ -358,7 +359,7 @@ mod imp {
                 return se_code(r);
             }
         }
-        1
+        SE.load(Ordering::Relaxed).max(1)
     }
 
     fn refresh_system_events() {

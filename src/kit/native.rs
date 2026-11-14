@@ -163,10 +163,20 @@ mod mac {
         let _ = app.setActivationPolicy(policy);
         // a menu bar app that turns into a Dock app while already active
         // keeps the previous app's menus in the menu bar until it's
-        // activated anew: step back now, and the window that is opening
-        // activates the app again on its next frames
+        // activated anew (deactivate alone didn't do it): hand activation
+        // to the Dock for a moment, and the window that is opening takes it
+        // back on its next frames
         if visible && app.isActive() {
-            app.deactivate();
+            use objc2::runtime::AnyObject;
+            use objc2::{class, msg_send};
+            unsafe {
+                let id = objc2_foundation::NSString::from_str("com.apple.dock");
+                let docks: Retained<AnyObject> = msg_send![class!(NSRunningApplication), runningApplicationsWithBundleIdentifier: &*id];
+                let dock: Option<Retained<AnyObject>> = msg_send![&*docks, firstObject];
+                if let Some(dock) = dock {
+                    let _: bool = msg_send![&*dock, activateWithOptions: 0usize];
+                }
+            }
         }
     }
 
@@ -183,6 +193,31 @@ mod mac {
             // without it a lone Window menu would take its place
             let main: Option<Retained<AnyObject>> = msg_send![&*app, mainMenu];
             let Some(main) = main else { return };
+            // winit names the app menu's items after the binary ("Quit
+            // cmdmeow"): use the app's own name
+            let process: Retained<AnyObject> = msg_send![class!(NSProcessInfo), processInfo];
+            let pname: Retained<NSString> = msg_send![&*process, processName];
+            let me: Retained<AnyObject> = msg_send![class!(NSRunningApplication), currentApplication];
+            let shown: Option<Retained<NSString>> = msg_send![&*me, localizedName];
+            let (pname, shown) = (pname.to_string(), shown.map(|s| s.to_string()).unwrap_or_default());
+            if !shown.is_empty() && shown != pname {
+                let first: Option<Retained<AnyObject>> = msg_send![&*main, itemAtIndex: 0isize];
+                let sub: Option<Retained<AnyObject>> = match &first {
+                    Some(f) => msg_send![&**f, submenu],
+                    None => None,
+                };
+                if let Some(sub) = sub {
+                    let n: isize = msg_send![&*sub, numberOfItems];
+                    for i in 0..n {
+                        let item: Retained<AnyObject> = msg_send![&*sub, itemAtIndex: i];
+                        let t: Retained<NSString> = msg_send![&*item, title];
+                        let t = t.to_string();
+                        if t.contains(&pname) {
+                            let _: () = msg_send![&*item, setTitle: &*NSString::from_str(&t.replace(&pname, &shown))];
+                        }
+                    }
+                }
+            }
             let title = NSString::from_str("Window");
             let existing: Option<Retained<AnyObject>> = msg_send![&*main, itemWithTitle: &*title];
             if existing.is_some() {
@@ -190,7 +225,7 @@ mod mac {
             }
             let menu: Retained<AnyObject> = msg_send![class!(NSMenu), new];
             let _: () = msg_send![&*menu, setTitle: &*title];
-            for (name, action, key) in [("Minimize", sel!(performMiniaturize:), "m"), ("Zoom", sel!(performZoom:), "")] {
+            for (name, action, key) in [("Close", sel!(performClose:), "w"), ("Minimize", sel!(performMiniaturize:), "m"), ("Zoom", sel!(performZoom:), "")] {
                 let item: Retained<AnyObject> = msg_send![class!(NSMenuItem), new];
                 let _: () = msg_send![&*item, setTitle: &*NSString::from_str(name)];
                 let _: () = msg_send![&*item, setAction: action];
