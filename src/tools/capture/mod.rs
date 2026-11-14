@@ -720,6 +720,13 @@ impl Capture {
         self.thumbs.tex.retain(|id, _| ids.contains(id));
     }
 
+    /// Takes the work other threads finished (thumbnails, saves).
+    fn drain_done(&mut self) {
+        while let Ok(d) = self.rx.try_recv() {
+            self.done(d);
+        }
+    }
+
     /// The thumbnail of a history capture; starts loading it when missing.
     fn thumb(&mut self, id: u64) -> Option<egui::TextureId> {
         let path = self.store.path(id);
@@ -931,6 +938,15 @@ fn demo_store() -> Store {
             st.shots.push(store::Shot { id, kind: *kind, w: *w, h: *ht, saved: None, pinned: i == 2, secs: None });
         }
     }
+    // and a few recordings, each with its picture and length
+    for (i, (h, secs)) in [(3u64, 42.0f32), (27, 135.0), (50, 8.0)].iter().enumerate() {
+        let id = now - h * hour - 100 - i as u64;
+        let img = grab::sample(1280, 800);
+        if img.save(st.path(id)).is_ok() {
+            st.shots.push(store::Shot { id, kind: Kind::Recording, w: 1280, h: 800, saved: None, pinned: false, secs: Some(*secs) });
+        }
+    }
+    st.shots.sort_by_key(|s| std::cmp::Reverse(s.id));
     st
 }
 

@@ -456,11 +456,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // the step slides in from the side it comes from
     let side = if from > step { -1.0 } else { 1.0 };
     let slide = (1.0 - ease(t * 2.2)) * 18.0 * side;
-    // Back and Continue line up with the step's own column
-    let col = match kind {
-        Kind::Agents | Kind::SignIns | Kind::Models => Rect::from_center_size(body.center(), Vec2::new(body.width().min(COL_W), body.height())),
-        _ => body,
-    };
+    let edge = body;
     let body = body.translate(Vec2::new(slide, 0.0));
     let mut next = false;
     let mut restart_now = false;
@@ -475,7 +471,9 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         Kind::Ready => restart_now = ready(app, ui, body, t),
     }
     // bottom bar
-    let bar = Rect::from_min_max(Pos2::new(col.left(), full.bottom() - BOTTOM_H), Pos2::new(col.right(), full.bottom()));
+    // Back and Continue sit at the body's edges on every step, so they never
+    // jump when a step uses a narrower column
+    let bar = Rect::from_min_max(Pos2::new(edge.left(), full.bottom() - BOTTOM_H), Pos2::new(edge.right(), full.bottom()));
     let mut finish = if restart_now { Finish::Restart } else { Finish::No };
     if step > 0 {
         let r = Rect::from_min_size(Pos2::new(bar.left(), bar.center().y - 16.0), Vec2::new(70.0, 32.0));
@@ -826,8 +824,6 @@ fn appear(ctx: &egui::Context, id: egui::Id, now: f64, dur: f32, demo: bool) -> 
 
 const PANEL_W: f32 = 300.0;
 
-/// The preview panel is not drawn smaller than this (text stays readable).
-const MIN_PANEL_SCALE: f32 = 0.72;
 
 fn tools(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let p = ui.painter().clone();
@@ -907,6 +903,7 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
             let (off, sc) = chip_motion(tid, now);
             let cr = Rect::from_center_size(cr.center() + off, cr.size() * sc * (1.0 + bump));
             tool_chip(&p, cr, b.icon, b.color);
+            tool_hint(ui, cr, id.with(("tool", tid)), app.tools[i].name());
         }
         // check, then name, bottom left
         let cc = Pos2::new(inner.left() + 9.0, ny);
@@ -1415,6 +1412,9 @@ fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
 /// The menu bar panel as it will be: the picked tools' widgets, laid out
 /// as the panel lays them out, filled with sample data. A widget drops in
 /// when its goal is picked and the others make room.
+/// Height of the preview's top fade, on screen.
+const TOP_FADE: f32 = 32.0;
+
 fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     use crate::core::panel;
     let p = ui.painter().clone();
@@ -1439,33 +1439,49 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let room = Rect::from_min_max(Pos2::new(area.left(), mb.bottom() + 8.0), area.max);
     let pad = panel::PAD;
     // each widget at its fullest size up to Medium, so it shows what it
-    // holds; when that gets too small to read (many goals), the sizes the
-    // panel itself gives them
+    // holds. Sizes and scale never change as goals are added: the preview is
+    // a window onto the panel that scrolls to what was just added
     let (placed, _) = panel::place(app, native_w);
-    let lay = |fullest: bool| {
-        let ws: Vec<(usize, &'static str, crate::core::tool::Size)> = placed
-            .iter()
-            .filter_map(|w| {
-                let owner = w.owner?;
-                let spec = app.tools[owner].widgets().into_iter().find(|s| s.id == w.id)?;
-                let size = if fullest { crate::core::tool::UP_TO_MEDIUM.iter().rev().copied().find(|z| spec.sizes.contains(z)).unwrap_or(w.size) } else { w.size };
-                Some((owner, w.id, size))
-            })
-            .collect();
-        let sizes: Vec<(u8, f32)> = ws.iter().map(|w| (w.2.cols(), panel::size_px(w.2, native_w).y)).collect();
-        let (rects, total) = crate::core::layout::flow(&sizes, native_w, panel::GAP);
-        (ws, rects, total)
-    };
-    let fit = |total: f32| (room.width() / (native_w + 2.0 * pad)).min(room.height() / (total + 2.0 * pad)).min(1.0);
-    let (mut placed, mut rects, mut total) = lay(true);
-    if fit(total) < MIN_PANEL_SCALE {
-        (placed, rects, total) = lay(false);
-    }
+    let ws: Vec<(usize, &'static str, crate::core::tool::Size)> = placed
+        .iter()
+        .filter_map(|w| {
+            let owner = w.owner?;
+            let spec = app.tools[owner].widgets().into_iter().find(|s| s.id == w.id)?;
+            let size = crate::core::tool::UP_TO_MEDIUM.iter().rev().copied().find(|z| spec.sizes.contains(z)).unwrap_or(w.size);
+            Some((owner, w.id, size))
+        })
+        .collect();
+    let sizes: Vec<(u8, f32)> = ws.iter().map(|w| (w.2.cols(), panel::size_px(w.2, native_w).y)).collect();
+    let (rects, total) = crate::core::layout::flow(&sizes, native_w, panel::GAP);
+    let placed = ws;
+    let total_to = total;
     let total = ctx.animate_value_with_time(ui.scope_id().with("setup-panel-h"), total, 0.25);
-    // never smaller than readable: past that, the panel runs off the bottom
-    let scale = fit(total).max(MIN_PANEL_SCALE.min(room.width() / (native_w + 2.0 * pad)));
+    let scale = (room.width() / (native_w + 2.0 * pad)).min(1.0);
     let empty_h = 120.0;
-    let h = if placed.is_empty() { empty_h } else { ((total + 2.0 * pad) * scale).min(room.height()) };
+    let full_h = (total + 2.0 * pad) * scale;
+    let h = if placed.is_empty() { empty_h } else { full_h.min(room.height()) };
+    // scroll to the first widget that wasn't there last frame; keep in range
+    let seen_id = ui.scope_id().with("setup-panel-seen");
+    let off_id = ui.scope_id().with("setup-panel-off");
+    let ids: Vec<(usize, &'static str)> = placed.iter().map(|w| (w.0, w.1)).collect();
+    let before: Option<Vec<(usize, &'static str)>> = ctx.data(|d| d.get_temp(seen_id));
+    let mut target: f32 = ctx.data(|d| d.get_temp(off_id)).unwrap_or(0.0);
+    if let Some(before) = &before {
+        if let Some(k) = ids.iter().position(|w| !before.contains(w)) {
+            // clear of the top fade, so its header reads in full
+            target = rects[k].top() - (TOP_FADE / scale + panel::GAP);
+        }
+    }
+    // the range is where the panel ends up, not where it is mid-slide, so
+    // a widget added at the end is scrolled to
+    let full_to = (total_to + 2.0 * pad) * scale;
+    let max_off = ((full_to - full_to.min(room.height())) / scale).max(0.0);
+    let target = target.clamp(0.0, max_off);
+    ctx.data_mut(|d| {
+        d.insert_temp(seen_id, ids);
+        d.insert_temp(off_id, target);
+    });
+    let off = ctx.animate_value_with_time(off_id.with("anim"), target, 0.35);
     let panel = Rect::from_min_size(room.min, Vec2::new(room.width(), h));
     let panel = panel.translate(Vec2::new(0.0, (1.0 - a) * -10.0));
     p.add(egui::epaint::Shadow { offset: [0, 14], blur: 36, spread: 0, color: Color32::from_black_alpha((70.0 * a) as u8) }.as_shape(panel, CornerRadius::same(12)));
@@ -1479,9 +1495,30 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let mut cx = app.cx();
     // centred in the column when the height is what limits it
     let x0 = panel.center().x - (native_w + 2.0 * pad) * scale / 2.0;
-    let origin = Pos2::new(x0 + pad * scale, panel.top() + pad * scale);
+    let origin = Pos2::new(x0 + pad * scale, panel.top() + (pad - off) * scale);
     let id = ui.scope_id().with("setup-panel-widgets");
     let demo = app.demo;
+    // where each widget is this frame; a widget already shown that is still
+    // sliding means the layout is settling, and a new one waits for it
+    let shown = |wid: egui::Id| ctx.data(|d| d.get_temp::<(f64, f64)>(wid.with("in"))).is_some_and(|(_, last)| now - last <= 0.2);
+    let mut settling = false;
+    let at: Vec<(f32, f32, bool)> = placed
+        .iter()
+        .zip(&rects)
+        .map(|(&(owner, wid_s, _), rect)| {
+            let wid = id.with((app.tools[owner].id(), wid_s));
+            let x = ctx.animate_value_with_time(wid.with("x"), rect.left(), 0.25);
+            let y = ctx.animate_value_with_time(wid.with("y"), rect.top(), 0.25);
+            let live = shown(wid);
+            if live && ((x - rect.left()).abs() > 0.5 || (y - rect.top()).abs() > 0.5) {
+                settling = true;
+            }
+            (x, y, live)
+        })
+        .collect();
+    if settling {
+        ctx.request_repaint();
+    }
     let layer = egui::Area::new(id)
         .order(egui::Order::Foreground)
         .fixed_pos(Pos2::ZERO)
@@ -1489,14 +1526,18 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         .interactable(false)
         .show(&ctx, |ui| {
             ui.multiply_opacity(a);
-            ui.set_clip_rect(Rect::from_min_size(Pos2::new(-pad, -pad), Vec2::new(native_w + 2.0 * pad, h / scale)));
-            for (&(owner, wid_s, size), rect) in placed.iter().zip(&rects) {
+            // inside the panel's padding top and bottom, clear of its round
+            // corners: a widget cut there fades out instead of crossing the edge
+            ui.set_clip_rect(Rect::from_min_max(Pos2::new(-pad, off), Pos2::new(native_w + pad, off + h / scale - 2.0 * pad)));
+            for ((&(owner, wid_s, size), rect), &(x, y, live)) in placed.iter().zip(&rects).zip(&at) {
                 let tid = app.tools[owner].id();
                 let Some(tool) = samples.iter_mut().find(|t| t.id() == tid) else { continue };
                 let wid = id.with((tid, wid_s));
-                // it moves to its new place, and drops in when it's new
-                let x = ctx.animate_value_with_time(wid.with("x"), rect.left(), 0.25);
-                let y = ctx.animate_value_with_time(wid.with("y"), rect.top(), 0.25);
+                // a new widget stays out until the others have slid out of
+                // its way, then fades in: no two layouts over each other
+                if !live && settling && !demo {
+                    continue;
+                }
                 let d = appear(&ctx, wid.with("in"), now, 0.36, demo);
                 let r = Rect::from_min_size(Pos2::new(x, y - (1.0 - d) * 14.0), rect.size());
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, wid_s, "sample")));
@@ -1508,19 +1549,31 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         .response
         .layer_id;
     ctx.set_transform_layer(layer, egui::emath::TSTransform::new(origin.to_vec2(), scale));
-    // cut off at the bottom: it fades out there, as a list that goes on
-    if (total + 2.0 * pad) * scale > room.height() + 0.5 {
-        let fade = Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - 40.0), Pos2::new(panel.right() - 1.0, panel.bottom() - 1.0));
-        let top_c = BG().gamma_multiply(0.0);
-        let bot_c = BG().gamma_multiply(a);
+    // cut off at an edge: it fades out there, as a list that goes on
+    // a gradient, then a solid band at the cut so no half line shows there
+    let fade = |r: Rect, at_top: bool| {
+        let (c0, c1) = (BG().gamma_multiply(0.0), BG().gamma_multiply(a));
+        let band = 14.0_f32.min(r.height());
+        let mid = if at_top { r.top() + band } else { r.bottom() - band };
+        let stops = if at_top { [(r.top(), c1), (mid, c1), (r.bottom(), c0)] } else { [(r.top(), c0), (mid, c1), (r.bottom(), c1)] };
         let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(fade.left_top(), top_c);
-        mesh.colored_vertex(fade.right_top(), top_c);
-        mesh.colored_vertex(fade.right_bottom(), bot_c);
-        mesh.colored_vertex(fade.left_bottom(), bot_c);
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with("fade"))).add(mesh);
+        for (y, c) in stops {
+            mesh.colored_vertex(Pos2::new(r.left(), y), c);
+            mesh.colored_vertex(Pos2::new(r.right(), y), c);
+        }
+        for k in 0..2u32 {
+            let i = k * 2;
+            mesh.add_triangle(i, i + 1, i + 3);
+            mesh.add_triangle(i, i + 3, i + 2);
+        }
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with(("fade", at_top)))).add(mesh);
+    };
+    let edge = pad * scale;
+    if full_h - off * scale > h + 0.5 {
+        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - edge - 52.0), Pos2::new(panel.right() - 1.0, panel.bottom() - edge)), false);
+    }
+    if off > 0.5 {
+        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.top() + edge), Pos2::new(panel.right() - 1.0, panel.top() + edge + TOP_FADE)), true);
     }
     // what a sample widget asks for (open a page…) goes nowhere
     let _ = cx.take_actions();
@@ -1690,7 +1743,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 let b = app.tools[i].badge();
                 let r = Rect::from_min_size(Pos2::new(tx - 26.0, cr.center().y - 13.0), Vec2::splat(26.0));
                 tool_chip(&p, r, b.icon, b.color);
-                ui.interact(r, ui.scope_id().with(("setup-ai-tool", name, *id)), Sense::hover()).on_hover_text(app.tools[i].name());
+                tool_hint(ui, r, ui.scope_id().with(("setup-ai-tool", name, *id)), app.tools[i].name());
                 tx -= 26.0 + 6.0;
             }
         }
@@ -1785,9 +1838,107 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
             }
         }
     }
+    // what AI Check does, shown: a short loop under the tiles, when it fits
+    let after = y + tile_h;
+    let demo_top = after + sp::XL;
+    let a = ease((t - 0.35) / 0.5);
+    if body.bottom() - demo_top >= 232.0 && a > 0.0 {
+        ai_check_demo(ui, &p, Pos2::new(x, demo_top + (1.0 - a) * 8.0), w, &set.main, a, t);
+    }
     if let Some(f) = change {
         settings::update(!app.demo, f);
     }
+}
+
+/// How long one round of the AI Check demo takes, in seconds.
+const DEMO_LOOP: f32 = 7.0;
+/// The demo starts this long after the step opens.
+const DEMO_DELAY: f32 = 0.6;
+/// The round stops here: every row has its answer and the header says so.
+const DEMO_END: f32 = 0.8;
+
+/// The AI agents step's demo of AI Check: four everyday Cleanup finds, the
+/// main agent checks them one by one and answers each. It plays once when
+/// the step opens (`t`, seconds since) and then holds the answers: no
+/// repaint loop (R-anim). Returns its height.
+fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str, a: f32, t: f32) -> f32 {
+    // (name, size, the reason when it needs an OK)
+    const ROWS: [(&str, &str, Option<&str>); 4] = [
+        ("Safari cache", "1.8 GB", None),
+        ("System logs", "1.2 GB", None),
+        ("iPhone backup", "9.4 GB", Some("Your only backup of this iPhone")),
+        ("Spotify cache", "860 MB", None),
+    ];
+    let head_h = 36.0;
+    let h = sp::XS + head_h + ROWS.iter().map(|r| if r.2.is_some() { sp::ROW2_H } else { sp::ROW_H }).sum::<f32>() + sp::XS;
+    let r = Rect::from_min_size(top_left, Vec2::new(w, h));
+    p.rect_filled(r, R_CARD, CARD().gamma_multiply(a));
+    let now = ui.ctx().input(|i| i.time);
+    // the round's fraction, stopped once every row has its answer
+    let c = ((t - DEMO_DELAY) / DEMO_LOOP).clamp(0.0, DEMO_END);
+    // one row every 16% of the round, its answer 15% after it starts
+    let lit = |k: usize| (0.10 + 0.16 * k as f32, 0.25 + 0.16 * k as f32);
+    let shown = |at: f32| ease(((c - at) / 0.03).clamp(0.0, 1.0));
+    let done = c >= 0.75;
+    // header: the agent's mark, AI Check, and the state on the right
+    let hy = r.top() + sp::XS + head_h / 2.0;
+    let x0 = r.left() + sp::L;
+    let x1 = r.right() - sp::L;
+    agent_mark(p, Rect::from_center_size(Pos2::new(x0 + 9.0, hy), Vec2::splat(18.0)), agent, false);
+    p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
+    if done {
+        p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, format!("{} checked", ROWS.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
+    } else if !done {
+        let t = p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, "Checking", font(12.0), TEXT_DIM().gamma_multiply(a));
+        spinner(p, Pos2::new(t.left() - sp::S - 5.0, hy), 5.0, now, BLUE());
+    }
+    let mut y = r.top() + sp::XS + head_h;
+    p.hline(r.left()..=r.right(), y, Stroke::new(1.0, white(15).gamma_multiply(a)));
+    for (k, (name, size, why)) in ROWS.iter().enumerate() {
+        let rh = if why.is_some() { sp::ROW2_H } else { sp::ROW_H };
+        let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(w, rh));
+        if k > 0 {
+            p.hline(r.left()..=r.right(), y, Stroke::new(1.0, white(12).gamma_multiply(a)));
+        }
+        let (start, answer) = lit(k);
+        // the row being checked glows faintly
+        let glow = ((c - start) / 0.02).clamp(0.0, 1.0) * (1.0 - ((c - answer) / 0.03).clamp(0.0, 1.0));
+        if glow > 0.0 {
+            // the last row keeps the card's round bottom corners
+            let rr = if k + 1 == ROWS.len() { CornerRadius { sw: R_CARD as u8, se: R_CARD as u8, ..Default::default() } } else { CornerRadius::ZERO };
+            p.rect_filled(row, rr, with_alpha(BLUE(), 0.06 * glow * a));
+        }
+        let v = shown(answer);
+        icon(p, Icon::Broom, Rect::from_center_size(Pos2::new(x0 + 9.0, row.center().y), Vec2::splat(18.0)), TEXT_FAINT().gamma_multiply(a));
+        let tx = x0 + 18.0 + sp::M;
+        // a reason moves the name up to make room for it (R9: 6 between)
+        let (ny, ry) = match why {
+            Some(_) => {
+                let (n, rr) = two_lines_y(p, row.center().y, &ty::body(), &ty::caption());
+                (row.center().y + (n - row.center().y) * v, rr)
+            }
+            None => (row.center().y, 0.0),
+        };
+        p.text(Pos2::new(tx, ny), Align2::LEFT_CENTER, *name, ty::body(), TEXT().gamma_multiply(a));
+        if let Some(why) = why {
+            p.text(Pos2::new(tx, ry), Align2::LEFT_CENTER, *why, ty::caption(), AMBER().gamma_multiply(a * v));
+        }
+        let chip_w = 104.0;
+        let cr = Rect::from_min_size(Pos2::new(x1 - chip_w, row.center().y - 10.0), Vec2::new(chip_w, 20.0));
+        p.text(Pos2::new(cr.left() - sp::L, row.center().y), Align2::RIGHT_CENTER, *size, ty::body(), TEXT_DIM().gamma_multiply(a));
+        if v > 0.0 {
+            let (bg, fg, label) = if why.is_some() { (AMBER(), AMBER(), "Needs your OK") } else { (BLUE(), ACCENT(), "Safe") };
+            p.rect_filled(cr, 6.0, with_alpha(bg, 0.16 * v * a));
+            p.text(cr.center(), Align2::CENTER_CENTER, label, bold(11.0), fg.gamma_multiply(v * a));
+        }
+        y += rh;
+    }
+    // frames only while it plays (setup draws in the root's pass: ask it too)
+    if c < DEMO_END {
+        ui.ctx().request_repaint();
+        ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+    }
+    h
 }
 
 /// One model on the Download models step and the tools it's for: (tool
@@ -1845,6 +1996,7 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 14.0), Vec2::splat(30.0));
         p.rect_filled(ib, 8.0, white(16));
         icon(&p, app.tools[i].badge().icon, ib.shrink(7.0), if m.state == ModelState::Ready { GREEN() } else { TEXT_SOFT() });
+        tool_hint(ui, ib, ui.scope_id().with(("setup-model-tool", i)), app.tools[i].name());
         let tx = ib.right() + 12.0;
         let right = r.right() - 14.0;
         let line1 = r.top() + 19.0;
@@ -2212,17 +2364,76 @@ fn celebrate(app: &App, p: &egui::Painter, feet: Pos2, t: f32) {
     }
 }
 
+/// What a tool does, in at most five words (T5), for the hover popover on
+/// its icon in setup.
+fn tool_hint_text(name: &str) -> &'static str {
+    match name {
+        "Cleanup" => "Clear caches, logs and Trash",
+        "Disk Map" => "See what fills your disk",
+        "Uninstaller" => "Remove apps and their leftovers",
+        "Startup" => "Apps that open at login",
+        "Mac Health" => "Live CPU, memory and battery",
+        "Fan Control" => "Temperatures and fan speed",
+        "Screenshot" => "Capture and mark up screenshots",
+        "Video" => "Record the screen",
+        "Sharing" => "Upload and copy a link",
+        "Clipboard" => "History of what you copy",
+        "Dictation" => "Type with your voice",
+        "Keep Awake" => "Keep the Mac awake",
+        "Displays" => "External monitor brightness and volume",
+        "AI Usage" => "AI limits and token use",
+        _ => "",
+    }
+}
+
+/// A small popover over a tool's icon while the pointer is on it: the
+/// tool's name and what it does. Checked by position, so the card under the
+/// icon keeps its own hover and click.
+fn tool_hint(ui: &Ui, r: Rect, id: egui::Id, name: &str) {
+    let over = ui.rect_contains_pointer(r);
+    let a = ui.ctx().animate_bool_with_time(id.with("hint"), over, 0.12);
+    if a <= 0.0 {
+        return;
+    }
+    let what = tool_hint_text(name);
+    let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, id.with("hint-layer")));
+    let title = p.layout_no_wrap(name.to_string(), bold(12.0), TEXT());
+    let body = p.layout_no_wrap(what.to_string(), font(12.0), TEXT_DIM());
+    let gap = if what.is_empty() { 0.0 } else { 2.0 };
+    let size = Vec2::new(title.size().x.max(body.size().x) + 2.0 * sp::M, title.size().y + gap + if what.is_empty() { 0.0 } else { body.size().y } + 2.0 * sp::S);
+    let screen = ui.ctx().content_rect();
+    let x = (r.center().x - size.x / 2.0).clamp(screen.left() + sp::S, screen.right() - sp::S - size.x);
+    // above the icon; below it when there's no room above
+    let above = r.top() - 6.0 - size.y;
+    let y = if above >= screen.top() + sp::S { above + (1.0 - a) * 4.0 } else { r.bottom() + 6.0 - (1.0 - a) * 4.0 };
+    let box_ = Rect::from_min_size(Pos2::new(x, y), size);
+    p.add(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha((90.0 * a) as u8) }.as_shape(box_, CornerRadius::same(8)));
+    p.rect_filled(box_, 8.0, POPOVER().gamma_multiply(a));
+    p.rect_stroke(box_, 8.0, Stroke::new(1.0, white(30).gamma_multiply(a)), StrokeKind::Inside);
+    let tl = box_.min + Vec2::new(sp::M, sp::S);
+    let th = title.size().y;
+    p.galley(tl, title, TEXT().gamma_multiply(a));
+    if !what.is_empty() {
+        p.galley(tl + Vec2::new(0.0, th + gap), body, TEXT_DIM().gamma_multiply(a));
+    }
+}
+
+/// Width of the menu bar strip and panel on the Ready step.
+const READY_PREVIEW_W: f32 = 360.0;
+
 /// Returns true when "Restart" next to Screen Recording was clicked.
 fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let mut restart = false;
     let p = ui.painter().clone();
-    let left = Rect::from_min_max(body.min, Pos2::new(body.right() - 340.0, body.bottom()));
+    // the rows and the panel preview share the width evenly
+    let left = Rect::from_min_max(body.min, Pos2::new(body.right() - READY_PREVIEW_W - sp::XXL, body.bottom()));
     let mut y = body.center().y - 120.0;
     p.text(Pos2::new(left.left(), y), Align2::LEFT_TOP, "Ready", bold(22.0), TEXT());
     celebrate(app, &p, Pos2::new(left.left() + 28.0, y - 14.0), t);
     y += 46.0;
-    // open at login
-    let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), 52.0));
+    let rows_top = y;
+    // open at login: as tall as the shortcut rows under it
+    let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
     p.rect_filled(row, 10.0, CARD());
     icon(&p, Icon::Power, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT());
     p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Open at login", bold(13.0), TEXT());
@@ -2233,7 +2444,7 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     if switch(ui, sw, ui.scope_id().with("setup-login"), on, true).clicked() && !app.demo {
         app.perm_watch.set_login(!on);
     }
-    y += 62.0;
+    y += sp::ROW_H + sp::S;
     // shortcuts of the enabled tools
     let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
         let ic = app.tools[i].badge().icon;
@@ -2241,15 +2452,15 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     }).collect();
     for (k, (ic, label, keys)) in keys.iter().enumerate() {
         let a = ease((t - 0.08 * (k + 1) as f32) / 0.4);
-        let row = Rect::from_min_size(Pos2::new(left.left(), y - (1.0 - a) * 8.0), Vec2::new(left.width(), 44.0));
+        let row = Rect::from_min_size(Pos2::new(left.left(), y - (1.0 - a) * 8.0), Vec2::new(left.width(), sp::ROW_H));
         p.rect_filled(row, 10.0, CARD().gamma_multiply(a));
         icon(&p, *ic, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT().gamma_multiply(a));
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, *label, font(13.0), TEXT().gamma_multiply(a));
         keycaps(&p, Pos2::new(row.right() - 12.0, row.center().y), keys);
-        y += 52.0;
+        y += sp::ROW_H + sp::S;
     }
     if needs_restart(app) {
-        let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), 44.0));
+        let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
         p.rect_filled(row, 10.0, CARD());
         icon(&p, Icon::ScreenRec, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), AMBER());
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Screen Recording needs a restart", font(13.0), TEXT());
@@ -2260,10 +2471,11 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         }
     }
     // a little panel builds itself from the chosen tools, under the menu bar icon
-    let pw = 300.0;
+    let pw = READY_PREVIEW_W;
     let px = body.right() - pw;
+    let pad = sp::S;
     let on_tools: Vec<usize> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).collect();
-    let cell = (pw - 20.0 - 3.0 * 8.0) / 4.0;
+    let cell = (pw - 2.0 * pad - 3.0 * 8.0) / 4.0;
     let spans: Vec<usize> = on_tools.iter().map(|&i| if matches!(app.tools[i].id(), "cleanup" | "system") { 2 } else { 1 }).collect();
     let mut rows_n = 0;
     {
@@ -2279,10 +2491,11 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
             rows_n += 1;
         }
     }
-    let ph = 20.0 + rows_n as f32 * 58.0 + (rows_n.max(1) as f32 - 1.0) * 8.0;
-    let top = body.center().y - ph / 2.0 + 24.0;
-    // a strip of the menu bar with the app icon lit, the panel hanging under it
-    let bar = Rect::from_min_size(Pos2::new(px, top - 40.0), Vec2::new(pw, 24.0));
+    let ph = 2.0 * pad + rows_n as f32 * 58.0 + (rows_n.max(1) as f32 - 1.0) * 8.0;
+    // a strip of the menu bar with the app icon lit, level with the first
+    // row, the panel hanging under it
+    let bar = Rect::from_min_size(Pos2::new(px, rows_top), Vec2::new(pw, 24.0));
+    let top = bar.bottom() + sp::S;
     p.rect_filled(bar, 6.0, white(18));
     let mut bx = bar.right() - 12.0;
     let clock = p.text(Pos2::new(bx, bar.center().y), Align2::RIGHT_CENTER, "Tue 17:58", font(11.0), TEXT_FAINT());
@@ -2309,7 +2522,7 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
             row += 1;
         }
         let a = pop((t - 0.3 - 0.09 * k as f32) / 0.45);
-        let r = Rect::from_min_size(Pos2::new(panel.left() + 10.0 + col as f32 * (cell + 8.0), panel.top() + 10.0 + row as f32 * 66.0 - (1.0 - a.min(1.0)) * 14.0), Vec2::new(cell * s as f32 + 8.0 * (s as f32 - 1.0), 58.0));
+        let r = Rect::from_min_size(Pos2::new(panel.left() + pad + col as f32 * (cell + 8.0), panel.top() + pad + row as f32 * 66.0 - (1.0 - a.min(1.0)) * 14.0), Vec2::new(cell * s as f32 + 8.0 * (s as f32 - 1.0), 58.0));
         col += s;
         if a <= 0.0 {
             continue;
@@ -2515,6 +2728,17 @@ mod tests {
         let t2 = loop_clock(&ctx, id, 20.0, true);
         assert!((t2 - t - 0.1).abs() < 1e-4, "{t2}");
         assert_eq!(loop_clock(&ctx, id, 30.0, false), t2, "stops where it was");
+    }
+
+    #[test]
+    fn every_tool_has_a_short_hover_hint() {
+        let tools = crate::tools::all(&crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true });
+        for t in tools.iter().filter(|t| t.id() != crate::tools::capture::ID) {
+            let hint = tool_hint_text(t.name());
+            assert!(!hint.is_empty(), "{} has no hint", t.name());
+            assert!(hint.split_whitespace().count() <= 5, "{}: more than 5 words (T5)", t.name());
+            assert!(!hint.ends_with('.'), "{}: no period (T5)", t.name());
+        }
     }
 
     #[test]
