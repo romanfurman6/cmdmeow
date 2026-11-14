@@ -247,7 +247,9 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                 let resp = ui.interact(r, ui.scope_id().with("area-pick"), Sense::click_and_drag());
                 vctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                 if resp.drag_started() {
-                    if let Some(q) = resp.interact_pointer_pos() {
+                    // from where the button went down: a drag only counts
+                    // once the pointer has moved a few points
+                    if let Some(q) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos()) {
                         pick.drag = Some((q, q));
                     }
                 }
