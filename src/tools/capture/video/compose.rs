@@ -222,7 +222,7 @@ mod imp {
         AVURLAsset,
     };
     use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
-    use objc2_core_image::{kCIContextCacheIntermediates, kCIContextOutputColorSpace, kCIContextWorkingColorSpace, kCIImageColorSpace, CIContext, CIImage, CIRenderDestination};
+    use objc2_core_image::{kCIContextCacheIntermediates, kCIContextOutputColorSpace, kCIContextWorkingColorSpace, kCIImageColorSpace, CIContext, CIImage, CIRenderDestination, CIRenderTask};
     use objc2_core_media::{CMFormatDescription, CMTime, CMTimeFlags};
     use objc2_core_video::CVPixelBuffer;
     use objc2_foundation::{NSDictionary, NSError, NSNull, NSNumber, NSString, NSURL};
@@ -355,34 +355,129 @@ mod imp {
         done: bool,
     }
 
+    /// How a framed save runs. Each can be set for a test run
+    /// (`CMDMEOW_FRAME_FAST=0` …).
+    #[derive(Clone, Copy, Debug)]
+    struct Knobs {
+        /// The encoder may trade a little quality for speed.
+        fast: bool,
+        /// Draw straight into the encoder's own pixel format (420v), so it
+        /// doesn't convert every frame from BGRA.
+        yuv: bool,
+        /// The finer (slower) filter when the picture shrinks.
+        hq: bool,
+        /// Frames on the GPU at once before the oldest goes to the encoder.
+        depth: usize,
+    }
+
+    impl Knobs {
+        fn get() -> Knobs {
+            let env = |k: &str, d: usize| std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(d);
+            Knobs { fast: env("CMDMEOW_FRAME_FAST", 1) == 1, yuv: env("CMDMEOW_FRAME_YUV", 1) == 1, hq: env("CMDMEOW_FRAME_HQ", 1) == 1, depth: env("CMDMEOW_FRAME_DEPTH", 3).clamp(1, 8) }
+        }
+    }
+
+    /// Where a render's time went, in seconds.
+    #[derive(Default)]
+    struct Spent {
+        /// Waiting for decoded frames.
+        read: f64,
+        /// Setting up each frame's drawing.
+        draw: f64,
+        /// Waiting for the GPU to finish a frame.
+        gpu: f64,
+        /// Handing frames to the encoder.
+        write: f64,
+        /// Waiting for the encoder to take more.
+        idle: f64,
+    }
+
+    /// A frame drawing on the GPU, into one of the encoder's buffers.
+    struct Flight {
+        task: Retained<CIRenderTask>,
+        _dest: Retained<CIRenderDestination>,
+        out: *mut c_void,
+        at: CMTime,
+        t: f64,
+    }
+
+    impl Drop for Flight {
+        fn drop(&mut self) {
+            unsafe { CFRelease(self.out) };
+        }
+    }
+
+    enum Next {
+        Frame(Flight),
+        Skip,
+        End,
+    }
+
+    /// A render that failed; `setup` when it failed before the first frame
+    /// (another try with safer settings can work).
+    struct Failed {
+        why: String,
+        setup: bool,
+    }
+
+    fn setup(why: impl Into<String>) -> Failed {
+        Failed { why: why.into(), setup: true }
+    }
+
+    fn failed(why: impl Into<String>) -> Failed {
+        Failed { why: why.into(), setup: false }
+    }
+
     pub fn render(job: &Job, progress: &Progress) -> Result<(u32, u32), String> {
         let t0 = std::time::Instant::now();
-        let r = unsafe { run(job, progress) };
+        let mut knobs = Knobs::get();
+        let mut spent = Spent::default();
+        let mut r = unsafe { run(job, progress, knobs, &mut spent) };
+        // an encoder that won't take the fast setting gets the plain one
+        if let Err(f) = &r {
+            if f.setup && knobs.fast && !progress.cancel.load(Ordering::Relaxed) {
+                eprintln!("[video] the encoder refused the fast setting ({}), framing without it", f.why);
+                knobs.fast = false;
+                spent = Spent::default();
+                r = unsafe { run(job, progress, knobs, &mut spent) };
+            }
+        }
+        let took = t0.elapsed().as_secs_f64();
         match &r {
-            Ok((size, frames, dur)) => eprintln!("[video] framed {:?} → {:?}: {frames} frames {size:?}, {dur:.1} s of video in {:.1} s", job.src, job.out, t0.elapsed().as_secs_f32()),
-            Err(e) => eprintln!("[video] framing {:?} failed after {:.1} s: {e}", job.src, t0.elapsed().as_secs_f32()),
+            Ok((size, frames, dur)) => eprintln!(
+                "[video] framed {:?} → {:?}: {frames} frames {size:?}, {dur:.1} s of video in {took:.1} s ({:.1}× real time; read {:.1}, draw {:.1}, gpu {:.1}, write {:.1}, idle {:.1} s; {knobs:?})",
+                job.src,
+                job.out,
+                dur / took.max(1e-3),
+                spent.read,
+                spent.draw,
+                spent.gpu,
+                spent.write,
+                spent.idle
+            ),
+            Err(f) => eprintln!("[video] framing {:?} failed after {took:.1} s: {} ({knobs:?})", job.src, f.why),
         }
         if r.is_err() {
             let _ = std::fs::remove_file(&job.out);
         }
-        r.map(|(size, _, _)| size)
+        r.map(|(size, _, _)| size).map_err(|f| f.why)
     }
 
     #[allow(deprecated)]
-    unsafe fn run(job: &Job, progress: &Progress) -> Result<((u32, u32), u64, f64), String> {
+    unsafe fn run(job: &Job, progress: &Progress, knobs: Knobs, spent: &mut Spent) -> Result<((u32, u32), u64, f64), Failed> {
         unsafe {
             let asset = AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&job.src.to_string_lossy())), None);
-            let (vm, am) = (AVMediaTypeVideo.ok_or("no video")?, AVMediaTypeAudio.ok_or("no audio")?);
+            let (vm, am) = (AVMediaTypeVideo.ok_or(setup("no video"))?, AVMediaTypeAudio.ok_or(setup("no audio"))?);
             let duration = secs(asset.duration());
             if duration <= 0.0 {
-                return Err("The video is empty".into());
+                return Err(failed("The video is empty"));
             }
-            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or("No picture in the video")?;
+            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or(failed("No picture in the video"))?;
             let ns = track.naturalSize();
             let src = ((ns.width.round() as u32).max(2), (ns.height.round() as u32).max(2));
             let lay = scene::layout(src, Some(&job.frame));
             let (ow, oh) = lay.out;
-            let chrome = scene::chrome(&job.frame, &lay).ok_or("The frame couldn't be drawn")?;
+            let chrome = scene::chrome(&job.frame, &lay).ok_or(failed("The frame couldn't be drawn"))?;
             // a screen recording sends frames only when something moved:
             // the rate is a hint for the encoder, the frames keep their times
             let fps = if track.nominalFrameRate() > 31.0 { 60 } else { 30 };
@@ -390,41 +485,48 @@ mod imp {
             // the GPU, without colour conversions: pixels go out as they came in
             let null = NSNull::null();
             let no = NSNumber::new_bool(false);
+            let yes = NSNumber::new_bool(true);
             let ctx_opts = NSDictionary::from_slices(&[kCIContextWorkingColorSpace, kCIContextOutputColorSpace, kCIContextCacheIntermediates], &[any(&*null), any(&*null), any(&*no)]);
             let ctx = CIContext::contextWithOptions(Some(&ctx_opts));
             let img_opts = NSDictionary::from_slices(&[kCIImageColorSpace], &[any(&*null)]);
-            let under = still(&chrome.under, &img_opts).ok_or("No memory for the frame")?;
-            let over = still(&chrome.over, &img_opts).ok_or("No memory for the frame")?;
+            let under = still(&chrome.under, &img_opts).ok_or(failed("No memory for the frame"))?;
+            let over = still(&chrome.over, &img_opts).ok_or(failed("No memory for the frame"))?;
             // the picture's place, in Core Image's space (y up from the bottom)
             let s = lay.screen;
             let hole = CGRect::new(CGPoint::new(s.left() as f64, (oh as f32 - s.bottom()) as f64), CGSize::new(s.width() as f64, s.height() as f64));
 
             // reading
-            let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| ns_err(&e))?;
+            let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| failed(ns_err(&e)))?;
             let video_out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(&gpu_attrs(YUV, None)));
             video_out.setAlwaysCopiesSampleData(false);
             if !reader.canAddOutput(&video_out) {
-                return Err("The video can't be read".into());
+                return Err(failed("The video can't be read"));
             }
             reader.addOutput(&video_out);
 
             // writing
             let _ = std::fs::remove_file(&job.out);
             let url = NSURL::fileURLWithPath(&NSString::from_str(&job.out.to_string_lossy()));
-            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url, AVFileTypeMPEG4.ok_or("mp4 isn't available")?).map_err(|e| ns_err(&e))?;
+            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url, AVFileTypeMPEG4.ok_or(setup("mp4 isn't available"))?).map_err(|e| failed(ns_err(&e)))?;
             let num = |v: f64| NSNumber::new_f64(v);
             let (bitrate, nfps, keys) = (num(timeline::bitrate(ow, oh, fps, RecQuality::High) as f64), num(fps as f64), num((fps * 2) as f64));
             let profile = NSString::from_str("H264_High_AutoLevel");
-            let compression = dict(&[("AverageBitRate", any(&*bitrate)), ("ExpectedFrameRate", any(&*nfps)), ("MaxKeyFrameInterval", any(&*keys)), ("ProfileLevel", any(&*profile)), ("AllowFrameReordering", any(&*no))]);
+            let mut props = vec![("AverageBitRate", any(&*bitrate)), ("ExpectedFrameRate", any(&*nfps)), ("MaxKeyFrameInterval", any(&*keys)), ("ProfileLevel", any(&*profile)), ("AllowFrameReordering", any(&*no))];
+            if knobs.fast {
+                props.push(("PrioritizeEncodingSpeedOverQuality", any(&*yes)));
+            }
+            let compression = dict(&props);
             let (w, h, codec) = (num(ow as f64), num(oh as f64), NSString::from_str("avc1"));
             let vset = dict(&[("AVVideoCodecKey", any(&*codec)), ("AVVideoWidthKey", any(&*w)), ("AVVideoHeightKey", any(&*h)), ("AVVideoCompressionPropertiesKey", any(&*compression))]);
-            let video = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset));
+            // settings the encoder doesn't know throw instead of failing
+            let video = objc2::exception::catch(std::panic::AssertUnwindSafe(|| AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset))))
+                .map_err(|e| setup(e.map(|e| format!("{e:?}")).unwrap_or_else(|| "the encoder refused its settings".into())))?;
             video.setExpectsMediaDataInRealTime(false);
             if !writer.canAddInput(&video) {
-                return Err("This Mac can't encode video at that size".into());
+                return Err(setup("This Mac can't encode video at that size"));
             }
             writer.addInput(&video);
-            let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(&video, Some(&gpu_attrs(BGRA, Some((ow, oh)))));
+            let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(&video, Some(&gpu_attrs(if knobs.yuv { YUV } else { BGRA }, Some((ow, oh)))));
 
             let mut lanes = Vec::new();
             for t in asset.tracksWithMediaType(am).iter() {
@@ -444,23 +546,29 @@ mod imp {
             }
 
             if !reader.startReading() {
-                return Err(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video can't be read".into()));
+                return Err(failed(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video can't be read".into())));
             }
             if !writer.startWriting() {
                 reader.cancelReading();
-                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into()));
+                return Err(setup(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into())));
             }
             writer.startSessionAtSourceTime(cm(0.0));
-            let pool = adaptor.pixelBufferPool().ok_or("No frames to draw into")?;
-            let pool_ptr = Retained::as_ptr(&pool) as *const c_void;
-
-            let fail = |why: String| -> Result<((u32, u32), u64, f64), String> {
+            let Some(pool) = adaptor.pixelBufferPool() else {
                 reader.cancelReading();
                 writer.cancelWriting();
-                Err(why)
+                return Err(setup("No frames to draw into"));
+            };
+            let pool_ptr = Retained::as_ptr(&pool) as *const c_void;
+
+            let fail = |why: String| -> Result<((u32, u32), u64, f64), Failed> {
+                reader.cancelReading();
+                writer.cancelWriting();
+                Err(failed(why))
             };
             let mut frames = 0u64;
             let mut last: Option<f64> = None;
+            let mut flights: std::collections::VecDeque<Flight> = std::collections::VecDeque::new();
+            let mut src_done = false;
             let mut video_done = false;
             while !(video_done && lanes.iter().all(|l| l.done)) {
                 if progress.cancel.load(Ordering::Relaxed) {
@@ -473,60 +581,91 @@ mod imp {
                     return fail(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be read".into()));
                 }
                 let mut moved = false;
-                if !video_done && video.isReadyForMoreMediaData() {
+                // keep the GPU busy: a few frames drawing while the encoder
+                // takes the oldest
+                while !video_done && !src_done && flights.len() < knobs.depth {
                     moved = true;
-                    // one frame: its objects go when it's written
-                    let step = autoreleasepool(|_| -> Result<(), String> {
-                        let Some(sb) = video_out.copyNextSampleBuffer() else {
-                            video.markAsFinished();
-                            video_done = true;
-                            return Ok(());
-                        };
+                    let next = autoreleasepool(|_| -> Result<Next, String> {
+                        let t0 = std::time::Instant::now();
+                        let sb = video_out.copyNextSampleBuffer();
+                        spent.read += t0.elapsed().as_secs_f64();
+                        let Some(sb) = sb else { return Ok(Next::End) };
                         let raw = &*sb as *const _ as *const c_void;
                         let pic_pb = CMSampleBufferGetImageBuffer(raw);
                         if pic_pb.is_null() {
-                            return Ok(());
+                            return Ok(Next::Skip);
                         }
                         let pts = CMSampleBufferGetPresentationTimeStamp(raw);
-                        let t = if pts.flags & 1 == 1 && pts.timescale > 0 { pts.value as f64 / pts.timescale as f64 } else { return Ok(()) };
-                        if last.is_some_and(|l| t <= l) {
-                            return Ok(());
+                        if pts.flags & 1 == 0 || pts.timescale <= 0 {
+                            return Ok(Next::Skip);
                         }
+                        let t = pts.value as f64 / pts.timescale as f64;
+                        if last.is_some_and(|l| t <= l) {
+                            return Ok(Next::Skip);
+                        }
+                        let t1 = std::time::Instant::now();
                         let (pw, ph) = (CVPixelBufferGetWidth(pic_pb).max(1) as f64, CVPixelBufferGetHeight(pic_pb).max(1) as f64);
                         let pic = CIImage::imageWithCVPixelBuffer_options(&*(pic_pb as *const CVPixelBuffer), Some(&img_opts));
                         let fit = CGAffineTransform { a: hole.size.width / pw, b: 0.0, c: 0.0, d: hole.size.height / ph, tx: hole.origin.x, ty: hole.origin.y };
                         // clamped first, so the picture's edge pixels are whole (no seam)
-                        let pic = pic.imageByClampingToExtent().imageByApplyingTransform_highQualityDownsample(fit, true).imageByCroppingToRect(hole);
+                        let pic = pic.imageByClampingToExtent().imageByApplyingTransform_highQualityDownsample(fit, knobs.hq).imageByCroppingToRect(hole);
                         let frame = over.img.imageByCompositingOverImage(&pic.imageByCompositingOverImage(&under.img));
                         let mut out: *mut c_void = std::ptr::null_mut();
                         if CVPixelBufferPoolCreatePixelBuffer(std::ptr::null(), pool_ptr, &mut out) != 0 || out.is_null() {
                             return Err("Out of memory for frames".into());
                         }
-                        let out_ref = &*(out as *const CVPixelBuffer);
-                        let dest = CIRenderDestination::initWithPixelBuffer(CIRenderDestination::alloc(), out_ref);
-                        dest.setColorSpace(None);
-                        let drawn = ctx.startTaskToRender_toDestination_error(&frame, &dest).and_then(|task| task.waitUntilCompletedAndReturnError());
-                        if let Err(e) = drawn {
-                            CFRelease(out);
-                            return Err(format!("The frame couldn't be drawn: {}", ns_err(&e)));
-                        }
-                        // the same colour tags as the recording
+                        // the recording's colour tags, and the matrix a 420v
+                        // frame is converted with
                         CVBufferPropagateAttachments(pic_pb, out);
+                        let dest = CIRenderDestination::initWithPixelBuffer(CIRenderDestination::alloc(), &*(out as *const CVPixelBuffer));
+                        dest.setColorSpace(None);
+                        let task = match ctx.startTaskToRender_toDestination_error(&frame, &dest) {
+                            Ok(task) => task,
+                            Err(e) => {
+                                CFRelease(out);
+                                return Err(format!("The frame couldn't be drawn: {}", ns_err(&e)));
+                            }
+                        };
+                        spent.draw += t1.elapsed().as_secs_f64();
                         // the first frame shows from the start, whenever it came
                         let at = if last.is_none() { cm(0.0) } else { CMTime { value: pts.value, timescale: pts.timescale, flags: CMTimeFlags(pts.flags), epoch: pts.epoch } };
-                        let ok = adaptor.appendPixelBuffer_withPresentationTime(out_ref, at);
-                        CFRelease(out);
+                        last = Some(t);
+                        Ok(Next::Frame(Flight { task, _dest: dest, out, at, t }))
+                    });
+                    match next {
+                        Ok(Next::Frame(f)) => flights.push_back(f),
+                        Ok(Next::Skip) => {}
+                        Ok(Next::End) => src_done = true,
+                        Err(e) => return fail(e),
+                    }
+                }
+                if !flights.is_empty() && video.isReadyForMoreMediaData() {
+                    moved = true;
+                    let Some(f) = flights.pop_front() else { continue };
+                    let step = autoreleasepool(|_| -> Result<(), String> {
+                        let t0 = std::time::Instant::now();
+                        let drawn = f.task.waitUntilCompletedAndReturnError();
+                        spent.gpu += t0.elapsed().as_secs_f64();
+                        if let Err(e) = drawn {
+                            return Err(format!("The frame couldn't be drawn: {}", ns_err(&e)));
+                        }
+                        let t1 = std::time::Instant::now();
+                        let ok = adaptor.appendPixelBuffer_withPresentationTime(&*(f.out as *const CVPixelBuffer), f.at);
+                        spent.write += t1.elapsed().as_secs_f64();
                         if !ok {
                             return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "A frame couldn't be written".into()));
                         }
-                        last = Some(t);
-                        frames += 1;
-                        progress.done.store(((t / duration) * 1000.0).clamp(0.0, 999.0) as u32, Ordering::Relaxed);
                         Ok(())
                     });
                     if let Err(e) = step {
                         return fail(e);
                     }
+                    frames += 1;
+                    progress.done.store(((f.t / duration) * 1000.0).clamp(0.0, 999.0) as u32, Ordering::Relaxed);
+                }
+                if !video_done && src_done && flights.is_empty() {
+                    video.markAsFinished();
+                    video_done = true;
                 }
                 for l in lanes.iter_mut().filter(|l| !l.done) {
                     while l.input.isReadyForMoreMediaData() {
@@ -546,7 +685,9 @@ mod imp {
                     }
                 }
                 if !moved {
-                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    let t0 = std::time::Instant::now();
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    spent.idle += t0.elapsed().as_secs_f64();
                 }
             }
             if frames == 0 {
@@ -567,7 +708,7 @@ mod imp {
             if writer.status() == AVAssetWriterStatus::Completed {
                 Ok(((ow, oh), frames, duration))
             } else {
-                Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be finished".into()))
+                Err(failed(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be finished".into())))
             }
         }
     }
