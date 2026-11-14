@@ -522,8 +522,8 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             Shown::Idle | Shown::Problem(_) => Some(("Click the field, then press", String::new())),
             Shown::Listening { tapped: false, .. } => Some(("Release", "to finish".into())),
             Shown::Listening { tapped: true, .. } => Some(("Press Enter or", "to finish".into())),
-            Shown::Done(_) if std::env::var("CMDMEOW_DICT_HINT").as_deref() == Ok("B") => Some(("Now press", "in any app".into())),
-            Shown::Done(_) => Some(("Press", "to try again".into())),
+            // the point of it: the same keys type into any app's field
+            Shown::Done(_) => Some(("Now press", "in any app".into())),
             _ => None,
         };
         if let Some((before, after)) = line {
@@ -541,14 +541,8 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         }
     }
 
-    // the point of it: the same keys type into any app's field
-    if keys.is_some() && std::env::var("CMDMEOW_DICT_HINT").as_deref() != Ok("B") && matches!(state, Shown::Idle | Shown::Problem(_) | Shown::Done(_)) {
-        p.text(Pos2::new(cx0, hy + 22.0), Align2::CENTER_CENTER, "Works in any text field on your Mac", font(12.0), TEXT_FAINT());
-    }
-
     // a button only where one is needed
-    let any_app = keys.is_some() && std::env::var("CMDMEOW_DICT_HINT").as_deref() != Ok("B") && matches!(state, Shown::Done(_));
-    let bc = Pos2::new(cx0, fr.bottom() + sp::L + hint_h + sp::XL + HERO_H / 2.0 + if any_app { 14.0 } else { 0.0 });
+    let bc = Pos2::new(cx0, fr.bottom() + sp::L + hint_h + sp::XL + HERO_H / 2.0);
     match &state {
         Shown::NeedModel { failed } => {
             let label = if failed.is_some() { "Try the download again".to_string() } else { format!("Get speech model · {}", human_bytes(d.settings.engine.bytes())) };
