@@ -70,7 +70,7 @@ pub enum Cmd {
 }
 
 /// Fan Control's privileged helper, as a setup step.
-const HELPER: crate::kit::perms::Perm = crate::kit::perms::Perm::Own { id: "fan-helper", name: "Fan helper", icon: crate::kit::glass::Icon::Lock };
+const HELPER: crate::kit::perms::Perm = crate::kit::perms::Perm::Own { id: "fan-helper", name: "Fan helper", icon: crate::kit::glass::Icon::Lock, why: "", ask: "Install", hint: "" };
 
 pub struct FanControl {
     snap: Shared,

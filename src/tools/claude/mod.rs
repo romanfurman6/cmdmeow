@@ -18,14 +18,101 @@ use egui::{Rect, Ui};
 pub const ID: ToolId = "claude";
 const LIMITS: &str = "limits";
 
+/// Claude Code's sign-in in the Keychain: setup's permission row and
+/// Settings › AI Usage ask for it; nothing reads it before that.
+pub const KEYCHAIN: crate::kit::perms::Perm = crate::kit::perms::Perm::Own {
+    id: "claude-keychain",
+    name: "Claude Code sign-in",
+    icon: Icon::Lock,
+    why: "Claude limits in AI Usage",
+    ask: "Allow",
+    hint: "Choose Always Allow",
+};
+
+/// Connecting to Claude Code's sign-in (the macOS prompt is up while busy).
+pub mod keychain {
+    use crate::kit::ai::{self, claude::Connect};
+    use crate::kit::sync::LockExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static BUSY: AtomicBool = AtomicBool::new(false);
+    static ERROR: Mutex<String> = Mutex::new(String::new());
+    /// Whether the item exists, looked up at most every 30 s (setup draws
+    /// the permission rows every frame).
+    static SEEN: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+
+    fn exists() -> bool {
+        let mut g = SEEN.lock_ok();
+        match *g {
+            Some((at, v)) if at.elapsed() < Duration::from_secs(30) => v,
+            _ => {
+                let v = ai::account::claude_keychain_exists();
+                *g = Some((Instant::now(), v));
+                v
+            }
+        }
+    }
+
+    /// Whether to offer it: Claude is tracked and Claude Code keeps its
+    /// sign-in in the Keychain (or it's connected already).
+    pub fn wanted(demo: bool) -> bool {
+        let set = ai::settings::get();
+        demo || ((set.is_on("claude") || set.main == "claude") && (set.claude_keychain == "ok" || exists()))
+    }
+
+    pub fn status() -> crate::kit::perms::Status {
+        use crate::kit::perms::Status;
+        match ai::settings::get().claude_keychain.as_str() {
+            "ok" => Status::Allowed,
+            "denied" => Status::Denied,
+            _ => Status::NotAsked,
+        }
+    }
+
+    pub fn busy() -> bool {
+        BUSY.load(Ordering::Relaxed)
+    }
+
+    pub fn error() -> String {
+        ERROR.lock_ok().clone()
+    }
+
+    /// Read it now (macOS asks), off the ui thread; limits refresh after.
+    pub fn connect(ctx: Option<egui::Context>) {
+        if BUSY.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        ERROR.lock_ok().clear();
+        std::thread::spawn(move || {
+            let r = ai::claude::connect_keychain();
+            eprintln!("[ai] claude keychain: {r:?}");
+            *ERROR.lock_ok() = match r {
+                Connect::Ok | Connect::Denied => String::new(),
+                Connect::Missing => "Sign in to Claude Code first".into(),
+                Connect::Failed => "Keychain didn't answer".into(),
+            };
+            if r == Connect::Ok {
+                super::backend::request_refresh();
+            }
+            BUSY.store(false, Ordering::Relaxed);
+            if let Some(c) = ctx {
+                c.request_repaint();
+            }
+        });
+    }
+}
+
 pub struct Claude {
     all: backend::All,
     demo: bool,
+    ctx: egui::Context,
 }
 
 impl Claude {
     pub fn new(env: &ToolEnv) -> Self {
-        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo }
+        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, ctx: env.ctx.clone() }
     }
 }
 
@@ -97,6 +184,28 @@ impl Tool for Claude {
     }
     fn has_page(&self) -> bool {
         true
+    }
+    fn needs(&self) -> Vec<crate::kit::perms::Need> {
+        if keychain::wanted(self.demo) {
+            vec![crate::kit::perms::Need::may(KEYCHAIN)]
+        } else {
+            Vec::new()
+        }
+    }
+    fn own_status(&self, id: &str) -> crate::kit::perms::Status {
+        if id == "claude-keychain" && !self.demo {
+            keychain::status()
+        } else {
+            crate::kit::perms::Status::NotAsked
+        }
+    }
+    fn own_progress(&self, id: &str) -> Option<(bool, String)> {
+        (id == "claude-keychain").then(|| (keychain::busy(), keychain::error()))
+    }
+    fn ask_own(&mut self, id: &str) {
+        if id == "claude-keychain" && !self.demo {
+            keychain::connect(Some(self.ctx.clone()));
+        }
     }
     fn sidebar_meta(&self) -> String {
         self.menu_bar().unwrap_or_default()

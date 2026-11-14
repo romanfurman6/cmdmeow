@@ -87,13 +87,18 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
                 s.main = id;
             }));
         }
-        // Claude's live limits need its sign-in from the Keychain; after a
-        // Deny, this asks again
-        if m.id == "claude" && found[k] && set.claude_keychain == "denied" && !demo {
+        // Claude's live limits need its sign-in from the Keychain: nothing
+        // reads it until the person connects it here or in setup
+        if m.id == "claude" && found[k] && set.claude_keychain != "ok" && !demo && super::keychain::wanted(false) {
+            let busy = super::keychain::busy();
             let bw = button_width(&p, "Connect", BTN_SECONDARY);
             let br = Rect::from_min_size(Pos2::new(rr.left() - sp::M - bw, r.center().y - 14.0), Vec2::new(bw, 28.0));
-            if pill_button(ui, br, "Connect", BTN_SECONDARY, true).on_hover_text("Read Claude Code's sign-in from the Keychain").clicked() {
-                change = Some(Box::new(|s| s.claude_keychain.clear()));
+            if pill_button(ui, br, "Connect", BTN_SECONDARY, !busy).on_hover_text("Claude limits from your account").clicked() {
+                super::keychain::connect(Some(ui.ctx().clone()));
+            }
+            let err = super::keychain::error();
+            if !err.is_empty() {
+                p.text(Pos2::new(br.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, err, ty::label(), RED());
             }
         } else if found[k] {
             p.text(Pos2::new(rr.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, plan_name(&info), ty::label(), TEXT_DIM());

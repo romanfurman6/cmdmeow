@@ -45,6 +45,20 @@ fn kinds(app: &App) -> Vec<Kind> {
     v
 }
 
+/// The step a screenshot view (`setup-perms`…) shows.
+pub fn view_step(app: &App, view: &str) -> usize {
+    let k = match view {
+        "setup-tools" | "setup-tools-all" | "setup-tools-preview" => Kind::Tools,
+        "setup-ai" => Kind::Agents,
+        "setup-models" => Kind::Models,
+        "setup-perms" => Kind::Perms,
+        "setup-crash" => Kind::Crash,
+        "setup-ready" => Kind::Ready,
+        _ => Kind::Welcome,
+    };
+    kinds(app).iter().position(|x| *x == k).unwrap_or(0)
+}
+
 /// The setup window's state while it is open.
 pub struct Setup {
     pub step: usize,
@@ -1959,13 +1973,16 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
             // a tool's own step (an admin prompt, a download) isn't in System Settings
             let hint = match r.perm {
                 Perm::FullDisk => "Switch it on in System Settings",
-                Perm::Own { .. } => "",
+                Perm::Own { hint, .. } => hint,
                 _ => "System Settings",
             };
             p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, hint, font(12.0), TEXT_FAINT());
         } else {
             let err = app.perm_watch.own_err.get(&r.perm).filter(|e| !e.is_empty());
             let (label, kind) = if err.is_some() {
+                ("Try again", BTN_SECONDARY)
+            } else if st == Status::Denied && matches!(r.perm, Perm::Own { .. }) {
+                // a tool's own step has no System Settings pane: ask again
                 ("Try again", BTN_SECONDARY)
             } else if st == Status::Denied {
                 ("Open Settings", BTN_SECONDARY)

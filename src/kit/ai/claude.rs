@@ -1,6 +1,6 @@
 //! Claude Code as a `Provider`. Plan limits come from Claude's account,
-//! signed in with Claude Code's own token (read from the Keychain, macOS
-//! asks once), and from the Claude CLI (`claude auth status`,
+//! signed in with Claude Code's own token (read from the Keychain once the
+//! person allows it in setup or Settings), and from the Claude CLI (`claude auth status`,
 //! `claude -p /usage`, which spends no tokens) when that doesn't work.
 //! Local activity comes from counting usage fields in Claude Code's logs.
 
@@ -38,6 +38,12 @@ impl ClaudeCode {
             return Some(c.clone());
         }
         self.creds = None;
+        // just connected from setup or Settings
+        if let Some(c) = HANDED.lock_ok().take().filter(|c| c.fresh(now)) {
+            self.creds_at = Some(Instant::now());
+            self.creds = Some(c.clone());
+            return Some(c);
+        }
         if self.creds_at.is_some_and(|t| t.elapsed() < CREDS_RETRY) {
             return None;
         }
@@ -85,26 +91,54 @@ impl ClaudeCode {
     }
 }
 
-/// Claude Code's sign-in from the Keychain. macOS asks the person the first
-/// time, so that happens only while a window is open (someone is there to
-/// answer), and a Deny is remembered until they allow it in Settings.
+/// Claude Code's sign-in read by [`connect_keychain`], waiting for the
+/// provider to pick it up (so macOS doesn't ask twice in a row).
+static HANDED: std::sync::Mutex<Option<ClaudeCreds>> = std::sync::Mutex::new(None);
+
+/// Claude Code's sign-in from the Keychain, read again once the person let
+/// us (setup's permission row or Settings › AI Usage): never before that,
+/// and only while a window is open, in case macOS asks again (someone is
+/// there to answer). A Deny is remembered until they connect again.
 fn read_keychain() -> Option<ClaudeCreds> {
-    let state = super::settings::get().claude_keychain;
-    if state == "denied" || (state.is_empty() && !crate::kit::activity::visible()) {
+    if super::settings::get().claude_keychain != "ok" || !crate::kit::activity::visible() {
         return None;
     }
     match account::read_claude_keychain() {
-        KeychainRead::Found(b) => {
-            if state != "ok" {
-                super::settings::update(true, |s| s.claude_keychain = "ok".into());
-            }
-            account::parse_claude_creds(&b)
-        }
+        KeychainRead::Found(b) => account::parse_claude_creds(&b),
         KeychainRead::Denied => {
             super::settings::update(true, |s| s.claude_keychain = "denied".into());
             None
         }
         KeychainRead::Missing | KeychainRead::Failed => None,
+    }
+}
+
+/// What connecting to Claude Code's sign-in gave.
+#[derive(Debug, PartialEq)]
+pub enum Connect {
+    Ok,
+    Denied,
+    /// No sign-in in the Keychain (Claude Code is signed out).
+    Missing,
+    Failed,
+}
+
+/// The person asked to use Claude Code's sign-in: read the Keychain now
+/// (macOS shows its Allow / Always Allow / Deny prompt) and remember the
+/// answer. Blocks while the prompt is up; run it off the ui thread.
+pub fn connect_keychain() -> Connect {
+    match account::read_claude_keychain() {
+        KeychainRead::Found(b) => {
+            super::settings::update(true, |s| s.claude_keychain = "ok".into());
+            *HANDED.lock_ok() = account::parse_claude_creds(&b);
+            Connect::Ok
+        }
+        KeychainRead::Denied => {
+            super::settings::update(true, |s| s.claude_keychain = "denied".into());
+            Connect::Denied
+        }
+        KeychainRead::Missing => Connect::Missing,
+        KeychainRead::Failed => Connect::Failed,
     }
 }
 

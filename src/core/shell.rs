@@ -322,8 +322,6 @@ impl App {
             // first-run setup, one step each
             "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
-                let step = ["setup", "setup-tools", "setup-ai", "setup-models", "setup-perms", "setup-crash", "setup-ready"].iter().position(|v| *v == view).unwrap_or(0);
-                self.setup = Some(super::onboard::Setup::new(step));
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
                 // the full list, with a few more tools on (the cost line fills up)
@@ -332,9 +330,13 @@ impl App {
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
-                    let on = super::onboard::ON_AT_FIRST.contains(&id) || (all && more.contains(&id)) || (view == "setup-models" && id == crate::tools::dictation::ID);
+                    // AI Usage on: Claude Code's sign-in row shows on the permissions step
+                    let on = super::onboard::ON_AT_FIRST.contains(&id) || (all && more.contains(&id)) || (view == "setup-models" && id == crate::tools::dictation::ID) || (view == "setup-perms" && id == crate::tools::claude::ID);
                     self.set_tool_on(i, on);
                 }
+                // which steps exist depends on the tools just switched on
+                let step = super::onboard::view_step(self, view);
+                self.setup = Some(super::onboard::Setup::new(step));
                 if all || view == "setup-tools-preview" {
                     let mut s = super::onboard::Setup::new(1);
                     s.all_tools = all;
