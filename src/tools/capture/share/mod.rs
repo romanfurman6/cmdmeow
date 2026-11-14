@@ -422,6 +422,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn r2_public_links_need_the_public_url() {
+        let mut s = Settings { endpoint: "abc.r2.cloudflarestorage.com".into(), bucket: "b".into(), access_key: "k".into(), secret_saved: true, ..Settings::default() };
+        assert!(s.is_r2() && !s.links_ready() && !s.set_up(VIDEO_ACCOUNT));
+        s.link = LinkKind::Week;
+        assert!(s.links_ready() && s.set_up(VIDEO_ACCOUNT));
+        s.link = LinkKind::Public;
+        s.public_url = "pub-1.r2.dev".into();
+        assert!(s.set_up(VIDEO_ACCOUNT));
+        // other storages make files public themselves
+        let h = Settings { endpoint: "fsn1.your-objectstorage.com".into(), ..s.clone() };
+        assert!(!h.is_r2() && Settings { public_url: String::new(), ..h }.links_ready());
+    }
+
+    #[test]
     fn keys_are_random_and_keep_the_extension() {
         let a = new_key("recordings", Path::new("/x/Recording 1.MP4"));
         let b = new_key("/recordings/", Path::new("/x/Recording 1.mp4"));
