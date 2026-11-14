@@ -12,7 +12,7 @@ use dispatch2::{DispatchQueue, DispatchTime};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{class, msg_send, MainThreadMarker};
-use objc2_app_kit::{NSBackingStoreType, NSColor, NSEvent, NSEventMask, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr};
@@ -25,9 +25,11 @@ use std::time::{Duration, Instant};
 /// The menu bar icon: 18 pt at 2x.
 const ICON_PX: u32 = 36;
 const ICON_PT: f64 = 18.0;
-/// Frames a second while only the icon moves, and while the big cat shows.
+/// Frames a second while only the icon moves, and while the big cat shows
+/// (each of its frames is a 400 px picture: 60 would cost twice as much
+/// for a cat on screen for two or three seconds).
 const ICON_FPS: f64 = 30.0;
-const BIG_FPS: f64 = 60.0;
+const BIG_FPS: f64 = 30.0;
 /// The big cat fades in and out over this long.
 const FADE: f64 = 0.15;
 /// The purr fades out in this many steps of this long.
@@ -41,8 +43,13 @@ const HAND_FINGERS: i32 = 4;
 const HAND_SIGN_MS: u64 = 200;
 /// A hand on the trackpad this soon after a key press is a typing hand.
 const TYPING_SECS: f64 = 1.5;
-/// The pointer is told to the cat this often at most, in milliseconds.
-const POINTER_MS: u64 = 33;
+/// The cat looks at the pointer this often while it moves, and while it rests.
+const LOOK_MOVING: f64 = 1.0 / 30.0;
+const LOOK_RESTING: f64 = 0.1;
+/// The pointer counts as moving this long after its last move, in seconds.
+const MOVED_LATELY: f64 = 0.5;
+/// Where the menu bar icon is, the main thread tells again this often.
+const PLACE_EVERY: f64 = 2.0;
 /// The eyes turn fully when the pointer is this share of the screen away…
 const LOOK_REACH: f64 = 0.4;
 /// …by this much of the 1024 box, sideways and down.
@@ -88,6 +95,7 @@ pub fn send(ev: Event) {
 struct Main {
     /// The menu bar icon (`NSStatusItem`).
     item: Retained<AnyObject>,
+    over: Option<Over>,
     big: Option<Big>,
     /// Counts the big cat's comings and goings, so a late "take it off
     /// screen" knows it is out of date.
@@ -98,16 +106,37 @@ struct Main {
     fading: Option<Retained<AnyObject>>,
     buzz_turn: u32,
     buzzing: bool,
-    /// The pointer watchers (event monitors: other apps', and ours), while
-    /// the eyes follow.
-    pointer: Vec<Retained<AnyObject>>,
     /// The trackpads being listened to.
     pads: Vec<*mut c_void>,
 }
 
+/// The moving face, drawn over the menu bar button. Each new button image
+/// costs about 4 ms on the main thread (AppKit redraws and masks it, and the
+/// menu bar is told), so while the cat moves the button holds a blank image
+/// and only this layer's picture changes; at rest the button shows the mark
+/// itself again.
+struct Over {
+    layer: Retained<AnyObject>,
+    /// The button's own image (the mark, a template), and an empty one the
+    /// same size that keeps its place.
+    mark: Retained<AnyObject>,
+    blank: Retained<AnyObject>,
+    /// The colour macOS draws the template in (sRGB, 0–1, not premultiplied)
+    /// and the appearance it was read under.
+    ink: [f32; 4],
+    look: String,
+    /// The menu bar's own colour space (owned): pictures in it go to the
+    /// screen as they are, not converted every frame.
+    space: *mut c_void,
+    on: bool,
+}
+
 struct Big {
     window: Retained<NSWindow>,
-    /// The layer that shows the cat's picture.
+    /// The card, drawn once for each screen scale, and the cat over it,
+    /// drawn every frame.
+    card: Retained<AnyObject>,
+    card_scale: f32,
     layer: Retained<AnyObject>,
 }
 
@@ -140,12 +169,15 @@ extern "C" {
     fn CGColorSpaceCreateDeviceRGB() -> *mut c_void;
     fn CGColorSpaceCreateWithName(name: *const c_void) -> *mut c_void;
     fn CGColorSpaceRelease(space: *mut c_void);
+    fn CGColorSpaceRetain(space: *mut c_void) -> *mut c_void;
     fn CGDataProviderCreateWithCFData(data: *const c_void) -> *mut c_void;
     fn CGDataProviderRelease(provider: *mut c_void);
     #[allow(clippy::too_many_arguments)]
     fn CGImageCreate(w: usize, h: usize, bits: usize, pixel_bits: usize, row_bytes: usize, space: *mut c_void, info: u32, provider: *mut c_void, decode: *const f64, interpolate: bool, intent: i32) -> *mut c_void;
     fn CGImageRelease(image: *mut c_void);
     fn CGEventSourceSecondsSinceLastEventType(state: i32, kind: u32) -> f64;
+    fn CGEventCreate(source: *const c_void) -> *const c_void;
+    fn CGEventGetLocation(event: *const c_void) -> NSPoint;
     static kCGColorSpaceSRGB: *const c_void;
 }
 
@@ -162,6 +194,16 @@ extern "C" {
 
 /// A `CGImage` (owned) from premultiplied RGBA pixels, `px` square.
 fn cg_image(rgba: &[u8], px: u32, srgb: bool) -> Option<*mut c_void> {
+    unsafe {
+        let space = if srgb { CGColorSpaceCreateWithName(kCGColorSpaceSRGB) } else { CGColorSpaceCreateDeviceRGB() };
+        let image = cg_image_in(rgba, px, space);
+        CGColorSpaceRelease(space);
+        image
+    }
+}
+
+/// The same in the colour space `space` (not taken over).
+fn cg_image_in(rgba: &[u8], px: u32, space: *mut c_void) -> Option<*mut c_void> {
     if rgba.len() != (px * px * 4) as usize {
         return None;
     }
@@ -172,25 +214,24 @@ fn cg_image(rgba: &[u8], px: u32, srgb: bool) -> Option<*mut c_void> {
         }
         let provider = CGDataProviderCreateWithCFData(data);
         CFRelease(data);
-        let space = if srgb { CGColorSpaceCreateWithName(kCGColorSpaceSRGB) } else { CGColorSpaceCreateDeviceRGB() };
         // 1: alpha last, premultiplied
         let image = CGImageCreate(px as usize, px as usize, 8, 32, px as usize * 4, space, 1, provider, std::ptr::null(), false, 0);
-        CGColorSpaceRelease(space);
         CGDataProviderRelease(provider);
         (!image.is_null()).then_some(image)
     }
 }
 
-/// One drawn moment: the icon, and the big cat when it shows.
+/// One drawn moment: the icon (and whether it is the mark at rest), and
+/// the big cat when it shows.
 struct Frame {
-    icon: Option<Vec<u8>>,
+    icon: Option<(Vec<u8>, bool)>,
     big: Option<(Vec<u8>, u32)>,
 }
 
 impl Main {
     fn show(&mut self, f: Frame) {
-        if let Some(px) = f.icon {
-            self.set_icon(&px);
+        if let Some((px, rest)) = f.icon {
+            self.set_icon(&px, rest);
         }
         if let (Some((px, n)), Some(big)) = (f.big, &self.big) {
             if let Some(image) = cg_image(&px, n, true) {
@@ -205,18 +246,59 @@ impl Main {
         }
     }
 
-    /// The menu bar icon's picture: a template, so macOS tints it.
-    fn set_icon(&mut self, rgba: &[u8]) {
-        let Some(image) = cg_image(rgba, ICON_PX, false) else { return };
+    /// The menu bar icon's picture (black, alpha = coverage): over the
+    /// button while the cat moves, the button's own mark at rest.
+    fn set_icon(&mut self, rgba: &[u8], rest: bool) {
+        let button: Option<Retained<AnyObject>> = unsafe { msg_send![&*self.item, button] };
+        let Some(button) = button else { return };
+        if self.over.is_none() && !rest {
+            self.over = Over::new(&button);
+        }
+        let Some(o) = self.over.as_mut() else {
+            set_template(&button, rgba);
+            return;
+        };
+        if rest {
+            o.hide(&button);
+            return;
+        }
+        // the menu bar turned light or dark: read the new colour off the mark
+        let look = appearance(&button);
+        if o.on && look != o.look {
+            o.hide(&button);
+        }
+        let start = !o.on;
+        if start && look != o.look {
+            if let Some(ink) = read_ink(&button) {
+                o.ink = ink;
+            }
+            if log() {
+                eprintln!("[cat] icon ink {:?} under {look}", o.ink);
+            }
+            o.look = look;
+        }
+        if start {
+            o.take_space(&button);
+        }
+        // the ink is a grey, the same numbers in any RGB space
+        let Some(image) = cg_image_in(&tint(rgba, o.ink), ICON_PX, o.space) else { return };
         unsafe {
-            let alloc: objc2::rc::Allocated<AnyObject> = msg_send![class!(NSImage), alloc];
-            let ns: Option<Retained<AnyObject>> = msg_send![alloc, initWithCGImage: image as *const c_void, size: NSSize::new(ICON_PT, ICON_PT)];
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+            if start {
+                // where the button draws its image (the title beside it may have changed)
+                let window: Option<Retained<AnyObject>> = msg_send![&*button, window];
+                let scale: f64 = window.map_or(2.0, |w| msg_send![&*w, backingScaleFactor]);
+                let _: () = msg_send![&*o.layer, setFrame: image_rect(&button)];
+                let _: () = msg_send![&*o.layer, setContentsScale: scale];
+                let _: () = msg_send![&*o.layer, setHidden: false];
+            }
+            let _: () = msg_send![&*o.layer, setContents: image as *mut AnyObject];
+            let _: () = msg_send![class!(CATransaction), commit];
             CGImageRelease(image);
-            let Some(ns) = ns else { return };
-            let _: () = msg_send![&*ns, setTemplate: true];
-            let button: Option<Retained<AnyObject>> = msg_send![&*self.item, button];
-            if let Some(button) = button {
-                let _: () = msg_send![&*button, setImage: &*ns];
+            if start {
+                let _: () = msg_send![&*button, setImage: &*o.blank];
+                o.on = true;
             }
         }
     }
@@ -229,12 +311,25 @@ impl Main {
             if self.big.is_none() {
                 self.big = big_window(mtm);
             }
-            let Some(big) = &self.big else { return };
+            let Some(big) = &mut self.big else { return };
             if let Some(screen) = NSScreen::mainScreen(mtm) {
                 let f = screen.frame();
                 let side = face::BEZEL_PT as f64;
                 big.window.setFrameOrigin(NSPoint::new(f.origin.x + (f.size.width - side) / 2.0, f.origin.y + (f.size.height - side) / 2.0));
-                BIG_SCALE.store((screen.backingScaleFactor() as f32).to_bits(), Ordering::Relaxed);
+                let scale = screen.backingScaleFactor() as f32;
+                BIG_SCALE.store(scale.to_bits(), Ordering::Relaxed);
+                if scale != big.card_scale {
+                    if let Some(image) = cg_image(&face::card(scale), face::bezel_px(scale), true) {
+                        unsafe {
+                            let _: () = msg_send![class!(CATransaction), begin];
+                            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+                            let _: () = msg_send![&*big.card, setContents: image as *mut AnyObject];
+                            let _: () = msg_send![class!(CATransaction), commit];
+                            CGImageRelease(image);
+                        }
+                        big.card_scale = scale;
+                    }
+                }
             }
             big.window.orderFrontRegardless();
             fade(&big.window, 1.0);
@@ -306,16 +401,6 @@ impl Main {
 
     /// Listen to what the switches ask for, and to nothing else.
     fn feel(&mut self, p: &Prefs) {
-        if p.watch == self.pointer.is_empty() {
-            if self.pointer.is_empty() {
-                self.pointer = watch_pointer();
-                self.tell_pointer();
-            } else {
-                for monitor in std::mem::take(&mut self.pointer) {
-                    unsafe { NSEvent::removeMonitor(&monitor) };
-                }
-            }
-        }
         if p.purr != !self.pads.is_empty() {
             if p.purr {
                 self.pads = pads_start();
@@ -325,26 +410,165 @@ impl Main {
         }
     }
 
-    /// Tell the cat where the pointer is from the menu bar icon.
-    fn tell_pointer(&self) {
-        let p = NSEvent::mouseLocation();
-        let (icon, screen): (NSRect, NSRect) = unsafe {
+    /// Tell the cat's thread where the menu bar icon and its screen are.
+    fn place(&self) {
+        let found: Option<(NSRect, NSRect, NSRect)> = unsafe {
             let button: Option<Retained<AnyObject>> = msg_send![&*self.item, button];
-            let Some(button) = button else { return };
-            let window: Option<Retained<AnyObject>> = msg_send![&*button, window];
-            let Some(window) = window else { return };
-            let screen: Option<Retained<AnyObject>> = msg_send![&*window, screen];
-            let Some(screen) = screen else { return };
-            (msg_send![&*window, frame], msg_send![&*screen, frame])
+            let window: Option<Retained<AnyObject>> = button.and_then(|b| msg_send![&*b, window]);
+            let screen: Option<Retained<AnyObject>> = window.as_ref().and_then(|w| msg_send![&**w, screen]);
+            let screens: Option<Retained<AnyObject>> = msg_send![class!(NSScreen), screens];
+            let first: Option<Retained<AnyObject>> = screens.and_then(|s| msg_send![&*s, firstObject]);
+            match (window, screen, first) {
+                (Some(w), Some(s), Some(f)) => Some((msg_send![&*w, frame], msg_send![&*s, frame], msg_send![&*f, frame])),
+                _ => None,
+            }
         };
-        let (w, h) = (screen.size.width.max(1.0), screen.size.height.max(1.0));
-        let top = screen.origin.y + h;
-        let on_screen = p.x >= screen.origin.x && p.x <= screen.origin.x + w && p.y >= screen.origin.y && p.y <= top;
-        let dx = (p.x - (icon.origin.x + icon.size.width / 2.0)) / w;
-        let dy = ((icon.origin.y + icon.size.height / 2.0) - p.y) / h;
-        let look = ((dx / LOOK_REACH).clamp(-1.0, 1.0) as f32 * LOOK_MAX.0, (dy / LOOK_REACH).clamp(0.0, 1.0) as f32 * LOOK_MAX.1);
-        send(Event::Pointer { look, near: on_screen && top - p.y <= h * NEAR_SHARE });
+        // AppKit counts up from the bottom of the first screen; the pointer's
+        // own position counts down from its top
+        *PLACE.lock().unwrap_or_else(|e| e.into_inner()) = found.map(|(icon, screen, first)| {
+            let top = first.size.height;
+            Place {
+                icon: (icon.origin.x + icon.size.width / 2.0, top - (icon.origin.y + icon.size.height / 2.0)),
+                screen: NSRect::new(NSPoint::new(screen.origin.x, top - screen.origin.y - screen.size.height), screen.size),
+            }
+        });
     }
+}
+
+/// The menu bar icon's middle and its screen, counted down from the top of
+/// the first screen, as the main thread last saw them.
+#[derive(Clone, Copy)]
+struct Place {
+    icon: (f64, f64),
+    screen: NSRect,
+}
+
+static PLACE: Mutex<Option<Place>> = Mutex::new(None);
+
+impl Over {
+    fn new(button: &AnyObject) -> Option<Over> {
+        unsafe {
+            let mark: Option<Retained<AnyObject>> = msg_send![button, image];
+            let mark = mark?;
+            let size: NSSize = msg_send![&*mark, size];
+            let alloc: objc2::rc::Allocated<AnyObject> = msg_send![class!(NSImage), alloc];
+            let blank: Retained<AnyObject> = msg_send![alloc, initWithSize: size];
+            let _: () = msg_send![button, setWantsLayer: true];
+            let root: Option<Retained<AnyObject>> = msg_send![button, layer];
+            let root = root?;
+            let layer: Retained<AnyObject> = msg_send![class!(CALayer), layer];
+            let _: () = msg_send![&*layer, setHidden: true];
+            let _: () = msg_send![&*root, addSublayer: &*layer];
+            Some(Over { layer, mark, blank, ink: [1.0, 1.0, 1.0, 1.0], look: String::new(), space: CGColorSpaceCreateDeviceRGB(), on: false })
+        }
+    }
+
+    /// The colour space of the window the button is in.
+    fn take_space(&mut self, button: &AnyObject) {
+        unsafe {
+            let window: Option<Retained<AnyObject>> = msg_send![button, window];
+            let space: Option<Retained<AnyObject>> = window.and_then(|w| msg_send![&*w, colorSpace]);
+            let cg: *mut c_void = space.map_or(std::ptr::null_mut(), |s| msg_send![&*s, CGColorSpace]);
+            if !cg.is_null() && cg != self.space {
+                CGColorSpaceRelease(self.space);
+                self.space = CGColorSpaceRetain(cg);
+            }
+        }
+    }
+
+    /// Back to the button's own mark.
+    fn hide(&mut self, button: &AnyObject) {
+        if !self.on {
+            return;
+        }
+        unsafe {
+            let _: () = msg_send![button, setImage: &*self.mark];
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+            let _: () = msg_send![&*self.layer, setHidden: true];
+            let _: () = msg_send![class!(CATransaction), commit];
+        }
+        self.on = false;
+    }
+}
+
+/// A template picture as the button's image (when no layer can be had).
+fn set_template(button: &AnyObject, rgba: &[u8]) {
+    let Some(image) = cg_image(rgba, ICON_PX, false) else { return };
+    unsafe {
+        let alloc: objc2::rc::Allocated<AnyObject> = msg_send![class!(NSImage), alloc];
+        let ns: Option<Retained<AnyObject>> = msg_send![alloc, initWithCGImage: image as *const c_void, size: NSSize::new(ICON_PT, ICON_PT)];
+        CGImageRelease(image);
+        let Some(ns) = ns else { return };
+        let _: () = msg_send![&*ns, setTemplate: true];
+        let _: () = msg_send![button, setImage: &*ns];
+    }
+}
+
+/// Where the button draws its image, in its own coordinates.
+fn image_rect(button: &AnyObject) -> NSRect {
+    unsafe {
+        let bounds: NSRect = msg_send![button, bounds];
+        let cell: Option<Retained<AnyObject>> = msg_send![button, cell];
+        match cell {
+            Some(cell) => msg_send![&*cell, imageRectForBounds: bounds],
+            None => bounds,
+        }
+    }
+}
+
+/// The name of the appearance the button draws under.
+fn appearance(button: &AnyObject) -> String {
+    unsafe {
+        let a: Option<Retained<AnyObject>> = msg_send![button, effectiveAppearance];
+        let name: Option<Retained<NSString>> = a.and_then(|a| msg_send![&*a, name]);
+        name.map(|n| n.to_string()).unwrap_or_default()
+    }
+}
+
+/// The colour the button draws its template mark in: the most opaque pixel
+/// of a picture of the button. White or black by the appearance when there
+/// is none.
+fn read_ink(button: &AnyObject) -> Option<[f32; 4]> {
+    let fallback = if appearance(button).contains("Dark") { [1.0, 1.0, 1.0, 1.0] } else { [0.0, 0.0, 0.0, 1.0] };
+    unsafe {
+        let bounds: NSRect = msg_send![button, bounds];
+        let rep: Option<Retained<AnyObject>> = msg_send![button, bitmapImageRepForCachingDisplayInRect: bounds];
+        let Some(rep) = rep else { return Some(fallback) };
+        let _: () = msg_send![button, cacheDisplayInRect: bounds, toBitmapImageRep: &*rep];
+        let (w, h): (isize, isize) = (msg_send![&*rep, pixelsWide], msg_send![&*rep, pixelsHigh]);
+        let flipped: bool = msg_send![button, isFlipped];
+        let rect = image_rect(button);
+        let k = w as f64 / bounds.size.width.max(1.0);
+        let top = if flipped { rect.origin.y } else { bounds.size.height - rect.origin.y - rect.size.height };
+        let (x0, y0) = ((rect.origin.x * k) as isize, (top * k) as isize);
+        let (x1, y1) = (((rect.origin.x + rect.size.width) * k) as isize, ((top + rect.size.height) * k) as isize);
+        let srgb: Retained<AnyObject> = msg_send![class!(NSColorSpace), sRGBColorSpace];
+        let mut best = [0.0f32; 4];
+        for y in y0.max(0)..y1.min(h) {
+            for x in x0.max(0)..x1.min(w) {
+                let c: Option<Retained<AnyObject>> = msg_send![&*rep, colorAtX: x, y: y];
+                let c: Option<Retained<AnyObject>> = c.and_then(|c| msg_send![&*c, colorUsingColorSpace: &*srgb]);
+                let Some(c) = c else { continue };
+                let a: f64 = msg_send![&*c, alphaComponent];
+                if a as f32 > best[3] {
+                    let (r, g, b): (f64, f64, f64) = (msg_send![&*c, redComponent], msg_send![&*c, greenComponent], msg_send![&*c, blueComponent]);
+                    best = [r as f32, g as f32, b as f32, a as f32];
+                }
+            }
+        }
+        Some(if best[3] > 0.5 { best } else { fallback })
+    }
+}
+
+/// Black coverage (premultiplied) recoloured in `ink`.
+fn tint(rgba: &[u8], ink: [f32; 4]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(rgba.len());
+    for p in rgba.chunks_exact(4) {
+        let a = p[3] as f32 * ink[3];
+        out.extend([(ink[0] * a) as u8, (ink[1] * a) as u8, (ink[2] * a) as u8, a as u8]);
+    }
+    out
 }
 
 /// The big cat's window: clear, above everything, on every Space, and
@@ -359,18 +583,24 @@ fn big_window(mtm: MainThreadMarker) -> Option<Big> {
     window.setHasShadow(false);
     window.setIgnoresMouseEvents(true);
     window.setLevel(25);
+    // the pictures are sRGB: drawn into an sRGB window they go in as they
+    // are, and the screen converts the whole window once, on its own
+    unsafe {
+        let srgb: Retained<AnyObject> = msg_send![class!(NSColorSpace), sRGBColorSpace];
+        let _: () = msg_send![&*window, setColorSpace: &*srgb];
+    }
     window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
     window.setAlphaValue(0.0);
     let view = window.contentView()?;
     view.setWantsLayer(true);
     let root = view.layer()?;
-    let layer: Retained<AnyObject> = unsafe {
+    let [card, layer] = [(); 2].map(|_| unsafe {
         let layer: Retained<AnyObject> = msg_send![class!(CALayer), layer];
         let _: () = msg_send![&*layer, setFrame: rect];
         let _: () = msg_send![&*root, addSublayer: &*layer];
         layer
-    };
-    Some(Big { window, layer })
+    });
+    Some(Big { window, card, card_scale: 0.0, layer })
 }
 
 /// Fade a window to `alpha`.
@@ -536,29 +766,34 @@ fn observe(name: &str, distributed: bool, f: impl Fn() + 'static) {
 
 // ------------------------------------------------------------- the pointer
 
-/// Tell the cat when the pointer moves (listen-only monitors: no
-/// permission needed). The global one hears other apps; while this app is
-/// in front the moves come to it instead, so a local one hears those.
-fn watch_pointer() -> Vec<Retained<AnyObject>> {
-    static LAST: AtomicU64 = AtomicU64::new(0);
-    fn moved() {
-        let now = uptime_ms();
-        if now.saturating_sub(LAST.load(Ordering::Relaxed)) < POINTER_MS {
-            return;
+/// Where the pointer is, as the eyes in the menu bar see it. Asked for by
+/// the cat's own thread: an event monitor would wake the main thread for
+/// every move of the pointer (over a hundred a second), and no permission
+/// is needed to ask.
+fn pointer() -> Option<Event> {
+    let place = (*PLACE.lock().unwrap_or_else(|e| e.into_inner()))?;
+    let p = unsafe {
+        let event = CGEventCreate(std::ptr::null());
+        if event.is_null() {
+            return None;
         }
-        LAST.store(now, Ordering::Relaxed);
-        with_main(|m| m.tell_pointer());
-    }
-    let mask = NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged;
-    let global = block2::RcBlock::new(|_event: std::ptr::NonNull<NSEvent>| moved());
-    let local = block2::RcBlock::new(|event: std::ptr::NonNull<NSEvent>| {
-        moved();
-        event.as_ptr()
-    });
-    let global = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &global);
-    // the event goes on to the app unchanged
-    let local = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &local) };
-    global.into_iter().chain(local).collect()
+        let p = CGEventGetLocation(event);
+        CFRelease(event);
+        p
+    };
+    let s = place.screen;
+    let (w, h) = (s.size.width.max(1.0), s.size.height.max(1.0));
+    let on_screen = p.x >= s.origin.x && p.x <= s.origin.x + w && p.y >= s.origin.y && p.y <= s.origin.y + h;
+    let dx = (p.x - place.icon.0) / w;
+    let dy = (p.y - place.icon.1) / h;
+    let look = ((dx / LOOK_REACH).clamp(-1.0, 1.0) as f32 * LOOK_MAX.0, (dy / LOOK_REACH).clamp(0.0, 1.0) as f32 * LOOK_MAX.1);
+    Some(Event::Pointer { look, near: on_screen && p.y - s.origin.y <= h * NEAR_SHARE })
+}
+
+/// Seconds since the pointer last moved.
+fn pointer_still() -> f64 {
+    // 0: all event sources; 5: mouse moved; 6: dragged
+    unsafe { CGEventSourceSecondsSinceLastEventType(0, 5).min(CGEventSourceSecondsSinceLastEventType(0, 6)) }
 }
 
 // ------------------------------------------------------------ the trackpad
@@ -677,7 +912,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let Some(item) = (unsafe { Retained::retain(status_item as *mut AnyObject) }) else { return };
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
-    let mut main = Main { item, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pointer: Vec::new(), pads: Vec::new() };
+    let mut main = Main { item, over: None, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new() };
     main.feel(&prefs);
     MAIN.with(|m| *m.borrow_mut() = Some(main));
 
@@ -694,17 +929,25 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     observe("com.apple.screenIsUnlocked", true, || send(Event::Locked(false)));
 
     let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(1);
-    let _ = std::thread::Builder::new().name("cat".into()).spawn(move || run(rx, Engine::new(prefs, seed)));
+    let watch = prefs.watch;
+    let _ = std::thread::Builder::new().name("cat".into()).spawn(move || run(rx, Engine::new(prefs, seed), watch));
 }
 
 /// The cat's thread: take in what the Mac felt, decide, draw what changed,
 /// sleep until something next moves.
-fn run(rx: Receiver<Event>, mut cat: Engine) {
+fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
     let t0 = Instant::now();
     let clock = || t0.elapsed().as_secs_f64();
     let mut drawn = cat.pose(0.0);
+    // the mark as the button shows it at rest
+    let rest = face::icon(&face::pose(face::Mood::Idle, 0.0, (0.0, 0.0)), ICON_PX);
+    let mut shown = rest.clone();
     let mut drawn_big = false;
     let mut last_draw = f64::MIN;
+    // when the pointer and the icon's place are next looked at, and what
+    // the pointer last said
+    let (mut next_look, mut next_place) = (0.0, 0.0);
+    let mut seen = None;
     loop {
         let now = clock();
         let frame = 1.0 / if cat.big() { BIG_FPS } else { ICON_FPS };
@@ -717,6 +960,7 @@ fn run(rx: Receiver<Event>, mut cat: Engine) {
             Some(s) if s <= 0.0 => Some(if due > 0.0 { due } else { frame }),
             other => other,
         };
+        let wait = if watch { Some(wait.map_or(next_look - now, |w| w.min(next_look - now)).max(0.0)) } else { wait };
         let news = match wait {
             None => match rx.recv() {
                 Ok(ev) => Some(ev),
@@ -734,7 +978,26 @@ fn run(rx: Receiver<Event>, mut cat: Engine) {
             if log() && !matches!(ev, Event::Pointer { .. } | Event::Hand) {
                 eprintln!("[cat] {ev:?}");
             }
+            if let Event::Prefs(p) = &ev {
+                if p.watch && !watch {
+                    (next_look, next_place, seen) = (now, now, None);
+                }
+                watch = p.watch;
+            }
             cmds.extend(cat.handle(now, ev));
+        }
+        if watch && now >= next_look {
+            next_look = now + if pointer_still() < MOVED_LATELY { LOOK_MOVING } else { LOOK_RESTING };
+            if now >= next_place {
+                next_place = now + PLACE_EVERY;
+                on_main(|m| m.place());
+            }
+            if let Some(ev @ Event::Pointer { look, near }) = pointer() {
+                if seen != Some((look, near)) {
+                    seen = Some((look, near));
+                    cmds.extend(cat.handle(now, ev));
+                }
+            }
         }
         cmds.extend(cat.tick(now));
         let big_comes = cmds.contains(&Cmd::Big(true));
@@ -757,17 +1020,27 @@ fn run(rx: Receiver<Event>, mut cat: Engine) {
         let (pose, big) = (cat.pose(now), cat.big());
         let changed = pose != drawn || big != drawn_big;
         if changed && (big_comes || now - last_draw >= frame - 0.002) {
-            let icon = (pose != drawn || !big).then(|| face::icon(&pose, ICON_PX));
+            // a move too small to change a pixel is not sent
+            let icon = (pose != drawn || !big).then(|| face::icon(&pose, ICON_PX)).filter(|px| *px != shown);
+            if let Some(px) = &icon {
+                shown.clone_from(px);
+            }
+            let icon = icon.map(|px| {
+                let at_rest = px == rest;
+                (px, at_rest)
+            });
             let picture = big.then(|| {
                 let scale = f32::from_bits(BIG_SCALE.load(Ordering::Relaxed)).clamp(1.0, 3.0);
-                (face::bezel(&pose, scale), face::bezel_px(scale))
+                (face::bezel_cat(&pose, scale), face::bezel_px(scale))
             });
-            on_main(move |m| {
-                if big_comes {
-                    m.set_big(true);
-                }
-                m.show(Frame { icon, big: picture });
-            });
+            if big_comes || icon.is_some() || picture.is_some() {
+                on_main(move |m| {
+                    if big_comes {
+                        m.set_big(true);
+                    }
+                    m.show(Frame { icon, big: picture });
+                });
+            }
             drawn = pose;
             drawn_big = big;
             last_draw = now;

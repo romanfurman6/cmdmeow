@@ -219,6 +219,9 @@ impl Loop {
 
 // the movements, as the design canvas has them
 const FLICK: Stops = &[(0.0, 0.0), (0.84, 0.0), (0.88, 14.0), (0.92, -4.0), (0.96, 6.0), (1.0, 0.0)];
+/// The same flick in a loop four times as long: at rest every frame makes
+/// the menu bar draw itself again, so the ears flick less often.
+const FLICK_RARE: Stops = &[(0.0, 0.0), (0.96, 0.0), (0.97, 14.0), (0.98, -4.0), (0.99, 6.0), (1.0, 0.0)];
 const DIP_EARLY: Stops = &[(0.0, 0.0), (0.25, 10.0), (0.5, 0.0), (1.0, 0.0)];
 const DIP_LATE: Stops = &[(0.0, 0.0), (0.5, 0.0), (0.75, 10.0), (1.0, 0.0)];
 const BOB: Stops = &[(0.0, 0.0), (0.5, 4.0), (1.0, 0.0)];
@@ -268,7 +271,7 @@ impl Moves {
 fn moves(mood: Mood) -> Moves {
     let l = Loop::new;
     match mood {
-        Mood::Idle => Moves { ear: [Some(l(FLICK, 9.0).after(3.0)), Some(l(FLICK, 13.0).after(7.0))], ..Moves::default() },
+        Mood::Idle => Moves { ear: [Some(l(FLICK_RARE, 36.0).after(3.0)), Some(l(FLICK_RARE, 52.0).after(7.0))], ..Moves::default() },
         Mood::Watch => Moves {
             ear: [Some(l(FLICK, 5.3).after(1.0)), Some(l(FLICK, 7.1).after(3.0))],
             nose: Some(l(SNIFF, 4.7).after(2.0)),
@@ -653,19 +656,53 @@ fn round_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<Path> {
     })
 }
 
+/// The big cat's card colour.
+const BEZEL_BACK: u32 = 0x1A2818;
+
 /// The big cat on its card for `pose`: `scale` pixels a point, premultiplied
-/// RGBA, `bezel_px(scale)` square.
+/// RGBA, `bezel_px(scale)` square. The screen gets it in two layers (`card`
+/// and `bezel_cat`); the tests look at it whole.
+#[cfg(test)]
 pub fn bezel(pose: &Pose, scale: f32) -> Vec<u8> {
     let n = bezel_px(scale);
     let Some(mut pm) = Pixmap::new(n, n) else { return vec![0; (n * n * 4) as usize] };
-    let back = rgb(0x1A2818, 1.0);
+    draw_card(&mut pm, scale);
+    draw_bezel_cat(&mut pm, pose, scale);
+    pm.take()
+}
+
+/// The card alone, as `bezel` draws it under the cat.
+pub fn card(scale: f32) -> Vec<u8> {
+    let n = bezel_px(scale);
+    let Some(mut pm) = Pixmap::new(n, n) else { return vec![0; (n * n * 4) as usize] };
+    draw_card(&mut pm, scale);
+    pm.take()
+}
+
+/// The cat alone, clear around it: laid over `card` it is `bezel`, so a
+/// moving cat only redraws itself.
+pub fn bezel_cat(pose: &Pose, scale: f32) -> Vec<u8> {
+    let n = bezel_px(scale);
+    let Some(mut pm) = Pixmap::new(n, n) else { return vec![0; (n * n * 4) as usize] };
+    draw_bezel_cat(&mut pm, pose, scale);
+    pm.take()
+}
+
+fn draw_card(pm: &mut Pixmap, scale: f32) {
     let card = Transform::from_scale(scale, scale);
     if let Some(p) = round_rect(0.0, 0.0, BEZEL_PT, BEZEL_PT, BEZEL_RADIUS_PT) {
-        pm.fill_path(&p, &solid(back, BlendMode::SourceOver), FillRule::Winding, card, None);
+        pm.fill_path(&p, &solid(rgb(BEZEL_BACK, 1.0), BlendMode::SourceOver), FillRule::Winding, card, None);
     }
     if let Some(p) = round_rect(0.5, 0.5, BEZEL_PT - 1.0, BEZEL_PT - 1.0, BEZEL_RADIUS_PT - 0.5) {
         pm.stroke_path(&p, &solid(rgb(0xFFFFFF, 0.08), BlendMode::SourceOver), &Stroke { width: 1.0, ..Stroke::default() }, card, None);
     }
+}
+
+fn draw_bezel_cat(pm: &mut Pixmap, pose: &Pose, scale: f32) {
+    let card = Transform::from_scale(scale, scale);
+    // the cut-outs are painted in the card's colour, so they look the same
+    // over the card whether it is under them now or later
+    let back = rgb(BEZEL_BACK, 1.0);
     let inks = Inks { ink: solid(rgb(0xC8F05A, 1.0), BlendMode::SourceOver), cut: solid(back, BlendMode::SourceOver) };
     // the cat's box in the middle of the card, then its own movement
     // around a point near its feet: turn, shift, grow
@@ -678,10 +715,9 @@ pub fn bezel(pose: &Pose, scale: f32) -> Vec<u8> {
         .pre_concat(Transform::from_rotate_at(b.rot, 512.0, 870.4))
         .pre_translate(b.dx / unit, b.dy / unit)
         .pre_concat(scale_at(b.scale, b.scale, 512.0, 870.4));
-    draw_head(&mut pm, t, pose, &inks, true);
-    draw_eyes(&mut pm, t, pose, &inks);
-    draw_muzzle(&mut pm, t, pose, &inks);
-    pm.take()
+    draw_head(pm, t, pose, &inks, true);
+    draw_eyes(pm, t, pose, &inks);
+    draw_muzzle(pm, t, pose, &inks);
 }
 
 pub fn bezel_px(scale: f32) -> u32 {
@@ -746,16 +782,16 @@ mod tests {
 
     #[test]
     fn the_resting_cat_says_when_it_next_moves() {
-        // left ear: first flick 3 s + 84% of 9 s in
+        // left ear: first flick 3 s + 96% of 36 s in
         let first = still_for(Mood::Idle, 0.0).unwrap();
-        assert!((first - (3.0 + 0.84 * 9.0)).abs() < 1e-3, "{first}");
-        assert_eq!(still_for(Mood::Idle, 3.0 + 0.9 * 9.0), Some(0.0), "mid flick");
+        assert!((first - (3.0 + 0.96 * 36.0)).abs() < 1e-3, "{first}");
+        assert_eq!(still_for(Mood::Idle, 3.0 + 0.98 * 36.0), Some(0.0), "mid flick");
         // right after the left ear's flick: the right ear's first one
-        let next = still_for(Mood::Idle, 12.01).unwrap();
-        assert!((12.01 + next - (7.0 + 0.84 * 13.0)).abs() < 1e-2, "{next}");
+        let next = still_for(Mood::Idle, 39.01).unwrap();
+        assert!((39.01 + next - (7.0 + 0.96 * 52.0)).abs() < 1e-2, "{next}");
         assert_eq!(still_for(Mood::Purr, 0.7), Some(0.0));
         // every stretch between two stops with different values counts as moving
-        for i in 0..400 {
+        for i in 0..1200 {
             let t = i as f32 * 0.1;
             let moving = pose(Mood::Idle, t, (0.0, 0.0)) != pose(Mood::Idle, t + 0.02, (0.0, 0.0));
             if moving {
@@ -839,7 +875,7 @@ mod tests {
             for col in 0..cols {
                 let t = span * col as f32 / cols as f32;
                 let look = if mood == Mood::Watch { (-150.0 + 300.0 * col as f32 / (cols - 1) as f32, 10.0 * col as f32) } else { (0.0, 0.0) };
-                let p = pose(mood, if mood == Mood::Idle { 10.56 + 0.12 * col as f32 } else { t }, look);
+                let p = pose(mood, if mood == Mood::Idle { 37.56 + 0.12 * col as f32 } else { t }, look);
                 over(&mut big, &bezel(&p, 2.0), n, col * n, row as u32 * n, false);
                 over(&mut small, &icon(&p, m), m, col * m, row as u32 * m, true);
             }
@@ -859,5 +895,21 @@ mod tests {
             over(&mut bar, &px, 36, i as u32 * 36, 36, false);
         }
         bar.save(dir.join("bar.png")).unwrap();
+    }
+
+    #[test]
+    fn the_cat_over_its_card_is_the_whole_picture() {
+        for mood in [Mood::Hello, Mood::Purr, Mood::Hiss, Mood::Hungry, Mood::Eat] {
+            let p = pose(mood, 0.7, (0.0, 0.0));
+            let (whole, card, cat) = (bezel(&p, 2.0), card(2.0), bezel_cat(&p, 2.0));
+            for i in (0..whole.len()).step_by(4) {
+                // premultiplied: cat + card × (1 − cat alpha)
+                let a = cat[i + 3] as u32;
+                for c in 0..4 {
+                    let laid = cat[i + c] as u32 + (card[i + c] as u32 * (255 - a) + 127) / 255;
+                    assert!(laid.abs_diff(whole[i + c] as u32) <= 2, "{mood:?} byte {}", i + c);
+                }
+            }
+        }
     }
 }

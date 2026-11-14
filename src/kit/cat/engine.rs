@@ -601,13 +601,13 @@ mod tests {
         let mut e = cat();
         e.tick(0.0);
         let s = e.sleep(0.0).unwrap();
-        assert!((s - (3.0 + 0.84 * 9.0)).abs() < 1e-3, "{s}");
-        assert_eq!(e.sleep(11.0), Some(0.0), "mid flick");
+        assert!((s - (3.0 + 0.96 * 36.0)).abs() < 1e-3, "{s}");
+        assert_eq!(e.sleep(38.0), Some(0.0), "mid flick");
         // a reaction moves all the time, and ends on time
-        e.handle(20.0, Event::Slap);
-        assert_eq!(e.sleep(20.5), Some(0.0));
-        assert_eq!(e.tick(21.5), [Cmd::Big(false)]);
-        assert!(e.sleep(21.5).unwrap() > 1.0);
+        e.handle(50.0, Event::Slap);
+        assert_eq!(e.sleep(50.5), Some(0.0));
+        assert_eq!(e.tick(51.5), [Cmd::Big(false)]);
+        assert!(e.sleep(51.5).unwrap() > 1.0);
     }
 
     #[test]
