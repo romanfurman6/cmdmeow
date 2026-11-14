@@ -289,7 +289,8 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shown {
     Idle,
-    Listening { secs: f32 },
+    /// `tapped`: the shortcut was tapped (another tap stops), not held.
+    Listening { secs: f32, tapped: bool },
     /// The model is turning the take into words.
     Working { frac: f32 },
     /// The take is done: its words in the field.
@@ -318,7 +319,7 @@ fn shown(d: &Dictation) -> Shown {
     }
     if d.trying {
         match &d.phase {
-            Phase::Listening { since, .. } => return Shown::Listening { secs: since.elapsed().as_secs_f32() },
+            Phase::Listening { since, tapped, .. } => return Shown::Listening { secs: since.elapsed().as_secs_f32(), tapped: *tapped },
             Phase::Working { since, expect, done, .. } => return Shown::Working { frac: super::work_progress(since.elapsed().as_secs_f32(), *expect, done.load(Ordering::Relaxed)) },
             _ => {}
         }
@@ -337,10 +338,12 @@ fn sample_levels() -> Vec<f32> {
     (0..64).map(|k| 0.25 + 0.6 * ((k as f32 * 0.55).sin() * (k as f32 * 0.21).cos()).abs()).collect()
 }
 
-/// The first visit: a mic, a field and Hold to talk. The take lands in
-/// the field (not pasted anywhere), so they see dictation work right here.
+/// The first visit: a mic and a field. Click the field, press the
+/// shortcut and talk: the take lands in the field (not pasted anywhere),
+/// so they see dictation work right here. Without a shortcut, a Hold to
+/// talk button stands in.
 fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
-    use crate::kit::empty::{hero_button, Lead, HERO_H};
+    use crate::kit::empty::{hero_button, keycaps, keycaps_width, Lead, HERO_H};
     d.try_seen = Some(std::time::Instant::now());
     // our window has the keys: the shortcut pressed now is meant for this field
     // (a menu-bar app is often not the "frontmost app" even then)
@@ -349,9 +352,15 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let t = ui.ctx().input(|i| i.time);
     let id = ui.scope_id().with("dict-try");
+    let key = d.shortcut_label();
+    let keys = (!key.is_empty()).then_some(key.as_str());
     let field_w = (body.width() - 2.0 * sp::PAGE_EDGE).min(480.0);
-    let (dot, field_h) = (64.0, 112.0);
-    let block = dot + sp::XL + field_h + sp::XXL + HERO_H;
+    let (dot, field_h, hint_h) = (64.0, 112.0, 24.0);
+    let button = match &state {
+        Shown::NeedModel { .. } | Shown::Downloading { .. } | Shown::Done(_) => true,
+        _ => keys.is_none(),
+    };
+    let block = dot + sp::XL + field_h + sp::L + hint_h + if button { sp::XL + HERO_H } else { 0.0 };
     let top = body.center().y - block / 2.0 - sp::L;
     let cx0 = body.center().x;
 
@@ -370,12 +379,22 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     p.circle_filled(c, dot / 2.0, with_alpha(col, 0.15));
     icon(&p, glyph, Rect::from_center_size(c, Vec2::splat(28.0)), col);
 
-    // the field
+    // the field: a click puts the caret in it
     let fr = Rect::from_min_size(Pos2::new(cx0 - field_w / 2.0, top + dot + sp::XL), Vec2::new(field_w, field_h));
     let quiet = matches!(state, Shown::NeedModel { .. } | Shown::Downloading { .. });
+    let field = ui.interact(fr, id.with("field"), if quiet { Sense::hover() } else { Sense::click() });
+    if field.clicked() {
+        d.try_armed = true;
+    } else if ui.input(|i| i.pointer.any_click()) && !field.hovered() {
+        d.try_armed = false;
+    }
+    if field.hovered() && !quiet {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    let armed = d.try_armed || matches!(state, Shown::Listening { .. } | Shown::Working { .. });
     let edge = match &state {
         Shown::Listening { .. } => Some(LIVE),
-        Shown::Idle => Some(TINT()),
+        Shown::Idle | Shown::Done(_) if armed => Some(TINT()),
         _ => None,
     };
     if let Some(e) = edge {
@@ -384,20 +403,28 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     // dimmer until the model is here
     let [cr, cg, cb, ca] = CARD().to_srgba_unmultiplied();
     p.rect_filled(fr, R_CARD, if quiet { Color32::from_rgba_unmultiplied(cr, cg, cb, ca / 2) } else { CARD() });
-    p.rect_stroke(fr, R_CARD, Stroke::new(1.0, edge.map(|e| with_alpha(e, 0.5)).unwrap_or(CARD_EDGE())), StrokeKind::Inside);
+    let rim = match edge {
+        Some(e) => with_alpha(e, 0.5),
+        None if field.hovered() && !quiet => white(46),
+        None => CARD_EDGE(),
+    };
+    p.rect_stroke(fr, R_CARD, Stroke::new(1.0, rim), StrokeKind::Inside);
     let inner = fr.shrink(sp::L);
-    let placeholder = "Say something";
+    let line_y = inner.top() + 10.0;
     match &state {
-        Shown::Idle => {
+        Shown::Idle if armed => {
             // a blinking caret, as in any empty field
             if (t * 1.8).fract() < 0.5 {
                 p.rect_filled(Rect::from_min_size(Pos2::new(inner.left(), inner.top() + 1.0), Vec2::new(2.0, 18.0)), 1.0, TINT());
             }
-            p.text(Pos2::new(inner.left() + 6.0, inner.top() + 10.0), Align2::LEFT_CENTER, placeholder, font(15.0), TEXT_MUTED());
+            p.text(Pos2::new(inner.left() + 6.0, line_y), Align2::LEFT_CENTER, "Say something", font(15.0), TEXT_MUTED());
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
+        Shown::Idle => {
+            p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, "Click here", font(15.0), TEXT_MUTED());
+        }
         Shown::NeedModel { .. } | Shown::Downloading { .. } => {
-            p.text(Pos2::new(inner.left(), inner.top() + 10.0), Align2::LEFT_CENTER, placeholder, font(15.0), with_alpha(TEXT(), 0.24));
+            p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, "Say something", font(15.0), with_alpha(TEXT(), 0.24));
         }
         Shown::Listening { .. } => {
             let lv = if d.demo { sample_levels() } else { d.levels.clone() };
@@ -421,10 +448,34 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         }
     }
 
-    // the button
-    let bc = Pos2::new(cx0, fr.bottom() + sp::XXL + HERO_H / 2.0);
-    let key = d.shortcut_label();
-    let keys = (!key.is_empty()).then_some(key.as_str());
+    // one line under the field: what the shortcut does now
+    let hy = fr.bottom() + sp::L + hint_h / 2.0;
+    if let Some(k) = keys {
+        let (before, after) = match &state {
+            Shown::Idle | Shown::Problem(_) if armed => ("Press", "and talk".to_string()),
+            Shown::Idle | Shown::Problem(_) => ("Click the field, then press", String::new()),
+            Shown::Listening { tapped: false, secs } => ("Release", format!("to stop · {}", clock(*secs))),
+            Shown::Listening { tapped: true, secs } => ("Press", format!("to stop · {}", clock(*secs))),
+            Shown::Done(_) => ("Press", "to try again".to_string()),
+            _ => ("", String::new()),
+        };
+        if !before.is_empty() {
+            let f = font(13.0);
+            let gap = 6.0;
+            let bw = p.layout_no_wrap(before.to_string(), f.clone(), TEXT_DIM()).size().x;
+            let aw = if after.is_empty() { 0.0 } else { gap + p.layout_no_wrap(after.clone(), f.clone(), TEXT_DIM()).size().x };
+            let kw = keycaps_width(&p, k, 12.0);
+            let x = cx0 - (bw + gap + kw + aw) / 2.0;
+            p.text(Pos2::new(x, hy), Align2::LEFT_CENTER, before, f.clone(), TEXT_DIM());
+            let kr = keycaps(&p, Pos2::new(x + bw + gap, hy), k, 12.0, None);
+            if !after.is_empty() {
+                p.text(Pos2::new(kr + gap, hy), Align2::LEFT_CENTER, after, f, TEXT_DIM());
+            }
+        }
+    }
+
+    // a button only where one is needed
+    let bc = Pos2::new(cx0, fr.bottom() + sp::L + hint_h + sp::XL + HERO_H / 2.0);
     match &state {
         Shown::NeedModel { failed } => {
             let label = if failed.is_some() { "Try the download again".to_string() } else { format!("Get speech model · {}", human_bytes(d.settings.engine.bytes())) };
@@ -443,30 +494,25 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             p.text(r.center(), Align2::CENTER_CENTER, what, bold(15.0), ACCENT());
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
-        Shown::Listening { secs } => {
-            let resp = hero_button(ui, bc, id.with("talk"), &format!("Stop · {}", clock(*secs)), None, Lead::Stop, Some(LIVE), true, 160.0);
-            hold(d, ui, &resp);
-        }
-        Shown::Working { .. } => {
-            hero_button(ui, bc, id.with("talk"), "Hold to talk", keys, Lead::Icon(Icon::Mic), Some(BLUE()), false, 0.0);
-        }
         Shown::Done(s) => {
-            // Copy and Try again side by side
-            let gap = sp::M;
-            let cw = crate::kit::empty::hero_width(&p, "Copy", None, Lead::None);
-            let tw = crate::kit::empty::hero_width(&p, "Try again", keys, Lead::None);
-            let x = cx0 - (cw + gap + tw) / 2.0;
-            if hero_button(ui, Pos2::new(x + cw / 2.0, bc.y), id.with("copy"), "Copy", None, Lead::None, None, true, 0.0).clicked() {
+            if hero_button(ui, bc, id.with("copy"), "Copy", None, Lead::None, None, true, 0.0).clicked() {
                 ui.ctx().copy_text(s.text.clone());
                 cx.toast("Copied");
             }
-            let resp = hero_button(ui, Pos2::new(x + cw + gap + tw / 2.0, bc.y), id.with("talk"), "Try again", keys, Lead::None, Some(BLUE()), true, 0.0);
+        }
+        // no shortcut set: hold the button instead
+        Shown::Listening { secs, .. } if keys.is_none() => {
+            let resp = hero_button(ui, bc, id.with("talk"), &format!("Stop · {}", clock(*secs)), None, Lead::Stop, Some(LIVE), true, 160.0);
             hold(d, ui, &resp);
         }
-        Shown::Idle | Shown::Problem(_) => {
-            let resp = hero_button(ui, bc, id.with("talk"), "Hold to talk", keys, Lead::Icon(Icon::Mic), Some(BLUE()), true, 0.0);
+        Shown::Working { .. } if keys.is_none() => {
+            hero_button(ui, bc, id.with("talk"), "Hold to talk", None, Lead::Icon(Icon::Mic), Some(BLUE()), false, 0.0);
+        }
+        Shown::Idle | Shown::Problem(_) if keys.is_none() => {
+            let resp = hero_button(ui, bc, id.with("talk"), "Hold to talk", None, Lead::Icon(Icon::Mic), Some(BLUE()), true, 0.0);
             hold(d, ui, &resp);
         }
+        _ => {}
     }
 }
 
