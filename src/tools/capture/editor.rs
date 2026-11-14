@@ -1643,7 +1643,7 @@ fn mark_pieces(m: &Mark) -> &'static [Piece] {
 
 // ---------------------------------------------------------------- drawing helpers
 
-fn c32(c: Rgba8) -> Color32 {
+pub(crate) fn c32(c: Rgba8) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
 }
 
@@ -1710,7 +1710,7 @@ fn draw_mark(p: &egui::Painter, m: &Mark, to_screen: &dyn Fn(Pos2) -> Pos2, scal
 }
 
 /// A rect filled with a top-left → bottom-right gradient (as the export draws it).
-fn gradient_rect(p: &egui::Painter, r: Rect, c0: Color32, c1: Color32) {
+pub(crate) fn gradient_rect(p: &egui::Painter, r: Rect, c0: Color32, c1: Color32) {
     let d = r.max - r.min;
     let t = |q: Pos2| ((q - r.min).dot(d) / d.length_sq().max(1.0)).clamp(0.0, 1.0);
     let mut mesh = egui::Mesh::default();
@@ -1723,7 +1723,7 @@ fn gradient_rect(p: &egui::Painter, r: Rect, c0: Color32, c1: Color32) {
 }
 
 /// A round swatch of a backdrop's gradient.
-fn gradient_disc(p: &egui::Painter, c: Pos2, radius: f32, c0: Color32, c1: Color32) {
+pub(crate) fn gradient_disc(p: &egui::Painter, c: Pos2, radius: f32, c0: Color32, c1: Color32) {
     let mut mesh = egui::Mesh::default();
     let t = |v: Vec2| ((v.x + v.y) / (2.0 * radius) * std::f32::consts::FRAC_1_SQRT_2 + 0.5).clamp(0.0, 1.0);
     mesh.colored_vertex(c, lerp_color(c0, c1, 0.5));

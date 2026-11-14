@@ -722,68 +722,84 @@ fn card_rows(p: &egui::Painter, x: f32, y: f32, w: f32, rows: usize) -> Rect {
     r
 }
 
-/// Screen recording: frame rate, quality, cursor, clicks and the countdown.
+/// Screen recording: frame rate, quality, the countdown, the cursor and
+/// its clicks (drawn by the system, so only where it can), the saved card.
 fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) -> f32 {
     use super::settings::{RecQuality, RECORD_FPS};
+    #[derive(Clone, Copy, PartialEq)]
+    enum Row {
+        Fps,
+        Quality,
+        Countdown,
+        Cursor,
+        Clicks,
+        Saved,
+        CardSecs,
+    }
+    let clicks = super::record::engine::clicks_supported();
+    let rows: Vec<(Row, &str)> = [(Row::Fps, "Frame rate"), (Row::Quality, "Quality"), (Row::Countdown, "Countdown"), (Row::Cursor, "Show the cursor"), (Row::Clicks, "Highlight clicks"), (Row::Saved, "When it's saved"), (Row::CardSecs, "Hide the card after")]
+        .into_iter()
+        .filter(|(r, _)| *r != Row::Clicks || clicks)
+        .collect();
     let x0 = col.left();
     p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "Screen recording", bold(15.0), TEXT());
-    let card = card_rows(p, x0, col.top() + 28.0, col.width(), 10);
+    let card = card_rows(p, x0, col.top() + 28.0, col.width(), rows.len());
     let id = ui.scope_id().with("rec-options");
     let mut s = c.settings.rec.clone();
-    let seg = |ui: &mut Ui, k: usize, w: f32, labels: &[&str], cur: usize| {
+    for (k, (row, label)) in rows.iter().enumerate() {
         let y = row_y(card, k);
-        segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - w, y - 12.0), Pos2::new(card.right() - 12.0, y + 12.0)), id.with(k), labels, cur)
-    };
-    let labels = ["Frame rate", "Quality", "Countdown", "Show the cursor", "Cursor size", "Smooth cursor", "Hide the cursor when still", "Highlight clicks", "When it's saved", "Hide the card after"];
-    for (k, l) in labels.iter().enumerate() {
-        p.text(Pos2::new(card.left() + 14.0, row_y(card, k)), Align2::LEFT_CENTER, *l, font(13.0), TEXT());
-    }
-    if let Some(i) = seg(ui, 0, 110.0, &["30 fps", "60 fps"], if s.fps == 30 { 0 } else { 1 }) {
-        s.fps = RECORD_FPS[i];
-    }
-    if let Some(i) = seg(ui, 1, 180.0, &["Up to 1080p", "Up to 4K"], if s.quality == RecQuality::Smaller { 0 } else { 1 }) {
-        s.quality = if i == 0 { RecQuality::Smaller } else { RecQuality::High };
-    }
-    let cd = match s.countdown {
-        0 => 0,
-        5 => 2,
-        _ => 1,
-    };
-    if let Some(i) = seg(ui, 2, 150.0, &["Off", "3 s", "5 s"], cd) {
-        s.countdown = [0, 3, 5][i];
-    }
-    let look = s.look.cursor;
-    for (k, on) in [(3usize, s.cursor), (5, look.smooth), (6, look.hide_idle), (7, s.clicks)] {
-        let y = row_y(card, k);
-        if switch(ui, Rect::from_min_size(Pos2::new(card.right() - 12.0 - 30.0, y - 9.0), Vec2::new(30.0, 18.0)), id.with(("sw", k)), on, k == 3 || s.cursor).clicked() {
-            match k {
-                3 => s.cursor = !s.cursor,
-                5 => s.look.cursor.smooth = !look.smooth,
-                6 => s.look.cursor.hide_idle = !look.hide_idle,
-                _ => s.clicks = !s.clicks,
+        p.text(Pos2::new(card.left() + 14.0, y), Align2::LEFT_CENTER, *label, font(13.0), TEXT());
+        let seg = |ui: &mut Ui, w: f32, labels: &[&str], cur: usize| segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - w, y - 12.0), Pos2::new(card.right() - 12.0, y + 12.0)), id.with(k), labels, cur);
+        let sw = Rect::from_min_size(Pos2::new(card.right() - 12.0 - 30.0, y - 9.0), Vec2::new(30.0, 18.0));
+        match row {
+            Row::Fps => {
+                if let Some(i) = seg(ui, 110.0, &["30 fps", "60 fps"], if s.fps == 30 { 0 } else { 1 }) {
+                    s.fps = RECORD_FPS[i];
+                }
+            }
+            Row::Quality => {
+                if let Some(i) = seg(ui, 180.0, &["Up to 1080p", "Up to 4K"], if s.quality == RecQuality::Smaller { 0 } else { 1 }) {
+                    s.quality = if i == 0 { RecQuality::Smaller } else { RecQuality::High };
+                }
+            }
+            Row::Countdown => {
+                let cd = match s.countdown {
+                    0 => 0,
+                    5 => 2,
+                    _ => 1,
+                };
+                if let Some(i) = seg(ui, 150.0, &["Off", "3 s", "5 s"], cd) {
+                    s.countdown = [0, 3, 5][i];
+                }
+            }
+            Row::Cursor => {
+                if switch(ui, sw, id.with(("sw", k)), s.cursor, true).clicked() {
+                    s.cursor = !s.cursor;
+                }
+            }
+            Row::Clicks => {
+                if switch(ui, sw, id.with(("sw", k)), s.clicks, s.cursor).clicked() {
+                    s.clicks = !s.clicks;
+                }
+            }
+            Row::Saved => {
+                if let Some(i) = seg(ui, 190.0, &["Show a card", "Open editor"], s.open_editor as usize) {
+                    s.open_editor = i == 1;
+                }
+            }
+            Row::CardSecs => {
+                if let Some(i) = seg(ui, 200.0, &["5 s", "8 s", "15 s", "Never"], secs_index(s.card_secs, &CARD_SECS)) {
+                    s.card_secs = CARD_SECS.get(i).copied();
+                }
             }
         }
     }
-    let size = CURSOR_SIZES.iter().position(|&v| (v - look.size).abs() < 0.01).unwrap_or(1);
-    if let Some(i) = seg(ui, 4, 150.0, &["1×", "1.5×", "2×"], size) {
-        s.look.cursor.size = CURSOR_SIZES[i];
-    }
-    if let Some(i) = seg(ui, 8, 190.0, &["Show a card", "Open editor"], s.open_editor as usize) {
-        s.open_editor = i == 1;
-    }
-    if let Some(i) = seg(ui, 9, 200.0, &["5 s", "8 s", "15 s", "Never"], secs_index(s.card_secs, &CARD_SECS)) {
-        s.card_secs = CARD_SECS.get(i).copied();
-    }
-    p.text(Pos2::new(x0, card.bottom() + 10.0), Align2::LEFT_TOP, "", font(12.0), TEXT_FAINT());
     if s != c.settings.rec {
         c.settings.rec = s;
         c.save_settings();
     }
     card.bottom() + 30.0
 }
-
-/// Cursor sizes in recordings (times the system size).
-const CURSOR_SIZES: [f32; 3] = [1.0, 1.5, 2.0];
 
 /// "Hide after" choices; past the end means never.
 const PREVIEW_SECS: [u32; 3] = [3, 6, 10];

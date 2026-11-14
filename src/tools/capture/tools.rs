@@ -137,7 +137,7 @@ impl Tool for Video {
         "Create"
     }
     fn about(&self) -> &'static str {
-        "Screen recordings with camera, microphone and a smooth cursor"
+        "Screen recordings with camera, microphone and transcripts"
     }
     fn needs(&self) -> Vec<crate::kit::perms::Need> {
         use crate::kit::perms::{Need, Perm};
