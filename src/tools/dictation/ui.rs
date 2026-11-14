@@ -285,6 +285,7 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         let (area, _) = ui.allocate_exact_size(Vec2::new(body.width(), total), Sense::hover());
         let mut y = area.top() + 16.0;
         let id = ui.scope_id().with("dict-rows");
+        let mut late: Option<(Rect, Rect)> = None;
         for (k, s) in d.history.items.iter().enumerate() {
             let rr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, heights[k] - ROW_GAP));
             // keyed by the entry, not its row: a removed entry's hover stays with it
@@ -299,21 +300,8 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             let mut p = p.clone();
             if k == 0 && e < 1.0 {
                 if let Some(f) = field {
-                    // the field itself, on its way to the entry
-                    let at = Rect::from_min_max(f.min.lerp(rr.min, e), f.max.lerp(rr.max, e));
-                    p.rect_filled(at, R_CARD, CARD());
-                    p.rect_filled(at, R_CARD, with_alpha(TINT(), 0.10 * glow));
-                    p.rect_stroke(at, R_CARD, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(TINT(), 0.5), glow)), StrokeKind::Inside);
-                    let from = f.shrink(sp::L).min;
-                    let to = Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP);
-                    paragraph(&p, from.lerp(to, e), &s.text, font(15.0 + (13.0 - 15.0) * e), TEXT(), (f.width() - 2.0 * sp::L) + (tw - (f.width() - 2.0 * sp::L)) * e);
-                    // the entry's own bits ride on the moving card and come in as it lands
-                    p.multiply_opacity(((e - 0.6) / 0.4).clamp(0.0, 1.0));
-                    let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
-                    p.text(Pos2::new(at.left() + PAD, at.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
-                    let cr = Rect::from_min_size(Pos2::new(at.right() - PAD - 64.0, at.center().y - 13.0), Vec2::new(64.0, 26.0));
-                    liquid_capsule(&p, cr, None, 0.0, 1.0);
-                    p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
+                    // drawn after the other rows, so it passes over them
+                    late = Some((f, rr));
                     y += heights[k];
                     continue;
                 }
@@ -330,6 +318,13 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             paragraph(&p, Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP), &s.text, font(13.0), TEXT(), tw);
             let cr = Rect::from_min_size(Pos2::new(rr.right() - PAD - 64.0, rr.center().y - 13.0), Vec2::new(64.0, 26.0));
             let xr = Rect::from_center_size(Pos2::new(cr.left() - 20.0, cr.center().y), Vec2::splat(22.0));
+            if e < 1.0 {
+                // still fading in with its row: drawn, not yet a button
+                liquid_capsule(&p, cr, None, 0.0, 1.0);
+                p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
+                y += heights[k];
+                continue;
+            }
             if h > 0.01 && icon_button(ui, xr, Icon::Trash, "Remove").clicked() {
                 remove = Some(k);
             }
@@ -337,6 +332,27 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
                 copy = Some(s.text.clone());
             }
             y += heights[k];
+        }
+        if let (Some((f, rr)), Some(s)) = (late, d.history.items.first()) {
+            let (e, glow) = morph.map_or((1.0, 0.0), |(e, g, _)| (e, g));
+            let mut p = p.clone();
+            // the field itself, on its way to the entry
+            let at = Rect::from_min_max(f.min.lerp(rr.min, e), f.max.lerp(rr.max, e));
+            // solid, so an older entry under its path doesn't show through
+            p.rect_filled(at, R_CARD, BG());
+            p.rect_filled(at, R_CARD, CARD());
+            p.rect_filled(at, R_CARD, with_alpha(TINT(), 0.10 * glow));
+            p.rect_stroke(at, R_CARD, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(TINT(), 0.5), glow)), StrokeKind::Inside);
+            let from = f.shrink(sp::L).min;
+            let to = Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP);
+            paragraph(&p, from.lerp(to, e), &s.text, font(15.0 + (13.0 - 15.0) * e), TEXT(), (f.width() - 2.0 * sp::L) + (tw - (f.width() - 2.0 * sp::L)) * e);
+            // the entry's own bits ride on the moving card and come in as it lands
+            p.multiply_opacity(((e - 0.6) / 0.4).clamp(0.0, 1.0));
+            let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
+            p.text(Pos2::new(at.left() + PAD, at.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
+            let cr = Rect::from_min_size(Pos2::new(at.right() - PAD - 64.0, at.center().y - 13.0), Vec2::new(64.0, 26.0));
+            liquid_capsule(&p, cr, None, 0.0, 1.0);
+            p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
         }
     });
     if let Some(t) = copy {

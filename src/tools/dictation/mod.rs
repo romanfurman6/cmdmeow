@@ -954,7 +954,9 @@ impl Tool for Dictation {
             "dictation-try-finish" => {
                 self.tab = Tab::History;
                 self.history = History::default();
-                self.history.add(Said { at: chrono::Local::now().timestamp(), text: "Okay, this is my first dictation and it already works.".into(), app: String::new(), secs: 4.0 });
+                let now = chrono::Local::now().timestamp();
+                self.history.add(Said { at: now - 3600, text: "Book the table for four at eight, and ask about the terrace.".into(), app: "Messages".into(), secs: 5.0 });
+                self.history.add(Said { at: now, text: "Okay, this is my first dictation and it already works.".into(), app: String::new(), secs: 4.0 });
                 let at = std::env::var("CMDMEOW_DICT_T").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.2);
                 let field = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(480.0, 112.0));
                 self.try_done = Some((Instant::now() - Duration::from_secs_f32(at), field));
