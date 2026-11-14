@@ -407,10 +407,17 @@ mod imp {
                 // macOS shows its question only once; after that, Settings
                 if !unsafe { CGRequestScreenCaptureAccess() } {
                     std::thread::spawn(|| {
-                        std::thread::sleep(std::time::Duration::from_millis(1200));
-                        if !screen_live() {
-                            super::open_settings(Perm::Screen);
+                        // the first time, macOS shows its own alert, whose
+                        // button opens Settings; opening Settings as well
+                        // covered that alert (M1). Only when no alert came
+                        // up within 2 s, open Settings ourselves.
+                        for _ in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            if screen_live() || crate::kit::settings_window::scene().prompt {
+                                return;
+                            }
                         }
+                        super::open_settings(Perm::Screen);
                     });
                 }
             }

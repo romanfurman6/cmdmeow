@@ -28,52 +28,6 @@ pub struct Word {
     pub text: String,
 }
 
-/// Sounds that fill a pause, not words: cut along with the pauses.
-const FILLERS: [&str; 22] = ["um", "umm", "uh", "uhh", "uhm", "hmm", "hm", "mm", "mmm", "er", "erm", "ah", "eh", "е", "ее", "еее", "е-е", "ем", "емм", "мм", "ммм", "гм"];
-
-pub fn is_filler(word: &str) -> bool {
-    let w: String = word.chars().filter(|c| c.is_alphabetic() || *c == '-').collect::<String>().to_lowercase();
-    !w.is_empty() && (FILLERS.contains(&w.as_str()) || w.trim_matches('-').chars().all(|c| matches!(c, 'е' | 'e' | 'м' | 'm' | 'h' | 'г')) && w.chars().count() >= 3)
-}
-
-/// Pauses at least this long are cut.
-pub const MIN_PAUSE: f64 = 0.7;
-/// Silence kept on each side of a cut, so speech isn't clipped.
-pub const PAUSE_MARGIN: f64 = 0.15;
-
-/// The stretches to cut so the video jumps from word to word: pauses of
-/// `MIN_PAUSE` or more (fillers count as pause), the silence before the
-/// first word and after the last, each with `PAUSE_MARGIN` left around the
-/// speech. Uses the words' times, or the lines' for transcripts without them.
-pub fn pauses(lines: &[Line], duration: f64) -> Vec<(f64, f64)> {
-    let mut speech: Vec<(f64, f64)> = Vec::new();
-    for l in lines {
-        if l.words.is_empty() {
-            speech.push((l.start, l.end));
-        } else {
-            speech.extend(l.words.iter().filter(|w| !is_filler(&w.text)).map(|w| (w.start, w.end)));
-        }
-    }
-    speech.retain(|(a, b)| b > a);
-    speech.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out = Vec::new();
-    let mut last = 0.0f64;
-    let mut first = true;
-    for (a, b) in speech {
-        let gap_start = if first { 0.0 } else { last + PAUSE_MARGIN };
-        let gap_end = a - PAUSE_MARGIN;
-        if a - last >= MIN_PAUSE && gap_end - gap_start > 0.05 {
-            out.push((gap_start, gap_end));
-        }
-        last = last.max(b);
-        first = false;
-    }
-    if !first && duration - last >= MIN_PAUSE {
-        out.push((last + PAUSE_MARGIN, duration));
-    }
-    out
-}
-
 /// A transcript kept for a file (in the app's data, not beside the video).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Saved {
@@ -164,6 +118,48 @@ pub fn tidy(raw: Vec<crate::kit::whisper::Segment>) -> Vec<Line> {
         .collect()
 }
 
+/// What Whisper writes over silence, music or noise (it learned them from
+/// the last lines of subtitles), lower case, letters and spaces only.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MADE_UP: [&str; 16] = [
+    "thank you",
+    "thank you very much",
+    "thanks for watching",
+    "thank you for watching",
+    "please subscribe",
+    "bye",
+    "you",
+    "subtitles by the amaraorg community",
+    "продолжение следует",
+    "спасибо за просмотр",
+    "субтитры сделал dimatorzok",
+    "субтитры создавал dimatorzok",
+    "редактор субтитров асинецкая корректор аегорова",
+    "дякую за перегляд",
+    "дякуємо за перегляд",
+    "субтитри зроблені спільнотою amaraorg",
+];
+
+/// Lines Whisper made up: one of [`MADE_UP`] said over more than 2.5 s (a
+/// real "Thank you." takes about one), or anything over near silence.
+/// `pcm` is the 16 kHz mono sound the lines came from.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn made_up(l: &Line, pcm: &[f32]) -> bool {
+    let plain: String = l.text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
+    let plain = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (a, b) = match (l.words.first(), l.words.last()) {
+        (Some(f), Some(w)) => (f.start, w.end),
+        _ => (l.start, l.end),
+    };
+    if MADE_UP.contains(&plain.as_str()) && b - a > 2.5 {
+        return true;
+    }
+    let at = |t: f64| ((t.max(0.0) * 16_000.0) as usize).min(pcm.len());
+    let part = &pcm[at(l.start)..at(l.end)];
+    // about -50 dBFS: nothing anyone said
+    !part.is_empty() && (part.iter().map(|v| v * v).sum::<f32>() / part.len() as f32).sqrt() < 0.003
+}
+
 /// Transcribe the voice in `video` with model `m`. Blocks; progress is in
 /// percent (`total` 100).
 #[cfg(target_os = "macos")]
@@ -180,7 +176,9 @@ pub fn transcribe(video: &Path, m: Model, p: &std::sync::Arc<Progress>) -> Resul
     }
     let raw = crate::kit::whisper::Loaded::load(m)?.run_timed(&pcm, None, Some(p))?;
     p.done.store(100, Ordering::Relaxed);
-    Ok(tidy(raw))
+    let mut lines = tidy(raw);
+    lines.retain(|l| !made_up(l, &pcm));
+    Ok(lines)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -196,35 +194,19 @@ mod tests {
         Line { start: s, end: e, text: t.into(), words: Vec::new() }
     }
 
-    fn word(s: f64, e: f64, t: &str) -> Word {
-        Word { start: s, end: e, text: t.into() }
-    }
-
     #[test]
-    fn fillers_are_known() {
-        for w in ["um", "Uh,", "е-е", "Еее...", "ммм", "hmmm"] {
-            assert!(is_filler(w), "{w}");
-        }
-        for w in ["ну", "так", "and", "me", "hello", "мене"] {
-            assert!(!is_filler(w), "{w}");
-        }
-    }
-
-    #[test]
-    fn pauses_and_fillers_are_cut_with_air_left() {
-        let mut l = line(1.0, 9.0, "Hello um there. Bye");
-        l.words = vec![word(1.0, 1.4, "Hello"), word(1.5, 2.6, "um"), word(2.7, 3.0, "there."), word(3.2, 3.5, "Bye")];
-        let cuts = pauses(&[l], 10.0);
-        let r = |v: f64| (v * 100.0).round() / 100.0;
-        let cuts: Vec<(f64, f64)> = cuts.into_iter().map(|(a, b)| (r(a), r(b))).collect();
-        // before the first word, the "um" gap (1.4 → 2.7), and after the last
-        assert_eq!(cuts, vec![(0.0, 0.85), (1.55, 2.55), (3.65, 10.0)]);
-        // short gaps stay; lines without words use the line times
-        let a = line(0.0, 2.0, "a");
-        let b = line(2.3, 4.0, "b");
-        assert!(pauses(&[a.clone(), b.clone()], 4.0).is_empty());
-        let c = line(6.0, 7.0, "c");
-        assert_eq!(pauses(&[a, b, c], 7.0).len(), 1);
+    fn lines_whisper_made_up_are_dropped() {
+        let loud: Vec<f32> = (0..16_000 * 12).map(|i| ((i as f32) * 0.05).sin() * 0.2).collect();
+        // a "Thank you." over ten seconds of beeps, and a real one
+        assert!(made_up(&line(0.0, 10.1, "Thank you."), &loud));
+        assert!(!made_up(&line(9.0, 10.0, "Thank you."), &loud));
+        assert!(made_up(&line(0.0, 6.0, "Продолжение следует..."), &loud));
+        assert!(!made_up(&line(0.0, 6.0, "Thank you all for coming today"), &loud));
+        // anything over near silence
+        let mut quiet = loud.clone();
+        quiet[16_000 * 2..16_000 * 5].iter_mut().for_each(|v| *v *= 0.001);
+        assert!(made_up(&line(2.0, 5.0, "Hello there"), &quiet));
+        assert!(!made_up(&line(5.0, 8.0, "Hello there"), &quiet));
     }
 
     #[test]

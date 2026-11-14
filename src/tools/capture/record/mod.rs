@@ -6,7 +6,8 @@
 //! Flow: [`Recorder::begin`] opens the picker over the screen under the
 //! mouse → Start → 3-2-1 → [`engine::start`] → Live (bar, timer in the menu
 //! bar) → Stop → the file is finished on a thread → a preview card and a
-//! History entry.
+//! History entry. The cursor and the camera bubble are in the picture as
+//! it's recorded, so there's nothing to draw after Stop.
 
 pub mod camera;
 pub mod engine;
@@ -19,11 +20,8 @@ pub mod ui;
 use super::settings::{RecSettings, Settings};
 use egui::{Pos2, Rect, Vec2};
 use engine::{Session, Stopped, Target};
-use crate::tools::capture::video::compose;
-use crate::tools::capture::video::scene::{Recorded, Style};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use sys::{Access, Display, Media, Win};
 
@@ -89,17 +87,6 @@ pub enum Phase {
     Live(Box<Live>),
     /// The file is being finished.
     Saving,
-    /// The look (smooth cursor, frame…) is being drawn into the video.
-    Rendering(Arc<compose::Progress>),
-}
-
-/// A recording that's rendered after Stop: where it goes and with what.
-struct Pending {
-    out: PathBuf,
-    project: compose::Project,
-    ppp: f32,
-    fps: u32,
-    style: Style,
 }
 
 /// The card after a recording is saved.
@@ -120,8 +107,6 @@ pub struct Saved {
 pub enum Event {
     Started(Result<Session, String>),
     Stopped(Result<Stopped, String>),
-    /// Rendered; the error says it was saved without the look.
-    Rendered(Stopped, Option<String>),
     Access(Media, bool),
 }
 
@@ -136,6 +121,10 @@ pub struct Recorder {
     pub phase: Phase,
     pub displays: Vec<Display>,
     pub camera: Option<camera::Camera>,
+    /// Said once that the camera sends no picture.
+    camera_warned: bool,
+    /// What the picker showed last, to open on it again.
+    last_source: Source,
     pub mics: Vec<sys::Device>,
     pub cams: Vec<sys::Device>,
     /// The device list open in the picker.
@@ -153,7 +142,6 @@ pub struct Recorder {
     pub folder: PathBuf,
     /// The display of the last recording (for the saved card).
     pub last_display: Rect,
-    pending: Option<Pending>,
     ctx: egui::Context,
 }
 
@@ -163,10 +151,10 @@ pub const CONFIRM_AFTER: f64 = 5.0;
 impl Recorder {
     pub fn new(ctx: egui::Context) -> Recorder {
         let (tx, rx) = channel();
-        // raw videos of recordings that are gone
+        // unframed copies of videos that are gone (and old projects)
         #[cfg(not(test))]
-        let _ = std::thread::Builder::new().name("cmdmeow-prune".into()).spawn(|| compose::prune(&projects_dir()));
-        Recorder { phase: Phase::Idle, displays: Vec::new(), camera: None, mics: Vec::new(), cams: Vec::new(), menu: None, meter: None, meter_for: None, saved: None, tx, rx, last_area: None, out: Vec::new(), folder: PathBuf::new(), last_display: Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0)), pending: None, ctx }
+        let _ = std::thread::Builder::new().name("cmdmeow-prune".into()).spawn(|| crate::tools::capture::video::compose::prune(&projects_dir()));
+        Recorder { phase: Phase::Idle, displays: Vec::new(), camera: None, camera_warned: false, last_source: Source::Display, mics: Vec::new(), cams: Vec::new(), menu: None, meter: None, meter_for: None, saved: None, tx, rx, last_area: None, out: Vec::new(), folder: PathBuf::new(), last_display: Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0)), ctx }
     }
 
     pub fn idle(&self) -> bool {
@@ -211,6 +199,7 @@ impl Recorder {
         self.menu = None;
         let display = sys::display_at(&self.displays, sys::mouse());
         self.phase = Phase::Pick(Pick { source: Source::Display, display, windows: Vec::new(), drag: None, area: self.last_area, frames: 0 });
+        self.set_source(self.last_source);
         if s.camera {
             self.show_camera(s);
         }
@@ -225,6 +214,7 @@ impl Recorder {
 
     pub fn set_source(&mut self, src: Source) {
         if let Phase::Pick(p) = &mut self.phase {
+            self.last_source = src;
             p.source = src;
             p.drag = None;
             if src == Source::Window {
@@ -262,7 +252,10 @@ impl Recorder {
             Access::Allowed => {
                 let d = s.camera_size.points();
                 match camera::Camera::open(s.camera_device.as_deref(), d, self.camera_spot(d)) {
-                    Ok(c) => self.camera = Some(c),
+                    Ok(c) => {
+                        self.camera = Some(c);
+                        self.camera_warned = false;
+                    }
                     Err(e) => self.hud(format!("Camera: {e}")),
                 }
             }
@@ -369,26 +362,7 @@ impl Recorder {
 
     /// Start the engine for `chosen`.
     pub fn launch(&mut self, chosen: Chosen, s: &RecSettings) {
-        let folder = self.folder.clone();
-        let out = free_path(&folder, &Settings::recording_name(chrono::Local::now()));
-        // the cursor on its own (drawn smooth after Stop): the raw video
-        // goes to the recording's project, the rendered one to the folder
-        let camera = self.camera.is_some();
-        let logged = s.cursor || camera;
-        self.pending = None;
-        let path = if logged {
-            let project = compose::Project::for_output(&projects_dir(), &out);
-            let raw = project.raw();
-            let r = chosen.rect;
-            let ppp = chosen.size.0 as f32 / r.width().max(1.0);
-            let mut style = s.look;
-            style.cursor.clicks = s.clicks;
-            self.pending = Some(Pending { out: out.clone(), project, ppp, fps: chosen.fps, style });
-            raw
-        } else {
-            out
-        };
-        let r = chosen.rect;
+        let path = free_path(&self.folder, &Settings::recording_name(chrono::Local::now()));
         let mic = (s.mic && sys::access(Media::Mic) == Access::Allowed).then(|| s.mic_device.clone().filter(|id| self.mics.iter().any(|d| &d.id == id)));
         let cfg = engine::Config {
             target: chosen.target.clone(),
@@ -399,9 +373,8 @@ impl Recorder {
             clicks: s.clicks,
             system_audio: s.system_audio,
             mic,
-            // the camera goes on its own track, not in the picture
-            keep_window: if camera { None } else { self.camera.as_ref().map(|c| c.window_number()) },
-            overlay: logged.then(|| engine::Overlay { region: [r.left() as f64, r.top() as f64, r.width() as f64, r.height() as f64], cursor: s.cursor, camera }),
+            // the bubble is recorded where it is on screen
+            keep_window: self.camera.as_ref().map(|c| c.window_number()),
             path,
         };
         let tx = self.tx.clone();
@@ -434,9 +407,6 @@ impl Recorder {
         let Phase::Live(live) = std::mem::replace(&mut self.phase, Phase::Idle) else { return };
         let Live { chosen, session, .. } = *live;
         session.discard();
-        if let Some(p) = self.pending.take() {
-            let _ = std::fs::remove_dir_all(&p.project.dir);
-        }
         if again {
             self.choose(chosen, s);
         } else {
@@ -475,9 +445,6 @@ impl Recorder {
 
     /// The menu bar title while recording: "● 0:42", "❚❚ 0:42".
     pub fn tray(&self) -> Option<String> {
-        if let Phase::Rendering(p) = &self.phase {
-            return Some(format!("⋯ {}%", p.done.load(std::sync::atomic::Ordering::Relaxed) / 10));
-        }
         let l = self.live()?;
         let t = timeline::clock_label(l.session.length());
         Some(if l.paused { format!("❚❚ {t}") } else { format!("● {t}") })
@@ -496,35 +463,6 @@ impl Recorder {
             self.meter = None;
             self.meter = meter::MicMeter::open(dev.as_deref());
             self.meter_for = Some(dev);
-        }
-    }
-
-    /// Draw the look into the raw recording on a thread; the result comes
-    /// back as [`Event::Rendered`]. Main thread (for the cursor pictures).
-    fn render(&mut self, st: Stopped, p: Pending) {
-        let recorded = Recorded { fps: p.fps, ..st.recorded.clone().unwrap_or_default() };
-        let meta = compose::Meta { out: p.out.clone(), recorded, style: p.style, ppp: p.ppp };
-        p.project.save(&meta);
-        let job = compose::Job { raw: st.path.clone(), out: p.out.clone(), meta, lines: Vec::new(), pictures: compose::cursor_pictures() };
-        let progress = Arc::new(compose::Progress::default());
-        self.phase = Phase::Rendering(progress.clone());
-        let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
-        let spawned = std::thread::Builder::new().name("cmdmeow-render".into()).spawn(move || {
-            let (size, err) = match compose::render(&job, &progress) {
-                Ok(size) => (size, None),
-                Err(e) => {
-                    // never lose the recording: the raw one, without the look
-                    let _ = std::fs::copy(&job.raw, &job.out);
-                    (st.size, Some(e))
-                }
-            };
-            let done = Stopped { path: job.out.clone(), secs: st.secs, size, thumb: st.thumb, recorded: None };
-            let _ = tx.send(Event::Rendered(done, err));
-            ctx.request_repaint();
-        });
-        if spawned.is_err() {
-            self.phase = Phase::Idle;
-            self.hud("Couldn't render the recording");
         }
     }
 
@@ -556,24 +494,10 @@ impl Recorder {
                 Event::Stopped(r) => {
                     eprintln!("[rec] stopped: {:?}", r.as_ref().map(|st| (&st.path, st.secs)));
                     self.phase = Phase::Idle;
-                    let pending = self.pending.take();
-                    match (r, pending) {
-                        (Ok(st), Some(p)) => self.render(st, p),
-                        (Ok(st), _) => self.out.push(Out::Saved(st)),
-                        (Err(e), p) => {
-                            if let Some(p) = p {
-                                let _ = std::fs::remove_dir_all(&p.project.dir);
-                            }
-                            self.hud(format!("Couldn't save the recording: {e}"));
-                        }
+                    match r {
+                        Ok(st) => self.out.push(Out::Saved(st)),
+                        Err(e) => self.hud(format!("Couldn't save the recording: {e}")),
                     }
-                }
-                Event::Rendered(st, err) => {
-                    self.phase = Phase::Idle;
-                    if let Some(e) = err {
-                        self.hud(format!("Saved without the cursor effects: {e}"));
-                    }
-                    self.out.push(Out::Saved(st));
                 }
                 Event::Access(m, ok) => match (m, ok) {
                     (Media::Camera, true) if s.camera && !self.idle() => self.show_camera(s),
@@ -605,6 +529,11 @@ impl Recorder {
             eprintln!("[rec] the microphone sends only silence");
             self.hud("The microphone hears nothing: is the lid closed, or are the AirPods out?");
         }
+        if !self.camera_warned && self.camera.as_ref().is_some_and(|c| c.stalled()) {
+            self.camera_warned = true;
+            eprintln!("[rec] the camera sends no picture");
+            self.hud("The camera sends no picture: is the lid closed, or is another app using it?");
+        }
         let failed = self.live().and_then(|l| l.session.failure());
         if let Some(why) = failed {
             eprintln!("[rec] failed: {why}");
@@ -619,7 +548,8 @@ impl Recorder {
     }
 }
 
-/// Where recordings keep their raw video and logs for rendering.
+/// Where framed videos keep their unframed picture, so the frame can be
+/// changed or taken off later.
 pub fn projects_dir() -> PathBuf {
     super::settings::data_dir().join("projects")
 }
@@ -651,7 +581,6 @@ pub fn probe(secs: f64, system_audio: bool, mic: bool) {
         system_audio,
         mic: mic_ok.then_some(None),
         keep_window: None,
-        overlay: None,
         path,
     };
     let (tx, rx) = channel();

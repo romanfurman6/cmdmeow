@@ -162,6 +162,12 @@ mod mac {
     pub fn activate() {
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
+        // macOS 14+ ignores activateIgnoringOtherApps more and more; its
+        // cooperative `activate` is the one that brings the window forward
+        let modern: bool = unsafe { objc2::msg_send![&*app, respondsToSelector: objc2::sel!(activate)] };
+        if modern {
+            let _: () = unsafe { objc2::msg_send![&*app, activate] };
+        }
         #[allow(deprecated)]
         app.activateIgnoringOtherApps(true);
     }
