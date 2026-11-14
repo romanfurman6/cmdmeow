@@ -470,7 +470,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let slide = (1.0 - ease(t * 2.2)) * 18.0 * side;
     // Back and Continue line up with the step's own column
     let col = match kind {
-        Kind::Agents | Kind::Models => Rect::from_center_size(body.center(), Vec2::new(body.width().min(COL_W), body.height())),
+        Kind::Agents | Kind::SignIns | Kind::Models => Rect::from_center_size(body.center(), Vec2::new(body.width().min(COL_W), body.height())),
         _ => body,
     };
     let body = body.translate(Vec2::new(slide, 0.0));
