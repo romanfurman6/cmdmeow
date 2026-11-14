@@ -353,7 +353,12 @@ fn demo_settings() -> Settings {
 
 /// Sample history for screenshots.
 fn demo_store() -> Store {
-    let dir = std::env::temp_dir().join(format!("cmdmeow-clipboard-demo-{}", std::process::id()));
+    // a folder per sample store: each seals its blobs with its own throwaway
+    // key, and tests running side by side in one process shared one folder,
+    // so one store moved the other's blobs aside as unreadable
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("cmdmeow-clipboard-demo-{}-{n}", std::process::id()));
     let mut st = Store::open(dir.clone(), Some(Arc::new(crate::kit::vault::Vault::random())));
     st.entries.clear();
     let now = now_ms();
