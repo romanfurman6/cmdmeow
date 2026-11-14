@@ -176,6 +176,10 @@ impl egui::FontProvider for MissingSystemFontsWarning {
 /// Everything needed to make a winit-based integration for [`epi`].
 ///
 /// Only one instance per app (not one per viewport).
+/// Cmd+Meow patch: the root window stays hidden after its first frame (a
+/// menu bar app that shows its window on a click). See `crate::start_hidden`.
+pub static START_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub struct EpiIntegration {
     pub frame: epi::Frame,
     last_auto_save: Instant,
@@ -445,7 +449,10 @@ impl EpiIntegration {
                 window_settings.before_first_show(window);
             }
             // We keep hidden until we've painted something. See https://github.com/emilk/egui/pull/2279
-            window.set_visible(true);
+            // Cmd+Meow patch: unless the app starts out of sight (see `crate::start_hidden`)
+            if !START_HIDDEN.load(std::sync::atomic::Ordering::Relaxed) {
+                window.set_visible(true);
+            }
             if let Some(window_settings) = &self.restored_window_settings {
                 window_settings.after_first_show(window);
             }

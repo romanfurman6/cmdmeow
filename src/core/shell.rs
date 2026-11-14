@@ -183,7 +183,9 @@ impl App {
             toast: None,
             setup: first_run.then(|| super::onboard::Setup::new(super::onboard::saved_step())),
             perm_watch: Default::default(),
-            start_hidden: first_run,
+            // the menu bar app starts out of sight: the panel shows on a click
+            // (or after setup's "Open panel" restart), never by itself
+            start_hidden: !demo && !crate::kit::perms::launched_to_panel(),
             hold_panel: None,
             links: (!demo).then(|| crate::kit::url_scheme::Inbox::new("open", Some(ctx.clone()), open_link)),
             update_banner: false,
@@ -1029,7 +1031,7 @@ impl App {
             crate::kit::native::set_dock_icon(false);
             match finish {
                 Finish::Restart => {
-                    crate::kit::perms::relaunch();
+                    crate::kit::perms::relaunch_to_panel();
                     self.quit(ctx);
                 }
                 Finish::Panel => {

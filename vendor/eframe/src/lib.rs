@@ -250,6 +250,14 @@ pub fn paint_everything_for(d: std::time::Duration) {
     native::winit_integration::paint_everything_for(d);
 }
 
+/// Cmd+Meow patch: keep the root window hidden after its first frame,
+/// until the app shows it (`ViewportCommand::Visible(true)`). Call before
+/// [`run_native`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn start_hidden() {
+    native::epi_integration::START_HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 // ----------------------------------------------------------------------------
 
 /// Attach an [`egui_inspection::InspectionPlugin`] to `ctx` when enabled via the environment.
