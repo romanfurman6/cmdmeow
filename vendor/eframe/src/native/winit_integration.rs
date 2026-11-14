@@ -46,6 +46,46 @@ pub fn sleep_if_invisible_or_minimized(window: Option<&Window>) {
     }
 }
 
+/// Cmd+Meow patch: what a viewport last put on screen. egui runs a pass for
+/// every mouse move and every timer, and most of those passes come out
+/// exactly like the frame already on screen (the pointer moved over nothing
+/// that reacts). Then tessellation and the GPU frame are skipped: the window
+/// keeps showing the same pixels. Still painted at least once a second, so
+/// a window can't stay stale for long whatever macOS did with its layer.
+/// `CMDMEOW_PAINT_ALWAYS=1` turns this off.
+#[derive(Default)]
+pub struct LastPaint(Option<(Vec<egui::epaint::ClippedShape>, f32, [u32; 2], Instant)>);
+
+impl LastPaint {
+    /// Whether this pass draws what is already on screen (same shapes, scale
+    /// and size, no texture changes). Remembers the pass either way.
+    pub fn same(&mut self, shapes: &[egui::epaint::ClippedShape], pixels_per_point: f32, size: [u32; 2], textures_idle: bool) -> bool {
+        if paint_always() {
+            return false;
+        }
+        let same = textures_idle
+            && self.0.as_ref().is_some_and(|(s, p, z, at)| at.elapsed().as_secs_f32() < 1.0 && *p == pixels_per_point && *z == size && s.as_slice() == shapes);
+        if !same {
+            self.0 = Some((shapes.to_vec(), pixels_per_point, size, Instant::now()));
+        }
+        PAINTS[usize::from(same)].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        same
+    }
+
+    /// The window was hidden (or not drawn): paint the next pass whatever it shows.
+    pub fn forget(&mut self) {
+        self.0 = None;
+    }
+}
+
+fn paint_always() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("CMDMEOW_PAINT_ALWAYS").is_some_and(|v| v != "0"))
+}
+
+/// Passes painted (0) and skipped as unchanged (1), for the app's repaint log.
+pub static PAINTS: [std::sync::atomic::AtomicU32; 2] = [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)];
+
 /// What [`WinitApp::run_ui_and_paint`] runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PassMode {

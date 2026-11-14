@@ -117,6 +117,9 @@ pub struct Viewport {
 
     /// `window` and `egui_winit` are initialized together.
     egui_winit: Option<egui_winit::State>,
+
+    /// Cmd+Meow patch: the frame on screen, to skip passes that change nothing.
+    last_paint: winit_integration::LastPaint,
 }
 
 impl Drop for Viewport {
@@ -363,6 +366,7 @@ impl<'app> WgpuWinitApp<'app> {
                 window: Some(window),
                 egui_winit: Some(egui_winit),
                 pending_delta: Default::default(),
+                last_paint: Default::default(),
             },
         );
 
@@ -731,6 +735,7 @@ impl WgpuWinitRunning<'_> {
 
                 if let Some(viewport) = viewports.get_mut(&viewport_id) {
                     viewport.info.events.clear(); // they should have been processed
+                    viewport.last_paint.forget();
                     if let Viewport {
                         window: Some(window),
                         egui_winit: Some(egui_winit),
@@ -820,26 +825,33 @@ impl WgpuWinitRunning<'_> {
         egui_winit.handle_platform_output_with_event_loop(window, event_loop, platform_output);
 
         let vsync_secs = if is_visible {
-            let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
+            let size = window.inner_size();
+            let wants_shot = viewport.actions_requested.iter().any(|a| matches!(a, ActionRequested::Screenshot(_)));
+            let same = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], pending_deltas.is_empty());
+            let vsync_secs = if same && !wants_shot {
+                0.0
+            } else {
+                let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
 
-            let mut screenshot_commands = vec![];
-            viewport.actions_requested.retain(|cmd| {
-                if let ActionRequested::Screenshot(callback) = cmd {
-                    screenshot_commands.push(callback.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            let vsync_secs = painter.paint_and_update_textures(
-                viewport_id,
-                pixels_per_point,
-                app.clear_color(&egui_ctx.global_style().visuals),
-                &clipped_primitives,
-                pending_deltas,
-                screenshot_commands,
-                window,
-            );
+                let mut screenshot_commands = vec![];
+                viewport.actions_requested.retain(|cmd| {
+                    if let ActionRequested::Screenshot(callback) = cmd {
+                        screenshot_commands.push(callback.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+                painter.paint_and_update_textures(
+                    viewport_id,
+                    pixels_per_point,
+                    app.clear_color(&egui_ctx.global_style().visuals),
+                    &clipped_primitives,
+                    pending_deltas,
+                    screenshot_commands,
+                    window,
+                )
+            };
 
             for action in viewport.actions_requested.drain(..) {
                 match action {
@@ -876,6 +888,7 @@ impl WgpuWinitRunning<'_> {
 
             vsync_secs
         } else {
+            viewport.last_paint.forget();
             0.0
         };
 
@@ -1307,16 +1320,23 @@ fn render_immediate_viewport(
         }
     }
 
-    let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
-    painter.paint_and_update_textures(
-        ids.this,
-        pixels_per_point,
-        [0.0, 0.0, 0.0, 0.0],
-        &clipped_primitives,
-        &mut viewport.pending_delta,
-        vec![],
-        window,
-    );
+    // Cmd+Meow patch: a pass that changes nothing on screen isn't painted
+    let size = window.inner_size();
+    if !viewport.info.visible().unwrap_or(true) {
+        viewport.last_paint.forget();
+    }
+    if !viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty()) {
+        let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
+        painter.paint_and_update_textures(
+            ids.this,
+            pixels_per_point,
+            [0.0, 0.0, 0.0, 0.0],
+            &clipped_primitives,
+            &mut viewport.pending_delta,
+            vec![],
+            window,
+        );
+    }
 
     egui_winit.handle_platform_output(window, platform_output);
 
@@ -1426,6 +1446,7 @@ fn initialize_or_update_viewport<'a>(
                 window: None,
                 egui_winit: None,
                 pending_delta: Default::default(),
+                last_paint: Default::default(),
             })
         }
 

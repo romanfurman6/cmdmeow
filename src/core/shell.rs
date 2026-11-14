@@ -759,6 +759,10 @@ impl eframe::App for App {
         let t = ctx.input(|i| i.time);
         let mut cx = self.cx();
         match self.mode {
+            // the root window is the panel; while it's hidden, its pass still
+            // runs for the app window and tools' own windows (drawn inside
+            // it), but nobody sees the panel: don't build it
+            Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
                 glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);

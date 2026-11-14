@@ -666,11 +666,12 @@ fn next_beat(now: f64, fps: f64) -> f64 {
     if left < 0.004 { left + period } else { left }
 }
 
-/// A spinning arc used while something is working; call [`animate`] to keep
-/// it turning.
-pub fn spinner(painter: &Painter, center: Pos2, radius: f32, t: f64, color: Color32) {
-    let a0 = (t * 4.0) as f32;
-    painter.add(PathShape::line(arc_points(center, radius, a0, a0 + 4.2, 40), PathStroke::new(2.5, color)));
+/// A spinning arc used while something is working. It turns by itself: a
+/// Core Animation layer where it can (no frames of ours, smooth while the
+/// app is busy), else egui at the animation pace. `_t` is unused (callers
+/// used to pass the clock).
+pub fn spinner(painter: &Painter, center: Pos2, radius: f32, _t: f64, color: Color32) {
+    crate::kit::spin::arc(painter, center, radius, color);
 }
 
 pub fn checkbox(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {

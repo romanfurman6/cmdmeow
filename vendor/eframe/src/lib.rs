@@ -232,6 +232,16 @@ pub fn viewport_ns_view(id: egui::ViewportId) -> Option<*mut core::ffi::c_void> 
     }
 }
 
+/// Cmd+Meow patch: (painted, skipped as unchanged) passes since the last
+/// call, counted over all windows.
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(feature = "glow", feature = "wgpu_no_default_features"))]
+pub fn take_paint_counts() -> (u32, u32) {
+    use std::sync::atomic::Ordering;
+    let p = &native::winit_integration::PAINTS;
+    (p[0].swap(0, Ordering::Relaxed), p[1].swap(0, Ordering::Relaxed))
+}
+
 // ----------------------------------------------------------------------------
 
 /// Attach an [`egui_inspection::InspectionPlugin`] to `ctx` when enabled via the environment.

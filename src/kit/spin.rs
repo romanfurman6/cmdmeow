@@ -1,4 +1,4 @@
-//! Fan blades that turn without redrawing the window.
+//! Fan blades and work spinners that turn without redrawing the window.
 //!
 //! egui redraws a whole window for any change, so blades turning at 30 fps
 //! kept an open panel at ~12% CPU (each frame ~3.3 ms on an M1). On macOS
@@ -12,8 +12,9 @@
 //! asked to [`suspend`] it (the widget editor). Otherwise egui draws the
 //! same blades at the same angle, at the decorative pace.
 //!
-//! Widgets call [`blades`] while drawing; the shell calls [`flush`] at the
-//! end of every pass of a window that may show them.
+//! Widgets call [`blades`] (or `glass::spinner`, which calls [`arc`]) while
+//! drawing; the shell calls [`flush`] at the end of every pass of a window
+//! that may show them.
 
 use egui::{Color32, LayerId, Painter, Pos2, Rect, Shape, Stroke, Vec2};
 use std::cell::RefCell;
@@ -25,10 +26,25 @@ struct Request {
     key: String,
     center: Pos2,
     radius: f32,
-    rpm: f32,
+    look: Look,
     color: Color32,
     hub: Color32,
 }
+
+/// What turns.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Look {
+    /// Fan blades at the fan's speed; they rest with the decorative loops.
+    Blades { rpm: f32 },
+    /// A work spinner's open arc; it turns as long as it's drawn.
+    Arc,
+}
+
+/// A work spinner's arc: how far it reaches, its line, its speed (as the
+/// egui spinner always turned: 4 radians a second).
+const ARC_SWEEP: f32 = 4.2;
+const ARC_WIDTH: f32 = 2.5;
+const ARC_TPS: f64 = 4.0 / std::f64::consts::TAU;
 
 /// Where a key's blades point: `angle0` at time `t0`, turning `tps` turns a second.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -69,8 +85,26 @@ pub fn blades(p: &Painter, key: &str, c: Pos2, r: f32, rpm: f32, color: Color32,
     static TEST_RPM: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
     let rpm = TEST_RPM.get_or_init(|| std::env::var("CMDMEOW_SPIN_RPM").ok().and_then(|v| v.parse().ok())).unwrap_or(rpm);
     let id = p.ctx().viewport_id();
-    let req = Request { painter: p.clone(), key: key.to_string(), center: c, radius: r, rpm, color, hub };
+    let req = Request { painter: p.clone(), key: key.to_string(), center: c, radius: r, look: Look::Blades { rpm }, color, hub };
     PENDING.with(|q| q.borrow_mut().push((id, req)));
+}
+
+/// A work spinner (an open arc of radius `r` around `c`), turning natively
+/// where it can (no frames of ours, smooth even while the app is busy) and
+/// drawn by egui at the animation pace where it can't.
+pub fn arc(p: &Painter, c: Pos2, r: f32, color: Color32) {
+    let ctx = p.ctx();
+    let id = ctx.viewport_id();
+    // one layer per spot: a spinner that moves gets a fresh one (egui draws
+    // it meanwhile), the old one goes when it's no longer asked for
+    let spot = egui::Id::new(("spin-arc", p.layer_id(), (c.x * 2.0).round() as i32, (c.y * 2.0).round() as i32, (r * 2.0).round() as i32));
+    let req = Request { painter: p.clone(), key: format!("arc-{}", spot.value()), center: c, radius: r, look: Look::Arc, color, hub: Color32::TRANSPARENT };
+    PENDING.with(|q| q.borrow_mut().push((id, req)));
+}
+
+/// The arc egui draws for a spinner pointing at `angle`.
+pub fn draw_arc(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
+    p.add(egui::epaint::PathShape::line(crate::kit::glass::arc_points(c, r, angle, angle + ARC_SWEEP, 40), egui::epaint::PathStroke::new(ARC_WIDTH, color)));
 }
 
 /// Draw blades with egui this pass (the widget editor: its widgets jiggle
@@ -151,8 +185,13 @@ pub fn flush(ctx: &egui::Context) {
     let now = clock();
     let mut keep = Vec::new();
     let mut egui_turning = false;
+    let mut egui_working = false;
     for req in &reqs {
-        let tps = if live { turns_per_sec(req.rpm) } else { 0.0 };
+        let tps = match req.look {
+            Look::Blades { rpm } if live => turns_per_sec(rpm),
+            Look::Blades { .. } => 0.0,
+            Look::Arc => ARC_TPS,
+        };
         let turn = TURNS.with(|t| {
             let mut t = t.borrow_mut();
             let e = t.entry(req.key.clone()).or_insert(Turn { angle0: 0.0, t0: now, tps });
@@ -161,7 +200,8 @@ pub fn flush(ctx: &egui::Context) {
             }
             *e
         });
-        let rect = Rect::from_center_size(req.center, Vec2::splat(req.radius * 2.0 + 2.0));
+        let edge = if req.look == Look::Arc { ARC_WIDTH } else { 1.0 };
+        let rect = Rect::from_center_size(req.center, Vec2::splat((req.radius + edge) * 2.0));
         let clip = req.painter.clip_rect().intersect(ctx.content_rect());
         let can = native_wanted()
             && !suspended
@@ -170,7 +210,7 @@ pub fn flush(ctx: &egui::Context) {
             && !covered(ctx, req.painter.layer_id(), rect);
         // a layer that can't show now stays (hidden) for when it can
         let shown = if can {
-            match native::show(id, &req.key, clip, req.center, req.radius, req.color, req.hub, turn) {
+            match native::show(id, &req.key, req.look == Look::Arc, clip, req.center, req.radius, req.color, req.hub, turn) {
                 Some(on) => {
                     keep.push(req.key.clone());
                     on
@@ -184,12 +224,23 @@ pub fn flush(ctx: &egui::Context) {
             false
         };
         if !shown {
-            draw(&req.painter, req.center, req.radius, turn.angle_at(now) as f32, req.color, req.hub);
-            egui_turning |= tps > 0.0;
+            let angle = turn.angle_at(now) as f32;
+            match req.look {
+                Look::Blades { .. } => {
+                    draw(&req.painter, req.center, req.radius, angle, req.color, req.hub);
+                    egui_turning |= tps > 0.0;
+                }
+                Look::Arc => {
+                    draw_arc(&req.painter, req.center, req.radius, angle, req.color);
+                    egui_working = true;
+                }
+            }
         }
     }
     native::retain(id, &keep);
-    if egui_turning {
+    if egui_working {
+        crate::kit::glass::animate(ctx);
+    } else if egui_turning {
         crate::kit::glass::ambient(ctx);
     }
 }
@@ -244,6 +295,8 @@ mod native {
         container: Retained<AnyObject>,
         blades: Retained<AnyObject>,
         hub: Retained<AnyObject>,
+        /// A spinner's arc (stroked) rather than blades (filled).
+        arc: bool,
         /// What was set last, to touch only what changed.
         frame: Option<(Rect, Pos2, f32)>,
         colors: Option<(Color32, Color32, Color32, *const AnyObject)>,
@@ -305,6 +358,19 @@ mod native {
                     CGPathAddLineToPoint(path, std::ptr::null(), q.x as f64, q.y as f64);
                 }
                 CGPathCloseSubpath(path);
+            }
+            path
+        }
+    }
+
+    /// A spinner's arc in a square of side 2r, centre (r, r), y down.
+    fn arc_path(r: f32) -> *mut c_void {
+        let pts = crate::kit::glass::arc_points(Pos2::new(r, r), r, 0.0, super::ARC_SWEEP, 40);
+        unsafe {
+            let path = CGPathCreateMutable();
+            CGPathMoveToPoint(path, std::ptr::null(), pts[0].x as f64, pts[0].y as f64);
+            for q in &pts[1..] {
+                CGPathAddLineToPoint(path, std::ptr::null(), q.x as f64, q.y as f64);
             }
             path
         }
@@ -376,7 +442,7 @@ mod native {
     /// Some(true) when they're on screen, Some(false) while a fresh or moved
     /// layer waits a pass, None if the window can't be reached.
     #[allow(clippy::too_many_arguments)]
-    pub fn show(id: egui::ViewportId, key: &str, clip: Rect, c: Pos2, r: f32, color: Color32, hub: Color32, turn: Turn) -> Option<bool> {
+    pub fn show(id: egui::ViewportId, key: &str, arc: bool, clip: Rect, c: Pos2, r: f32, color: Color32, hub: Color32, turn: Turn) -> Option<bool> {
         let (root, scale, space) = root_of(id)?;
         let space_ptr: *const AnyObject = space.as_deref().map_or(std::ptr::null(), |s| s as *const AnyObject);
         let root_ptr: *const AnyObject = &*root;
@@ -396,9 +462,16 @@ mod native {
                         let _: () = msg_send![&*container, addSublayer: &*blades];
                         let _: () = msg_send![&*container, addSublayer: &*hub_l];
                         let _: () = msg_send![&*hub_l, setLineWidth: 1.0f64];
+                        if arc {
+                            let none: *const c_void = std::ptr::null();
+                            let _: () = msg_send![&*blades, setFillColor: none];
+                            let _: () = msg_send![&*blades, setLineWidth: super::ARC_WIDTH as f64];
+                            let _: () = msg_send![&*blades, setLineJoin: &*NSString::from_str("round")];
+                            let _: () = msg_send![&*hub_l, setHidden: true];
+                        }
                         let _: () = msg_send![&*root, addSublayer: &*container];
                     }
-                    all.push(Blades { viewport: id, key: key.to_string(), root: root_ptr, container, blades, hub: hub_l, frame: None, colors: None, turn: None, hidden: false });
+                    all.push(Blades { viewport: id, key: key.to_string(), root: root_ptr, container, blades, hub: hub_l, arc, frame: None, colors: None, turn: None, hidden: false });
                     all.len() - 1
                 }
             };
@@ -434,8 +507,12 @@ mod native {
                         let _: () = msg_send![&**l, setPosition: mid];
                     }
                     if fresh_path {
-                        set_path(&b.blades, blades_path(r));
-                        set_path(&b.hub, hub_path(r));
+                        if b.arc {
+                            set_path(&b.blades, arc_path(r));
+                        } else {
+                            set_path(&b.blades, blades_path(r));
+                            set_path(&b.hub, hub_path(r));
+                        }
                     }
                     b.frame = Some(frame);
                 }
@@ -443,9 +520,13 @@ mod native {
                 // a window moved to another screen gets new colours too
                 if b.colors != Some((color, hub, edge, space_ptr)) {
                     let sp = space.as_deref();
-                    set_color(&b.blades, false, color, sp);
-                    set_color(&b.hub, false, hub, sp);
-                    set_color(&b.hub, true, edge, sp);
+                    if b.arc {
+                        set_color(&b.blades, true, color, sp);
+                    } else {
+                        set_color(&b.blades, false, color, sp);
+                        set_color(&b.hub, false, hub, sp);
+                        set_color(&b.hub, true, edge, sp);
+                    }
                     b.colors = Some((color, hub, edge, space_ptr));
                 }
                 if b.turn != Some(turn) {
@@ -510,7 +591,7 @@ mod native {
         START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
     }
     #[allow(clippy::too_many_arguments)]
-    pub fn show(_id: egui::ViewportId, _key: &str, _clip: Rect, _c: Pos2, _r: f32, _color: Color32, _hub: Color32, _turn: Turn) -> Option<bool> {
+    pub fn show(_id: egui::ViewportId, _key: &str, _arc: bool, _clip: Rect, _c: Pos2, _r: f32, _color: Color32, _hub: Color32, _turn: Turn) -> Option<bool> {
         None
     }
     pub fn hide(_id: egui::ViewportId, _key: &str) -> bool {
@@ -540,6 +621,22 @@ mod tests {
         assert_eq!(turns_per_sec(2400.0), 1.0);
         assert_eq!(turns_per_sec(0.0), 0.0);
         assert_eq!(turns_per_sec(-5.0), 0.0);
+    }
+
+    #[test]
+    fn a_spinner_without_native_layers_is_drawn_by_egui_and_keeps_turning() {
+        set_allowed(false);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0))), ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| {
+            crate::kit::glass::spinner(ui.painter(), Pos2::new(50.0, 50.0), 8.0, 0.0, Color32::WHITE);
+            flush(ui.ctx());
+        });
+        out.textures_delta.clear();
+        set_allowed(true);
+        assert!(out.shapes.iter().any(|s| matches!(s.shape, Shape::Path(_))), "the arc is drawn");
+        let next = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay).unwrap();
+        assert!(next <= std::time::Duration::from_millis(20), "and asks for the next frame: {next:?}");
     }
 
     #[test]
