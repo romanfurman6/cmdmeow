@@ -14,8 +14,14 @@ use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, Vie
 use std::time::Instant;
 
 const DIM: Color32 = Color32::from_rgba_premultiplied(5, 5, 7, 140);
-const CARD: Color32 = Color32::from_rgb(0x1C, 0x1C, 0x1F);
-const ROWS: Color32 = Color32::from_rgb(0x24, 0x24, 0x28);
+/// Cards and bars over the screen: the theme's popover, so the text on
+/// them (TEXT and co.) reads in light mode too.
+#[allow(non_snake_case)]
+fn CARD() -> Color32 { POPOVER() }
+#[allow(non_snake_case)]
+fn ROWS() -> Color32 { white(12) }
+/// A floating bar: the popover, slightly see-through.
+fn bar_fill(a: u8) -> Color32 { with_alpha(POPOVER(), a as f32 / 255.0) }
 const LIVE: Color32 = Color32::from_rgb(0xFF, 0x69, 0x61);
 const PAUSED: Color32 = Color32::from_rgb(0xFF, 0xB3, 0x40);
 
@@ -94,7 +100,7 @@ fn device_menu(ui: &mut Ui, p: &egui::Painter, at: Pos2, w: f32, m: Media, devs:
     let rows = list.len().max(1);
     let r = Rect::from_min_size(at, Vec2::new(w, rows as f32 * MENU_ROW + 8.0));
     p.rect_filled(r.translate(Vec2::new(0.0, 4.0)), 10.0, Color32::from_black_alpha(70));
-    p.rect_filled(r, 10.0, CARD);
+    p.rect_filled(r, 10.0, CARD());
     p.rect_stroke(r, 10.0, Stroke::new(1.0, white(36)), StrokeKind::Inside);
     let id = ui.scope_id().with(("dev-menu", m == Media::Mic));
     // swallow clicks on the card itself
@@ -133,7 +139,7 @@ fn small_switch(ui: &mut Ui, r: Rect, id: egui::Id, on: bool) -> bool {
     let resp = ui.interact(r, id, Sense::click());
     let t = ui.ctx().animate_bool(id.with("t"), on);
     let p = ui.painter();
-    p.rect_filled(r, r.height() / 2.0, lerp_color(white(41), tint::CAPTURE(), t));
+    p.rect_filled(r, r.height() / 2.0, lerp_color(white(41), BLUE(), t));
     let d = r.height() - 4.0;
     let x = r.left() + 2.0 + d / 2.0 + (r.width() - 4.0 - d) * t;
     p.circle_filled(Pos2::new(x, r.center().y), d / 2.0, Color32::WHITE);
@@ -200,7 +206,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         match pick.source {
             Source::Display => {
                 p.rect_filled(r, 0.0, DIM);
-                p.rect_stroke(r, 0.0, Stroke::new(3.0, tint::CAPTURE()), StrokeKind::Inside);
+                p.rect_stroke(r, 0.0, Stroke::new(3.0, BLUE()), StrokeKind::Inside);
                 let card = Rect::from_center_size(r.center(), Vec2::new(440.0, 464.0));
                 display_card(ui, &p, card, &d, &s, many, &cam_name, &mic_name, &devs, &mut todo);
                 if devs.menu.is_none() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -214,15 +220,15 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                     Some(w) => {
                         let wr = to_local(w.frame).intersect(r);
                         dim_around(&p, r, wr);
-                        p.rect_stroke(wr, 6.0, Stroke::new(3.0, tint::CAPTURE()), StrokeKind::Outside);
+                        p.rect_stroke(wr, 6.0, Stroke::new(3.0, BLUE()), StrokeKind::Outside);
                         let label = format!("{} · {} × {}", w.label(), w.frame.width().round(), w.frame.height().round());
                         let g = p.layout_no_wrap(label, bold(12.0), TEXT());
                         let lr = Rect::from_center_size(wr.center() - Vec2::new(0.0, 14.0), g.size() + Vec2::new(20.0, 10.0));
-                        p.rect_filled(lr, lr.height() / 2.0, CARD);
+                        p.rect_filled(lr, lr.height() / 2.0, CARD());
                         p.galley(lr.center() - g.size() / 2.0, g, TEXT());
                         let hr = Rect::from_center_size(wr.center() + Vec2::new(0.0, 16.0), Vec2::new(110.0, 22.0));
-                        p.rect_filled(hr, 11.0, tint::CAPTURE());
-                        p.text(hr.center(), Align2::CENTER_CENTER, "Click to record", font(11.0), Color32::WHITE);
+                        p.rect_filled(hr, 11.0, BLUE());
+                        p.text(hr.center(), Align2::CENTER_CENTER, "Click to record", bold(11.0), ON_ACTION);
                     }
                     None => {
                         p.rect_filled(r, 0.0, DIM);
@@ -270,12 +276,12 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                                 let below = ar.bottom() + 12.0 + 40.0 < r.bottom();
                                 let ty = if below { ar.bottom() + 12.0 } else { ar.bottom() - 52.0 };
                                 let tr = Rect::from_min_size(Pos2::new(ar.center().x - 60.0, ty), Vec2::new(120.0, 40.0));
-                                p.rect_filled(tr, 20.0, CARD);
+                                p.rect_filled(tr, 20.0, CARD());
                                 p.rect_stroke(tr, 20.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
                                 let sb = tr.shrink(5.0);
                                 let sr = ui.interact(sb, ui.scope_id().with("area-start"), Sense::click());
-                                p.rect_filled(sb, sb.height() / 2.0, if sr.hovered() { lerp_color(tint::CAPTURE(), Color32::WHITE, 0.12) } else { tint::CAPTURE() });
-                                p.text(sb.center(), Align2::CENTER_CENTER, "Start  Enter", bold(13.0), Color32::WHITE);
+                                p.rect_filled(sb, sb.height() / 2.0, if sr.hovered() { lerp_color(BLUE(), Color32::WHITE, 0.15) } else { BLUE() });
+                                p.text(sb.center(), Align2::CENTER_CENTER, "Start  Enter", bold(13.0), ON_ACTION);
                                 if sr.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     todo.push(Do::Start(ch));
                                 }
@@ -342,7 +348,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
     // the big card for a whole display
     #[allow(clippy::too_many_arguments)]
     fn display_card(ui: &mut Ui, p: &egui::Painter, card: Rect, d: &sys::Display, s: &crate::tools::capture::settings::RecSettings, many: bool, cam: &str, mic: &str, devs: &Devs, todo: &mut Vec<Do>) {
-        p.rect_filled(card, 16.0, CARD);
+        p.rect_filled(card, 16.0, CARD());
         p.rect_stroke(card, 16.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
         let id = ui.scope_id().with("rec-card");
         let x0 = card.left() + 16.0;
@@ -368,16 +374,15 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
 
         let start = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 56.0));
         let sr = ui.interact(start, id.with("start"), Sense::click());
-        p.rect_filled(start, 12.0, if sr.hovered() { lerp_color(tint::CAPTURE(), Color32::WHITE, 0.1) } else { tint::CAPTURE() });
+        // the action colour with dark text, like every primary button
+        p.rect_filled(start, 12.0, if sr.hovered() { lerp_color(BLUE(), Color32::WHITE, 0.15) } else { BLUE() });
         let dot = Pos2::new(start.left() + 30.0, start.center().y);
-        p.circle_filled(dot, 14.0, Color32::WHITE);
-        p.circle_filled(dot, 6.0, Color32::from_rgb(0xE5, 0x38, 0x2E));
-        let (ly1, ly2) = two_lines_y(&p, start.center().y, &bold(15.0), &font(11.0));
-        p.text(Pos2::new(dot.x + 26.0, ly1), Align2::LEFT_CENTER, "Start recording", bold(15.0), Color32::WHITE);
-        p.text(Pos2::new(dot.x + 26.0, ly2), Align2::LEFT_CENTER, "Saves an mp4 to your Capture folder", font(11.0), Color32::from_rgb(0xE4, 0xDE, 0xFA));
+        p.circle_filled(dot, 13.0, ON_ACTION);
+        p.circle_filled(dot, 6.0, LIVE);
+        p.text(Pos2::new(dot.x + 25.0, start.center().y), Align2::LEFT_CENTER, "Start recording", bold(15.0), ON_ACTION);
         let kr = Rect::from_center_size(Pos2::new(start.right() - 36.0, start.center().y), Vec2::new(44.0, 22.0));
-        p.rect_filled(kr, 6.0, white(46));
-        p.text(kr.center(), Align2::CENTER_CENTER, "Enter", bold(11.0), Color32::WHITE);
+        p.rect_filled(kr, 6.0, with_alpha(ON_ACTION, 0.14));
+        p.text(kr.center(), Align2::CENTER_CENTER, "Enter", bold(11.0), ON_ACTION);
         if sr.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
@@ -388,7 +393,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
 
         const ROW: f32 = 56.0;
         let rows = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 3.0 * ROW));
-        p.rect_filled(rows, 12.0, ROWS);
+        p.rect_filled(rows, 12.0, ROWS());
         let list: [(Ico, &str, String, bool, Option<Media>); 3] = [
             (Ico::Camera, "Camera", cam.to_string(), s.camera, Some(Media::Camera)),
             (Ico::Mic, "Microphone", mic.to_string(), s.mic, Some(Media::Mic)),
@@ -445,7 +450,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
     // the compact bar for Window and Area; returns its rect
     fn top_bar(ui: &mut Ui, p: &egui::Painter, r: Rect, src: Source, s: &crate::tools::capture::settings::RecSettings, devs: &Devs, todo: &mut Vec<Do>) -> Rect {
         let br = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 64.0), Vec2::new(500.0, 48.0));
-        p.rect_filled(br, 24.0, CARD);
+        p.rect_filled(br, 24.0, CARD());
         p.rect_stroke(br, 24.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
         let id = ui.scope_id().with("rec-top");
         let cur = Source::ALL.iter().position(|x| *x == src).unwrap_or(0);
@@ -455,9 +460,9 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         let mut x = br.left() + 262.0;
         for (k, (on, ico_on, ico_off, tip)) in [(s.camera, Ico::Camera, Ico::Camera, "Camera"), (s.mic, Ico::Mic, Ico::MicOff, "Microphone"), (s.system_audio, Ico::Speaker, Ico::Speaker, "System audio")].into_iter().enumerate() {
             let b = Rect::from_min_size(Pos2::new(x, br.top() + 8.0), Vec2::splat(32.0));
-            let color = if on { Color32::WHITE } else { TEXT_FAINT() };
+            let color = if on { ON_ACTION } else { TEXT_FAINT() };
             if on {
-                p.circle_filled(b.center(), 16.0, with_alpha(tint::CAPTURE(), 0.45));
+                p.circle_filled(b.center(), 16.0, BLUE());
             }
             if k == 1 {
                 if let Some(l) = devs.level {
@@ -538,16 +543,16 @@ fn countdown(c: &mut Capture, ctx: &egui::Context) {
         for (k, a) in [(84.0, 10u8), (78.0, 22), (74.0, 40)] {
             p.circle_filled(c0 + Vec2::new(0.0, 3.0), k, Color32::from_black_alpha(a));
         }
-        p.circle_filled(c0, 70.0, Color32::from_rgba_unmultiplied(22, 22, 24, 235));
+        p.circle_filled(c0, 70.0, bar_fill(235));
         crate::kit::glass::stroke_circle(&p, c0, 66.0, Stroke::new(2.0, Color32::from_black_alpha(90)));
         let frac = (left / total.max(0.1)).clamp(0.0, 1.0);
         // macOS animates the ring itself, smooth whatever our frame rate;
         // elsewhere (and before its window is up) egui draws it
-        let [r0, g0, b0, _] = tint::CAPTURE().to_array();
+        let [r0, g0, b0, _] = BLUE().to_array();
         native_ring = sys::countdown_ring(title, 66.0, 5.0, [r0, g0, b0], frac as f64, left as f64);
         if !native_ring {
             let a0 = -std::f32::consts::FRAC_PI_2;
-            p.add(egui::epaint::PathShape::line(arc_points(c0, 66.0, a0, a0 + frac * std::f32::consts::TAU, 64), egui::epaint::PathStroke::new(5.0, tint::CAPTURE())));
+            p.add(egui::epaint::PathShape::line(arc_points(c0, 66.0, a0, a0 + frac * std::f32::consts::TAU, 64), egui::epaint::PathStroke::new(5.0, BLUE())));
         }
         p.text(c0, Align2::CENTER_CENTER, format!("{}", left.ceil().max(1.0) as u32), bold(52.0), TEXT());
         if ui.interact(r, ui.scope_id().with("skip"), Sense::click()).on_hover_text("Click to start now · Esc to cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
@@ -646,7 +651,7 @@ fn bar(c: &mut Capture, ctx: &egui::Context) {
         }
         let r = ui.max_rect().shrink(2.0);
         let p = ui.painter().clone();
-        p.rect_filled(r, r.height() / 2.0, Color32::from_rgba_unmultiplied(22, 22, 24, 248));
+        p.rect_filled(r, r.height() / 2.0, bar_fill(248));
         p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, white(32)), StrokeKind::Inside);
         let id = ui.scope_id().with("rec-bar");
         let color = if paused { PAUSED } else { LIVE };
@@ -775,7 +780,7 @@ fn camera_controls(c: &mut Capture, ctx: &egui::Context) {
         sys::lift(title, None);
         let r = ui.max_rect().shrink(1.0);
         let p = ui.painter().clone();
-        p.rect_filled(r, r.height() / 2.0, Color32::from_rgba_unmultiplied(22, 22, 24, 230));
+        p.rect_filled(r, r.height() / 2.0, bar_fill(230));
         let id = ui.scope_id().with("cam-ctl");
         let b = |i: f32| Rect::from_center_size(Pos2::new(r.left() + 20.0 + i * 36.0, r.center().y), Vec2::splat(28.0));
         let glyph = |ui: &mut Ui, rect: Rect, key: &str, tip: &str, on: bool, draw: &dyn Fn(&egui::Painter, Pos2, Color32)| {
@@ -843,7 +848,7 @@ fn bar_settings(c: &mut Capture, ctx: &egui::Context) {
         sys::lift(title, None);
         let r = ui.max_rect().shrink(2.0);
         let p = ui.painter().clone();
-        p.rect_filled(r, 12.0, CARD);
+        p.rect_filled(r, 12.0, CARD());
         p.rect_stroke(r, 12.0, Stroke::new(1.0, white(32)), StrokeKind::Inside);
         let id = ui.scope_id().with("rec-settings");
         let x0 = r.left() + 14.0;
@@ -966,11 +971,11 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
         let r = ui.max_rect().shrink(2.0);
         hovered = ui.rect_contains_pointer(r);
         let p = ui.painter().clone();
-        p.rect_filled(r, 12.0, CARD);
+        p.rect_filled(r, 12.0, CARD());
         p.rect_stroke(r, 12.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
         let id = ui.scope_id().with("rec-saved");
         let pic = Rect::from_min_size(r.min, Vec2::new(r.width(), 128.0));
-        p.rect_filled(pic, egui::CornerRadius { nw: 12, ne: 12, sw: 0, se: 0 }, Color32::from_rgb(0x2F, 0x3B, 0x52));
+        p.rect_filled(pic, egui::CornerRadius { nw: 12, ne: 12, sw: 0, se: 0 }, white(20));
         if let Some(img) = &sv.thumb {
             let t = tex(&vctx, &mut sv.tex, img);
             super::super::ui::thumb(&p, pic.shrink(1.0), Some(t), img.dimensions(), 11.0);
@@ -983,16 +988,17 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
             todo = Some(Do::Open);
         }
         let len = timeline::clock_label(sv.secs);
-        let g = p.layout_no_wrap(len, bold(11.0), TEXT());
+        // over the picture: white on dark in both themes
+        let g = p.layout_no_wrap(len, bold(11.0), Color32::WHITE);
         let lr = Rect::from_min_size(pic.right_bottom() - g.size() - Vec2::new(18.0, 14.0), g.size() + Vec2::new(10.0, 6.0));
         p.rect_filled(lr, 4.0, Color32::from_rgba_unmultiplied(28, 28, 31, 220));
-        p.galley(lr.min + Vec2::new(5.0, 3.0), g, TEXT());
+        p.galley(lr.min + Vec2::new(5.0, 3.0), g, Color32::WHITE);
         let close = Rect::from_min_size(Pos2::new(pic.right() - 30.0, pic.top() + 8.0), Vec2::splat(22.0));
         if icon_button(ui, close, id.with("close"), Ico::Close, "Close", TEXT(), true) {
             todo = Some(Do::Close);
         }
         let y = pic.bottom() + 14.0;
-        icons::draw(&p, Ico::Check, Rect::from_center_size(Pos2::new(r.left() + 18.0, y), Vec2::splat(13.0)), Color32::from_rgb(0x30, 0xD1, 0x58));
+        icons::draw(&p, Ico::Check, Rect::from_center_size(Pos2::new(r.left() + 18.0, y), Vec2::splat(13.0)), GREEN());
         p.text(Pos2::new(r.left() + 30.0, y), Align2::LEFT_CENTER, format!("Saved · {}", megabytes(sv.bytes)), font(12.0), TEXT());
         p.text(Pos2::new(r.right() - 12.0, y), Align2::RIGHT_CENTER, format!("{}×{}", sv.size.0, sv.size.1), font(12.0), TEXT_FAINT());
         let acts = [(Ico::Scissors, "Edit", Do::Open), (Ico::Link, link_label.as_str(), Do::Link), (Ico::Folder, "Finder", Do::Reveal), (Ico::Copy, "Copy", Do::Copy), (Ico::Trash, "Delete", Do::Delete)];
