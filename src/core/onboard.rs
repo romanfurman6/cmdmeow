@@ -2359,7 +2359,10 @@ fn tool_hint(ui: &Ui, r: Rect, id: egui::Id, name: &str) {
     let size = Vec2::new(title.size().x.max(body.size().x) + 2.0 * sp::M, title.size().y + gap + if what.is_empty() { 0.0 } else { body.size().y } + 2.0 * sp::S);
     let screen = ui.ctx().content_rect();
     let x = (r.center().x - size.x / 2.0).clamp(screen.left() + sp::S, screen.right() - sp::S - size.x);
-    let box_ = Rect::from_min_size(Pos2::new(x, r.top() - 6.0 - size.y + (1.0 - a) * 4.0), size);
+    // above the icon; below it when there's no room above
+    let above = r.top() - 6.0 - size.y;
+    let y = if above >= screen.top() + sp::S { above + (1.0 - a) * 4.0 } else { r.bottom() + 6.0 - (1.0 - a) * 4.0 };
+    let box_ = Rect::from_min_size(Pos2::new(x, y), size);
     p.add(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha((90.0 * a) as u8) }.as_shape(box_, CornerRadius::same(8)));
     p.rect_filled(box_, 8.0, POPOVER().gamma_multiply(a));
     p.rect_stroke(box_, 8.0, Stroke::new(1.0, white(30).gamma_multiply(a)), StrokeKind::Inside);
@@ -2681,6 +2684,17 @@ mod tests {
         let t2 = loop_clock(&ctx, id, 20.0, true);
         assert!((t2 - t - 0.1).abs() < 1e-4, "{t2}");
         assert_eq!(loop_clock(&ctx, id, 30.0, false), t2, "stops where it was");
+    }
+
+    #[test]
+    fn every_tool_has_a_short_hover_hint() {
+        let tools = crate::tools::all(&crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true });
+        for t in tools.iter().filter(|t| t.id() != crate::tools::capture::ID) {
+            let hint = tool_hint_text(t.name());
+            assert!(!hint.is_empty(), "{} has no hint", t.name());
+            assert!(hint.split_whitespace().count() <= 5, "{}: more than 5 words (T5)", t.name());
+            assert!(!hint.ends_with('.'), "{}: no period (T5)", t.name());
+        }
     }
 
     #[test]
