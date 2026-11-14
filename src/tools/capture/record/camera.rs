@@ -26,6 +26,9 @@ impl Camera {
         false
     }
     pub fn set_visible(&self, _on: bool) {}
+    pub fn stalled(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -97,7 +100,8 @@ mod imp {
         window: Retained<NSWindow>,
         session: Retained<AVCaptureSession>,
         preview: Retained<AVCaptureVideoPreviewLayer>,
-        _frames: Option<(Retained<AVCaptureVideoDataOutput>, Retained<Frames>)>,
+        frames: Option<(Retained<AVCaptureVideoDataOutput>, Retained<Frames>)>,
+        opened: std::time::Instant,
     }
 
     struct SendBox<T>(T);
@@ -172,7 +176,7 @@ mod imp {
                     // nothing will say when it's live: show it now
                     window.setAlphaValue(1.0);
                 }
-                let cam = Camera { window, session, preview, _frames: frames };
+                let cam = Camera { window, session, preview, frames, opened: std::time::Instant::now() };
                 cam.lay_out(d);
                 if let Some(root) = view.layer() {
                     root.addSublayer(&cam.preview);
@@ -232,6 +236,13 @@ mod imp {
 
         pub fn visible(&self) -> bool {
             self.window.isVisible()
+        }
+
+        /// On for a while and still no picture: the camera sends none (a
+        /// closed lid, another app holding it).
+        pub fn stalled(&self) -> bool {
+            let live = self.frames.as_ref().is_none_or(|(_, f)| f.ivars().live.load(Ordering::Relaxed));
+            !live && self.opened.elapsed().as_secs_f32() > 3.0
         }
 
         /// Hide the bubble (and turn the camera off) or bring it back. The

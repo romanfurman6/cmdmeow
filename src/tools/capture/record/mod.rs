@@ -121,6 +121,8 @@ pub struct Recorder {
     pub phase: Phase,
     pub displays: Vec<Display>,
     pub camera: Option<camera::Camera>,
+    /// Said once that the camera sends no picture.
+    camera_warned: bool,
     pub mics: Vec<sys::Device>,
     pub cams: Vec<sys::Device>,
     /// The device list open in the picker.
@@ -150,7 +152,7 @@ impl Recorder {
         // unframed copies of videos that are gone (and old projects)
         #[cfg(not(test))]
         let _ = std::thread::Builder::new().name("cmdmeow-prune".into()).spawn(|| crate::tools::capture::video::compose::prune(&projects_dir()));
-        Recorder { phase: Phase::Idle, displays: Vec::new(), camera: None, mics: Vec::new(), cams: Vec::new(), menu: None, meter: None, meter_for: None, saved: None, tx, rx, last_area: None, out: Vec::new(), folder: PathBuf::new(), last_display: Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0)), ctx }
+        Recorder { phase: Phase::Idle, displays: Vec::new(), camera: None, camera_warned: false, mics: Vec::new(), cams: Vec::new(), menu: None, meter: None, meter_for: None, saved: None, tx, rx, last_area: None, out: Vec::new(), folder: PathBuf::new(), last_display: Rect::from_min_size(Pos2::ZERO, Vec2::new(1440.0, 900.0)), ctx }
     }
 
     pub fn idle(&self) -> bool {
@@ -246,7 +248,10 @@ impl Recorder {
             Access::Allowed => {
                 let d = s.camera_size.points();
                 match camera::Camera::open(s.camera_device.as_deref(), d, self.camera_spot(d)) {
-                    Ok(c) => self.camera = Some(c),
+                    Ok(c) => {
+                        self.camera = Some(c);
+                        self.camera_warned = false;
+                    }
                     Err(e) => self.hud(format!("Camera: {e}")),
                 }
             }
@@ -519,6 +524,11 @@ impl Recorder {
             }
             eprintln!("[rec] the microphone sends only silence");
             self.hud("The microphone hears nothing: is the lid closed, or are the AirPods out?");
+        }
+        if !self.camera_warned && self.camera.as_ref().is_some_and(|c| c.stalled()) {
+            self.camera_warned = true;
+            eprintln!("[rec] the camera sends no picture");
+            self.hud("The camera sends no picture: is the lid closed, or is another app using it?");
         }
         let failed = self.live().and_then(|l| l.session.failure());
         if let Some(why) = failed {

@@ -118,6 +118,48 @@ pub fn tidy(raw: Vec<crate::kit::whisper::Segment>) -> Vec<Line> {
         .collect()
 }
 
+/// What Whisper writes over silence, music or noise (it learned them from
+/// the last lines of subtitles), lower case, letters and spaces only.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MADE_UP: [&str; 16] = [
+    "thank you",
+    "thank you very much",
+    "thanks for watching",
+    "thank you for watching",
+    "please subscribe",
+    "bye",
+    "you",
+    "subtitles by the amaraorg community",
+    "продолжение следует",
+    "спасибо за просмотр",
+    "субтитры сделал dimatorzok",
+    "субтитры создавал dimatorzok",
+    "редактор субтитров асинецкая корректор аегорова",
+    "дякую за перегляд",
+    "дякуємо за перегляд",
+    "субтитри зроблені спільнотою amaraorg",
+];
+
+/// Lines Whisper made up: one of [`MADE_UP`] said over more than 2.5 s (a
+/// real "Thank you." takes about one), or anything over near silence.
+/// `pcm` is the 16 kHz mono sound the lines came from.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn made_up(l: &Line, pcm: &[f32]) -> bool {
+    let plain: String = l.text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
+    let plain = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (a, b) = match (l.words.first(), l.words.last()) {
+        (Some(f), Some(w)) => (f.start, w.end),
+        _ => (l.start, l.end),
+    };
+    if MADE_UP.contains(&plain.as_str()) && b - a > 2.5 {
+        return true;
+    }
+    let at = |t: f64| ((t.max(0.0) * 16_000.0) as usize).min(pcm.len());
+    let part = &pcm[at(l.start)..at(l.end)];
+    // about -50 dBFS: nothing anyone said
+    !part.is_empty() && (part.iter().map(|v| v * v).sum::<f32>() / part.len() as f32).sqrt() < 0.003
+}
+
 /// Transcribe the voice in `video` with model `m`. Blocks; progress is in
 /// percent (`total` 100).
 #[cfg(target_os = "macos")]
@@ -134,7 +176,9 @@ pub fn transcribe(video: &Path, m: Model, p: &std::sync::Arc<Progress>) -> Resul
     }
     let raw = crate::kit::whisper::Loaded::load(m)?.run_timed(&pcm, None, Some(p))?;
     p.done.store(100, Ordering::Relaxed);
-    Ok(tidy(raw))
+    let mut lines = tidy(raw);
+    lines.retain(|l| !made_up(l, &pcm));
+    Ok(lines)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -148,6 +192,21 @@ mod tests {
 
     fn line(s: f64, e: f64, t: &str) -> Line {
         Line { start: s, end: e, text: t.into(), words: Vec::new() }
+    }
+
+    #[test]
+    fn lines_whisper_made_up_are_dropped() {
+        let loud: Vec<f32> = (0..16_000 * 12).map(|i| ((i as f32) * 0.05).sin() * 0.2).collect();
+        // a "Thank you." over ten seconds of beeps, and a real one
+        assert!(made_up(&line(0.0, 10.1, "Thank you."), &loud));
+        assert!(!made_up(&line(9.0, 10.0, "Thank you."), &loud));
+        assert!(made_up(&line(0.0, 6.0, "Продолжение следует..."), &loud));
+        assert!(!made_up(&line(0.0, 6.0, "Thank you all for coming today"), &loud));
+        // anything over near silence
+        let mut quiet = loud.clone();
+        quiet[16_000 * 2..16_000 * 5].iter_mut().for_each(|v| *v *= 0.001);
+        assert!(made_up(&line(2.0, 5.0, "Hello there"), &quiet));
+        assert!(!made_up(&line(5.0, 8.0, "Hello there"), &quiet));
     }
 
     #[test]
