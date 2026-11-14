@@ -1412,6 +1412,9 @@ fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
 /// The menu bar panel as it will be: the picked tools' widgets, laid out
 /// as the panel lays them out, filled with sample data. A widget drops in
 /// when its goal is picked and the others make room.
+/// Height of the preview's top fade, on screen.
+const TOP_FADE: f32 = 32.0;
+
 fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     use crate::core::panel;
     let p = ui.painter().clone();
@@ -1465,7 +1468,8 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let mut target: f32 = ctx.data(|d| d.get_temp(off_id)).unwrap_or(0.0);
     if let Some(before) = &before {
         if let Some(k) = ids.iter().position(|w| !before.contains(w)) {
-            target = rects[k].top();
+            // clear of the top fade, so its header reads in full
+            target = rects[k].top() - (TOP_FADE / scale + panel::GAP);
         }
     }
     // the range is where the panel ends up, not where it is mid-slide, so
@@ -1569,7 +1573,7 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - edge - 52.0), Pos2::new(panel.right() - 1.0, panel.bottom() - edge)), false);
     }
     if off > 0.5 {
-        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.top() + edge), Pos2::new(panel.right() - 1.0, panel.top() + edge + 32.0)), true);
+        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.top() + edge), Pos2::new(panel.right() - 1.0, panel.top() + edge + TOP_FADE)), true);
     }
     // what a sample widget asks for (open a page…) goes nowhere
     let _ = cx.take_actions();
