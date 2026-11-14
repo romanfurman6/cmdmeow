@@ -16,8 +16,7 @@
   tick(); setInterval(tick, 15000);
 
   // Phones can't install a Mac app: send the link to the Mac instead
-  const get = $('get');
-  if (get && matchMedia('(hover: none) and (pointer: coarse)').matches) {
+  if (matchMedia('(hover: none) and (pointer: coarse)').matches) document.querySelectorAll('.get').forEach(get => {
     const url = 'https://cmdmeow.com/';
     get.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14.5V3.5M7.5 8L12 3.5 16.5 8M5.5 12v8.5h13V12"/></svg><span class="gl-tx">Send link to my Mac</span><span class="gl-ok">Link copied</span>';
     get.href = url;
@@ -27,7 +26,7 @@
       try { await navigator.clipboard.writeText(url); } catch { return; }
       get.classList.add('done'); setTimeout(() => get.classList.remove('done'), 1800);
     });
-  }
+  });
 
   // Windows rise in one after another
   if (!still) ['.hero', '.drop'].forEach((s, i) => {

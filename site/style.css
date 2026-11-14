@@ -239,3 +239,13 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 /* Phone: one action that works on a phone */
 .cta .btn.pri .gl-ok { display: none; }
 .cta .btn.pri.done .gl-ok { display: inline; } .cta .btn.pri.done .gl-tx { display: none; }
+
+/* Page end: "> coded by AI" / "Designed by Humans." and the download buttons */
+.human { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding-top: 120px; padding-bottom: 120px; }
+.human code { font: 400 20px/1.3 'Geist Mono', ui-monospace, monospace; color: var(--ink2); }
+.human .cur { display: inline-block; width: 9px; height: 18px; margin-left: 5px; vertical-align: -3px; background: var(--ink2); animation: hcur 1s steps(1) infinite; }
+@keyframes hcur { 50% { opacity: 0; } }
+.human b { font: 400 64px/1.15 'Permanent Marker', cursive; color: var(--lime); transform: rotate(-2deg); }
+.human .cta { margin-top: 36px; justify-content: center; }
+@media (max-width: 860px) { .human { padding-top: 16px; padding-bottom: 72px; } .human code { font-size: 16px; } .human b { font-size: 32px; } .human .cta { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .human .cur { animation: none; } }
