@@ -10,7 +10,6 @@ use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, Str
 use std::collections::HashMap;
 
 pub const SETUP_W: f32 = 820.0;
-pub const SETUP_H: f32 = 600.0;
 /// Most steps setup can have (with the crash reports step).
 const MAX_STEPS: usize = 7;
 const TOP_H: f32 = 44.0;

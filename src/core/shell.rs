@@ -457,7 +457,8 @@ impl App {
                 Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, m::APP_HEIGHT),
                 None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             },
-            Mode::Setup => Vec2::new(super::onboard::SETUP_W, super::onboard::SETUP_H),
+            // setup shows in the app window: screenshots at its size
+            Mode::Setup => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             Mode::FdaHelp => Vec2::new(360.0, 132.0),
         }
     }
