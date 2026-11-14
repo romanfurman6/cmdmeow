@@ -69,6 +69,8 @@ pub struct App {
     pub app_asked: Option<Instant>,
     /// When the app window (or setup in it) last drew.
     app_drawn: Option<Instant>,
+    /// When the system appearance (and new windows' glass) was last checked.
+    theme_checked: Option<Instant>,
     app_focus: bool,
     /// Frames left before the panel hides after the window was opened from
     /// it: the window shows first, so the app always has a window on screen
@@ -164,6 +166,7 @@ impl App {
             app_open: false,
             app_asked: None,
             app_drawn: None,
+            theme_checked: None,
             app_focus: false,
             panel_hide_in: 0,
             pending_shape: true,
@@ -724,7 +727,15 @@ impl eframe::App for App {
         self.frame += 1;
         // screenshots and demo views render egui alone: no native layers
         crate::kit::spin::set_allowed(self.screenshot.is_none() && !self.demo);
-        if self.frame <= 3 || self.frame.is_multiple_of(30) {
+        // by time, not by pass count: a still window has few passes, and a
+        // theme switch (which brings a pass of its own) must show at once.
+        // A pass too soon after the last check asks for one more later
+        const THEME_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+        let since = self.theme_checked.map(|t| t.elapsed());
+        if since.is_some_and(|d| d < THEME_EVERY) && self.frame > 3 {
+            ctx.request_repaint_after(THEME_EVERY - since.unwrap_or_default());
+        } else {
+            self.theme_checked = Some(Instant::now());
             sync_theme(&ctx, self.screenshot.is_none());
             let r = if self.mode == Mode::Panel { m::CARD_RADIUS as f64 + 6.0 } else { 16.0 };
             if self.screenshot.is_none() {

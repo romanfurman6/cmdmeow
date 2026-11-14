@@ -770,13 +770,14 @@ mod tests {
         let ctx = egui::Context::default();
         let keys = |ctx: &egui::Context| {
             let mut keys = Vec::new();
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 for i in 0..2 {
                     crate::kit::glass::spinner(ui.painter(), Pos2::new(20.0 + 30.0 * i as f32, 20.0), 6.0, 0.0, Color32::WHITE);
                 }
                 keys = PENDING.with(|q| q.borrow().iter().map(|(_, r)| r.key.clone()).collect());
                 drop_unflushed();
             });
+            out.textures_delta.clear();
             keys
         };
         let first = keys(&ctx);
