@@ -2,7 +2,7 @@
 //! row and the timeline (frames, trim handles, cuts, selection, playhead).
 
 use super::speech::{self, Model};
-use super::{Drag, JobKind, Out, Tab, Viewer, SPEEDS};
+use super::{scene, Drag, JobKind, Out, Tab, Viewer, SPEEDS};
 use crate::kit::glass::*;
 use crate::tools::capture::icons::{self, Ico};
 use crate::tools::capture::record::timeline::clock_label;
@@ -79,6 +79,7 @@ pub fn show(c: &mut Capture, ctx: &egui::Context) {
     }
     if closed {
         v.cancel_job();
+        v.cancel_save();
         if let Some(f) = v.voice.take() {
             let _ = std::fs::remove_file(f);
         }
@@ -105,11 +106,12 @@ fn draw(v: &mut Viewer, ui: &mut Ui, full: Rect, upload: Option<f32>) -> bool {
     if keys(v, ui) {
         close = true;
     }
-    // frames while playing, and for a moment after a seek
-    if v.playing() || v.drag.is_some() || v.kick.elapsed().as_secs_f32() < 0.6 || v.saving {
+    // frames while playing, and for a moment after a seek; progress a few
+    // times a second (the spinner and bar move on their own)
+    if v.playing() || v.drag.is_some() || v.kick.elapsed().as_secs_f32() < 0.6 {
         ui.ctx().request_repaint();
-    } else if v.busy() {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+    } else if v.busy() || v.saving {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
     }
     if let Some((m, at)) = &v.status {
         if at.elapsed().as_secs_f32() < 2.5 {
@@ -163,8 +165,8 @@ fn header(v: &mut Viewer, ui: &mut Ui, r: Rect, upload: Option<f32>) -> bool {
     }
     let can = !v.saving && !v.busy();
     let saving = match &v.rendering {
-        Some(pr) => format!("Rendering {}%", pr.done.load(std::sync::atomic::Ordering::Relaxed) / 10),
-        None if v.saving => "Saving…".into(),
+        Some(pr) => format!("Saving {}%", pr.done.load(std::sync::atomic::Ordering::Relaxed) / 10),
+        None if v.saving => "Saving".into(),
         None => "Save  ⌘S".into(),
     };
     if button(ui, &saving, BTN_PRIMARY, v.dirty() && can) {
@@ -188,7 +190,7 @@ fn header(v: &mut Viewer, ui: &mut Ui, r: Rect, upload: Option<f32>) -> bool {
             (true, true) => "Unsaved cuts and voice",
             (true, false) => "Unsaved cuts",
             (false, true) => "Unsaved voice cleanup",
-            _ => "Unsaved look",
+            _ => "Unsaved frame",
         };
         chip(&p, Pos2::new(x - 2.0, y), Align2::RIGHT_CENTER, what, CHIP_ASK());
     }
@@ -196,7 +198,8 @@ fn header(v: &mut Viewer, ui: &mut Ui, r: Rect, upload: Option<f32>) -> bool {
 }
 
 fn picture(v: &mut Viewer, ui: &mut Ui, r: Rect) {
-    let p = ui.painter().clone();
+    use crate::tools::capture::editor::{c32, gradient_rect};
+    let p = ui.painter_at(r);
     p.rect_filled(r, 0.0, Color32::from_rgb(0x0E, 0x0E, 0x10));
     if let Some(e) = &v.error {
         p.text(r.center(), Align2::CENTER_CENTER, format!("Can't play this video: {e}"), font(13.0), TEXT_DIM());
@@ -209,41 +212,43 @@ fn picture(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             slot => *slot = Some(ui.ctx().load_texture("capture-video-frame", img, egui::TextureOptions::LINEAR)),
         }
     }
-    if let Some((t, look, img)) = v.take_preview_image() {
-        let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw());
-        let tex = ui.ctx().load_texture("capture-video-look", ci, egui::TextureOptions::LINEAR);
-        v.preview = Some((t, look, tex));
+    // the frame being chosen, laid out as Save renders it
+    let lay = scene::layout((v.size.0.max(2), v.size.1.max(2)), v.look.frame.as_ref());
+    let area = r.shrink(sp::L);
+    let out = Vec2::new(lay.out.0 as f32, lay.out.1 as f32);
+    let s = (area.width() / out.x).min(area.height() / out.y);
+    let outer = Rect::from_center_size(area.center(), out * s);
+    let fit = Rect::from_min_size(outer.min + lay.screen.min.to_vec2() * s, lay.screen.size() * s);
+    let radius = lay.radius * s;
+    if let Some(f) = &v.look.frame {
+        let (c0, c1) = scene::backdrop_colors(f);
+        gradient_rect(&p, outer, c32(c0), c32(c1));
+        if let Some((blur, dy)) = lay.shadow {
+            let sh = egui::epaint::Shadow { offset: [0, (dy * s).round().min(127.0) as i8], blur: (blur * s).round().min(255.0) as u8, spread: 0, color: Color32::from_black_alpha(110) };
+            p.add(sh.as_shape(fit, radius));
+        }
     }
-    // paused on the Look tab: the frame as the new look draws it
-    let shown = v.preview.as_ref().filter(|(t, look, _)| v.tab == Tab::Look && !v.playing() && (t - v.time()).abs() < 0.05 && *look == v.look).map(|p| p.2.clone());
-    let area = r.shrink(16.0);
-    let (w, h) = match &shown {
-        Some(t) => (t.size()[0] as f32, t.size()[1] as f32),
-        None => (v.size.0.max(1) as f32, v.size.1.max(1) as f32),
-    };
-    let s = (area.width() / w).min(area.height() / h);
-    let fit = Rect::from_center_size(area.center(), Vec2::new(w * s, h * s));
-    match shown.as_ref().or(v.tex.as_ref()) {
+    match &v.tex {
         Some(t) => {
-            p.image(t.id(), fit, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+            p.add(egui::epaint::RectShape::filled(fit, radius, Color32::WHITE).with_texture(t.id(), Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))));
         }
         None => {
-            p.rect_filled(fit, 6.0, Color32::from_rgb(0x1A, 0x1A, 0x1E));
+            p.rect_filled(fit, radius.max(6.0), Color32::from_rgb(0x1A, 0x1A, 0x1E));
         }
     }
     // a cut piece shows dimmed, so it's clear it won't be in the file
     if v.player.is_some() && !v.edl.kept(v.time()) && v.time() < v.duration() - 1e-3 {
-        p.rect_filled(fit, 0.0, Color32::from_black_alpha(150));
+        p.rect_filled(outer, 0.0, Color32::from_black_alpha(150));
         p.text(fit.center(), Align2::CENTER_CENTER, "Cut", bold(15.0), TEXT_SOFT());
     }
-    if let Some(text) = v.caption().filter(|_| shown.is_none()) {
+    if let Some(text) = v.caption() {
         let wrap = (fit.width() * 0.8).max(120.0);
         let g = p.layout(text.to_string(), bold(15.0), Color32::WHITE, wrap);
         let box_ = Rect::from_center_size(Pos2::new(fit.center().x, fit.bottom() - 24.0 - g.size().y / 2.0), g.size() + Vec2::new(20.0, 10.0));
         p.rect_filled(box_, 6.0, Color32::from_black_alpha(170));
         p.galley(box_.center() - g.size() / 2.0, g, Color32::WHITE);
     }
-    let resp = ui.interact(fit, ui.scope_id().with("pic"), Sense::click());
+    let resp = ui.interact(outer, ui.scope_id().with("pic"), Sense::click());
     if resp.clicked() {
         v.toggle_play();
     }
@@ -313,9 +318,6 @@ fn transport(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let ur = rr.translate(Vec2::new(-34.0, 0.0));
     if plain_icon(ui, ur, Ico::Undo, "Undo (⌘Z)", !v.undo.is_empty()) {
         v.undo();
-    }
-    if !has_sel && v.edl.duration > 0.0 {
-        p.text(Pos2::new(ur.left() - 14.0, y), Align2::RIGHT_CENTER, "Drag on the timeline to choose a stretch", font(12.0), TEXT_FAINT());
     }
 }
 
@@ -494,172 +496,115 @@ fn panel(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     hairline(&p, r.left_top(), r.left_bottom());
     let tabs = Rect::from_min_size(r.min + Vec2::new(14.0, 12.0), Vec2::new(r.width() - 28.0, 28.0));
     let all = [Tab::Transcript, Tab::Audio, Tab::Look];
-    let n = if v.project.is_some() { 3 } else { 2 };
-    let k = all.iter().position(|t| *t == v.tab).unwrap_or(0).min(n - 1);
-    if let Some(i) = segmented(ui, tabs, ui.scope_id().with("tabs"), &["Transcript", "Voice", "Look"][..n], k) {
+    let k = all.iter().position(|t| *t == v.tab).unwrap_or(0);
+    if let Some(i) = segmented(ui, tabs, ui.scope_id().with("tabs"), &["Transcript", "Voice", "Frame"], k) {
         v.tab = all[i];
     }
     let body = Rect::from_min_max(Pos2::new(r.left() + 14.0, tabs.bottom() + 12.0), Pos2::new(r.right() - 14.0, r.bottom() - 10.0));
     match v.tab {
         Tab::Transcript => transcript(v, ui, body),
         Tab::Audio => voice_tab(v, ui, body),
-        Tab::Look => look_tab(v, ui, body),
+        Tab::Look => frame_tab(v, ui, body),
     }
 }
 
-/// The look a recording is rendered with: frame, cursor, camera, captions.
-fn look_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
-    use crate::tools::capture::render::{Frame, Ratio, BACKDROPS};
-    use super::scene::{Place, CAMERA_SIZES};
-    let Some((_, meta)) = &v.project else { return };
-    let (has_cursor, has_camera) = (meta.recorded.cursor.is_some(), meta.recorded.camera);
-    let p = ui.painter().clone();
-    let id = ui.scope_id().with("look");
-    let mut l = v.look;
-    let mut y = r.top();
-    let row_h = 34.0;
-    let label = |y: f32, text: &str| {
-        p.text(Pos2::new(r.left(), y + row_h / 2.0), Align2::LEFT_CENTER, text, font(12.0), TEXT_SOFT());
-    };
-    let head = |y: f32, text: &str| {
-        p.text(Pos2::new(r.left(), y + 10.0), Align2::LEFT_CENTER, text, bold(13.0), TEXT());
-    };
-    let seg_rect = |y: f32, w: f32| Rect::from_min_max(Pos2::new(r.right() - w, y + 5.0), Pos2::new(r.right(), y + row_h - 5.0));
-    let sw_rect = |y: f32| Rect::from_min_size(Pos2::new(r.right() - 30.0, y + row_h / 2.0 - 9.0), Vec2::new(30.0, 18.0));
+/// The frame: none or a backdrop, then padding, shape, corners and shadow.
+/// Any pick puts a frame on, starting from the last one used.
+fn frame_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
+    use crate::tools::capture::editor::{c32, gradient_disc};
+    use crate::tools::capture::render::{Ratio, BACKDROPS};
+    let p = ui.painter_at(r);
+    let id = ui.scope_id().with("frame");
+    let cur = v.look.frame;
+    let mut next = cur;
+    let mut f = cur.unwrap_or(v.prefs.frame);
 
-    // frame: none or a backdrop, then its options
-    head(y, "Frame");
-    y += 26.0;
+    // the backdrops; the first takes the frame off
     let n = BACKDROPS.len() + 1;
-    let d = ((r.width() - (n as f32 - 1.0) * 8.0) / n as f32).min(30.0);
+    let step = r.width() / n as f32;
+    let rad = (step / 2.0 - 6.0).min(13.0);
+    let cy = r.top() + rad + 4.0;
     for k in 0..n {
-        let c = Pos2::new(r.left() + d / 2.0 + k as f32 * (d + 8.0), y + d / 2.0);
-        let on = match (k, &l.frame) {
-            (0, None) => true,
-            (k, Some(f)) => k > 0 && f.bg == k - 1,
-            _ => false,
+        let c = Pos2::new(r.left() + step * (k as f32 + 0.5), cy);
+        let name = if k == 0 { "None" } else { BACKDROPS[k - 1].0 };
+        let resp = ui.interact(Rect::from_center_size(c, Vec2::splat(rad * 2.0 + 8.0)), id.with(("bg", k)), Sense::click()).on_hover_text(name);
+        let on = match cur {
+            None => k == 0,
+            Some(x) => x.bg + 1 == k,
         };
-        let resp = ui.interact(Rect::from_center_size(c, Vec2::splat(d)), id.with(("bg", k)), Sense::click());
-        if k == 0 {
-            p.circle_stroke(c, d / 2.0 - 1.0, Stroke::new(1.5, TEXT_FAINT()));
-            p.line_segment([c + Vec2::new(-d * 0.25, d * 0.25), c + Vec2::new(d * 0.25, -d * 0.25)], Stroke::new(1.5, TEXT_FAINT()));
-        } else {
-            let (_, a, b) = BACKDROPS[k - 1];
-            p.circle_filled(c, d / 2.0, Color32::from_rgb(a[0], a[1], a[2]));
-            p.circle_filled(c + Vec2::new(d * 0.12, d * 0.12), d * 0.3, Color32::from_rgb(b[0], b[1], b[2]));
-        }
         if on {
-            p.circle_stroke(c, d / 2.0 + 3.0, Stroke::new(2.0, ACCENT()));
+            stroke_circle(&p, c, rad + 3.5, Stroke::new(2.0, BLUE()));
+        }
+        if k == 0 {
+            stroke_circle(&p, c, rad - 0.5, Stroke::new(1.5, TEXT_SOFT()));
+            let d = Vec2::splat((rad - 0.5) * std::f32::consts::FRAC_1_SQRT_2);
+            p.line_segment([c - d, c + d], Stroke::new(1.5, TEXT_SOFT()));
+        } else {
+            let (_, c0, c1) = BACKDROPS[k - 1];
+            gradient_disc(&p, c, rad, c32(c0), c32(c1));
+            stroke_circle(&p, c, rad, Stroke::new(1.0, white(64)));
         }
         if resp.clicked() {
-            l.frame = if k == 0 { None } else { Some(Frame { bg: k - 1, ..l.frame.unwrap_or_default() }) };
-        }
-    }
-    y += d + 8.0;
-    if let Some(mut f) = l.frame {
-        label(y, "Padding");
-        if let Some(i) = segmented(ui, seg_rect(y, 120.0), id.with("pad"), &["S", "M", "L"], f.pad.min(2)) {
-            f.pad = i;
-        }
-        y += row_h;
-        label(y, "Shape");
-        let ratios: Vec<&str> = Ratio::ALL.iter().map(|q| q.label()).collect();
-        if let Some(i) = segmented(ui, seg_rect(y, 190.0), id.with("ratio"), &ratios, Ratio::ALL.iter().position(|q| *q == f.ratio).unwrap_or(0)) {
-            f.ratio = Ratio::ALL[i];
-        }
-        y += row_h;
-        for (k, text, on) in [(0, "Round corners", f.round), (1, "Shadow", f.shadow)] {
-            label(y, text);
-            if switch(ui, sw_rect(y), id.with(("fsw", k)), on, true).clicked() {
-                if k == 0 {
-                    f.round = !f.round;
-                } else {
-                    f.shadow = !f.shadow;
-                }
+            if k == 0 {
+                next = None;
+            } else {
+                f.bg = k - 1;
+                next = Some(f);
             }
-            y += row_h;
         }
-        l.frame = Some(f);
-    }
-    y += 8.0;
-
-    if has_cursor {
-        head(y, "Cursor");
-        y += 22.0;
-        let c = &mut l.cursor;
-        label(y, "Show");
-        if switch(ui, sw_rect(y), id.with("cshow"), c.show, true).clicked() {
-            c.show = !c.show;
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        y += row_h;
-        label(y, "Size");
-        let sizes = [1.0f32, 1.5, 2.0];
-        let cur = sizes.iter().position(|s| (s - c.size).abs() < 0.01).unwrap_or(1);
-        if let Some(i) = segmented(ui, seg_rect(y, 150.0), id.with("csize"), &["1×", "1.5×", "2×"], cur) {
-            c.size = sizes[i];
-        }
-        y += row_h;
-        for (k, text) in [(0, "Smooth"), (1, "Click rings"), (2, "Hide when still")] {
-            let on = [c.smooth, c.clicks, c.hide_idle][k];
-            label(y, text);
-            if switch(ui, sw_rect(y), id.with(("csw", k)), on, c.show).clicked() {
-                match k {
-                    0 => c.smooth = !c.smooth,
-                    1 => c.clicks = !c.clicks,
-                    _ => c.hide_idle = !c.hide_idle,
-                }
-            }
-            y += row_h;
-        }
-        y += 8.0;
     }
 
-    if has_camera {
-        head(y, "Camera");
-        y += 22.0;
-        let c = &mut l.camera;
-        label(y, "Show");
-        if switch(ui, sw_rect(y), id.with("kshow"), c.show, true).clicked() {
-            c.show = !c.show;
+    // its options, one settings row each
+    let mut y = cy + rad + 4.0 + sp::M;
+    let row_h = sp::SETTINGS_ROW_H;
+    let ratios: Vec<&str> = Ratio::ALL.iter().map(|q| q.label()).collect();
+    for k in 0..4 {
+        let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), row_h));
+        if k > 0 {
+            hairline(&p, row.left_top(), row.right_top());
         }
-        y += row_h;
-        label(y, "Place");
-        let places = ["As recorded", "↖", "↗", "↙", "↘"];
-        if let Some(i) = segmented(ui, seg_rect(y, 210.0), id.with("kplace"), &places, Place::ALL.iter().position(|q| *q == c.place).unwrap_or(0)) {
-            c.place = Place::ALL[i];
-        }
-        y += row_h;
-        label(y, "Size");
-        let cur = match c.size {
-            None => 0,
-            Some(s) => 1 + CAMERA_SIZES.iter().position(|v| (v - s).abs() < 0.001).unwrap_or(1),
+        let label = ["Padding", "Shape", "Round corners", "Shadow"][k];
+        p.text(Pos2::new(row.left(), row.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT());
+        let seg_at = |labels: &[&str]| {
+            let w = labels.iter().map(|l| p.layout_no_wrap(l.to_string(), font(12.0), TEXT()).size().x + 2.0 * sp::M).fold(0.0f32, f32::max) * labels.len() as f32 + 4.0;
+            Rect::from_min_max(Pos2::new(row.right() - w, row.center().y - sp::CONTROL_H / 2.0), Pos2::new(row.right(), row.center().y + sp::CONTROL_H / 2.0))
         };
-        if let Some(i) = segmented(ui, seg_rect(y, 190.0), id.with("ksize"), &["As recorded", "S", "M", "L"], cur) {
-            c.size = if i == 0 { None } else { Some(CAMERA_SIZES[i - 1]) };
+        let sw = Rect::from_min_size(Pos2::new(row.right() - 30.0, row.center().y - 9.0), Vec2::new(30.0, 18.0));
+        match k {
+            0 => {
+                let labels = ["S", "M", "L"];
+                if let Some(i) = segmented(ui, seg_at(&labels), id.with("pad"), &labels, f.pad.min(2)) {
+                    f.pad = i;
+                    next = Some(f);
+                }
+            }
+            1 => {
+                if let Some(i) = segmented(ui, seg_at(&ratios), id.with("ratio"), &ratios, Ratio::ALL.iter().position(|q| *q == f.ratio).unwrap_or(0)) {
+                    f.ratio = Ratio::ALL[i];
+                    next = Some(f);
+                }
+            }
+            2 => {
+                if switch(ui, sw, id.with("round"), f.round && cur.is_some(), true).clicked() {
+                    f.round = !f.round || cur.is_none();
+                    next = Some(f);
+                }
+            }
+            _ => {
+                if switch(ui, sw, id.with("shadow"), f.shadow && cur.is_some(), true).clicked() {
+                    f.shadow = !f.shadow || cur.is_none();
+                    next = Some(f);
+                }
+            }
         }
-        y += row_h;
-        label(y, "Shape");
-        if let Some(i) = segmented(ui, seg_rect(y, 150.0), id.with("kshape"), &["Circle", "Square"], c.square as usize) {
-            c.square = i == 1;
-        }
-        y += row_h;
-        label(y, "Mirror");
-        if switch(ui, sw_rect(y), id.with("kmirror"), c.mirror, true).clicked() {
-            c.mirror = !c.mirror;
-        }
-        y += row_h + 8.0;
+        y = row.bottom();
     }
-
-    head(y, "Captions");
-    y += 22.0;
-    label(y, "Burn into the video");
-    if switch(ui, sw_rect(y), id.with("caps"), l.captions, !v.lines.is_empty()).clicked() {
-        l.captions = !l.captions;
+    if next != cur {
+        v.set_frame(next);
     }
-    if l != v.look {
-        v.look = l;
-    }
-    v.want_preview();
 }
 
 /// A job's progress: label, bar, Stop.
@@ -674,10 +619,11 @@ fn job_row(v: &mut Viewer, ui: &mut Ui, r: Rect, label: &str) -> f32 {
         }
         _ => format!("{:.0}%", frac * 100.0),
     };
-    spinner(&p, Pos2::new(r.left() + 8.0, r.top() + 10.0), 6.0, ui.input(|i| i.time), ACCENT());
+    // the arc and the bar move on Core Animation: smooth with few frames
+    crate::kit::spin::arc(&p, "video-job", Pos2::new(r.left() + 8.0, r.top() + 10.0), 6.0, ACCENT());
     p.text(Pos2::new(r.left() + 22.0, r.top() + 10.0), Align2::LEFT_CENTER, label, font(12.0), TEXT());
     p.text(Pos2::new(r.right(), r.top() + 10.0), Align2::RIGHT_CENTER, detail, font(12.0), TEXT_FAINT());
-    bar(&p, Rect::from_min_size(Pos2::new(r.left(), r.top() + 26.0), Vec2::new(r.width(), 6.0)), frac, ACCENT());
+    crate::kit::spin::bar(&p, "video-job-bar", Rect::from_min_size(Pos2::new(r.left(), r.top() + 26.0), Vec2::new(r.width(), 6.0)), frac, ACCENT());
     let stop = Rect::from_min_size(Pos2::new(r.left(), r.top() + 42.0), Vec2::new(70.0, 26.0));
     if pill_button(ui, stop, "Stop", BTN_SECONDARY, true).clicked() {
         v.cancel_job();
@@ -747,7 +693,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     }
 
     // the lines
-    let foot = 78.0;
+    let foot = 44.0;
     let list = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), r.bottom() - foot));
     let now = speech::line_at(&v.lines, v.time());
     let mut clicked = None;
@@ -788,24 +734,8 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         v.pick_line(i, shift);
     }
 
-    // under the list: cut the picked lines, captions, copy and save
-    let fy = r.bottom() - foot + 8.0;
-    let picked = v.picked.map(|(a, b)| b - a + 1).unwrap_or(0);
-    let half = (r.width() - 8.0) / 2.0;
-    let cut = Rect::from_min_size(Pos2::new(r.left(), fy), Vec2::new(half, 28.0));
-    let label = match picked {
-        0 | 1 => "Cut line".to_string(),
-        n => format!("Cut {n} lines"),
-    };
-    if pill_button(ui, cut, &label, if picked > 0 { BTN_PRIMARY } else { BTN_SECONDARY }, picked > 0).on_hover_text("Click a line, ⇧-click for more").clicked() {
-        v.cut_selection();
-        v.picked = None;
-    }
-    let pauses = Rect::from_min_size(Pos2::new(cut.right() + 8.0, fy), Vec2::new(half, 28.0));
-    if pill_button(ui, pauses, "Cut pauses", BTN_SECONDARY, true).on_hover_text("Cut silences and um, uh, е-е").clicked() {
-        v.cut_pauses();
-    }
-    let by = cut.bottom() + 10.0;
+    // under the list: captions, copy and save the text
+    let by = r.bottom() - foot + sp::S;
     let cb = Rect::from_min_size(Pos2::new(r.left(), by + 6.0), Vec2::splat(16.0));
     if checkbox(ui, cb, ui.scope_id().with("captions"), v.prefs.captions, true).clicked() {
         v.prefs.captions = !v.prefs.captions;

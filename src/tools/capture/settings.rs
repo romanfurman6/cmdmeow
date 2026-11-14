@@ -197,8 +197,6 @@ pub struct RecSettings {
     pub open_editor: bool,
     /// Seconds the saved card stays up; None keeps it until closed.
     pub card_secs: Option<u32>,
-    /// How recordings are drawn after Stop (smooth cursor, frame…).
-    pub look: crate::tools::capture::video::scene::Style,
 }
 
 impl Default for RecSettings {
@@ -217,7 +215,6 @@ impl Default for RecSettings {
             countdown: 3,
             open_editor: false,
             card_secs: Some(8),
-            look: Default::default(),
         }
     }
 }

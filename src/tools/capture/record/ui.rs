@@ -834,7 +834,9 @@ fn bar_settings(c: &mut Capture, ctx: &egui::Context) {
     if !live.settings_open {
         return;
     }
-    let size = Vec2::new(300.0, 326.0);
+    // the system draws click highlights only on newer macOS
+    let clicks = super::engine::clicks_supported();
+    let size = Vec2::new(300.0, if clicks { 288.0 } else { 254.0 });
     let bar = live.bar_at.unwrap_or_else(|| bar_spot(&live.chosen, BAR_W));
     // the bubble can be hidden and shown again only if the recording
     // started with it (the video keeps that one window)
@@ -907,13 +909,13 @@ fn bar_settings(c: &mut Capture, ctx: &egui::Context) {
         if small_switch(ui, Rect::from_min_size(Pos2::new(x1 - 36.0, y + 5.0), Vec2::new(36.0, 20.0)), id.with("cursor"), s.cursor) {
             s.cursor = !s.cursor;
         }
-        y += 34.0;
-        row(&p, y, "Highlight clicks");
-        if small_switch(ui, Rect::from_min_size(Pos2::new(x1 - 36.0, y + 5.0), Vec2::new(36.0, 20.0)), id.with("clicks"), s.clicks) {
-            s.clicks = !s.clicks;
+        if clicks {
+            y += 34.0;
+            row(&p, y, "Highlight clicks");
+            if small_switch(ui, Rect::from_min_size(Pos2::new(x1 - 36.0, y + 5.0), Vec2::new(36.0, 20.0)), id.with("clicks"), s.clicks) {
+                s.clicks = !s.clicks;
+            }
         }
-        y += 38.0;
-        text_fit(&p, Pos2::new(x0, y), Align2::LEFT_TOP, "Camera size applies now, the rest from the next recording.", font(11.0), TEXT_FAINT(), x1 - x0);
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             close = true;
         }

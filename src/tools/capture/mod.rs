@@ -302,7 +302,7 @@ impl Capture {
             self.queue.retain(|(c, _)| *c != Command::Record);
             if self.rec.live().is_some() {
                 self.rec.stop();
-            } else if !matches!(self.rec.phase, record::Phase::Saving | record::Phase::Rendering(_)) {
+            } else if !matches!(self.rec.phase, record::Phase::Saving) {
                 self.rec.cancel();
             }
         }
@@ -997,7 +997,7 @@ impl Tool for Capture {
             self.video = None;
             if self.rec.live().is_some() {
                 self.rec.stop();
-            } else if !matches!(self.rec.phase, record::Phase::Saving | record::Phase::Rendering(_)) {
+            } else if !matches!(self.rec.phase, record::Phase::Saving) {
                 self.rec.cancel();
             }
             if let Some(mut ew) = self.editor.take() {
