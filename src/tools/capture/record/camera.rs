@@ -190,6 +190,10 @@ mod imp {
 
         fn lay_out(&self, d: f64) {
             unsafe {
+                // at once, with the window: an animated layer would lag
+                // behind it and the bubble would jump
+                let _: () = msg_send![objc2::class!(CATransaction), begin];
+                let _: () = msg_send![objc2::class!(CATransaction), setDisableActions: true];
                 let r = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(d, d));
                 let layer: &AnyObject = &self.preview;
                 let _: () = msg_send![layer, setFrame: r];
@@ -199,6 +203,7 @@ mod imp {
                 let white = NSColor::whiteColor();
                 let cg: *const std::ffi::c_void = msg_send![&*white, CGColor];
                 let _: () = msg_send![layer, setBorderColor: cg];
+                let _: () = msg_send![objc2::class!(CATransaction), commit];
             }
         }
 
