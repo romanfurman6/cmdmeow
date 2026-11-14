@@ -631,13 +631,14 @@ fn job_row(v: &mut Viewer, ui: &mut Ui, r: Rect, label: &str) -> f32 {
     stop.bottom() + 12.0
 }
 
+/// The last job's failure, on the tab whose job it was.
 fn error_row(v: &Viewer, p: &egui::Painter, r: Rect, y: f32) -> f32 {
     match &v.job_error {
-        Some(e) => {
+        Some((tab, e)) if *tab == v.tab => {
             let h = paragraph(p, Pos2::new(r.left(), y), e, font(12.0), RED(), r.width());
             y + h + 10.0
         }
-        None => y,
+        _ => y,
     }
 }
 

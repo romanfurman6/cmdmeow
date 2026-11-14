@@ -150,8 +150,8 @@ pub struct Viewer {
     /// Lines chosen in the transcript (first, last).
     pub picked: Option<(usize, usize)>,
     pub job: Option<Job>,
-    /// The last job's failure, shown in the panel.
-    pub job_error: Option<String>,
+    /// The last job's failure, shown on the tab the job belongs to.
+    pub job_error: Option<(Tab, String)>,
     /// Audio tracks in the file (3: mix, system, mic).
     pub tracks: usize,
     /// The voice's loudness, and the cleaned voice's.
@@ -681,7 +681,7 @@ impl Viewer {
                         // straight on to what the download was for
                         Ok(()) if m == self.prefs.model && self.lines.is_empty() => self.transcribe(),
                         Ok(()) => {}
-                        Err(e) => self.job_error = Some(e),
+                        Err(e) => self.job_error = Some((Tab::Transcript, e)),
                     }
                 }
                 Event::Transcribed(r) => {
@@ -690,12 +690,12 @@ impl Viewer {
                         Ok(lines) => {
                             speech::store(&self.path, &lines);
                             if lines.is_empty() {
-                                self.job_error = Some("No speech found".into());
+                                self.job_error = Some((Tab::Transcript, "No speech found".into()));
                             }
                             self.lines = lines;
                             self.picked = None;
                         }
-                        Err(e) => self.job_error = Some(e),
+                        Err(e) => self.job_error = Some((Tab::Transcript, e)),
                     }
                 }
                 Event::Cleaned(r) => {
@@ -708,7 +708,7 @@ impl Viewer {
                             self.set_voice_on(true);
                             self.flash("Voice cleaned up: Save puts it in the video");
                         }
-                        Err(e) => self.job_error = Some(e),
+                        Err(e) => self.job_error = Some((Tab::Audio, e)),
                     }
                 }
             }

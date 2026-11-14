@@ -376,9 +376,16 @@ mod imp {
         }
     }
 
-    /// Where a render's time went, in seconds.
+    /// Where a render's time went (seconds), and the frames it left out.
     #[derive(Default)]
     struct Spent {
+        /// Frames the reader gave, and when the first one shows.
+        samples: u64,
+        first: Option<f64>,
+        /// Left out: no picture, no time, not after the frame before.
+        no_picture: u32,
+        no_time: u32,
+        not_later: u32,
         /// Waiting for decoded frames.
         read: f64,
         /// Setting up each frame's drawing.
@@ -420,9 +427,14 @@ mod imp {
         let took = t0.elapsed().as_secs_f64();
         match &r {
             Ok((size, frames, dur)) => eprintln!(
-                "[video] framed {:?} → {:?}: {frames} frames {size:?}, {dur:.1} s of video in {took:.1} s ({:.1}× real time; read {:.1}, draw {:.1}, gpu {:.1}, write {:.1}, idle {:.1} s; {knobs:?})",
+                "[video] framed {:?} → {:?}: {frames} of {} frames {size:?} (first at {:.3} s; left out {} without a picture, {} without a time, {} not after the one before), {dur:.1} s of video in {took:.1} s ({:.1}× real time; read {:.1}, draw {:.1}, gpu {:.1}, write {:.1}, idle {:.1} s; {knobs:?})",
                 job.src,
                 job.out,
+                spent.samples,
+                spent.first.unwrap_or(0.0),
+                spent.no_picture,
+                spent.no_time,
+                spent.not_later,
                 dur / took.max(1e-3),
                 spent.read,
                 spent.draw,
@@ -558,19 +570,24 @@ mod imp {
                         let sb = video_out.copyNextSampleBuffer();
                         spent.read += t0.elapsed().as_secs_f64();
                         let Some(sb) = sb else { return Ok(Next::End) };
+                        spent.samples += 1;
                         let raw = &*sb as *const _ as *const c_void;
                         let pic_pb = CMSampleBufferGetImageBuffer(raw);
                         if pic_pb.is_null() {
+                            spent.no_picture += 1;
                             return Ok(Next::Skip);
                         }
                         let pts = CMSampleBufferGetPresentationTimeStamp(raw);
                         if pts.flags & 1 == 0 || pts.timescale <= 0 {
+                            spent.no_time += 1;
                             return Ok(Next::Skip);
                         }
                         let t = pts.value as f64 / pts.timescale as f64;
                         if last.is_some_and(|l| t <= l) {
+                            spent.not_later += 1;
                             return Ok(Next::Skip);
                         }
+                        spent.first.get_or_insert(t);
                         let t1 = std::time::Instant::now();
                         let (pw, ph) = (CVPixelBufferGetWidth(pic_pb).max(1) as f64, CVPixelBufferGetHeight(pic_pb).max(1) as f64);
                         let pic = CIImage::imageWithCVPixelBuffer_options(&*(pic_pb as *const CVPixelBuffer), Some(&img_opts));
