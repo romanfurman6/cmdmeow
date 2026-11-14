@@ -23,6 +23,9 @@ enum Kind {
     Welcome,
     Tools,
     Agents,
+    /// 3a, right after Agents (no dot of its own): the picked agents whose
+    /// sign-in is in the Keychain, each asked for on a click.
+    SignIns,
     Models,
     Perms,
     Crash,
@@ -33,6 +36,9 @@ enum Kind {
 /// builds (screenshots show it too).
 fn kinds(app: &App) -> Vec<Kind> {
     let mut v = vec![Kind::Welcome, Kind::Tools, Kind::Agents];
+    if has_sign_ins(app) {
+        v.push(Kind::SignIns);
+    }
     // only when an enabled tool needs a download (Dictation's speech model)
     // or already has one; models fetched on first use don't count
     if has_models_step(app) {
@@ -44,6 +50,21 @@ fn kinds(app: &App) -> Vec<Kind> {
     }
     v.push(Kind::Ready);
     v
+}
+
+/// The step a screenshot view (`setup-perms`…) shows.
+pub fn view_step(app: &App, view: &str) -> usize {
+    let k = match view {
+        "setup-tools" | "setup-tools-all" | "setup-tools-preview" => Kind::Tools,
+        "setup-ai" => Kind::Agents,
+        "setup-signins" => Kind::SignIns,
+        "setup-models" => Kind::Models,
+        "setup-perms" => Kind::Perms,
+        "setup-crash" => Kind::Crash,
+        "setup-ready" => Kind::Ready,
+        _ => Kind::Welcome,
+    };
+    kinds(app).iter().position(|x| *x == k).unwrap_or(0)
 }
 
 /// The setup window's state while it is open.
@@ -424,14 +445,17 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
     let from = app.setup.as_ref().map(|s| s.from).unwrap_or(step).min(steps - 1);
-    step_dots(&p, full, steps, from, step, t);
+    // Sign-ins is 3a: it shares the Agents dot
+    let dot = |i: usize| kinds[..=i].iter().filter(|k| **k != Kind::SignIns).count() - 1;
+    let dots = kinds.iter().filter(|k| **k != Kind::SignIns).count();
+    step_dots(&p, full, dots, dot(from), dot(step), t);
     let body = Rect::from_min_max(Pos2::new(full.left() + 40.0, full.top() + TOP_H), Pos2::new(full.right() - 40.0, full.bottom() - BOTTOM_H));
     // the step slides in from the side it comes from
     let side = if from > step { -1.0 } else { 1.0 };
     let slide = (1.0 - ease(t * 2.2)) * 18.0 * side;
     // Back and Continue line up with the step's own column
     let col = match kind {
-        Kind::Agents | Kind::Models => Rect::from_center_size(body.center(), Vec2::new(body.width().min(COL_W), body.height())),
+        Kind::Agents | Kind::SignIns | Kind::Models => Rect::from_center_size(body.center(), Vec2::new(body.width().min(COL_W), body.height())),
         _ => body,
     };
     let body = body.translate(Vec2::new(slide, 0.0));
@@ -441,6 +465,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         Kind::Welcome => next = welcome(app, ui, body, t),
         Kind::Tools => tools(app, ui, body, t),
         Kind::Agents => agents(app, ui, body, t),
+        Kind::SignIns => sign_ins(app, ui, body, t),
         Kind::Models => models_step(app, ui, body, t),
         Kind::Perms => permissions_step(app, ui, body, t, now),
         Kind::Crash => next = crash_step(app, ui, body, t),
@@ -458,7 +483,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let label = match kind {
         // these steps have their own buttons
         Kind::Welcome | Kind::Crash => None,
-        Kind::Tools | Kind::Agents | Kind::Models | Kind::Perms => Some("Continue"),
+        Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some("Continue"),
         Kind::Ready if needs_restart(app) => Some("Restart and open"),
         Kind::Ready => Some("Open panel"),
     };
@@ -488,7 +513,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // the root for the frames too, or after a click the window kept showing
     // the old step until it was resized (first launch, M1)
     let busy_for = if kind == Kind::Welcome { WELCOME_END } else { 2.5 };
-    let animating = (seen && t < busy_for) || app.perm_watch.busy(now) || next;
+    let animating = (seen && t < busy_for) || app.perm_watch.busy(now) || (kind == Kind::SignIns && crate::tools::claude::keychain::busy()) || next;
     if !seen && t < busy_for {
         // waiting to be seen: look again soon, without drawing flat out
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -1543,6 +1568,77 @@ fn rolling_count(p: &egui::Painter, left_bottom: Pos2, shown: f32, total: usize)
         clip.text(left_bottom + Vec2::new(0.0, (1.0 - frac) * line), Align2::LEFT_BOTTOM, &hi_s, f.clone(), TEXT_FAINT());
     }
     p.text(Pos2::new(cell.right(), left_bottom.y), Align2::LEFT_BOTTOM, format!("/{total}"), f, TEXT_FAINT());
+}
+
+/// Step 3a exists: AI Usage is on and a picked agent (Main or Track) keeps
+/// its sign-in in the Keychain. Only Claude Code does; Codex and Gemini
+/// keep theirs in files, read without asking.
+fn has_sign_ins(app: &App) -> bool {
+    let usage_on = (0..app.tools.len()).any(|i| app.tools[i].id() == crate::tools::claude::ID && app.tool_on(i));
+    usage_on && crate::tools::claude::keychain::wanted(app.demo)
+}
+
+/// Step 3a: Keychain sign-ins of the picked agents, so AI Usage shows
+/// limits from their accounts. Nothing is read before Allow is pressed;
+/// then macOS asks (Allow / Always Allow / Deny). Laid out like AI agents.
+fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
+    use crate::kit::perms::Status;
+    use crate::tools::claude::keychain;
+    let p = ui.painter().clone();
+    let ctx = ui.ctx().clone();
+    let now = ctx.input(|i| i.time);
+    keychain::refocus(&ctx);
+    let w = body.width().min(640.0);
+    let x = body.center().x - w / 2.0;
+    let head = body.top() + 6.0;
+    p.text(Pos2::new(x, head), Align2::LEFT_TOP, "Sign-ins", bold(22.0), TEXT());
+    // the section, as on AI agents: what it's for
+    let y = head + 22.0 + sp::XL;
+    let cr = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(42.0));
+    tool_chip(&p, cr, Icon::Lock, TEXT_SOFT());
+    p.text(Pos2::new(cr.right() + sp::M, cr.top() + 2.0), Align2::LEFT_TOP, "Keychain", bold(15.0), TEXT());
+    p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, "Limits from your account in AI Usage", ty::body(), TEXT_DIM());
+    // one tile per picked agent that keeps it there: today only Claude Code
+    let a = ease(t / 0.4);
+    let r = Rect::from_min_size(Pos2::new(x, cr.bottom() + sp::M + (1.0 - a) * 8.0), Vec2::new(w, 84.0));
+    let st = if app.demo { Status::NotAsked } else { keychain::status() };
+    let ok = st == Status::Allowed;
+    let s = ctx.animate_bool_with_time(egui::Id::new("signin-tile"), ok, 0.18);
+    p.rect_filled(r, 12.0, lerp_color(CARD(), with_alpha(GREEN(), 0.10), s).gamma_multiply(a));
+    p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(GREEN(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+    agent_mark(&p, Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0)), "claude", false);
+    p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, "Claude Code", ty::title(), TEXT());
+    let right = r.right() - sp::L;
+    let busy = !app.demo && keychain::busy();
+    let err = if app.demo { String::new() } else { keychain::error() };
+    if ok {
+        let since = ctx.data(|d| d.get_temp::<f64>(egui::Id::new("signin-ok"))).unwrap_or(now - 10.0);
+        check_drawn(&p, Pos2::new(right - 13.0, r.center().y), 12.0, GREEN(), ease(((now - since) / 0.35) as f32));
+    } else if busy {
+        let c = Pos2::new(right - 8.0, r.center().y);
+        spinner(&p, c, 6.0, now, BLUE());
+        p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, "Choose Always Allow", font(12.0), TEXT_FAINT());
+    } else {
+        let label = if st == Status::Denied || !err.is_empty() { "Try again" } else { "Allow" };
+        let bw = button_width(&p, label, BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - 13.0), Vec2::new(bw, 26.0));
+        if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() && !app.demo {
+            keychain::connect(Some(ctx.clone()));
+        }
+        if !err.is_empty() {
+            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, err, font(12.0), RED());
+        } else if st == Status::Denied {
+            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, "Denied", font(12.0), AMBER());
+        }
+    }
+    // the check pops once when it turns allowed while shown
+    let id = egui::Id::new("signin-ok");
+    let was = ctx.data(|d| d.get_temp::<bool>(id.with("was"))).unwrap_or(ok);
+    if ok && !was {
+        ctx.data_mut(|d| d.insert_temp(id, now));
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(id.with("was"), ok));
 }
 
 /// An AI agent's mark, in `r`: drawn here, no image files. Claude a

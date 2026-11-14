@@ -326,10 +326,8 @@ impl App {
                 return;
             }
             // first-run setup, one step each
-            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
+            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
-                let step = ["setup", "setup-tools", "setup-ai", "setup-models", "setup-perms", "setup-crash", "setup-ready"].iter().position(|v| *v == view).unwrap_or(0);
-                self.setup = Some(super::onboard::Setup::new(step));
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
                 // a few goals picked ("setup-tools" shows none, as a fresh install);
@@ -341,9 +339,13 @@ impl App {
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
-                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id)) || (view == "setup-models" && id == dictation::ID);
+                    // AI Usage on: the Sign-ins step (3a) shows
+                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id)) || (view == "setup-models" && id == dictation::ID) || (view == "setup-signins" && id == claude::ID);
                     self.set_tool_on(i, on);
                 }
+                // which steps exist depends on the tools just switched on
+                let step = super::onboard::view_step(self, view);
+                self.setup = Some(super::onboard::Setup::new(step));
                 if all || view == "setup-tools-preview" {
                     let mut s = super::onboard::Setup::new(1);
                     s.all_tools = all;

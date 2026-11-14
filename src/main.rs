@@ -6,7 +6,7 @@
 //! storage (default), memory, battery, cpu, network, devices, claude-detail,
 //! cleanup, cleanup-no-claude, results, lens, lens-live, claude, claude-missing,
 //! health, customize, settings-tools, fan, fan-detail, fan-air, fan-air-detail,
-//! fan-curve, fan-fixed, fan-install, setup, setup-tools, setup-tools-all, setup-tools-preview, setup-ai, setup-perms,
+//! fan-curve, fan-fixed, fan-install, setup, setup-tools, setup-tools-all, setup-tools-preview, setup-ai, setup-signins, setup-perms,
 //! setup-crash, setup-ready, settings-general,
 //! or widget-<tool>/<widget>@<size> for one widget alone (widget-system/devices@4:4).
 //! `--fan-report` prints every fan and temperature sensor this Mac reports.
