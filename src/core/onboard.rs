@@ -1795,17 +1795,17 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let a = ease((t - 0.05 * k as f32) / 0.4);
         // two lines (the model, then the tools it's for), a third for the bar or an error
         let third = matches!(m.state, ModelState::Downloading { .. } | ModelState::Unpacking | ModelState::Failed(_));
-        let row_h = if third { 86.0 } else { 66.0 };
+        let row_h = if third { 78.0 } else { 58.0 };
         let r = Rect::from_min_size(Pos2::new(x, y + (1.0 - a) * 8.0), Vec2::new(w, row_h));
         y += row_h + sp::S;
         glass_card(&p, r, R_CARD, 0.0, false);
-        let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 18.0), Vec2::splat(30.0));
+        let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 14.0), Vec2::splat(30.0));
         p.rect_filled(ib, 8.0, white(16));
         icon(&p, app.tools[i].badge().icon, ib.shrink(7.0), if m.state == ModelState::Ready { GREEN() } else { TEXT_SOFT() });
         let tx = ib.right() + 12.0;
         let right = r.right() - 14.0;
-        let line1 = r.top() + 22.0;
-        let line2 = r.top() + 44.0;
+        let line1 = r.top() + 19.0;
+        let line2 = r.top() + 39.0;
         // a two-line row's status or button sits on its middle; with a
         // third line (the bar) it stays on the first
         let side = if third { line1 } else { r.center().y };
@@ -1815,7 +1815,7 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let uses = row.tools.iter().map(|(ti, what)| format!("{}: {}", app.tools[*ti].name(), what.to_lowercase())).collect::<Vec<_>>().join(" · ");
         let status_w = 150.0;
         text_fit(&p, Pos2::new(tx, line2), Align2::LEFT_CENTER, &uses, font(12.0), TEXT_DIM(), right - tx - status_w);
-        let bar = Rect::from_min_max(Pos2::new(tx, r.bottom() - 16.0), Pos2::new(right, r.bottom() - 10.0));
+        let bar = Rect::from_min_max(Pos2::new(tx, r.bottom() - 14.0), Pos2::new(right, r.bottom() - 8.0));
         let mut button: Option<&str> = None;
         match &m.state {
             ModelState::Ready => {
@@ -2370,8 +2370,20 @@ pub fn help_card(ui: &mut Ui, full: Rect, now: f64, perm: Perm) -> bool {
     let x = Rect::from_min_size(Pos2::new(full.right() - 26.0, full.bottom() - 26.0), Vec2::splat(18.0));
     let r = ui.interact(x, ui.scope_id().with("fda-help-close"), Sense::click());
     icon(&p, Icon::Close, x.shrink(3.0), if r.hovered() { TEXT() } else { TEXT_MUTED() });
-    ui.ctx().request_repaint();
+    // it can stay up for minutes, and each of its frames redraws setup too:
+    // move at the decorative pace, and sleep while the switch holds still
+    let wait = help_wait(cycle).map_or(std::time::Duration::from_secs_f32(1.0 / 30.0), std::time::Duration::from_secs_f32);
+    ui.ctx().request_repaint_after(wait);
+    ui.ctx().request_repaint_after_for(wait, egui::ViewportId::ROOT);
     r.clicked()
+}
+
+/// Seconds the help card's loop holds still from `cycle` (0..1 of its
+/// 2.4 s), or None while the pointer or the switch moves.
+fn help_wait(cycle: f32) -> Option<f32> {
+    // the pointer comes in (0..0.25), the switch flips on (..0.5), holds,
+    // and flips back off (0.85..1)
+    (0.5..0.85).contains(&cycle).then(|| (0.85 - cycle) * 2.4)
 }
 
 
@@ -2452,6 +2464,14 @@ mod tests {
     fn keycaps_split_modifiers_from_the_key() {
         assert_eq!(caps("⌘⇧2"), vec!["⌘", "⇧", "2"]);
         assert_eq!(caps("⌥Space"), vec!["⌥", "Space"]);
+    }
+
+    #[test]
+    fn the_help_card_sleeps_while_its_switch_holds() {
+        assert_eq!(help_wait(0.1), None, "pointer moving");
+        assert_eq!(help_wait(0.4), None, "switch flipping");
+        assert!((help_wait(0.5).unwrap() - 0.84).abs() < 1e-3);
+        assert_eq!(help_wait(0.9), None, "switch flipping back");
     }
 
     #[test]

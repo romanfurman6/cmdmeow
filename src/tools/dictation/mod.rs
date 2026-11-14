@@ -205,6 +205,8 @@ pub struct Dictation {
     try_down: bool,
     /// Our window had the keyboard when the try-it field was last drawn.
     try_focused: bool,
+    /// The try-it field was clicked: it shows a caret and waits for the shortcut.
+    try_armed: bool,
     /// Sample data (screenshots): what the try-it field shows.
     try_fake: Option<ui::Shown>,
 }
@@ -262,6 +264,7 @@ impl Dictation {
             try_note: None,
             try_down: false,
             try_focused: false,
+            try_armed: false,
             try_fake: None,
         }
     }
@@ -679,6 +682,7 @@ impl Dictation {
             self.try_seen = None;
             self.try_last = None;
             self.try_note = None;
+            self.try_armed = false;
         }
         if let Phase::Showing { until, .. } = self.phase {
             if Instant::now() >= until {
@@ -913,12 +917,14 @@ impl Tool for Dictation {
                 Some(View::Page)
             }
             // the first visit: the try-it field, in each of its states
-            "dictation-empty" | "dictation-try-listening" | "dictation-try-working" | "dictation-try-done" | "dictation-try-model" | "dictation-try-download" => {
+            "dictation-empty" | "dictation-try-armed" | "dictation-try-listening" | "dictation-try-holding" | "dictation-try-working" | "dictation-try-done" | "dictation-try-model" | "dictation-try-download" => {
                 self.tab = Tab::History;
                 self.history = History::default();
+                self.try_armed = view != "dictation-empty";
                 let words = "Okay, this is my first dictation and it already works.";
                 self.try_fake = Some(match view {
-                    "dictation-try-listening" => ui::Shown::Listening { secs: 4.0 },
+                    "dictation-try-listening" => ui::Shown::Listening { secs: 4.0, tapped: true },
+                    "dictation-try-holding" => ui::Shown::Listening { secs: 4.0, tapped: false },
                     "dictation-try-working" => ui::Shown::Working { frac: 0.6 },
                     "dictation-try-done" => ui::Shown::Done(Said { at: chrono::Local::now().timestamp(), text: words.into(), app: String::new(), secs: 4.0 }),
                     "dictation-try-model" => ui::Shown::NeedModel { failed: None },
