@@ -356,11 +356,10 @@ mod imp {
     }
 
     /// How a framed save runs. Each can be set for a test run
-    /// (`CMDMEOW_FRAME_FAST=0` …).
+    /// (`CMDMEOW_FRAME_DEPTH=1` …). On an M1 the encoder sets the pace
+    /// (~55 frames a second at 3456×2402): these only matter where it's faster.
     #[derive(Clone, Copy, Debug)]
     struct Knobs {
-        /// The encoder may trade a little quality for speed.
-        fast: bool,
         /// Draw straight into the encoder's own pixel format (420v), so it
         /// doesn't convert every frame from BGRA.
         yuv: bool,
@@ -373,7 +372,7 @@ mod imp {
     impl Knobs {
         fn get() -> Knobs {
             let env = |k: &str, d: usize| std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(d);
-            Knobs { fast: env("CMDMEOW_FRAME_FAST", 1) == 1, yuv: env("CMDMEOW_FRAME_YUV", 1) == 1, hq: env("CMDMEOW_FRAME_HQ", 1) == 1, depth: env("CMDMEOW_FRAME_DEPTH", 3).clamp(1, 8) }
+            Knobs { yuv: env("CMDMEOW_FRAME_YUV", 1) == 1, hq: env("CMDMEOW_FRAME_HQ", 1) == 1, depth: env("CMDMEOW_FRAME_DEPTH", 3).clamp(1, 8) }
         }
     }
 
@@ -413,35 +412,11 @@ mod imp {
         End,
     }
 
-    /// A render that failed; `setup` when it failed before the first frame
-    /// (another try with safer settings can work).
-    struct Failed {
-        why: String,
-        setup: bool,
-    }
-
-    fn setup(why: impl Into<String>) -> Failed {
-        Failed { why: why.into(), setup: true }
-    }
-
-    fn failed(why: impl Into<String>) -> Failed {
-        Failed { why: why.into(), setup: false }
-    }
-
     pub fn render(job: &Job, progress: &Progress) -> Result<(u32, u32), String> {
         let t0 = std::time::Instant::now();
-        let mut knobs = Knobs::get();
+        let knobs = Knobs::get();
         let mut spent = Spent::default();
-        let mut r = unsafe { run(job, progress, knobs, &mut spent) };
-        // an encoder that won't take the fast setting gets the plain one
-        if let Err(f) = &r {
-            if f.setup && knobs.fast && !progress.cancel.load(Ordering::Relaxed) {
-                eprintln!("[video] the encoder refused the fast setting ({}), framing without it", f.why);
-                knobs.fast = false;
-                spent = Spent::default();
-                r = unsafe { run(job, progress, knobs, &mut spent) };
-            }
-        }
+        let r = unsafe { run(job, progress, knobs, &mut spent) };
         let took = t0.elapsed().as_secs_f64();
         match &r {
             Ok((size, frames, dur)) => eprintln!(
@@ -455,29 +430,29 @@ mod imp {
                 spent.write,
                 spent.idle
             ),
-            Err(f) => eprintln!("[video] framing {:?} failed after {took:.1} s: {} ({knobs:?})", job.src, f.why),
+            Err(e) => eprintln!("[video] framing {:?} failed after {took:.1} s: {e} ({knobs:?})", job.src),
         }
         if r.is_err() {
             let _ = std::fs::remove_file(&job.out);
         }
-        r.map(|(size, _, _)| size).map_err(|f| f.why)
+        r.map(|(size, _, _)| size)
     }
 
     #[allow(deprecated)]
-    unsafe fn run(job: &Job, progress: &Progress, knobs: Knobs, spent: &mut Spent) -> Result<((u32, u32), u64, f64), Failed> {
+    unsafe fn run(job: &Job, progress: &Progress, knobs: Knobs, spent: &mut Spent) -> Result<((u32, u32), u64, f64), String> {
         unsafe {
             let asset = AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&job.src.to_string_lossy())), None);
-            let (vm, am) = (AVMediaTypeVideo.ok_or(setup("no video"))?, AVMediaTypeAudio.ok_or(setup("no audio"))?);
+            let (vm, am) = (AVMediaTypeVideo.ok_or("no video")?, AVMediaTypeAudio.ok_or("no audio")?);
             let duration = secs(asset.duration());
             if duration <= 0.0 {
-                return Err(failed("The video is empty"));
+                return Err("The video is empty".into());
             }
-            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or(failed("No picture in the video"))?;
+            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or("No picture in the video")?;
             let ns = track.naturalSize();
             let src = ((ns.width.round() as u32).max(2), (ns.height.round() as u32).max(2));
             let lay = scene::layout(src, Some(&job.frame));
             let (ow, oh) = lay.out;
-            let chrome = scene::chrome(&job.frame, &lay).ok_or(failed("The frame couldn't be drawn"))?;
+            let chrome = scene::chrome(&job.frame, &lay).ok_or("The frame couldn't be drawn")?;
             // a screen recording sends frames only when something moved:
             // the rate is a hint for the encoder, the frames keep their times
             let fps = if track.nominalFrameRate() > 31.0 { 60 } else { 30 };
@@ -485,45 +460,38 @@ mod imp {
             // the GPU, without colour conversions: pixels go out as they came in
             let null = NSNull::null();
             let no = NSNumber::new_bool(false);
-            let yes = NSNumber::new_bool(true);
             let ctx_opts = NSDictionary::from_slices(&[kCIContextWorkingColorSpace, kCIContextOutputColorSpace, kCIContextCacheIntermediates], &[any(&*null), any(&*null), any(&*no)]);
             let ctx = CIContext::contextWithOptions(Some(&ctx_opts));
             let img_opts = NSDictionary::from_slices(&[kCIImageColorSpace], &[any(&*null)]);
-            let under = still(&chrome.under, &img_opts).ok_or(failed("No memory for the frame"))?;
-            let over = still(&chrome.over, &img_opts).ok_or(failed("No memory for the frame"))?;
+            let under = still(&chrome.under, &img_opts).ok_or("No memory for the frame")?;
+            let over = still(&chrome.over, &img_opts).ok_or("No memory for the frame")?;
             // the picture's place, in Core Image's space (y up from the bottom)
             let s = lay.screen;
             let hole = CGRect::new(CGPoint::new(s.left() as f64, (oh as f32 - s.bottom()) as f64), CGSize::new(s.width() as f64, s.height() as f64));
 
             // reading
-            let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| failed(ns_err(&e)))?;
+            let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| ns_err(&e))?;
             let video_out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(&gpu_attrs(YUV, None)));
             video_out.setAlwaysCopiesSampleData(false);
             if !reader.canAddOutput(&video_out) {
-                return Err(failed("The video can't be read"));
+                return Err("The video can't be read".into());
             }
             reader.addOutput(&video_out);
 
             // writing
             let _ = std::fs::remove_file(&job.out);
             let url = NSURL::fileURLWithPath(&NSString::from_str(&job.out.to_string_lossy()));
-            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url, AVFileTypeMPEG4.ok_or(setup("mp4 isn't available"))?).map_err(|e| failed(ns_err(&e)))?;
+            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url, AVFileTypeMPEG4.ok_or("mp4 isn't available")?).map_err(|e| ns_err(&e))?;
             let num = |v: f64| NSNumber::new_f64(v);
             let (bitrate, nfps, keys) = (num(timeline::bitrate(ow, oh, fps, RecQuality::High) as f64), num(fps as f64), num((fps * 2) as f64));
             let profile = NSString::from_str("H264_High_AutoLevel");
-            let mut props = vec![("AverageBitRate", any(&*bitrate)), ("ExpectedFrameRate", any(&*nfps)), ("MaxKeyFrameInterval", any(&*keys)), ("ProfileLevel", any(&*profile)), ("AllowFrameReordering", any(&*no))];
-            if knobs.fast {
-                props.push(("PrioritizeEncodingSpeedOverQuality", any(&*yes)));
-            }
-            let compression = dict(&props);
+            let compression = dict(&[("AverageBitRate", any(&*bitrate)), ("ExpectedFrameRate", any(&*nfps)), ("MaxKeyFrameInterval", any(&*keys)), ("ProfileLevel", any(&*profile)), ("AllowFrameReordering", any(&*no))]);
             let (w, h, codec) = (num(ow as f64), num(oh as f64), NSString::from_str("avc1"));
             let vset = dict(&[("AVVideoCodecKey", any(&*codec)), ("AVVideoWidthKey", any(&*w)), ("AVVideoHeightKey", any(&*h)), ("AVVideoCompressionPropertiesKey", any(&*compression))]);
-            // settings the encoder doesn't know throw instead of failing
-            let video = objc2::exception::catch(std::panic::AssertUnwindSafe(|| AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset))))
-                .map_err(|e| setup(e.map(|e| format!("{e:?}")).unwrap_or_else(|| "the encoder refused its settings".into())))?;
+            let video = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset));
             video.setExpectsMediaDataInRealTime(false);
             if !writer.canAddInput(&video) {
-                return Err(setup("This Mac can't encode video at that size"));
+                return Err("This Mac can't encode video at that size".into());
             }
             writer.addInput(&video);
             let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(&video, Some(&gpu_attrs(if knobs.yuv { YUV } else { BGRA }, Some((ow, oh)))));
@@ -546,24 +514,24 @@ mod imp {
             }
 
             if !reader.startReading() {
-                return Err(failed(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video can't be read".into())));
+                return Err(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video can't be read".into()));
             }
             if !writer.startWriting() {
                 reader.cancelReading();
-                return Err(setup(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into())));
+                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into()));
             }
             writer.startSessionAtSourceTime(cm(0.0));
             let Some(pool) = adaptor.pixelBufferPool() else {
                 reader.cancelReading();
                 writer.cancelWriting();
-                return Err(setup("No frames to draw into"));
+                return Err("No frames to draw into".into());
             };
             let pool_ptr = Retained::as_ptr(&pool) as *const c_void;
 
-            let fail = |why: String| -> Result<((u32, u32), u64, f64), Failed> {
+            let fail = |why: String| -> Result<((u32, u32), u64, f64), String> {
                 reader.cancelReading();
                 writer.cancelWriting();
-                Err(failed(why))
+                Err(why)
             };
             let mut frames = 0u64;
             let mut last: Option<f64> = None;
@@ -708,7 +676,7 @@ mod imp {
             if writer.status() == AVAssetWriterStatus::Completed {
                 Ok(((ow, oh), frames, duration))
             } else {
-                Err(failed(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be finished".into())))
+                Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be finished".into()))
             }
         }
     }
