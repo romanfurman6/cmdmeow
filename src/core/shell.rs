@@ -859,7 +859,9 @@ static FIRST_FRAMES: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::
 /// The app window is past its first frames (see [`kick_first_frames`]):
 /// what it draws now is what the person sees.
 pub fn first_frames_shown() -> bool {
-    FIRST_FRAMES.load(std::sync::atomic::Ordering::Relaxed) >= 2
+    // the kick needs the window's size; without one, give up waiting after 1.5 s
+    static SINCE: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    FIRST_FRAMES.load(std::sync::atomic::Ordering::Relaxed) >= 2 || SINCE.get_or_init(std::time::Instant::now).elapsed().as_secs_f32() > 1.5
 }
 
 fn kick_first_frames(ctx: &egui::Context) {

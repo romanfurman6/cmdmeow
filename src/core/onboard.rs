@@ -2281,6 +2281,20 @@ mod tests {
     }
 
     #[test]
+    fn a_goal_loop_runs_only_under_the_pointer() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::NULL.with("loop");
+        assert_eq!(loop_clock(&ctx, id, 10.0, false), 2.0, "rests at the screenshot pose");
+        assert_eq!(loop_clock(&ctx, id, 11.0, false), 2.0, "holds while not hovered");
+        let t = loop_clock(&ctx, id, 11.05, true);
+        assert!((t - 2.05).abs() < 1e-4, "{t}");
+        // a long gap (window hidden) moves it a frame's worth at most
+        let t2 = loop_clock(&ctx, id, 20.0, true);
+        assert!((t2 - t - 0.1).abs() < 1e-4, "{t2}");
+        assert_eq!(loop_clock(&ctx, id, 30.0, false), t2, "stops where it was");
+    }
+
+    #[test]
     fn keycaps_split_modifiers_from_the_key() {
         assert_eq!(caps("⌘⇧2"), vec!["⌘", "⇧", "2"]);
         assert_eq!(caps("⌥Space"), vec!["⌥", "Space"]);
