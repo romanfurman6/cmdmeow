@@ -500,7 +500,12 @@ pub fn merge_extra(list: &mut Vec<Device>, paired_pods: &[Device], adverts: &[Po
     for a in models {
         // the connected pair of this model; macOS sometimes reports no
         // product id for it, so a lone connected pair without one counts too
-        let unknown: Vec<usize> = (0..list.len()).filter(|&i| list[i].kind == Kind::Earbuds && list[i].product == 0 && list[i].live()).collect();
+        // (Apple's only: other earbuds must never take a stranger's advert)
+        let apple = |d: &Device| {
+            let n = d.name.to_lowercase();
+            n.contains("airpods") || n.contains("beats")
+        };
+        let unknown: Vec<usize> = (0..list.len()).filter(|&i| list[i].kind == Kind::Earbuds && list[i].product == 0 && list[i].live() && apple(&list[i])).collect();
         let conn = list.iter().position(|d| d.product == a.model && d.kind == Kind::Earbuds && d.live()).or(match unknown[..] {
             [i] => Some(i),
             _ => None,
@@ -926,6 +931,11 @@ mod tests {
         let mut v = vec![Device { name: "AirPods Pro".into(), kind: Kind::Earbuds, product: 0x200e, left: Some(50), right: Some(50), ..Default::default() }];
         merge_extra(&mut v, &paired, &[ad], &[]);
         assert_eq!(v.len(), 1);
+        // other makers' earbuds without a product id keep their own data
+        let sony = Device { name: "WF-1000XM5".into(), kind: Kind::Earbuds, address: "bb-01".into(), left: Some(60), right: Some(60), ..Default::default() };
+        let mut v = vec![sony.clone()];
+        merge_extra(&mut v, &[], &[ad], &[]);
+        assert_eq!(v, vec![sony]);
     }
 
     fn mouse(b: u8) -> Vec<Device> {
