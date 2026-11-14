@@ -14,6 +14,9 @@ use std::time::Instant;
 
 /// How often the app wakes while nothing is on screen.
 const HIDDEN_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(5);
+/// How long opening the app window keeps pulling it to the front, and the
+/// longest the menu panel waits for it before stepping aside anyway.
+const APP_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_millis(700);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -68,6 +71,14 @@ pub struct App {
     /// When the window was asked for (dev log: how long the first frame took).
     pub app_asked: Option<Instant>,
     app_focus: bool,
+    /// Until then, keep bringing the app window forward while it isn't key:
+    /// on its first frames macOS can still hand focus back to the app that
+    /// was in front before the menu bar click.
+    app_focus_until: Option<Instant>,
+    /// The panel waits for the app window to take focus before it hides;
+    /// hiding it first left the app with no window, so macOS activated the
+    /// previous app and the new window opened behind it.
+    panel_hide_after_open: Option<Instant>,
     pending_shape: bool,
     screenshot: Option<PathBuf>,
     frame: u64,
@@ -157,6 +168,8 @@ impl App {
             app_open: false,
             app_asked: None,
             app_focus: false,
+            app_focus_until: None,
+            panel_hide_after_open: None,
             pending_shape: true,
             screenshot: opts.screenshot,
             frame: 0,
@@ -477,7 +490,8 @@ impl App {
                 let x = (right - size.x).max(8.0);
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(Pos2::new(x, anchor.y + 6.0)));
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
-                crate::kit::native::set_dock_icon(false);
+                // the app window may still be open behind the panel: keep its Dock icon
+                crate::kit::native::set_dock_icon(self.app_open);
             }
             Mode::Window | Mode::Setup | Mode::FdaHelp => {
                 let pos = Pos2::new(((screen.x - size.x) / 2.0).max(0.0), ((screen.y - size.y) / 2.0).max(30.0));
@@ -515,7 +529,8 @@ impl App {
         self.app_asked = Some(Instant::now());
         crate::kit::native::set_dock_icon(true);
         if self.visible {
-            self.hide(ctx);
+            self.panel_hide_after_open = Some(Instant::now());
+            ctx.request_repaint();
         }
     }
 
@@ -918,6 +933,7 @@ impl App {
         let id = egui::ViewportId::from_hash_of("cmdmeow-app");
         use super::onboard::Finish;
         let mut finish = Finish::No;
+        let mut app_focused = false;
         crate::kit::viewport::show(ctx, id, builder, |ui, _class| {
             let vctx = ui.ctx().clone();
             if let Some(at) = self.app_asked.take() {
@@ -925,10 +941,20 @@ impl App {
                     eprintln!("[timing] window first frame {} ms after the click", at.elapsed().as_millis());
                 }
             }
+            app_focused = vctx.input(|i| i.viewport().focused) == Some(true);
             if self.app_focus {
                 self.app_focus = false;
+                self.app_focus_until = Some(Instant::now() + APP_FOCUS_GRACE);
                 vctx.send_viewport_cmd(ViewportCommand::Focus);
                 crate::kit::native::activate();
+            } else if let Some(until) = self.app_focus_until {
+                if app_focused || Instant::now() > until {
+                    self.app_focus_until = None;
+                } else {
+                    vctx.send_viewport_cmd(ViewportCommand::Focus);
+                    crate::kit::native::activate();
+                    vctx.request_repaint_after(std::time::Duration::from_millis(50));
+                }
             }
             if vctx.input(|i| i.viewport().close_requested()) {
                 // closing during setup only hides it: the menu bar brings it back
@@ -950,6 +976,16 @@ impl App {
             self.run_actions(&vctx, &mut cx);
             vctx.request_repaint_after(glass::next_second());
         });
+        if let Some(at) = self.panel_hide_after_open {
+            if !self.visible || self.mode != Mode::Panel {
+                self.panel_hide_after_open = None;
+            } else if app_focused || at.elapsed() > APP_FOCUS_GRACE {
+                self.panel_hide_after_open = None;
+                self.hide(ctx);
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_millis(30));
+            }
+        }
         if finish != Finish::No {
             crate::kit::login::default_on();
             super::onboard::mark_done();
@@ -980,7 +1016,8 @@ impl App {
         self.app_asked = Some(Instant::now());
         crate::kit::native::set_dock_icon(true);
         if self.visible {
-            self.hide(ctx);
+            self.panel_hide_after_open = Some(Instant::now());
+            ctx.request_repaint();
         }
     }
 
