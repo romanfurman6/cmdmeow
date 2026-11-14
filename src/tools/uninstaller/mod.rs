@@ -939,14 +939,6 @@ impl Tool for Uninstaller {
         };
         working || self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
-    fn sidebar_meta(&self) -> String {
-        let g = self.st.lock_ok();
-        if g.apps.is_empty() {
-            String::new()
-        } else {
-            g.apps.len().to_string()
-        }
-    }
     fn has_page(&self) -> bool {
         true
     }

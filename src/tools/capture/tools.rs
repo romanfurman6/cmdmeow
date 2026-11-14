@@ -37,10 +37,6 @@ impl Tool for Sharing {
     fn about(&self) -> &'static str {
         "Uploads screenshots and recordings to your own storage and copies a link"
     }
-    fn sidebar_meta(&self) -> String {
-        let c = self.0.borrow();
-        if c.settings.share.set_up(super::share::VIDEO_ACCOUNT) { String::new() } else { "Set up".into() }
-    }
     fn has_page(&self) -> bool {
         true
     }

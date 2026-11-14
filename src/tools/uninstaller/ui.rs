@@ -269,17 +269,15 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
 }
 
-/// The start screen before the first scan: what the scan finds, and Scan for
+/// The start screen before the first scan: what the tool does, and Scan for
 /// apps. Returns true when it was clicked.
 fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     let p = ui.painter().clone();
     let c = area.center() - Vec2::new(0.0, 40.0);
     tool_chip(&p, Rect::from_center_size(c - Vec2::new(0.0, 70.0), Vec2::splat(64.0)), Icon::AppRemove, TINT());
     p.text(Pos2::new(c.x, c.y - 18.0), Align2::CENTER_CENTER, "Remove apps and what they leave behind", bold(18.0), TEXT());
-    let w = area.width().min(440.0);
-    text_wrap(&p, Pos2::new(c.x, c.y + 6.0), Align2::CENTER_TOP, "The scan lists your apps with their size and files, and finds data left by apps that are gone. Nothing is removed until you choose.", ty::body(), TEXT_DIM(), w, 3);
     let btn = Vec2::new(200.0, 44.0);
-    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 104.0), btn);
+    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 20.0 + sp::XXL), btn);
     let resp = ui.interact(br, ui.scope_id().with("un-fresh-scan"), Sense::click());
     let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
     liquid_capsule(&p, br, Some(BLUE()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
@@ -287,7 +285,7 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    p.text(Pos2::new(c.x, br.bottom() + 22.0), Align2::CENTER_CENTER, "Or drop an app on this window to remove it", font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(c.x, br.bottom() + 22.0), Align2::CENTER_CENTER, "Or drop an app here", font(12.0), TEXT_FAINT());
     resp.clicked()
 }
 
@@ -555,7 +553,9 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
             if it.admin {
                 right = outline_chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "admin", TEXT_FAINT()).left() - 6.0;
             }
-            let label = item_label(it, &lib);
+            // a long path gives way in the middle, so its file name stays
+            let w = right - cb.right() - 12.0;
+            let label = fit_middle(&p, &item_label(it, &lib), &font(12.0), w);
             let lr = text_fit(&p, Pos2::new(cb.right() + 8.0, rr.center().y), Align2::LEFT_CENTER, &label, font(12.0), if it.selected { TEXT() } else { TEXT_FAINT() }, right - cb.right() - 12.0);
             ui.interact(lr, ui.scope_id().with(("un-tip", &it.path)), Sense::hover()).on_hover_text(format!("{} · {}", it.kind.label(), it.path.display()));
             if resp.clicked() {
@@ -1445,4 +1445,22 @@ mod tests {
         }
         assert!(demo::fill(&mut u, "clipboard").is_none());
     }
+}
+
+/// `s` cut in the middle ("/Library/…/com.docker.vmnetd.plist") until it
+/// fits `max_w`; the end of a path is what tells files apart.
+fn fit_middle(p: &egui::Painter, s: &str, f: &egui::FontId, max_w: f32) -> String {
+    let fits = |t: &str| p.layout_no_wrap(t.to_string(), f.clone(), TEXT()).size().x <= max_w;
+    if fits(s) {
+        return s.to_string();
+    }
+    let mut n = s.chars().count();
+    while n > 8 {
+        n -= 1;
+        let t = middle_ellipsis(s, n);
+        if fits(&t) {
+            return t;
+        }
+    }
+    s.to_string()
 }

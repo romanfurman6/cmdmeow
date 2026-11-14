@@ -806,11 +806,6 @@ impl Tool for Startup {
     fn busy(&self) -> bool {
         self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
-    fn sidebar_meta(&self) -> String {
-        let g = self.state();
-        let n = g.suggested().len() + g.flagged(true).len();
-        if n > 0 { n.to_string() } else { String::new() }
-    }
     fn widgets(&self) -> Vec<WidgetSpec> {
         vec![WidgetSpec { id: SUMMARY, title: "Startup", about: "What starts with your Mac, and one button for what can go.", sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
     }

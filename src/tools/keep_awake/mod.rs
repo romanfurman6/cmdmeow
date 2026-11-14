@@ -270,10 +270,6 @@ impl Tool for KeepAwake {
     fn about(&self) -> &'static str {
         "Keep the Mac awake, or only while your AI agent works"
     }
-    fn sidebar_meta(&self) -> String {
-        let e = self.engine.lock_ok();
-        ui::short_state(e.state(self.now()), e.agent_name())
-    }
     fn widgets(&self) -> Vec<WidgetSpec> {
         vec![WidgetSpec { id: CARD, title: "Keep Awake", about: "The switch, and what keeps your Mac up.", sizes: UP_TO_MEDIUM, size: Size::S12, default_on: true }]
     }

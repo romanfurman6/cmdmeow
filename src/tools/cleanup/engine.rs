@@ -41,13 +41,13 @@ impl Group {
     }
     pub fn blurb(self) -> &'static str {
         match self {
-            Group::AiTools => "Caches, logs, temp files and old versions of AI tools: Claude, Codex, Gemini, Cursor. Projects you use are never touched.",
-            Group::AppCaches => "Cache files apps keep to start faster. They pile up over time and are rebuilt when needed.",
-            Group::Developer => "Xcode build data, simulator caches and package manager downloads, fetched again when needed.",
-            Group::Projects => "Build output of code projects you haven't touched in a while: node_modules, target and the like. Sources are never touched.",
-            Group::Installers => "Old installers in Downloads. The apps they installed stay.",
-            Group::Logs => "Activity logs from apps and macOS. Useful only for debugging, especially when old.",
-            Group::Trash => "Items you already deleted still take space until the Trash is emptied.",
+            Group::AiTools => "Caches, logs and old versions of Claude, Codex, Gemini, Cursor",
+            Group::AppCaches => "Files apps rebuild when needed",
+            Group::Developer => "Xcode build data, simulator caches, package downloads",
+            Group::Projects => "node_modules, target and other build output of idle projects",
+            Group::Installers => "Old installers in Downloads",
+            Group::Logs => "Logs from apps and macOS",
+            Group::Trash => "Items in the Trash",
         }
     }
 }

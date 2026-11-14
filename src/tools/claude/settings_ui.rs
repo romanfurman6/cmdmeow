@@ -62,6 +62,11 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     let mut order: Vec<usize> = (0..ai::PROVIDERS.len()).collect();
     order.sort_by_key(|k| !found[*k]);
     let card = section(&p, x, w, &mut y, "Providers", ai::PROVIDERS.len());
+    // column heads on the title's line: the radio picks the main agent, the
+    // switch tracks its usage (the same words as setup)
+    let head_y = card.top() - 28.0 + 9.0;
+    p.text(Pos2::new(card.right() - 66.0, head_y), Align2::CENTER_CENTER, "Main", ty::label(), TEXT_DIM());
+    p.text(Pos2::new(card.right() - 27.0, head_y), Align2::CENTER_CENTER, "Track", ty::label(), TEXT_DIM());
     for (n, &k) in order.iter().enumerate() {
         let m = &ai::PROVIDERS[k];
         let r = row(card, n);

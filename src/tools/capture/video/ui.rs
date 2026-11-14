@@ -662,7 +662,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         // what's needed to start: a model (downloaded once), then Transcribe
         p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, "Speech to text, on this Mac", bold(13.0), TEXT());
         y += 22.0;
-        y += paragraph(&p, Pos2::new(r.left(), y), "Whisper runs here; the sound never leaves the Mac. The model is downloaded once.", font(12.0), TEXT_DIM(), r.width()) + 12.0;
+        y += 12.0;
         for m in Model::ALL {
             let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 50.0));
             let resp = ui.interact(row, ui.scope_id().with(("model", m.name())), Sense::click());
@@ -768,14 +768,10 @@ fn voice_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let mut y = r.top();
     p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, "Clean up voice", bold(13.0), TEXT());
     y += 22.0;
-    let about = if v.tracks >= 3 {
-        "Takes background noise out of the microphone; system sound stays as it was. Runs on this Mac."
-    } else if v.tracks > 0 {
-        "Takes background noise out of the sound. Runs on this Mac. (Recordings with both the microphone and system sound clean the voice alone.)"
-    } else {
-        "This video has no sound."
-    };
-    y += paragraph(&p, Pos2::new(r.left(), y), about, font(12.0), TEXT_DIM(), r.width()) + 14.0;
+    if v.tracks == 0 {
+        y += paragraph(&p, Pos2::new(r.left(), y), "This video has no sound", font(12.0), TEXT_DIM(), r.width());
+    }
+    y += 14.0;
     if v.tracks == 0 {
         return;
     }
@@ -835,7 +831,6 @@ fn voice_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             }
             y = w.bottom() + 10.0;
         }
-        paragraph(&p, Pos2::new(r.left(), y), "What plays is what Save writes into the video.", font(12.0), TEXT_FAINT(), r.width());
     }
 }
 

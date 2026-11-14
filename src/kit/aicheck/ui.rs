@@ -152,7 +152,9 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
     let pm = ui.painter().clone();
     let line_h = wrapped_h(&pm, &line, ty::body(), w - 28.0, 3);
     let head_h = POP_HEAD_H + line_h + sp::M;
-    let row_hs: Vec<f32> = answers.iter().chain(others.iter()).map(|r| rec_height(&pm, c, r, w)).collect();
+    // one text width for every row, so the values line up in a column
+    let btn_w = recs.iter().map(|r| rec_buttons(&pm, c, r).1).fold(0.0, f32::max);
+    let row_hs: Vec<f32> = answers.iter().chain(others.iter()).map(|r| rec_height(&pm, r, w, btn_w)).collect();
     let h = head_h + row_hs.iter().sum::<f32>() + sections * POP_SEC_H;
     let x = chip.left().min(screen.right() - sp::L - w).max(screen.left() + sp::L);
     let rect = Rect::from_min_size(Pos2::new(x, chip.bottom() + 6.0), Vec2::new(w, h));
@@ -190,7 +192,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
             }
             for r in list.iter() {
                 let row = Rect::from_min_size(Pos2::new(rr.left(), y), Vec2::new(rr.width(), row_hs[k]));
-                if let Some(e) = rec_row(c, ui, row, r) {
+                if let Some(e) = rec_row(c, ui, row, r, btn_w) {
                     ev = Some(e);
                 }
                 y += row_hs[k];
@@ -291,17 +293,16 @@ fn rec_buttons(p: &egui::Painter, c: &Check, r: &Rec) -> (Option<(&'static str, 
     (alt, 14.0 + second + sp::M + button_width(p, &r.label, BTN_PRIMARY))
 }
 
-/// Where a recommendation's text goes in a row `w` wide: its left edge
-/// (from the row's) and its width.
-fn rec_text_span(p: &egui::Painter, c: &Check, r: &Rec, w: f32) -> (f32, f32) {
-    let (_, bw) = rec_buttons(p, c, r);
+/// Where a recommendation's text goes in a row `w` wide with buttons `bw`
+/// wide on the right: its left edge (from the row's) and its width.
+fn rec_text_span(w: f32, bw: f32) -> (f32, f32) {
     let tx = 14.0 + 24.0 + sp::M;
     (tx, w - tx - bw - sp::L)
 }
 
 /// A row's height: title (with its value) over why, both wrapped.
-fn rec_height(p: &egui::Painter, c: &Check, r: &Rec, w: f32) -> f32 {
-    let (_, tw) = rec_text_span(p, c, r, w);
+fn rec_height(p: &egui::Painter, r: &Rec, w: f32, bw: f32) -> f32 {
+    let (_, tw) = rec_text_span(w, bw);
     let vw = if r.value.is_empty() { 0.0 } else { p.layout_no_wrap(r.value.clone(), ty::title(), TEXT()).size().x + sp::M };
     let th = wrapped_h(p, &r.title, ty::title(), tw - vw, 2);
     let wh = wrapped_h(p, &r.why, ty::label(), tw, 3);
@@ -310,7 +311,7 @@ fn rec_height(p: &egui::Painter, c: &Check, r: &Rec, w: f32) -> f32 {
 
 /// One recommendation under a hairline: icon, title and value, why under
 /// them (both wrap), then its button and Skip.
-fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec) -> Option<Event> {
+fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32) -> Option<Event> {
     let p = ui.painter().clone();
     let cy = rr.center().y;
     hairline(&p, rr.left_top(), rr.right_top());
@@ -342,7 +343,7 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec) -> Option<Event> {
     if pill_button(ui, br, &r.label, BTN_PRIMARY, true).clicked() {
         ev = Some(Event::Act(r.clone()));
     }
-    let (tx, tw) = rec_text_span(&p, c, r, rr.width());
+    let (tx, tw) = rec_text_span(rr.width(), btn_w);
     let tx = rr.left() + tx;
     let vw = if r.value.is_empty() { 0.0 } else { p.layout_no_wrap(r.value.clone(), ty::title(), TEXT()).size().x + sp::M };
     let th = wrapped_h(&p, &r.title, ty::title(), tw - vw, 2);

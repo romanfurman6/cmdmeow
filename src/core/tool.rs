@@ -208,7 +208,9 @@ pub trait Tool {
     fn about(&self) -> &'static str {
         ""
     }
-    /// Short status beside the tool in the window sidebar ("18.3 GB", "19%").
+    /// The tool's shortcut beside it in the window sidebar ("⇧⌘2"), or what
+    /// that shortcut is doing right now ("Listening", "0:12"). Nothing else:
+    /// one column holds one kind of thing (docs/ui-rules.md T15).
     fn sidebar_meta(&self) -> String {
         String::new()
     }

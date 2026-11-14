@@ -101,17 +101,18 @@ pub fn card(p: &egui::Painter, r: Rect, cl: &UsageInfo, t: f64) {
     let hy = r.top() + 17.0;
     let status = status(cl);
     let (fresh, fc) = super::parts::fresh(cl);
-    let (status, scol) = if cl.limits.is_empty() || fresh.is_empty() { (status, white(166)) } else { (fresh, fc) };
+    // the time only when it is old: the rows already carry their own times
+    let (status, scol) = if cl.limits.is_empty() || !cl.stale || fresh.is_empty() { (status, white(166)) } else { (fresh, fc) };
     let sw = text_fit(p, Pos2::new(x1, hy), Align2::RIGHT_CENTER, &status, ty::label(), scol, 170.0).width();
     text_fit(p, Pos2::new(x0, hy), Align2::LEFT_CENTER, "AI Usage", ty::title(), TEXT(), (x1 - sw - 12.0) - x0);
     if cl.limits.is_empty() && (cl.loading || !cl.scanned) {
         spinner(p, Pos2::new(x1 - 8.0, r.top() + 56.0), 7.0, t, TEXT_DIM());
     }
     // columns sized by what they hold this frame: the forecast keeps its
-    // full width ("Out tomorrow 23:40"), the bar takes what is left
+    // full width ("Runs out tomorrow 23:40"), the bar takes what is left
     let rows = [("Session", cl.session().cloned()), ("Week", cl.weekly().cloned())];
     let w = |s: &str| p.layout_no_wrap(s.to_string(), font(12.0), TEXT()).size().x;
-    let fc: Vec<String> = rows.iter().map(|(_, l)| l.as_ref().map(|l| super::parts::forecast(l).trim_start_matches("Resets ").to_string()).unwrap_or_default()).collect();
+    let fc: Vec<String> = rows.iter().map(|(_, l)| l.as_ref().map(super::parts::forecast).unwrap_or_default()).collect();
     let fw = fc.iter().map(|f| w(f)).fold(0.0, f32::max);
     let pw = w("100%");
     let lw = rows.iter().map(|(k, _)| w(k)).fold(0.0, f32::max);
@@ -129,7 +130,7 @@ pub fn card(p: &egui::Painter, r: Rect, cl: &UsageInfo, t: f64) {
                     super::parts::pace_bar(p, br, l);
                 }
                 p.text(Pos2::new(pct_r, yy), Align2::RIGHT_CENTER, format!("{:.0}%", l.pct), font(12.0), TEXT());
-                let col = if super::parts::forecast(l).starts_with("Out") { RED() } else { TEXT_FAINT() };
+                let col = if super::parts::forecast(l).starts_with("Runs out") { RED() } else { TEXT_FAINT() };
                 p.text(Pos2::new(x1, yy), Align2::RIGHT_CENTER, &fc[k], font(12.0), col);
             }
             None if show_bar => bar(p, br, 0.0, TEXT_DIM()),
@@ -185,7 +186,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         p.text(Pos2::new(lr.right() - 12.0, yy), Align2::RIGHT_TOP, format!("{:.0}%", l.pct), bold(13.0), TEXT());
         super::parts::pace_bar(&p, Rect::from_min_size(Pos2::new(lr.left() + 12.0, yy + 20.0), Vec2::new(w - 24.0, 6.0)), l);
         let f = super::parts::forecast(l);
-        let col = if f.starts_with("Out") { RED() } else { TEXT_FAINT() };
+        let col = if f.starts_with("Runs out") { RED() } else { TEXT_FAINT() };
         let fr = text_fit(&p, Pos2::new(lr.left() + 12.0, yy + 32.0), Align2::LEFT_TOP, &f, font(12.0), col, w - 24.0);
         if let Some((s, c)) = super::parts::pace_label(l) {
             text_fit(&p, Pos2::new(lr.right() - 12.0, yy + 32.0), Align2::RIGHT_TOP, s, font(12.0), c, lr.right() - 24.0 - fr.right());

@@ -43,7 +43,7 @@ pub fn missing(app: &App, i: usize) -> Option<Perm> {
 pub fn page_bar(app: &mut App, ui: &mut Ui, content: Rect, perm: Perm) -> Rect {
     let now = ui.ctx().input(|i| i.time);
     let bar = Rect::from_min_size(content.min + Vec2::new(24.0, 14.0), Vec2::new(content.width() - 48.0, 46.0));
-    onboard::perm_list(app, ui, bar, &[Row { perm, optional: false, tools: Vec::new() }], 10.0, now);
+    onboard::perm_list(app, ui, bar, &[Row { perm, optional: false, tools: Vec::new(), locked: true }], 10.0, now);
     Rect::from_min_max(Pos2::new(content.left(), content.top() + BAR_H), content.max)
 }
 
@@ -57,7 +57,7 @@ pub fn widget_cover(app: &mut App, ui: &mut Ui, r: Rect, perm: Perm, id: egui::I
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    if resp.on_hover_text(perm.name()).clicked() {
+    if resp.on_hover_text(format!("Needs {}", perm.name())).clicked() {
         app.perm_watch.ask(perm, ui.ctx().input(|i| i.time));
     }
 }

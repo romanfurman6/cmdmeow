@@ -176,10 +176,6 @@ impl Tool for Cleanup {
         let scanning = matches!(self.clean.lock_ok().phase, engine::Phase::Scanning | engine::Phase::Judging | engine::Phase::Cleaning);
         scanning || self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
-    fn sidebar_meta(&self) -> String {
-        let g = self.clean.lock_ok();
-        if g.phase == engine::Phase::Results { human_bytes(g.total()) } else { String::new() }
-    }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         page::page(self, ui, rect, cx);
     }

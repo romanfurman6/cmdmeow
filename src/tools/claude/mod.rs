@@ -188,9 +188,6 @@ impl Tool for Claude {
     fn has_page(&self) -> bool {
         true
     }
-    fn sidebar_meta(&self) -> String {
-        self.menu_bar().unwrap_or_default()
-    }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         page::page(&self.all, self.demo, ui, rect, cx);
     }

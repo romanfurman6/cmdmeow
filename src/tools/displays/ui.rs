@@ -168,7 +168,9 @@ pub fn page(d: &mut Displays, ui: &mut Ui, r: Rect) {
     let color = tint::DISPLAYS();
     let x0 = r.left() + 24.0;
     let x1 = r.right() - 24.0;
-    let mut y = r.top() + 20.0;
+    // a title like every other page
+    page_header(&p, r, "Displays", "", TEXT_DIM());
+    let mut y = r.top() + PAGE_HEADER_H + 20.0;
     let screens = d.screens();
     let ours: Vec<Screen> = screens.iter().filter(|s| s.adjustable()).cloned().collect();
     if ours.is_empty() {
@@ -210,7 +212,7 @@ pub fn page(d: &mut Displays, ui: &mut Ui, r: Rect) {
     // the keys
     let kr = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, y + 56.0));
     glass_card(&p, kr, R_CARD, 0.0, false);
-    p.text(Pos2::new(kr.left() + 18.0, kr.center().y), Align2::LEFT_CENTER, "Brightness and volume keys", ty::body(), TEXT());
+    p.text(Pos2::new(kr.left() + 18.0, kr.center().y), Align2::LEFT_CENTER, "Use keyboard keys for these displays", ty::body(), TEXT());
     let mut st = d.settings();
     let sw = Rect::from_min_size(Pos2::new(kr.right() - 18.0 - 38.0, kr.center().y - 11.0), Vec2::new(38.0, 22.0));
     if switch(ui, sw, id.with("keys"), st.keys, true).clicked() {
@@ -225,24 +227,12 @@ fn empty(ui: &mut Ui, p: &egui::Painter, r: Rect, color: Color32) {
     p.circle_filled(c, 34.0, white(12));
     icon(p, Icon::Display, Rect::from_center_size(c, Vec2::splat(30.0)), lift(color));
     p.text(c + Vec2::new(0.0, 56.0), Align2::CENTER_CENTER, "No external display", bold(15.0), TEXT());
-    let w = (r.width() - 48.0).min(380.0);
-    let h = paragraph_centered(p, c + Vec2::new(0.0, 80.0), "Connect a monitor over USB-C, DisplayPort or HDMI. Its brightness and speaker volume show up here, and your Mac's keys control them.", font(13.0), TEXT_DIM(), w);
     let label = "Display Settings";
     let bw = button_width(p, label, BTN_SECONDARY);
-    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 80.0 + h + 30.0), Vec2::new(bw, 30.0));
+    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 56.0 + 40.0), Vec2::new(bw, 30.0));
     if pill_button(ui, br, label, BTN_SECONDARY, true).clicked() {
         let _ = std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.Displays-Settings.extension").spawn();
     }
-}
-
-/// `text` wrapped to `w` and centred under `top`; returns its height.
-fn paragraph_centered(p: &egui::Painter, top: Pos2, text: &str, f: egui::FontId, col: Color32, w: f32) -> f32 {
-    let mut job = egui::text::LayoutJob::simple(text.to_string(), f, col, w);
-    job.halign = egui::Align::Center;
-    let g = p.layout_job(job);
-    let h = g.size().y;
-    p.galley(Pos2::new(top.x, top.y), g, col);
-    h
 }
 
 // ---------------------------------------------------------------- the level after a key
