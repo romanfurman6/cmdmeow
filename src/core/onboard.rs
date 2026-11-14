@@ -58,9 +58,7 @@ pub struct Setup {
     from: usize,
     /// The Tools step shows every tool with a switch, not the goals.
     pub all_tools: bool,
-    /// Screenshots: the goal card the pointer "is on" (its preview shows).
-    pub demo_hover: Option<usize>,
-    /// The tools again, with sample data, for the Tools step's preview: the
+    /// The tools again, with sample data, for the Tools step's panel: the
     /// live ones would read the person's folders (Capture's Recent list
     /// lists ~/Desktop, and macOS asked about it on a hover).
     samples: Option<Vec<Box<dyn super::tool::Tool>>>,
@@ -68,7 +66,7 @@ pub struct Setup {
 
 impl Setup {
     pub fn new(step: usize) -> Self {
-        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, demo_hover: None, samples: None }
+        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, samples: None }
     }
 }
 
@@ -419,7 +417,8 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         t = s.clock;
     }
     // screenshots show each step settled, not mid-animation
-    let t = if app.demo { t + 5.0 } else { t };
+    // (CMDMEOW_SETUP_T=<s> renders a moment of the animation instead)
+    let t = if app.demo { std::env::var("CMDMEOW_SETUP_T").ok().and_then(|v| v.parse().ok()).unwrap_or(t + 5.0) } else { t };
     // setup lives in the app window: a centered column when that is wider
     let win = full;
     let full = Rect::from_center_size(win.center(), Vec2::new(win.width().min(SETUP_W + 80.0), win.height()));
@@ -487,8 +486,9 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // setup is an immediate window drawn in the (hidden) root's pass: ask
     // the root for the frames too, or after a click the window kept showing
     // the old step until it was resized (first launch, M1)
-    let animating = (seen && t < 2.5) || app.perm_watch.busy(now) || next;
-    if !seen && t < 2.5 {
+    let busy_for = if kind == Kind::Welcome { WELCOME_END } else { 2.5 };
+    let animating = (seen && t < busy_for) || app.perm_watch.busy(now) || next;
+    if !seen && t < busy_for {
         // waiting to be seen: look again soon, without drawing flat out
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
         ctx.request_repaint_after_for(std::time::Duration::from_millis(100), egui::ViewportId::ROOT);
@@ -571,43 +571,69 @@ fn brand_glyph(p: &egui::Painter, c: Pos2, size: f32, col: Color32) {
 
 fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let p = ui.painter().clone();
-    let c = Pos2::new(body.center().x, body.top() + 150.0);
+    // the ring, the name and the button fill the step, as one block in its middle
+    let ring = 150.0;
+    let chip = 21.0;
+    let title = 36.0;
+    let button = Vec2::new(168.0, 46.0);
+    let block = 2.0 * (ring + chip) + 40.0 + title + sp::S + 18.0 + 36.0 + button.y;
+    let c = Pos2::new(body.center().x, body.center().y - block / 2.0 + chip + ring);
     // the cat peeks out ears first, flicks them, then hops up; the ring
     // draws itself round it and the tools land on it one by one
-    let ring = 104.0;
     crate::kit::glass::stroke_circle(&p, c, ring, Stroke::new(2.0, white(14)));
     let start = -std::f32::consts::FRAC_PI_2;
-    let k = ease((t - 1.15) / 0.9);
+    // the ring and the tools come once the cat is up
+    let v = t - WELCOME_WAIT - WELCOME_SHAKE;
+    let k = ease((v - 1.15) / 0.9);
     if k > 0.0 {
-        p.add(egui::Shape::line(arc_points(c, ring, start, start + std::f32::consts::TAU * k, 96), Stroke::new(2.0, BLUE())));
+        p.add(egui::Shape::line(arc_points(c, ring, start, start + std::f32::consts::TAU * k, 128), Stroke::new(2.5, BLUE())));
     }
     let n = app.tools.len().max(1);
     for (i, tool) in app.tools.iter().enumerate() {
         let a = start + i as f32 / n as f32 * std::f32::consts::TAU;
         let at = c + Vec2::new(a.cos(), a.sin()) * ring;
-        let s = pop((t - 1.25 - 0.07 * i as f32) / 0.4);
+        let s = pop((v - 1.25 - 0.07 * i as f32) / 0.4);
         if s <= 0.0 {
             continue;
         }
-        p.circle_filled(at, 15.0 * s, BG());
-        crate::kit::glass::stroke_circle(&p, at, 15.0 * s, Stroke::new(1.0, white(36)));
-        icon(&p, tool.badge().icon, Rect::from_center_size(at, Vec2::splat(14.0 * s)), TEXT_SOFT());
+        p.circle_filled(at, chip * s, BG());
+        crate::kit::glass::stroke_circle(&p, at, chip * s, Stroke::new(1.0, white(36)));
+        icon(&p, tool.badge().icon, Rect::from_center_size(at, Vec2::splat(19.0 * s)), TEXT_SOFT());
     }
-    let size = 128.0;
+    let size = 184.0;
     // peek() is laid out for a 96 pt cat
-    let (rise, sx, sy) = peek(t);
+    let ((rise, sx, sy), ears) = welcome_cat(t);
     let rise = rise * size / 96.0;
     let floor = c.y + size / 2.0;
     let (w, h) = (size * sx, size * sy);
     let cat = Rect::from_min_max(Pos2::new(c.x - w / 2.0, floor - rise - h), Pos2::new(c.x + w / 2.0, floor - rise));
     // below the floor the cat is hidden: that's where it peeks out from
-    let clip = Rect::from_min_max(Pos2::new(c.x - 90.0, c.y - 130.0), Pos2::new(c.x + 90.0, floor));
-    let ears = (twitch(t, 0.42) + twitch(t, 2.3), twitch(t, 0.6) + twitch(t, 1.55));
+    let clip = Rect::from_min_max(Pos2::new(c.x - size * 0.7, c.y - size), Pos2::new(c.x + size * 0.7, floor));
     crate::kit::brand::draw_mascot(&p.with_clip_rect(clip.intersect(p.clip_rect())), cat, cat_color(), ears);
-    let name = p.text(Pos2::new(c.x, c.y + ring + 32.0), Align2::CENTER_TOP, "Cmd+Meow", bold(28.0), TEXT());
-    p.text(Pos2::new(c.x, name.bottom() + sp::LINE_GAP), Align2::CENTER_TOP, format!("{} tools. One menu bar.", app.tools.len()), font(13.0), TEXT_FAINT());
-    let r = Rect::from_center_size(Pos2::new(c.x, c.y + ring + 128.0), Vec2::new(128.0, 40.0));
+    let name = p.text(Pos2::new(c.x, c.y + ring + chip + 40.0), Align2::CENTER_TOP, "Cmd+Meow", bold(title), TEXT());
+    let line = p.text(Pos2::new(c.x, name.bottom() + sp::S), Align2::CENTER_TOP, format!("{} tools. One menu bar.", app.tools.len()), font(16.0), TEXT_FAINT());
+    let r = Rect::from_min_size(Pos2::new(c.x - button.x / 2.0, line.bottom() + 36.0), button);
     pill_button(ui, r, "Set up", BTN_PRIMARY, true).clicked()
+}
+
+/// Welcome waits this long after the window is on screen before anything moves.
+const WELCOME_WAIT: f32 = 0.6;
+/// How long only the ears show, shaking, before the cat jumps out.
+const WELCOME_SHAKE: f32 = 0.45;
+/// When the Welcome animation is over (the last tool has landed).
+const WELCOME_END: f32 = WELCOME_WAIT + WELCOME_SHAKE + 2.6;
+
+/// The Welcome cat at `t`: a still moment, then its ears come up over the
+/// floor and shake, then it jumps out ([`peek`] with the ears' moment
+/// stretched); and the ears' tilt (left, right).
+fn welcome_cat(t: f32) -> ((f32, f32, f32), (f32, f32)) {
+    let u = t - WELCOME_WAIT;
+    // peek() holds still from 0.45 s to 0.85 s with just the ears up
+    let pose = if u < 0.45 { peek(u) } else if u < 0.85 + WELCOME_SHAKE { peek(0.6) } else { peek(u - WELCOME_SHAKE) };
+    let shake = |a: &[f32]| a.iter().map(|&at| twitch(u, at)).sum::<f32>();
+    let after = WELCOME_SHAKE;
+    let ears = (shake(&[0.42, 0.78, 1.12, 2.3 + after]), shake(&[0.6, 0.95, 1.55 + after]));
+    (pose, ears)
 }
 
 /// The Welcome cat at `t`: how far it is lifted from where it rests (0 =
@@ -735,9 +761,9 @@ pub const GOALS: [Goal; 6] = {
     ]
 };
 
-/// Tools on in a fresh install: "Clean my Mac" and Clipboard. One
-/// permission (Full Disk Access), no downloads, no shortcuts taken.
-pub const ON_AT_FIRST: [&str; 4] = [crate::tools::cleanup::ID, crate::tools::lens::ID, crate::tools::uninstaller::ID, crate::tools::clipboard::ID];
+/// Tools on in a fresh install: none. Setup's goals start unpicked and the
+/// person picks what they came for (Continue waits for one).
+pub const ON_AT_FIRST: [&str; 0] = [];
 
 /// The ids to save as switched off on a fresh install.
 pub fn off_at_first<'a>(ids: impl Iterator<Item = &'a str>) -> Vec<String> {
@@ -766,7 +792,7 @@ fn appear(ctx: &egui::Context, id: egui::Id, now: f64, dur: f32, demo: bool) -> 
     ease(k)
 }
 
-const PANEL_W: f32 = 252.0;
+const PANEL_W: f32 = 300.0;
 
 fn tools(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let p = ui.painter().clone();
@@ -786,15 +812,16 @@ fn tools(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     }
     let top = g.bottom() + 20.0;
     let area = Rect::from_min_max(Pos2::new(left.left(), top), left.max);
-    // what the pointer is on: its tools' widgets show on the right
-    let hot = if all { all_tools(app, ui, area, t) } else { goal_cards(app, ui, area, t) };
-    let demo_hover = app.setup.as_ref().and_then(|s| s.demo_hover).filter(|_| app.demo);
-    let hot = hot.or_else(|| demo_hover.map(|k| goal_tools(app, &GOALS[k])));
-    mini_panel(app, ui, Rect::from_min_max(Pos2::new(body.right() - PANEL_W, body.top() + 6.0), body.max), t, hot);
+    if all {
+        all_tools(app, ui, area, t);
+    } else {
+        goal_cards(app, ui, area, t);
+    }
+    mini_panel(app, ui, Rect::from_min_max(Pos2::new(body.right() - PANEL_W, body.top() + 6.0), body.max), t);
 }
 
-/// The goal cards. Returns the tools of the card under the pointer.
-fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usize>> {
+/// The goal cards: a click picks a goal (its tools on) or drops it.
+fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let p = ui.painter().clone();
     let gap = sp::M;
     let cw = (area.width() - gap) / 2.0;
@@ -805,7 +832,6 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usiz
     // screenshots show
     let wall = ui.ctx().input(|i| i.time);
     let mut flip = None;
-    let mut hot = None;
     for (k, goal) in GOALS.iter().enumerate() {
         let idx = goal_tools(app, goal);
         if idx.is_empty() {
@@ -847,9 +873,6 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usiz
             let cr = Rect::from_center_size(cr.center() + off, cr.size() * sc * (1.0 + bump));
             tool_chip(&p, cr, b.icon, b.color);
         }
-        if resp.hovered() {
-            hot = Some(idx.clone());
-        }
         // check, then name, bottom left
         let cc = Pos2::new(inner.left() + 9.0, ny);
         p.circle_stroke(cc, 8.5, Stroke::new(1.5, lerp_color(white(40), BLUE(), s)));
@@ -888,7 +911,6 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usiz
             app.set_tool_on(i, o);
         }
     }
-    hot
 }
 
 /// A goal card's loop time: it runs while `on` (the pointer is on the card)
@@ -1302,14 +1324,13 @@ fn loop_dev(p: &egui::Painter, f: Rect, now: f32) {
 
 /// Every tool with a switch, by section in two columns. Returns the tool
 /// under the pointer.
-fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usize>> {
+fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let p = ui.painter().clone();
     let secs = sections(app);
     let gap = 18.0;
     let cw = (area.width() - gap) / 2.0;
     let mut ys = [area.top(); 2];
     let mut flip = None;
-    let mut hot = None;
     let mut k = 0;
     for (si, sec) in secs.iter().enumerate() {
         let c = si % 2;
@@ -1330,7 +1351,6 @@ fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usize
             if ui.rect_contains_pointer(r) {
                 p.rect_filled(r, 9.0, CARD());
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                hot = Some(vec![i]);
             }
             let b = app.tools[i].badge();
             let chip = Rect::from_center_size(Pos2::new(r.left() + 20.0, r.center().y), Vec2::splat(24.0));
@@ -1354,13 +1374,13 @@ fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) -> Option<Vec<usize
     if let Some((i, o)) = flip {
         app.set_tool_on(i, o);
     }
-    hot
 }
 
-/// The menu bar panel as it will look: a tile per switched-on tool, which
-/// drops in when the tool is turned on. With `hot` tools (under the
-/// pointer), their widgets instead.
-fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32, hot: Option<Vec<usize>>) {
+/// The menu bar panel as it will be: the picked tools' widgets, laid out
+/// as the panel lays them out, filled with sample data. A widget drops in
+/// when its goal is picked and the others make room.
+fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
+    use crate::core::panel;
     let p = ui.painter().clone();
     let ctx = ui.ctx().clone();
     let now = ctx.input(|i| i.time);
@@ -1377,99 +1397,70 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32, hot: Option<Vec<us
         symbol(&p, name, r, TEXT_DIM().gamma_multiply(a));
         sx -= 24.0;
     }
-    if let Some(list) = hot {
-        preview(app, ui, Rect::from_min_max(Pos2::new(area.left(), mb.bottom() + 8.0), area.max), &list);
-        return;
-    }
-    // the panel under it
-    let on: Vec<usize> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).collect();
-    let pad = sp::S;
-    let gap = 6.0;
-    let th = 44.0;
-    let tw = (area.width() - pad * 2.0 - gap) / 2.0;
-    let rows = on.len().div_ceil(2);
-    let want = if rows == 0 { 120.0 } else { pad * 2.0 + rows as f32 * (th + gap) - gap };
-    let h = ctx.animate_value_with_time(ui.scope_id().with("setup-panel-h"), want, 0.25);
-    let panel = Rect::from_min_size(Pos2::new(area.left(), mb.bottom() + 8.0), Vec2::new(area.width(), h));
+    // the panel's own grid, at its own width, scaled to the column; when
+    // it's taller than the step, scaled down to fit
+    let native_w = panel::inner_width();
+    // each widget at its fullest size up to Medium, so it shows what it holds
+    let (placed, _) = panel::place(app, native_w);
+    let placed: Vec<(usize, &'static str, crate::core::tool::Size)> = placed
+        .iter()
+        .filter_map(|w| {
+            let owner = w.owner?;
+            let spec = app.tools[owner].widgets().into_iter().find(|s| s.id == w.id)?;
+            let size = crate::core::tool::UP_TO_MEDIUM.iter().rev().copied().find(|z| spec.sizes.contains(z)).unwrap_or(w.size);
+            Some((owner, w.id, size))
+        })
+        .collect();
+    let sizes: Vec<(u8, f32)> = placed.iter().map(|w| (w.2.cols(), panel::size_px(w.2, native_w).y)).collect();
+    let (rects, total) = crate::core::layout::flow(&sizes, native_w, panel::GAP);
+    let room = Rect::from_min_max(Pos2::new(area.left(), mb.bottom() + 8.0), area.max);
+    let pad = panel::PAD;
+    let total = ctx.animate_value_with_time(ui.scope_id().with("setup-panel-h"), total, 0.25);
+    let scale = (room.width() / (native_w + 2.0 * pad)).min(room.height() / (total + 2.0 * pad)).min(1.0);
+    let empty_h = 120.0;
+    let h = if placed.is_empty() { empty_h } else { (total + 2.0 * pad) * scale };
+    let panel = Rect::from_min_size(room.min, Vec2::new(room.width(), h));
     let panel = panel.translate(Vec2::new(0.0, (1.0 - a) * -10.0));
     p.add(egui::epaint::Shadow { offset: [0, 14], blur: 36, spread: 0, color: Color32::from_black_alpha((70.0 * a) as u8) }.as_shape(panel, CornerRadius::same(12)));
     p.rect_filled(panel, 12.0, BG().gamma_multiply(a));
     p.rect_stroke(panel, 12.0, Stroke::new(1.0, CARD_EDGE().gamma_multiply(a)), StrokeKind::Inside);
-    if on.is_empty() {
+    if placed.is_empty() {
         brand_glyph(&p, panel.center(), 40.0, white(24).gamma_multiply(a));
         return;
     }
-    let clip = p.with_clip_rect(panel);
-    for (k, &i) in on.iter().enumerate() {
-        let id = ui.scope_id().with(("setup-panel-tile", app.tools[i].id()));
-        let (col, row) = ((k % 2) as f32, (k / 2) as f32);
-        let x = ctx.animate_value_with_time(id.with("x"), panel.left() + pad + col * (tw + gap), 0.25);
-        let y = ctx.animate_value_with_time(id.with("y"), row * (th + gap), 0.25);
-        let d = appear(&ctx, id.with("in"), now, 0.36, app.demo).min(a);
-        let r = Rect::from_min_size(Pos2::new(x, panel.top() + pad + y - (1.0 - d) * 12.0), Vec2::new(tw, th));
-        let r = Rect::from_center_size(r.center(), r.size() * (0.92 + 0.08 * d));
-        clip.rect_filled(r, 10.0, CARD().gamma_multiply(d));
-        clip.rect_stroke(r, 10.0, Stroke::new(1.0, CARD_EDGE().gamma_multiply(d)), StrokeKind::Inside);
-        let b = app.tools[i].badge();
-        let chip = Rect::from_center_size(Pos2::new(r.left() + 20.0, r.center().y), Vec2::splat(26.0));
-        tool_chip(&clip, chip, b.icon, b.color.gamma_multiply(d));
-        let tx = chip.right() + 8.0;
-        let meta = app.tools[i].sidebar_meta();
-        let room = r.right() - tx - 6.0;
-        if meta.is_empty() {
-            text_fit(&clip, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, app.tools[i].name(), font(12.0), TEXT().gamma_multiply(d), room);
-        } else {
-            two_lines(&clip, tx, r.center().y, app.tools[i].name(), font(10.5), TEXT_FAINT().gamma_multiply(d), &meta, bold(13.0), TEXT().gamma_multiply(d), room);
-        }
-    }
-}
-
-/// The panel widgets of `list` (each at its biggest size up to Medium),
-/// scaled to fit `area`'s width, stacked from the top. They are drawn by
-/// copies of the tools holding sample data: a hover must not touch the
-/// person's files or ask macOS for anything.
-fn preview(app: &mut App, ui: &mut Ui, area: Rect, list: &[usize]) {
-    use crate::core::panel;
-    use crate::core::tool::Size;
-    let ctx = ui.ctx().clone();
-    let now = ctx.input(|i| i.time);
     let Some(mut samples) = app.setup.as_mut().map(|s| s.samples.take().unwrap_or_else(|| crate::tools::all(&crate::core::tool::ToolEnv { ctx: ctx.clone(), demo: true }))) else { return };
-    let native_w = panel::inner_width();
-    let scale = (area.width() / native_w).min(1.0);
-    let mut y = area.top();
     let mut cx = app.cx();
-    for &i in list {
-        let tid = app.tools[i].id();
-        let Some(tool) = samples.iter_mut().find(|t| t.id() == tid) else { continue };
-        let Some(spec) = tool.widgets().into_iter().next() else { continue };
-        let size = [Size::S24, Size::S14, Size::S12, Size::S11].into_iter().find(|s| spec.sizes.contains(s)).unwrap_or(spec.size);
-        let native = panel::size_px(size, native_w);
-        let h = native.y * scale;
-        if y + h > area.bottom() {
-            break;
-        }
-        let id = ui.scope_id().with(("setup-preview", tid));
-        let d = appear(&ctx, id.with("in"), now, 0.25, app.demo);
-        let target = Pos2::new(area.left() + (1.0 - d) * 10.0, y);
-        // drawn at the panel's own size on a layer of its own, then scaled down
-        let layer = egui::Area::new(id)
-            .order(egui::Order::Foreground)
-            .fixed_pos(Pos2::ZERO)
-            .constrain(false)
-            .interactable(false)
-            .show(&ctx, |ui| {
-                ui.multiply_opacity(d);
-                let r = Rect::from_min_size(Pos2::ZERO, native);
-                ui.set_clip_rect(r.expand(2.0));
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, spec.id, "sample")));
+    // centred in the column when the height is what limits it
+    let x0 = panel.center().x - (native_w + 2.0 * pad) * scale / 2.0;
+    let origin = Pos2::new(x0 + pad * scale, panel.top() + pad * scale);
+    let id = ui.scope_id().with("setup-panel-widgets");
+    let demo = app.demo;
+    let layer = egui::Area::new(id)
+        .order(egui::Order::Foreground)
+        .fixed_pos(Pos2::ZERO)
+        .constrain(false)
+        .interactable(false)
+        .show(&ctx, |ui| {
+            ui.multiply_opacity(a);
+            ui.set_clip_rect(Rect::from_min_size(Pos2::new(-pad, -pad), Vec2::new(native_w + 2.0 * pad, total + 2.0 * pad)));
+            for (&(owner, wid_s, size), rect) in placed.iter().zip(&rects) {
+                let tid = app.tools[owner].id();
+                let Some(tool) = samples.iter_mut().find(|t| t.id() == tid) else { continue };
+                let wid = id.with((tid, wid_s));
+                // it moves to its new place, and drops in when it's new
+                let x = ctx.animate_value_with_time(wid.with("x"), rect.left(), 0.25);
+                let y = ctx.animate_value_with_time(wid.with("y"), rect.top(), 0.25);
+                let d = appear(&ctx, wid.with("in"), now, 0.36, demo);
+                let r = Rect::from_min_size(Pos2::new(x, y - (1.0 - d) * 14.0), rect.size());
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, wid_s, "sample")));
+                child.multiply_opacity(d);
                 // a sample that fails stays blank; the live tool isn't stopped for it
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tool.widget_ui(spec.id, size, &mut child, r, &mut cx)));
-            })
-            .response
-            .layer_id;
-        ctx.set_transform_layer(layer, egui::emath::TSTransform::new(target.to_vec2(), scale));
-        y += h + sp::S;
-    }
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tool.widget_ui(wid_s, size, &mut child, r, &mut cx)));
+            }
+        })
+        .response
+        .layer_id;
+    ctx.set_transform_layer(layer, egui::emath::TSTransform::new(origin.to_vec2(), scale));
     // what a sample widget asks for (open a page…) goes nowhere
     let _ = cx.take_actions();
     if let Some(s) = app.setup.as_mut() {
@@ -1499,36 +1490,81 @@ fn rolling_count(p: &egui::Painter, left_bottom: Pos2, shown: f32, total: usize)
     p.text(Pos2::new(cell.right(), left_bottom.y), Align2::LEFT_BOTTOM, format!("/{total}"), f, TEXT_FAINT());
 }
 
+/// An AI agent's mark, in `r`: drawn here, no image files. Claude a
+/// sunburst, Codex a prompt, Gemini a four-point star, OpenCode braces.
+fn agent_mark(p: &egui::Painter, r: Rect, id: &str, dim: bool) {
+    let k = if dim { 0.45 } else { 1.0 };
+    let c = r.center();
+    let s = r.width();
+    match id {
+        "claude" => {
+            let col = Color32::from_rgb(0xD9, 0x77, 0x57).gamma_multiply(k);
+            p.rect_filled(r, s * 0.27, with_alpha(col, 0.14));
+            for i in 0..12 {
+                let a = i as f32 / 12.0 * std::f32::consts::TAU;
+                let len = if i % 2 == 0 { 0.34 } else { 0.26 };
+                let d = Vec2::new(a.cos(), a.sin());
+                p.line_segment([c + d * s * 0.07, c + d * s * len], Stroke::new(s * 0.075, col));
+            }
+        }
+        "codex" => {
+            p.rect_filled(r, s * 0.27, pick(Color32::from_gray(236), Color32::from_gray(24)).gamma_multiply(k));
+            p.text(c, Align2::CENTER_CENTER, ">_", mono(s * 0.42), pick(Color32::from_gray(20), Color32::WHITE).gamma_multiply(k));
+        }
+        "gemini" => {
+            let col = Color32::from_rgb(0x4C, 0x8D, 0xF6).gamma_multiply(k);
+            p.rect_filled(r, s * 0.27, with_alpha(col, 0.14));
+            let q = s * 0.32;
+            let w = s * 0.07;
+            let pts = vec![c + Vec2::new(0.0, -q), c + Vec2::new(w, -w), c + Vec2::new(q, 0.0), c + Vec2::new(w, w), c + Vec2::new(0.0, q), c + Vec2::new(-w, w), c + Vec2::new(-q, 0.0), c + Vec2::new(-w, -w)];
+            p.add(egui::Shape::convex_polygon(vec![pts[0], pts[1], pts[7]], col, Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(vec![pts[2], pts[3], pts[1]], col, Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(vec![pts[4], pts[5], pts[3]], col, Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(vec![pts[6], pts[7], pts[5]], col, Stroke::NONE));
+            p.add(egui::Shape::convex_polygon(vec![pts[1], pts[3], pts[5], pts[7]], col, Stroke::NONE));
+        }
+        _ => {
+            p.rect_filled(r, s * 0.27, white(18).gamma_multiply(k));
+            p.text(c, Align2::CENTER_CENTER, "{ }", mono(s * 0.38), TEXT().gamma_multiply(k));
+        }
+    }
+}
+
 fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     use crate::kit::ai::{self, settings};
+    use crate::tools::*;
     let p = ui.painter().clone();
     let set = settings::get();
-    // a column in the middle of the step (left-aligned it left the right half empty)
-    let w = body.width().min(560.0);
+    // a column in the middle of the step
+    let w = body.width().min(640.0);
     let x = body.center().x - w / 2.0;
     let head = body.top() + 6.0;
-    let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, "AI agents", bold(22.0), TEXT());
-    let sub = text_wrap(&p, Pos2::new(x, g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "Main does AI Check in Cleanup, Uninstaller, Startup, Disk Map and Mac Health. Tracked agents show in AI Usage.", ty::body(), TEXT_DIM(), w, 3);
-    let col_track = x + w - sp::L - 8.0;
-    let col_main = col_track - 56.0;
-    let top = sub.bottom() + sp::XL;
-    p.text(Pos2::new(col_main, top), Align2::CENTER_TOP, "Main", ty::caption(), TEXT_FAINT());
-    p.text(Pos2::new(col_track, top), Align2::CENTER_TOP, "Track", ty::caption(), TEXT_FAINT());
+    p.text(Pos2::new(x, head), Align2::LEFT_TOP, "AI agents", bold(22.0), TEXT());
     let n = ai::PROVIDERS.len();
-    let a = ease(t / 0.4);
-    let card = Rect::from_min_size(Pos2::new(x, top + 20.0 + (1.0 - a) * 8.0), Vec2::new(w, n as f32 * sp::ROW_H));
-    glass_card(&p, card, R_CARD, 0.0, false);
-    // a light sweeps across the card as the agents are looked for; each
-    // "Found" shows once it has passed
-    let (sweep0, sweep_t) = (0.15, 0.8);
-    let band_w = 140.0;
-    let travel = card.width() + band_w;
-    let u = (t - sweep0) / sweep_t;
-    if (0.0..1.0).contains(&u) {
-        glow_band(&p, card, card.left() - band_w / 2.0 + travel * u, band_w, with_alpha(BLUE(), 0.12));
-    }
-    let seen_at = |x: f32| sweep0 + sweep_t * (x - card.left() + band_w / 2.0) / travel;
-    // a ping round the main agent's dot when it changes
+    let found: Vec<bool> = (0..n).map(|k| app.demo || ai::make(k).data_dir().is_some_and(|d| d.exists())).collect();
+    let tile_h = 84.0;
+    let gap = sp::S;
+    let tile_w = (w - gap * (n as f32 - 1.0)) / n as f32;
+    // a section: its tool, its name, what it's for, and where it shows (the
+    // tools' own chips); then one tile per agent
+    let section = |ui: &mut Ui, y: f32, chip_icon: Icon, chip_col: Color32, name: &str, what: &str, tools: &[&str]| -> f32 {
+        let cr = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(42.0));
+        tool_chip(&p, cr, chip_icon, chip_col);
+        p.text(Pos2::new(cr.right() + sp::M, cr.top() + 2.0), Align2::LEFT_TOP, name, bold(15.0), TEXT());
+        p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, what, ty::body(), TEXT_DIM());
+        let mut tx = x + w;
+        for id in tools.iter().rev() {
+            if let Some(i) = app.tool_index(id) {
+                let b = app.tools[i].badge();
+                let r = Rect::from_min_size(Pos2::new(tx - 26.0, cr.center().y - 13.0), Vec2::splat(26.0));
+                tool_chip(&p, r, b.icon, b.color);
+                ui.interact(r, ui.scope_id().with(("setup-ai-tool", name, *id)), Sense::hover()).on_hover_text(app.tools[i].name());
+                tx -= 26.0 + 6.0;
+            }
+        }
+        cr.bottom() + sp::M
+    };
+    // a ping round the main agent's mark when it changes
     let now = ui.ctx().input(|i| i.time);
     let ping_id = ui.scope_id().with("setup-main-ping");
     let (was, since) = ui.ctx().data(|d| d.get_temp::<(String, f64)>(ping_id)).unwrap_or_else(|| (set.main.clone(), f64::NEG_INFINITY));
@@ -1537,25 +1573,44 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let ping = ((now - since) / 0.55) as f32;
     type Change = Box<dyn FnOnce(&mut settings::Settings)>;
     let mut change: Option<Change> = None;
-    for (k, m) in ai::PROVIDERS.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * sp::ROW_H), Vec2::new(w, sp::ROW_H));
-        if k > 0 {
-            hairline(&p, Pos2::new(r.left() + sp::L, r.top()), Pos2::new(r.right() - sp::L, r.top()));
+    // one tile: the agent's mark and name, found or not; `on` lights it
+    let tile = |ui: &mut Ui, r: Rect, k: usize, on: bool, a: f32| -> egui::Response {
+        let m = &ai::PROVIDERS[k];
+        let resp = ui.interact(r, ui.scope_id().with(("setup-ai-tile", r.top() as i32, m.id)), if found[k] { Sense::click() } else { Sense::hover() });
+        let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k]);
+        let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
+        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(BLUE(), 0.10), s);
+        p.rect_filled(r, 12.0, fill.gamma_multiply(a));
+        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(BLUE(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        let mr = Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0));
+        agent_mark(&p, mr, m.id, !found[k]);
+        p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });
+        if !found[k] {
+            p.text(Pos2::new(r.right() - 12.0, r.bottom() - 12.0), Align2::RIGHT_BOTTOM, "Not found", ty::caption(), TEXT_FAINT());
         }
-        let found = app.demo || ai::make(k).data_dir().is_some_and(|d| d.exists());
-        let name = p.text(Pos2::new(r.left() + sp::L, r.center().y), Align2::LEFT_CENTER, m.name, ty::title(), TEXT());
-        let sx = name.right() + sp::S;
-        let sa = ease((t - seen_at(sx) - 0.04 * k as f32) / 0.25);
-        p.text(Pos2::new(sx - (1.0 - sa) * 6.0, r.center().y), Align2::LEFT_CENTER, if found { "Found" } else { "Not found" }, ty::label(), (if found { GREEN() } else { TEXT_FAINT() }).gamma_multiply(sa));
+        if resp.hovered() && found[k] {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        resp
+    };
+    // AI Check: one agent
+    let mut y = head + 22.0 + sp::XL;
+    let cleanup_chip = app.tool_index(cleanup::ID).map(|i| app.tools[i].badge().color).unwrap_or(BLUE());
+    y = section(ui, y, Icon::Sparkle, cleanup_chip, "AI Check", "Asks it what's safe to remove", &[cleanup::ID, uninstaller::ID, startup::ID, lens::ID, system::ID]);
+    for k in 0..n {
+        let m = &ai::PROVIDERS[k];
+        let a = ease((t - 0.05 * k as f32) / 0.4);
+        let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
         let main = set.main == m.id;
-        let on = set.is_on(m.id);
-        let rr = Rect::from_center_size(Pos2::new(col_main, r.center().y), Vec2::splat(16.0));
+        let resp = tile(ui, r, k, main, a);
+        let rr = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
         if main && (0.0..1.0).contains(&ping) {
             let e = ease(ping);
             crate::kit::glass::stroke_circle(&p, rr.center(), 8.0 + 13.0 * e, Stroke::new(1.5, with_alpha(BLUE(), 0.7 * (1.0 - e))));
             ui.ctx().request_repaint();
         }
-        if radio(ui, rr, ui.scope_id().with(("setup-main", m.id)), main, found || main).clicked() && !main && found {
+        let dot = if found[k] { radio(ui, rr, ui.scope_id().with(("setup-main", m.id)), main, true).clicked() } else { false };
+        if (resp.clicked() || dot) && !main && found[k] {
             let id = m.id.to_string();
             change = Some(Box::new(move |s| {
                 s.off.retain(|x| *x != id);
@@ -1563,15 +1618,28 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 s.main = id;
             }));
         }
-        // the main agent is always tracked
-        let cb = Rect::from_center_size(Pos2::new(col_track, r.center().y), Vec2::splat(16.0));
-        let track = checkbox(ui, cb, ui.scope_id().with(("setup-track", m.id)), on || main, true);
-        let track = if main { track.on_hover_text("The main agent is always tracked") } else { track };
-        if track.clicked() && !main {
+    }
+    y += tile_h + sp::XL + sp::M;
+    // AI Usage: every agent it follows
+    let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, BLUE()));
+    y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
+    for k in 0..n {
+        let m = &ai::PROVIDERS[k];
+        let a = ease((t - 0.2 - 0.05 * k as f32) / 0.4);
+        let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
+        let main = set.main == m.id;
+        let on = set.is_on(m.id) || main;
+        let resp = tile(ui, r, k, on && found[k], a);
+        let cb = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
+        // the main agent is always followed
+        let box_ = checkbox(ui, cb, ui.scope_id().with(("setup-track", m.id)), on, true);
+        let box_ = if main { box_.on_hover_text("The AI Check agent is always followed") } else { box_ };
+        if (box_.clicked() || resp.clicked()) && !main {
             let id = m.id.to_string();
+            let was_on = set.is_on(m.id);
             change = Some(Box::new(move |s| {
                 s.off.retain(|x| *x != id);
-                if on {
+                if was_on {
                     s.off.push(id);
                 }
             }));
@@ -2247,24 +2315,11 @@ mod tests {
     }
 
     #[test]
-    fn fresh_install_turns_on_three_to_four_tools() {
+    fn fresh_install_starts_with_every_tool_off() {
         let env = crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true };
         let all = crate::tools::all(&env);
         let off = off_at_first(all.iter().map(|t| t.id()));
-        let on: Vec<&str> = all.iter().map(|t| t.id()).filter(|id| !off.iter().any(|o| o == id)).collect();
-        assert_eq!(on, ON_AT_FIRST.to_vec());
-        // they ask macOS for one thing only, and take no shortcut
-        let mut need: Vec<Perm> = Vec::new();
-        for t in all.iter().filter(|t| on.contains(&t.id())) {
-            for n in t.needs() {
-                if !need.contains(&n.perm) {
-                    need.push(n.perm);
-                }
-            }
-            assert!(t.setup_shortcuts().is_empty(), "{} takes a shortcut", t.id());
-            assert!(t.setup_models().is_empty(), "{} downloads", t.id());
-        }
-        assert_eq!(need, vec![Perm::FullDisk]);
+        assert_eq!(off.len(), all.len(), "the goals start unpicked");
     }
 
     #[test]
@@ -2301,6 +2356,26 @@ mod tests {
     fn keycaps_split_modifiers_from_the_key() {
         assert_eq!(caps("⌘⇧2"), vec!["⌘", "⇧", "2"]);
         assert_eq!(caps("⌥Space"), vec!["⌥", "Space"]);
+    }
+
+    #[test]
+    fn welcome_waits_then_ears_shake_then_the_cat_jumps() {
+        // still, nothing showing, while the window settles on screen
+        assert!(welcome_cat(0.0).0 .0 <= -96.0 && welcome_cat(WELCOME_WAIT - 0.01).0 .0 <= -96.0);
+        assert_eq!(welcome_cat(0.3).1, (0.0, 0.0));
+        // just the ears, shaking
+        let mid = WELCOME_WAIT + 0.9;
+        assert!((-80.0..-60.0).contains(&welcome_cat(mid).0 .0));
+        let most = (0..60).map(|i| welcome_cat(WELCOME_WAIT + 0.4 + i as f32 * 0.01).1 .0).fold(0.0f32, f32::max);
+        assert!(most > 0.1, "{most}");
+        // then up, and at rest by the end
+        assert_eq!(welcome_cat(WELCOME_END).0, (0.0, 1.0, 1.0));
+        let mut last = welcome_cat(0.0).0 .0;
+        for i in 1..400 {
+            let r = welcome_cat(i as f32 * 0.01).0 .0;
+            assert!((r - last).abs() < 15.0, "a jump of {} at {:.2}s", r - last, i as f32 * 0.01);
+            last = r;
+        }
     }
 
     #[test]
