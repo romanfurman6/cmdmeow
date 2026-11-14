@@ -1451,6 +1451,7 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let sizes: Vec<(u8, f32)> = ws.iter().map(|w| (w.2.cols(), panel::size_px(w.2, native_w).y)).collect();
     let (rects, total) = crate::core::layout::flow(&sizes, native_w, panel::GAP);
     let placed = ws;
+    let total_to = total;
     let total = ctx.animate_value_with_time(ui.scope_id().with("setup-panel-h"), total, 0.25);
     let scale = (room.width() / (native_w + 2.0 * pad)).min(1.0);
     let empty_h = 120.0;
@@ -1467,7 +1468,10 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
             target = rects[k].top();
         }
     }
-    let max_off = ((full_h - h) / scale).max(0.0);
+    // the range is where the panel ends up, not where it is mid-slide, so
+    // a widget added at the end is scrolled to
+    let full_to = (total_to + 2.0 * pad) * scale;
+    let max_off = ((full_to - full_to.min(room.height())) / scale).max(0.0);
     let target = target.clamp(0.0, max_off);
     ctx.data_mut(|d| {
         d.insert_temp(seen_id, ids);
@@ -1490,6 +1494,27 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let origin = Pos2::new(x0 + pad * scale, panel.top() + (pad - off) * scale);
     let id = ui.scope_id().with("setup-panel-widgets");
     let demo = app.demo;
+    // where each widget is this frame; a widget already shown that is still
+    // sliding means the layout is settling, and a new one waits for it
+    let shown = |wid: egui::Id| ctx.data(|d| d.get_temp::<(f64, f64)>(wid.with("in"))).is_some_and(|(_, last)| now - last <= 0.2);
+    let mut settling = false;
+    let at: Vec<(f32, f32, bool)> = placed
+        .iter()
+        .zip(&rects)
+        .map(|(&(owner, wid_s, _), rect)| {
+            let wid = id.with((app.tools[owner].id(), wid_s));
+            let x = ctx.animate_value_with_time(wid.with("x"), rect.left(), 0.25);
+            let y = ctx.animate_value_with_time(wid.with("y"), rect.top(), 0.25);
+            let live = shown(wid);
+            if live && ((x - rect.left()).abs() > 0.5 || (y - rect.top()).abs() > 0.5) {
+                settling = true;
+            }
+            (x, y, live)
+        })
+        .collect();
+    if settling {
+        ctx.request_repaint();
+    }
     let layer = egui::Area::new(id)
         .order(egui::Order::Foreground)
         .fixed_pos(Pos2::ZERO)
@@ -1500,16 +1525,16 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
             // inside the panel's padding top and bottom, clear of its round
             // corners: a widget cut there fades out instead of crossing the edge
             ui.set_clip_rect(Rect::from_min_max(Pos2::new(-pad, off), Pos2::new(native_w + pad, off + h / scale - 2.0 * pad)));
-            for (&(owner, wid_s, size), rect) in placed.iter().zip(&rects) {
+            for ((&(owner, wid_s, size), rect), &(x, y, live)) in placed.iter().zip(&rects).zip(&at) {
                 let tid = app.tools[owner].id();
                 let Some(tool) = samples.iter_mut().find(|t| t.id() == tid) else { continue };
                 let wid = id.with((tid, wid_s));
-                // it moves to its new place, and drops in when it's new
-                let x = ctx.animate_value_with_time(wid.with("x"), rect.left(), 0.25);
-                let y = ctx.animate_value_with_time(wid.with("y"), rect.top(), 0.25);
-                // a new widget waits for the others to slide out of its way
-                // (0.25 s), then fades in: no two layouts over each other
-                let d = ((appear(&ctx, wid.with("in"), now, 0.66, demo) - 0.5) / 0.5).clamp(0.0, 1.0);
+                // a new widget stays out until the others have slid out of
+                // its way, then fades in: no two layouts over each other
+                if !live && settling && !demo {
+                    continue;
+                }
+                let d = appear(&ctx, wid.with("in"), now, 0.36, demo);
                 let r = Rect::from_min_size(Pos2::new(x, y - (1.0 - d) * 14.0), rect.size());
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, wid_s, "sample")));
                 child.multiply_opacity(d);
@@ -1521,21 +1546,27 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         .layer_id;
     ctx.set_transform_layer(layer, egui::emath::TSTransform::new(origin.to_vec2(), scale));
     // cut off at an edge: it fades out there, as a list that goes on
+    // a gradient, then a solid band at the cut so no half line shows there
     let fade = |r: Rect, at_top: bool| {
         let (c0, c1) = (BG().gamma_multiply(0.0), BG().gamma_multiply(a));
-        let (top_c, bot_c) = if at_top { (c1, c0) } else { (c0, c1) };
+        let band = 14.0_f32.min(r.height());
+        let mid = if at_top { r.top() + band } else { r.bottom() - band };
+        let stops = if at_top { [(r.top(), c1), (mid, c1), (r.bottom(), c0)] } else { [(r.top(), c0), (mid, c1), (r.bottom(), c1)] };
         let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(r.left_top(), top_c);
-        mesh.colored_vertex(r.right_top(), top_c);
-        mesh.colored_vertex(r.right_bottom(), bot_c);
-        mesh.colored_vertex(r.left_bottom(), bot_c);
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
+        for (y, c) in stops {
+            mesh.colored_vertex(Pos2::new(r.left(), y), c);
+            mesh.colored_vertex(Pos2::new(r.right(), y), c);
+        }
+        for k in 0..2u32 {
+            let i = k * 2;
+            mesh.add_triangle(i, i + 1, i + 3);
+            mesh.add_triangle(i, i + 3, i + 2);
+        }
         ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, id.with(("fade", at_top)))).add(mesh);
     };
     let edge = pad * scale;
     if full_h - off * scale > h + 0.5 {
-        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - edge - 40.0), Pos2::new(panel.right() - 1.0, panel.bottom() - edge)), false);
+        fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.bottom() - edge - 52.0), Pos2::new(panel.right() - 1.0, panel.bottom() - edge)), false);
     }
     if off > 0.5 {
         fade(Rect::from_min_max(Pos2::new(panel.left() + 1.0, panel.top() + edge), Pos2::new(panel.right() - 1.0, panel.top() + edge + 32.0)), true);
