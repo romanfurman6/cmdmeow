@@ -177,14 +177,6 @@ impl Tool for Displays {
     fn about(&self) -> &'static str {
         "Brightness and volume of external monitors from the menu bar"
     }
-    fn sidebar_meta(&self) -> String {
-        let v = self.view.lock_ok();
-        match v.screens.iter().filter(|s| s.adjustable()).count() {
-            0 => String::new(),
-            1 => v.screens.iter().find(|s| s.adjustable()).map(|s| format!("{}%", (s.brightness * 100.0).round())).unwrap_or_default(),
-            n => format!("{n}"),
-        }
-    }
     fn needs(&self) -> Vec<Need> {
         // only the brightness and volume keys need it
         vec![Need::may(Perm::Accessibility)]
@@ -240,9 +232,9 @@ mod tests {
     }
 
     #[test]
-    fn the_built_in_panel_is_shown_but_not_counted() {
+    fn the_built_in_panel_is_shown_but_not_adjustable() {
         let d = demo();
-        assert_eq!(d.sidebar_meta(), "2");
+        assert_eq!(d.screens().iter().filter(|s| s.adjustable()).count(), 2);
         assert!(d.screens().iter().any(|s| s.builtin && !s.adjustable()));
     }
 

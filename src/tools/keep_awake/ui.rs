@@ -226,9 +226,10 @@ fn hero_text(e: &Engine, st: State, now: i64) -> (String, String, String) {
         State::Agent => {
             let n = e.working(now).len();
             let screen = if e.settings.agent_screen { "screen on" } else { "screen can sleep" };
+            // says who holds it: the Keep awake switch is off in this state
             (
-                "Awake".into(),
-                format!("{} is working · {n} session{}", e.agent_name(), if n == 1 { "" } else { "s" }),
+                format!("Awake for {}", e.agent_name()),
+                format!("{n} session{} working", if n == 1 { "" } else { "s" }),
                 format!("{} · {screen}", e.awake_since.map(|s| span_text(now - s)).unwrap_or_default()),
             )
         }
@@ -286,6 +287,9 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         let st = e.state(now);
         (st, ring_frac(&e, st, now), hero_text(&e, st, now), e.manual_since.is_some(), e.agent_name())
     };
+    // a widget's switch shows the agent's hold itself, so its title stays
+    // short ("Awake for Claude" is the page's, where the switch is manual)
+    let (title, reason) = if st == State::Agent { ("Awake".to_string(), format!("{agent} · {reason}")) } else { (title, reason) };
     let lk = look(st);
     // the ring carries the state; the card stays the same as every other one
     let resp = tile::card(ui, rect, id, false);
@@ -595,6 +599,14 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         }
         i += 1;
         line(i);
+        // its screen switch right under it, so the two screen rows don't read
+        // as one setting twice
+        let c = e.settings.agent_screen;
+        if switch_row(ui, p, row(i), id.with("cscreen"), &format!("Keep the screen on for {agent}"), c) {
+            e.change(now, |s| s.agent_screen = !c);
+        }
+        i += 1;
+        line(i);
         let r1 = row(i);
         let labels: Vec<String> = GRACE_CHOICES.iter().map(|m| format!("{m} min")).collect();
         let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
@@ -607,19 +619,12 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         i += 1;
         line(i);
     }
-    let (m, c) = (e.settings.manual_screen, e.settings.agent_screen);
-    if switch_row(ui, p, row(i), id.with("mscreen"), "Keep the screen on", m) {
+    let m = e.settings.manual_screen;
+    if switch_row(ui, p, row(i), id.with("mscreen"), "Keep the screen on with Keep awake", m) {
         e.change(now, |s| s.manual_screen = !m);
     }
     i += 1;
     line(i);
-    if !agent.is_empty() {
-        if switch_row(ui, p, row(i), id.with("cscreen"), &format!("Keep the screen on for {agent}"), c) {
-            e.change(now, |s| s.agent_screen = !c);
-        }
-        i += 1;
-        line(i);
-    }
     shortcut_row(ui, p, row(i), e, keys, now, id.with("key"));
 }
 

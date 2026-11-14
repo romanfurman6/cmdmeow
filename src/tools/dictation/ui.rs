@@ -214,12 +214,15 @@ fn latest(d: &Dictation, ui: &mut Ui, r: Rect, n: usize) {
         text_fit(p, r.center(), Align2::CENTER_CENTER, &format!("Hold {} and speak", d.shortcut_label()), font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    let lh = (r.height() / n as f32).min(26.0);
+    // two items (the Row size) get two lines each, so a sentence isn't cut
+    // to its first words; longer lists stay one line per item
+    let rows = if n <= 2 { 2 } else { 1 };
+    let lh = if n <= 2 { r.height() / n as f32 } else { (r.height() / n as f32).min(26.0) };
     let top = r.center().y - lh * items.len() as f32 / 2.0;
     for (k, s) in items.iter().enumerate() {
         let y = top + lh * (k as f32 + 0.5);
         let ag = p.text(Pos2::new(r.right(), y), Align2::RIGHT_CENTER, ago(s.at), font(11.0), TEXT_FAINT());
-        text_fit(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0);
+        text_wrap(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0, rows);
     }
 }
 
@@ -663,9 +666,11 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     }
 
     // download
-    label(p, card, 2, "Speech model");
-    let y = row_y(card, 2);
+    // the picked model's own row: named after it, so it's plain which one
+    // the download or Ready is about
     let engine = d.settings.engine;
+    label(p, card, 2, engine.name());
+    let y = row_y(card, 2);
     let right = card.right() - 12.0;
     match &d.download {
         Some(dl) if dl.engine == engine => {
@@ -802,7 +807,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let x0 = col.left();
     p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "After", bold(15.0), TEXT());
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 2);
-    let rows: [(&str, &mut bool); 2] = [("Put the clipboard back", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
+    let rows: [(&str, &mut bool); 2] = [("Restore clipboard", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
     for (k, (l, on)) in rows.into_iter().enumerate() {
         label(p, card, k, l);
         let y = row_y(card, k);

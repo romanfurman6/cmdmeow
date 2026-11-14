@@ -579,7 +579,9 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
             if it.admin {
                 right = outline_chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "admin", TEXT_FAINT()).left() - 6.0;
             }
-            let label = item_label(it, &lib);
+            // a long path gives way in the middle, so its file name stays
+            let w = right - cb.right() - 12.0;
+            let label = fit_middle(&p, &item_label(it, &lib), &font(12.0), w);
             let lr = text_fit(&p, Pos2::new(cb.right() + 8.0, rr.center().y), Align2::LEFT_CENTER, &label, font(12.0), if it.selected { TEXT() } else { TEXT_FAINT() }, right - cb.right() - 12.0);
             ui.interact(lr, ui.scope_id().with(("un-tip", &it.path)), Sense::hover()).on_hover_text(format!("{} · {}", it.kind.label(), it.path.display()));
             if resp.clicked() {
@@ -1469,4 +1471,22 @@ mod tests {
         }
         assert!(demo::fill(&mut u, "clipboard").is_none());
     }
+}
+
+/// `s` cut in the middle ("/Library/…/com.docker.vmnetd.plist") until it
+/// fits `max_w`; the end of a path is what tells files apart.
+fn fit_middle(p: &egui::Painter, s: &str, f: &egui::FontId, max_w: f32) -> String {
+    let fits = |t: &str| p.layout_no_wrap(t.to_string(), f.clone(), TEXT()).size().x <= max_w;
+    if fits(s) {
+        return s.to_string();
+    }
+    let mut n = s.chars().count();
+    while n > 8 {
+        n -= 1;
+        let t = middle_ellipsis(s, n);
+        if fits(&t) {
+            return t;
+        }
+    }
+    s.to_string()
 }
