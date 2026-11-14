@@ -38,6 +38,9 @@ pub mod keychain {
     use std::time::{Duration, Instant};
 
     static BUSY: AtomicBool = AtomicBool::new(false);
+    /// The macOS prompt was answered: our window goes back in front (it can
+    /// end up behind another app's window).
+    static ANSWERED: AtomicBool = AtomicBool::new(false);
     static ERROR: Mutex<String> = Mutex::new(String::new());
     /// Whether the item exists, looked up at most every 30 s (setup draws
     /// the permission rows every frame).
@@ -79,6 +82,15 @@ pub mod keychain {
         ERROR.lock_ok().clone()
     }
 
+    /// Bring the window back in front once the prompt was answered (call
+    /// every frame where the Allow / Connect button is drawn).
+    pub fn refocus(ctx: &egui::Context) {
+        if ANSWERED.swap(false, Ordering::Relaxed) {
+            crate::kit::native::activate();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
     /// Read it now (macOS asks), off the ui thread; limits refresh after.
     pub fn connect(ctx: Option<egui::Context>) {
         if BUSY.swap(true, Ordering::Relaxed) {
@@ -97,6 +109,7 @@ pub mod keychain {
                 super::backend::request_refresh();
             }
             BUSY.store(false, Ordering::Relaxed);
+            ANSWERED.store(true, Ordering::Relaxed);
             if let Some(c) = ctx {
                 c.request_repaint();
             }

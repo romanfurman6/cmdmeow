@@ -1914,6 +1914,7 @@ fn ring_ears(p: &egui::Painter, c: Pos2, z: f32, col: Color32) {
 /// The permission rows (setup and Settings › General). Returns the height used.
 pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, now: f64) -> f32 {
     let p = ui.painter().clone();
+    crate::tools::claude::keychain::refocus(ui.ctx());
     let mut y = area.top();
     let mut opt_head = false;
     // rows shrink a little when the list wouldn't fit (8 permissions + Optional)

@@ -89,6 +89,9 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
         }
         // Claude's live limits need its sign-in from the Keychain: nothing
         // reads it until the person connects it here or in setup
+        if m.id == "claude" && !demo {
+            super::keychain::refocus(ui.ctx());
+        }
         if m.id == "claude" && found[k] && set.claude_keychain != "ok" && !demo && super::keychain::wanted(false) {
             let busy = super::keychain::busy();
             let bw = button_width(&p, "Connect", BTN_SECONDARY);
