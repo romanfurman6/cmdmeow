@@ -15,18 +15,6 @@ pub enum Source {
     Apple,
 }
 
-impl Source {
-    pub fn tag(self) -> Option<&'static str> {
-        match self {
-            Source::Direct => None,
-            Source::AppStore => Some("App Store"),
-            Source::Homebrew => Some("Homebrew"),
-            Source::Setapp => Some("Setapp"),
-            Source::Apple => Some("Apple"),
-        }
-    }
-}
-
 /// Bundle ids of what an app carries inside it (extensions, login items,
 /// helpers, XPC services, system extensions) from the same vendor, beyond
 /// those already under the app's own id. Their data ("~/Library/Containers/
