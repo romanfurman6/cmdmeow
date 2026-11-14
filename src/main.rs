@@ -26,6 +26,7 @@ mod kit;
 mod tools;
 
 fn main() -> eframe::Result {
+    kit::repaint_log::mark_start();
     kit::sync::install_panic_log();
     // official release builds only (DSN baked in by release.yml), and only
     // after the person agreed in setup or Settings; off everywhere else
@@ -114,6 +115,11 @@ fn main() -> eframe::Result {
         .with_resizable(false)
         .with_has_shadow(true);
     let options = eframe::NativeOptions { viewport, ..Default::default() };
+    // the panel shows on a click, not by itself at launch (the shell hides
+    // it on its first pass; this keeps it from flashing up before that)
+    if opts.screenshot.is_none() && !kit::perms::launched_to_panel() {
+        eframe::start_hidden();
+    }
     // before the run loop, so the link that launched the app is caught
     kit::url_scheme::install();
     eframe::run_native("Cmd+Meow", options, Box::new(move |cc| Ok(Box::new(core::shell::App::new(cc, opts)))))

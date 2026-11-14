@@ -105,6 +105,19 @@ pub fn arc(p: &Painter, key: &str, c: Pos2, r: f32, color: Color32) {
     push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Arc, tps: ARC_TPS, always: true });
 }
 
+/// A work spinner keyed by where it's drawn from (`at`, the caller's line)
+/// and how many that line drew before it this pass, for callers without a
+/// name of their own (`glass::spinner`): a spinner that moves (a growing
+/// Disk Map bubble, a scrolled row) keeps its one layer instead of getting
+/// a new layer every frame.
+pub fn arc_at(p: &Painter, c: Pos2, r: f32, color: Color32, at: &'static std::panic::Location<'static>) {
+    let id = p.ctx().viewport_id();
+    let site = egui::Id::NULL.with(("spin-arc", at.file(), at.line(), at.column(), p.layer_id()));
+    let prefix = format!("arc-{}-", site.value());
+    let n = PENDING.with(|q| q.borrow().iter().filter(|(v, r)| *v == id && r.key.starts_with(&prefix)).count());
+    arc(p, &format!("{prefix}{n}"), c, r, color);
+}
+
 /// A progress bar filled to `frac` (as `glass::bar`); natively it eases
 /// from one value to the next, so a few frames a second look smooth.
 pub fn bar(p: &Painter, key: &str, rect: Rect, frac: f32, color: Color32) {
@@ -519,6 +532,20 @@ mod native {
             let moved = l.frame != Some(frame);
             let k = kind(look);
             let size = Rect::from_min_size(Pos2::ZERO, rect.size());
+            let (second, edge) = match look {
+                Look::Blades { hub } => (Some(hub), crate::kit::glass::white(46)),
+                Look::Arc => (None, Color32::TRANSPARENT),
+                Look::Bar { .. } => (None, super::track()),
+            };
+            let settled = match look {
+                Look::Bar { frac } => l.frac == Some(super::stroke_end(rect.width(), rect.height(), frac)),
+                _ => l.turn == Some(turn),
+            };
+            // nothing to change: no transaction at all (this runs every pass,
+            // and a commit costs more than the rest of a quiet pass)
+            if !moved && !l.hidden && settled && l.shape == Some((k, size)) && l.colors == Some((color, second, edge, space_ptr)) {
+                return Some(true);
+            }
             unsafe {
                 let _: () = msg_send![class!(CATransaction), begin];
                 let _: () = msg_send![class!(CATransaction), setDisableActions: true];
@@ -574,11 +601,6 @@ mod native {
                     l.colors = None;
                 }
                 // a window moved to another screen gets new colours too
-                let (second, edge) = match look {
-                    Look::Blades { hub } => (Some(hub), crate::kit::glass::white(46)),
-                    Look::Arc => (None, Color32::TRANSPARENT),
-                    Look::Bar { .. } => (None, super::track()),
-                };
                 if l.colors != Some((color, second, edge, space_ptr)) {
                     let sp = space.as_deref();
                     match look {
@@ -725,6 +747,43 @@ mod tests {
         }
         assert_eq!(stroke_end(w, h, 0.0), 0.0, "empty is empty");
         assert!(stroke_end(w, h, 0.01) > 0.0, "a sliver still shows its dot");
+    }
+
+    #[test]
+    fn a_spinner_without_native_layers_is_drawn_by_egui_and_keeps_turning() {
+        set_allowed(false);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0))), ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| {
+            crate::kit::glass::spinner(ui.painter(), Pos2::new(50.0, 50.0), 8.0, 0.0, Color32::WHITE);
+            flush(ui.ctx());
+        });
+        out.textures_delta.clear();
+        set_allowed(true);
+        assert!(out.shapes.iter().any(|s| matches!(s.shape, Shape::Path(_))), "the arc is drawn");
+        let next = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay).unwrap();
+        assert!(next <= std::time::Duration::from_millis(40), "and asks for the next frame: {next:?}");
+    }
+
+    #[test]
+    fn spinners_from_one_line_get_one_key_each_and_keep_it() {
+        let ctx = egui::Context::default();
+        let keys = |ctx: &egui::Context| {
+            let mut keys = Vec::new();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                for i in 0..2 {
+                    crate::kit::glass::spinner(ui.painter(), Pos2::new(20.0 + 30.0 * i as f32, 20.0), 6.0, 0.0, Color32::WHITE);
+                }
+                keys = PENDING.with(|q| q.borrow().iter().map(|(_, r)| r.key.clone()).collect());
+                drop_unflushed();
+            });
+            out.textures_delta.clear();
+            keys
+        };
+        let first = keys(&ctx);
+        assert_eq!(first.len(), 2);
+        assert_ne!(first[0], first[1], "two spinners, two layers");
+        assert_eq!(keys(&ctx), first, "the next pass reuses them");
     }
 
     #[test]

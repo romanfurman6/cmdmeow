@@ -97,7 +97,7 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     let gx = r.left() + 10.0 + 7.0;
     if phase == Phase::Running {
         spinner(&p, Pos2::new(gx, r.center().y), 5.5, ui.input(|i| i.time), ai);
-        animate(&ctx);
+        crate::kit::glass::poll(&ctx);
     } else if phase == Phase::Idle {
         agent_mark(&p, Rect::from_center_size(Pos2::new(gx, r.center().y), Vec2::splat(12.0)), agent_of(c), None);
     } else {

@@ -70,6 +70,10 @@ pub struct App {
     pub app_open: bool,
     /// When the window was asked for (dev log: how long the first frame took).
     pub app_asked: Option<Instant>,
+    /// When the app window (or setup in it) last drew.
+    app_drawn: Option<Instant>,
+    /// When the system appearance (and new windows' glass) was last checked.
+    theme_checked: Option<Instant>,
     app_focus: bool,
     /// Until then, keep bringing the app window forward while it isn't key:
     /// on its first frames macOS can still hand focus back to the app that
@@ -104,6 +108,13 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, opts: Options) -> Self {
         install_fonts(&cc.egui_ctx);
+        {
+            let ctx = cc.egui_ctx.clone();
+            crate::kit::native::watch_theme(move || {
+                note_theme();
+                ctx.request_repaint();
+            });
+        }
         let ctx = cc.egui_ctx.clone();
         let demo = opts.screenshot.is_some();
         // screenshots stay silent; otherwise sounds are on until switched off
@@ -167,6 +178,8 @@ impl App {
             last_hide: Instant::now(),
             app_open: false,
             app_asked: None,
+            app_drawn: None,
+            theme_checked: None,
             app_focus: false,
             app_focus_until: None,
             panel_hide_after_open: None,
@@ -177,7 +190,9 @@ impl App {
             toast: None,
             setup: first_run.then(|| super::onboard::Setup::new(super::onboard::saved_step())),
             perm_watch: Default::default(),
-            start_hidden: first_run,
+            // the menu bar app starts out of sight: the panel shows on a click
+            // (or after setup's "Open panel" restart), never by itself
+            start_hidden: !demo && !crate::kit::perms::launched_to_panel(),
             hold_panel: None,
             links: (!demo).then(|| crate::kit::url_scheme::Inbox::new("open", Some(ctx.clone()), open_link)),
             update_banner: false,
@@ -668,7 +683,12 @@ impl eframe::App for App {
                 self.detail = None;
             }
         }
-        if (self.app_open || self.setup.is_some() || tools_need_frames) && !self.visible {
+        // the app window is drawn inside the hidden root window's pass; once
+        // it's on screen eframe runs that pass for it anyway. Asking again
+        // every pass was a loop: each ask is itself a repaint request, so a
+        // still window drew 10 times a second
+        let app_drawing = self.app_drawn.is_some_and(|t| t.elapsed().as_millis() < 1500);
+        if ((self.app_open || self.setup.is_some()) && !app_drawing || tools_need_frames) && !self.visible {
             ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
         }
         // background work slows down and stops asking for frames while
@@ -731,7 +751,21 @@ impl eframe::App for App {
         self.frame += 1;
         // screenshots and demo views render egui alone: no native layers
         crate::kit::spin::set_allowed(self.screenshot.is_none() && !self.demo);
-        if self.frame <= 3 || self.frame.is_multiple_of(30) {
+        // by time, not by pass count: a still window has few passes, and a
+        // theme switch (which brings a pass of its own) must show at once.
+        // A pass too soon after the last check asks for one more later
+        const THEME_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+        let since = self.theme_checked.map(|t| t.elapsed());
+        // the system just said it switched (or we did): look every pass for
+        // a moment, as the app's own appearance may follow a beat later
+        let noted = THEME_NOTED.with(|n| n.get().is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1500)));
+        if noted {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        if !noted && since.is_some_and(|d| d < THEME_EVERY) && self.frame > 3 {
+            ctx.request_repaint_after(THEME_EVERY - since.unwrap_or_default());
+        } else {
+            self.theme_checked = Some(Instant::now());
             sync_theme(&ctx, self.screenshot.is_none());
             let r = if self.mode == Mode::Panel { m::CARD_RADIUS as f64 + 6.0 } else { 16.0 };
             if self.screenshot.is_none() {
@@ -741,7 +775,7 @@ impl eframe::App for App {
         // CMDMEOW_SELF_SHOT=<dir>: open the panel, then let screencapture
         // (run by the app, so with its Screen Recording permission) save the
         // screen, to check how the panel looks over the desktop
-        if let Some(dir) = std::env::var_os("CMDMEOW_SELF_SHOT") {
+        if let Some(dir) = env_once("CMDMEOW_SELF_SHOT") {
             if self.frame == 60 {
                 self.open_panel(&ctx);
             }
@@ -752,7 +786,7 @@ impl eframe::App for App {
             }
             ctx.request_repaint();
         }
-        if std::env::var_os("CMDMEOW_SCALE_LOG").is_some() {
+        if env_once("CMDMEOW_SCALE_LOG").is_some() {
             // the scale egui renders at, logged when it changes (the panel
             // shown on another display)
             let scale = (ctx.pixels_per_point(), ctx.input(|i| i.viewport().native_pixels_per_point));
@@ -761,7 +795,7 @@ impl eframe::App for App {
                 eprintln!("[scale] ppp {} native {:?} frame {}\n{}", scale.0, scale.1, self.frame, crate::kit::native::debug_windows());
             }
         }
-        if std::env::var("CMDMEOW_DEBUG").is_ok() {
+        if env_once("CMDMEOW_DEBUG").is_some() {
             match self.frame {
                 30 => eprintln!("== start screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
                 120 => eprintln!("== panel screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
@@ -784,6 +818,10 @@ impl eframe::App for App {
         let t = ctx.input(|i| i.time);
         let mut cx = self.cx();
         match self.mode {
+            // the root window is the panel; while it's hidden, its pass still
+            // runs for the app window and tools' own windows (drawn inside
+            // it), but nobody sees the panel: don't build it
+            Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
                 glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);
@@ -874,6 +912,19 @@ impl eframe::App for App {
     }
 }
 
+/// A debugging switch from the environment, read once: `getenv` locks, and
+/// the pass runs up to the display's rate.
+fn env_once(key: &'static str) -> Option<&'static std::ffi::OsStr> {
+    static VARS: std::sync::Mutex<Vec<(&'static str, Option<&'static std::ffi::OsStr>)>> = std::sync::Mutex::new(Vec::new());
+    let mut v = VARS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, val)) = v.iter().find(|(k, _)| *k == key) {
+        return *val;
+    }
+    let val: Option<&'static std::ffi::OsStr> = std::env::var_os(key).map(|s| &*Box::leak(s.into_boxed_os_str()));
+    v.push((key, val));
+    val
+}
+
 /// macOS: right after launch the app window kept showing its first frames
 /// (setup frozen on Welcome, clicks working underneath) until it was resized
 /// once; from then on it drew fine. So resize it by a point and back once,
@@ -955,6 +1006,7 @@ impl App {
         let mut finish = Finish::No;
         let mut app_focused = false;
         crate::kit::viewport::show(ctx, id, builder, |ui, _class| {
+            self.app_drawn = Some(Instant::now());
             let vctx = ui.ctx().clone();
             if let Some(at) = self.app_asked.take() {
                 if crate::kit::fs::is_dev() {
@@ -1017,7 +1069,7 @@ impl App {
             crate::kit::native::set_dock_icon(false);
             match finish {
                 Finish::Restart => {
-                    crate::kit::perms::relaunch();
+                    crate::kit::perms::relaunch_to_panel();
                     self.quit(ctx);
                 }
                 Finish::Panel => {
@@ -1107,16 +1159,37 @@ fn sync_theme(ctx: &egui::Context, live: bool) {
         if live {
             crate::kit::native::set_appearance(light);
         }
+        // the new fonts take over mid-pass, so a window may show one frame
+        // drawn half with the old ones: paint every window anew for a moment
+        eframe::paint_everything_for(std::time::Duration::from_millis(600));
+        note_theme();
         ctx.request_repaint();
     }
+}
+
+thread_local! {
+    /// When the system last said it switched between light and dark.
+    static THEME_NOTED: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+fn note_theme() {
+    THEME_NOTED.with(|n| n.set(Some(Instant::now())));
 }
 
 fn install_fonts(ctx: &egui::Context) {
     use egui::epaint::text::VariationCoords;
     use egui::{FontData, FontDefinitions, FontFamily};
     let mut fonts = FontDefinitions::default();
-    let sf = std::fs::read("/System/Library/Fonts/SFNS.ttf").ok();
-    let mono = std::fs::read("/System/Library/Fonts/SFNSMono.ttf").ok();
+    // read once and shared by every weight (and every theme switch, which
+    // installs the fonts again): SF is one big variable font file, and a
+    // copy per weight held it in memory three times
+    fn system_font(path: &str, cell: &'static std::sync::OnceLock<Option<egui::epaint::text::Blob>>) -> Option<egui::epaint::text::Blob> {
+        cell.get_or_init(|| std::fs::read(path).ok().map(|b| Arc::new(b) as egui::epaint::text::Blob)).clone()
+    }
+    static SF: std::sync::OnceLock<Option<egui::epaint::text::Blob>> = std::sync::OnceLock::new();
+    static MONO: std::sync::OnceLock<Option<egui::epaint::text::Blob>> = std::sync::OnceLock::new();
+    let sf = system_font("/System/Library/Fonts/SFNS.ttf", &SF);
+    let mono = system_font("/System/Library/Fonts/SFNSMono.ttf", &MONO);
     let mut bold_family = vec![];
     let mut hero_family = vec![];
     if let Some(bytes) = sf {
@@ -1124,11 +1197,11 @@ fn install_fonts(ctx: &egui::Context) {
         // mode sets every weight a step up
         let light = glass::is_light();
         let (w_regular, w_bold, w_hero) = if light { (510.0, 680.0, 520.0) } else { (430.0, 620.0, 330.0) };
-        let mut regular = FontData::from_owned(bytes.clone());
+        let mut regular = FontData::from_blob(bytes.clone(), 0);
         regular.tweak.coords = VariationCoords::new([("wght", w_regular)]);
-        let mut semibold = FontData::from_owned(bytes.clone());
+        let mut semibold = FontData::from_blob(bytes.clone(), 0);
         semibold.tweak.coords = VariationCoords::new([("wght", w_bold)]);
-        let mut hero = FontData::from_owned(bytes);
+        let mut hero = FontData::from_blob(bytes, 0);
         hero.tweak.coords = VariationCoords::new([("wght", w_hero)]);
         fonts.font_data.insert("sf".into(), Arc::new(regular));
         fonts.font_data.insert("sf-bold".into(), Arc::new(semibold));
@@ -1138,7 +1211,7 @@ fn install_fonts(ctx: &egui::Context) {
         hero_family.push("sf-hero".to_string());
     }
     if let Some(bytes) = mono {
-        fonts.font_data.insert("sf-mono".into(), Arc::new(FontData::from_owned(bytes)));
+        fonts.font_data.insert("sf-mono".into(), Arc::new(FontData::from_blob(bytes, 0)));
         fonts.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "sf-mono".into());
     }
     let mut fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
@@ -1151,7 +1224,15 @@ fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(FontFamily::Name("bold".into()), bold_family);
     fonts.families.insert(FontFamily::Name("hero".into()), hero_family);
     ctx.set_fonts(fonts);
-    ctx.set_visuals(if glass::is_light() { egui::Visuals::light() } else { egui::Visuals::dark() });
+    // one look for every window: egui otherwise picks its dark or light style
+    // per window from that window's own appearance (ours are pinned, and
+    // switch one by one), and the two styles render text differently. A
+    // window on the other style made egui rebuild the shared glyph atlas
+    // under the other, which then drew garbled text
+    let (theme, visuals) = if glass::is_light() { (egui::Theme::Light, egui::Visuals::light()) } else { (egui::Theme::Dark, egui::Visuals::dark()) };
+    ctx.set_theme(theme);
+    ctx.set_visuals_of(egui::Theme::Dark, visuals.clone());
+    ctx.set_visuals_of(egui::Theme::Light, visuals);
     ctx.all_styles_mut(|s| {
         s.visuals.panel_fill = Color32::TRANSPARENT;
         s.visuals.window_fill = glass::BG();

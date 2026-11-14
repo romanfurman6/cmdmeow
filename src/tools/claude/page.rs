@@ -42,7 +42,7 @@ fn header(ui: &mut Ui, r: Rect, sub: &str, sub_col: egui::Color32, loading: bool
     let rb = Rect::from_center_size(Pos2::new(btns.right() - 13.0, btns.center().y), Vec2::splat(26.0));
     if loading || backend::refreshing() {
         spinner(&p, rb.center(), 6.0, ui.ctx().input(|i| i.time), TEXT_DIM());
-        animate(ui.ctx());
+        crate::kit::glass::poll(ui.ctx());
     } else if round_button(ui, rb, Icon::Refresh, "Refresh").clicked() {
         backend::request_refresh();
         cx.toast("Checking your AI tools…");
@@ -249,7 +249,7 @@ fn empty_state(ui: &mut Ui, r: Rect, title: &str, msg: &str, button: Option<&str
     let below = Pos2::new(c.x, c.y + 74.0 + h + 30.0);
     let Some(label) = button else {
         spinner(&p, below, 8.0, ui.ctx().input(|i| i.time), TEXT_DIM());
-        animate(ui.ctx());
+        crate::kit::glass::poll(ui.ctx());
         return false;
     };
     let bw = button_width(&p, label, BTN_SECONDARY);

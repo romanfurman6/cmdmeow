@@ -303,6 +303,9 @@ pub fn loading(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color3
             k += 1;
         }
     }
-    ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+    // the shimmer moves only where someone sees it
+    if crate::kit::activity::visible() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+    }
     resp
 }

@@ -212,8 +212,26 @@ pub fn relaunched() -> bool {
 /// Start the app again a second from now (to pick up Screen Recording);
 /// the caller quits this copy.
 pub fn relaunch() {
+    relaunch_with("");
+}
+
+/// Passed to a copy started by [`relaunch_to_panel`].
+const OPEN_PANEL: &str = "--open-panel";
+
+/// [`relaunch`], and show the menu bar panel once started (setup's last
+/// step, "Open panel", when it needs a restart).
+pub fn relaunch_to_panel() {
+    relaunch_with(OPEN_PANEL);
+}
+
+/// Started by [`relaunch_to_panel`]: the only launch that shows the panel.
+pub fn launched_to_panel() -> bool {
+    std::env::args().any(|a| a == OPEN_PANEL)
+}
+
+fn relaunch_with(extra: &str) {
     if let Some(app) = app_bundle() {
-        let cmd = format!("sleep 1; /usr/bin/open -n {} --args {RELAUNCHED}", sh_quote(&app.to_string_lossy()));
+        let cmd = format!("sleep 1; /usr/bin/open -n {} --args {RELAUNCHED} {extra}", sh_quote(&app.to_string_lossy()));
         let _ = std::process::Command::new("/bin/sh").args(["-c", &cmd]).spawn();
     }
 }

@@ -1,5 +1,5 @@
 mod app_icon;
-mod epi_integration;
+pub(crate) mod epi_integration;
 mod event_loop_context;
 pub mod run;
 

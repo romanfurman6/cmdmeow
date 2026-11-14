@@ -93,6 +93,20 @@ pub struct SharedState {
 
     /// Passed on to each [`egui_winit::State`]. See [`NativeOptions::clipboard_shortcuts`].
     clipboard_shortcuts: bool,
+
+    /// Cmd+Meow patch: texture changes from passes of a window that wasn't
+    /// painted (the hidden panel, while the app window drawn inside its pass
+    /// is open). Textures are shared by every window, so whichever window
+    /// paints next applies these first; applied later than newer changes, a
+    /// stale glyph atlas patch garbled text.
+    unpainted_deltas: TexturesDelta,
+}
+
+impl Drop for SharedState {
+    fn drop(&mut self) {
+        // Avoid debug panic when dropping unapplied deltas on teardown
+        self.unpainted_deltas.clear();
+    }
 }
 
 pub type Viewports = egui::OrderedViewportIdMap<Viewport>;
@@ -117,6 +131,9 @@ pub struct Viewport {
 
     /// `window` and `egui_winit` are initialized together.
     egui_winit: Option<egui_winit::State>,
+
+    /// Cmd+Meow patch: the frame on screen, to skip passes that change nothing.
+    last_paint: winit_integration::LastPaint,
 }
 
 impl Drop for Viewport {
@@ -363,6 +380,7 @@ impl<'app> WgpuWinitApp<'app> {
                 window: Some(window),
                 egui_winit: Some(egui_winit),
                 pending_delta: Default::default(),
+                last_paint: Default::default(),
             },
         );
 
@@ -374,6 +392,7 @@ impl<'app> WgpuWinitApp<'app> {
             focused_viewport: Some(ViewportId::ROOT),
             resized_viewport: None,
             clipboard_shortcuts: self.native_options.clipboard_shortcuts,
+            unpainted_deltas: Default::default(),
         }));
 
         {
@@ -731,6 +750,7 @@ impl WgpuWinitRunning<'_> {
 
                 if let Some(viewport) = viewports.get_mut(&viewport_id) {
                     viewport.info.events.clear(); // they should have been processed
+                    viewport.last_paint.on_screen(false);
                     if let Viewport {
                         window: Some(window),
                         egui_winit: Some(egui_winit),
@@ -782,6 +802,7 @@ impl WgpuWinitRunning<'_> {
             viewports,
             painter,
             viewport_from_window,
+            unpainted_deltas,
             ..
         } = &mut *shared_mut;
 
@@ -793,7 +814,11 @@ impl WgpuWinitRunning<'_> {
             viewport_output,
         } = full_output;
 
-        pending_deltas.append(textures_delta);
+        // older changes first: those another window's pass left unpainted
+        let mut older = std::mem::take(unpainted_deltas);
+        older.append(std::mem::take(pending_deltas));
+        older.append(textures_delta);
+        *pending_deltas = older;
 
         remove_viewports_not_in(viewports, painter, viewport_from_window, &viewport_output);
 
@@ -820,26 +845,36 @@ impl WgpuWinitRunning<'_> {
         egui_winit.handle_platform_output_with_event_loop(window, event_loop, platform_output);
 
         let vsync_secs = if is_visible {
-            let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
+            let size = window.inner_size();
+            let wants_shot = viewport.actions_requested.iter().any(|a| matches!(a, ActionRequested::Screenshot(_)));
+            viewport.last_paint.on_screen(!winit_integration::is_invisible_or_minimized(window));
+            let same = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], pending_deltas.is_empty());
+            let skip = same && !wants_shot;
+            viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
+            let vsync_secs = if skip {
+                0.0
+            } else {
+                let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
 
-            let mut screenshot_commands = vec![];
-            viewport.actions_requested.retain(|cmd| {
-                if let ActionRequested::Screenshot(callback) = cmd {
-                    screenshot_commands.push(callback.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-            let vsync_secs = painter.paint_and_update_textures(
-                viewport_id,
-                pixels_per_point,
-                app.clear_color(&egui_ctx.global_style().visuals),
-                &clipped_primitives,
-                pending_deltas,
-                screenshot_commands,
-                window,
-            );
+                let mut screenshot_commands = vec![];
+                viewport.actions_requested.retain(|cmd| {
+                    if let ActionRequested::Screenshot(callback) = cmd {
+                        screenshot_commands.push(callback.clone());
+                        false
+                    } else {
+                        true
+                    }
+                });
+                painter.paint_and_update_textures(
+                    viewport_id,
+                    pixels_per_point,
+                    app.clear_color(&egui_ctx.global_style().visuals),
+                    &clipped_primitives,
+                    pending_deltas,
+                    screenshot_commands,
+                    window,
+                )
+            };
 
             for action in viewport.actions_requested.drain(..) {
                 match action {
@@ -876,6 +911,9 @@ impl WgpuWinitRunning<'_> {
 
             vsync_secs
         } else {
+            viewport.last_paint.on_screen(false);
+            // not painted: the next window that paints applies these
+            unpainted_deltas.append(std::mem::take(pending_deltas));
             0.0
         };
 
@@ -1282,6 +1320,7 @@ fn render_immediate_viewport(
         viewports,
         painter,
         viewport_from_window,
+        unpainted_deltas,
         ..
     } = &mut *shared_mut;
 
@@ -1289,7 +1328,11 @@ fn render_immediate_viewport(
         warn!("Viewport disappeared unexpectedly!");
         return;
     };
-    viewport.pending_delta.append(textures_delta);
+    // older changes first: those another window's pass left unpainted
+    let mut older = std::mem::take(unpainted_deltas);
+    older.append(std::mem::take(&mut viewport.pending_delta));
+    older.append(textures_delta);
+    viewport.pending_delta = older;
 
     viewport.info.events.clear(); // they should have been processed
     let (Some(egui_winit), Some(window)) = (&mut viewport.egui_winit, &viewport.window) else {
@@ -1307,16 +1350,23 @@ fn render_immediate_viewport(
         }
     }
 
-    let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
-    painter.paint_and_update_textures(
-        ids.this,
-        pixels_per_point,
-        [0.0, 0.0, 0.0, 0.0],
-        &clipped_primitives,
-        &mut viewport.pending_delta,
-        vec![],
-        window,
-    );
+    // Cmd+Meow patch: a pass that changes nothing on screen isn't painted
+    let size = window.inner_size();
+    viewport.last_paint.on_screen(viewport.info.visible().unwrap_or(true) && !winit_integration::is_invisible_or_minimized(window));
+    let skip = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty());
+    viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
+    if !skip {
+        let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
+        painter.paint_and_update_textures(
+            ids.this,
+            pixels_per_point,
+            [0.0, 0.0, 0.0, 0.0],
+            &clipped_primitives,
+            &mut viewport.pending_delta,
+            vec![],
+            window,
+        );
+    }
 
     egui_winit.handle_platform_output(window, platform_output);
 
@@ -1426,6 +1476,7 @@ fn initialize_or_update_viewport<'a>(
                 window: None,
                 egui_winit: None,
                 pending_delta: Default::default(),
+                last_paint: Default::default(),
             })
         }
 

@@ -99,7 +99,10 @@ pub fn draw_at(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static st
                 child.multiply_opacity(0.45);
             }
             // screenshots only: CMB_DEMO_LOADING shows every tool that can load as loading
-            let demo = std::env::var_os("CMB_DEMO_LOADING").is_some() && matches!(app.tools[i].id(), "system" | "startup" | "fan");
+            let demo = {
+                static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+                *ON.get_or_init(|| std::env::var_os("CMB_DEMO_LOADING").is_some())
+            } && matches!(app.tools[i].id(), "system" | "startup" | "fan");
             let tid = app.tools[i].id();
             let drawn = if tool::is_broken(tid) {
                 false
