@@ -688,7 +688,22 @@ mod imp {
                 }
             });
             writer.finishWritingWithCompletionHandler(&block);
-            let _ = rx.recv_timeout(std::time::Duration::from_secs(120));
+            // a long file can take a while to finish: wait for as long as
+            // the writer is at it, unless the save is called off
+            loop {
+                match rx.recv_timeout(std::time::Duration::from_millis(250)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        if progress.cancel.load(Ordering::Relaxed) {
+                            writer.cancelWriting();
+                            return Err("Cancelled".into());
+                        }
+                        if writer.status() != AVAssetWriterStatus::Writing {
+                            break;
+                        }
+                    }
+                }
+            }
             progress.done.store(1000, Ordering::Relaxed);
             if writer.status() == AVAssetWriterStatus::Completed {
                 Ok(((ow, oh), frames, duration))

@@ -8,10 +8,16 @@
 # grant Screen Recording and Accessibility again and remove the old
 # "CleanMeBro Dev.app" from /Applications.
 #
-# Sign with a stable identity (SIGN_ID, e.g. your "Apple Development: …"
-# certificate name or SHA-1 from `security find-identity -v -p codesigning`)
-# and macOS keeps the Screen Recording / Accessibility grants across builds.
-# Without it the build is signed ad hoc and asks again every time.
+# Signed with a stable identity, so macOS keeps the Screen Recording /
+# Accessibility grants across builds: the self-signed one from
+# scripts/dev-signing.sh (created on first run), or SIGN_ID (e.g. your
+# "Apple Development: …" certificate name or SHA-1 from
+# `security find-identity -v -p codesigning`). SIGN_ID=- signs ad hoc, which
+# macOS treats as a new app after every build.
+#
+# With System Integrity Protection off (a test Mac), scripts/dev-grant.sh then
+# grants every permission without the prompts (sudo for the system ones).
+# GRANT=0 skips that.
 #
 #   SIGN_ID="Apple Development: …" scripts/dev-install.sh
 #   NO_PULL=1 scripts/dev-install.sh     # build what's checked out
@@ -20,7 +26,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-export SIGN_ID="${SIGN_ID:--}"
+if [[ -z "${SIGN_ID:-}" ]]; then SIGN_ID="$(scripts/dev-signing.sh)"; fi
+export SIGN_ID
 export APP_NAME="CmdMeow Dev"
 export DISPLAY_NAME="Cmd+Meow Dev"
 export BUNDLE_ID="com.romanfurman6.cmdmeow.dev"
@@ -50,6 +57,10 @@ sleep 1
 rm -rf "$DEST"
 ditto "target/bundle/$APP_NAME.app" "$DEST"
 codesign -dv --verbose=2 "$DEST" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier)=' || true
+
+if [[ "${GRANT:-1}" == "1" ]] && csrutil status | grep -q disabled; then
+  scripts/dev-grant.sh "$DEST" || echo "!! dev-grant.sh failed; the app will ask for its permissions" >&2
+fi
 
 mkdir -p "$LOG_DIR"
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') dev-install: $(git rev-parse --abbrev-ref HEAD)@$(git rev-parse --short HEAD) ($PROFILE) =====" >> "$LOG"
