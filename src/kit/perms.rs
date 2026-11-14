@@ -4,6 +4,14 @@
 
 use crate::kit::glass::Icon;
 
+/// See [`Perm::take_answered`].
+static ANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn answered() {
+    ANSWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// A macOS permission, or something a tool sets up itself (`Own`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Perm {
@@ -116,6 +124,19 @@ impl Perm {
             Perm::Notifications => return None,
             Perm::Own { .. } => return None,
         })
+    }
+
+    /// macOS answers it with a question over the app (Allow / Don't Allow)
+    /// and never needs System Settings, unless it was refused before.
+    pub fn answered_in_place(self) -> bool {
+        matches!(self, Perm::SystemEvents | Perm::Microphone | Perm::Camera | Perm::Bluetooth | Perm::Notifications)
+    }
+
+    /// A macOS question shown over the app was just answered (set by its
+    /// completion handler), so the app can take the front back at once
+    /// instead of after the next status poll. Read once.
+    pub fn take_answered() -> bool {
+        ANSWERED.swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The live status of a system permission (`Own` ones belong to their tool).
@@ -386,10 +407,17 @@ mod imp {
                 // macOS shows its question only once; after that, Settings
                 if !unsafe { CGRequestScreenCaptureAccess() } {
                     std::thread::spawn(|| {
-                        std::thread::sleep(std::time::Duration::from_millis(1200));
-                        if !screen_live() {
-                            super::open_settings(Perm::Screen);
+                        // the first time, macOS shows its own alert, whose
+                        // button opens Settings; opening Settings as well
+                        // covered that alert (M1). Only when no alert came
+                        // up within 2 s, open Settings ourselves.
+                        for _ in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            if screen_live() || crate::kit::settings_window::scene().prompt {
+                                return;
+                            }
                         }
+                        super::open_settings(Perm::Screen);
                     });
                 }
             }
@@ -408,16 +436,17 @@ mod imp {
                     // the question needs System Events running
                     let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
                     std::thread::sleep(std::time::Duration::from_millis(600));
-                    if system_events(true) == -1743 {
-                        super::open_settings(Perm::SystemEvents);
-                    }
+                    // a "Don't Allow" just shows on the row (its button then
+                    // opens Settings); opening Settings here took over the screen
+                    let _ = system_events(true);
+                    super::answered();
                 });
             }
             Perm::Microphone | Perm::Camera => {
                 use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio, AVMediaTypeVideo};
                 let t = if p == Perm::Microphone { unsafe { AVMediaTypeAudio } } else { unsafe { AVMediaTypeVideo } };
                 if let Some(t) = t {
-                    let done = block2::RcBlock::new(|_ok: objc2::runtime::Bool| {});
+                    let done = block2::RcBlock::new(|_ok: objc2::runtime::Bool| super::answered());
                     unsafe { AVCaptureDevice::requestAccessForMediaType_completionHandler(t, &done) };
                 }
             }
@@ -441,7 +470,7 @@ mod imp {
                 }
                 use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
                 let center = UNUserNotificationCenter::currentNotificationCenter();
-                let done = block2::RcBlock::new(|_granted: objc2::runtime::Bool, _err: *mut objc2_foundation::NSError| {});
+                let done = block2::RcBlock::new(|_granted: objc2::runtime::Bool, _err: *mut objc2_foundation::NSError| super::answered());
                 center.requestAuthorizationWithOptions_completionHandler(UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound, &done);
             }
             Perm::Own { .. } => {}
@@ -472,5 +501,12 @@ mod tests {
             assert!(!p.name().is_empty());
             assert!(p.pane().is_some() || p == Perm::Notifications, "{p:?}");
         }
+    }
+
+    #[test]
+    fn an_answer_is_read_once() {
+        answered();
+        assert!(Perm::take_answered());
+        assert!(!Perm::take_answered());
     }
 }
