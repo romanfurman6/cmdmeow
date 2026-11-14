@@ -156,7 +156,68 @@ mod mac {
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
         let policy = if visible { NSApplicationActivationPolicy::Regular } else { NSApplicationActivationPolicy::Accessory };
+        let was = app.activationPolicy();
+        if was == policy {
+            return;
+        }
         let _ = app.setActivationPolicy(policy);
+        // a menu bar app that turns into a Dock app while already active
+        // keeps the previous app's menus in the menu bar until it's
+        // activated anew: step back now, and the window that is opening
+        // activates the app again on its next frames
+        if visible && app.isActive() {
+            app.deactivate();
+        }
+    }
+
+    /// A Window menu (Minimize ⌘M, Zoom) beside the app menu winit makes,
+    /// so ⌘M works in the app window.
+    pub fn install_window_menu() {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send, sel};
+        use objc2_foundation::NSString;
+        let Some(_mtm) = MainThreadMarker::new() else { return };
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            // the first item of the main menu is the app menu (winit's):
+            // without it a lone Window menu would take its place
+            let main: Option<Retained<AnyObject>> = msg_send![&*app, mainMenu];
+            let Some(main) = main else { return };
+            let title = NSString::from_str("Window");
+            let existing: Option<Retained<AnyObject>> = msg_send![&*main, itemWithTitle: &*title];
+            if existing.is_some() {
+                return;
+            }
+            let menu: Retained<AnyObject> = msg_send![class!(NSMenu), new];
+            let _: () = msg_send![&*menu, setTitle: &*title];
+            for (name, action, key) in [("Minimize", sel!(performMiniaturize:), "m"), ("Zoom", sel!(performZoom:), "")] {
+                let item: Retained<AnyObject> = msg_send![class!(NSMenuItem), new];
+                let _: () = msg_send![&*item, setTitle: &*NSString::from_str(name)];
+                let _: () = msg_send![&*item, setAction: action];
+                let _: () = msg_send![&*item, setKeyEquivalent: &*NSString::from_str(key)];
+                let _: () = msg_send![&*menu, addItem: &*item];
+            }
+            let holder: Retained<AnyObject> = msg_send![class!(NSMenuItem), new];
+            let _: () = msg_send![&*holder, setTitle: &*title];
+            let _: () = msg_send![&*holder, setSubmenu: &*menu];
+            let _: () = msg_send![&*main, addItem: &*holder];
+            let _: () = msg_send![&*app, setWindowsMenu: &*menu];
+        }
+    }
+
+    /// Put the app window (the titled one) in front of other apps' windows,
+    /// even when macOS didn't let the app activate (a launch it didn't
+    /// see the user ask for).
+    pub fn bring_app_window_front() {
+        use objc2_app_kit::NSWindowStyleMask;
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let app = NSApplication::sharedApplication(mtm);
+        for w in app.windows().iter() {
+            if w.isVisible() && w.styleMask().contains(NSWindowStyleMask::Titled) {
+                w.orderFrontRegardless();
+                w.makeKeyWindow();
+            }
+        }
     }
 
     pub fn activate() {
@@ -313,6 +374,8 @@ mod other {
         String::new()
     }
     pub fn set_dock_icon(_v: bool) {}
+    pub fn install_window_menu() {}
+    pub fn bring_app_window_front() {}
     pub fn activate() {}
     pub fn thermal_state() -> u8 {
         0
