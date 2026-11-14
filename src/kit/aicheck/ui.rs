@@ -210,6 +210,30 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
     ev
 }
 
+/// Width of an [`agent_button`] with `label`.
+pub fn agent_button_width(ui: &Ui, label: &str) -> f32 {
+    10.0 + 14.0 + 6.0 + ui.painter().layout_no_wrap(label.to_owned(), bold(12.0), TEXT()).size().x + 12.0
+}
+
+/// A chip in AI Check's idle look (agent mark + label) that does one
+/// thing, its left edge centred on `at`: "Ask Claude to set up".
+pub fn agent_button(ui: &mut Ui, at: Pos2, id: egui::Id, a: Agent, label: &str) -> egui::Response {
+    let p = ui.painter().clone();
+    let ai = tint::HEALTH();
+    let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(agent_button_width(ui, label), CHIP_H));
+    let resp = ui.interact(r, id, Sense::click());
+    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
+    p.rect_filled(r, CHIP_H / 2.0, white((8.0 * h) as u8));
+    p.rect_stroke(r, CHIP_H / 2.0, Stroke::new(1.0, with_alpha(ai, 0.3 + 0.15 * h)), StrokeKind::Inside);
+    let gx = r.left() + 10.0 + 7.0;
+    agent_mark(&p, Rect::from_center_size(Pos2::new(gx, r.center().y), Vec2::splat(12.0)), a, None);
+    p.text(Pos2::new(gx + 7.0 + 6.0, r.center().y), Align2::LEFT_CENTER, label, bold(12.0), TEXT());
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
 /// The agent's mark: Claude's orange burst, Codex's prompt square.
 pub fn agent_mark(p: &egui::Painter, r: Rect, a: Agent, ink: Option<Color32>) {
     match a {

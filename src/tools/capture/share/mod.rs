@@ -12,6 +12,7 @@ pub const VIDEO_FOLDER: &str = "cmdmeow/videos/";
 pub const SHOT_FOLDER: &str = "cmdmeow/screenshots/";
 
 pub mod s3;
+pub mod setup;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -43,6 +44,9 @@ pub struct Settings {
     pub region: String,
     pub bucket: String,
     pub access_key: String,
+    /// Where public files are read from when that isn't the bucket itself:
+    /// R2's "https://pub-….r2.dev" or a custom domain. Empty: the bucket.
+    pub public_url: String,
     /// Folder inside the bucket ("cmdmeow/videos/"); may be empty.
     pub folder: String,
     pub link: LinkKind,
@@ -54,7 +58,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { auto: false, copy_link: true, endpoint: String::new(), region: String::new(), bucket: String::new(), access_key: String::new(), folder: VIDEO_FOLDER.into(), link: LinkKind::Public, secret_saved: false }
+        Settings { auto: false, copy_link: true, endpoint: String::new(), region: String::new(), bucket: String::new(), access_key: String::new(), public_url: String::new(), folder: VIDEO_FOLDER.into(), link: LinkKind::Public, secret_saved: false }
     }
 }
 
@@ -65,7 +69,16 @@ impl Settings {
     }
     /// The bucket, with the secret kept under `account`.
     pub fn bucket(&self, account: &str) -> s3::Bucket {
-        s3::Bucket::new(&self.endpoint, &self.region, &self.bucket, &self.access_key, &secret::get(account).unwrap_or_default())
+        s3::Bucket::new(&self.endpoint, &self.region, &self.bucket, &self.access_key, &secret::get(account).unwrap_or_default()).public_at(&self.public_url)
+    }
+    /// The storage is Cloudflare R2 (by its endpoint).
+    pub fn is_r2(&self) -> bool {
+        s3::Bucket::new(&self.endpoint, "", &self.bucket, "", "").is_r2()
+    }
+    /// Public links can be made: R2 has no per-file ACL, so it needs the
+    /// bucket's public URL.
+    pub fn links_ready(&self) -> bool {
+        self.link == LinkKind::Week || !self.is_r2() || !self.public_url.trim().is_empty()
     }
     /// Everything filled in (the secret included). Reads the secret, which
     /// can make macOS ask for the Keychain password: only when uploading.
@@ -75,7 +88,7 @@ impl Settings {
     /// Filled in, with a secret saved, from our own settings only: no
     /// Keychain call, so it's safe anywhere (the sidebar, every launch).
     pub fn set_up(&self, _account: &str) -> bool {
-        !self.endpoint.trim().is_empty() && !self.bucket.trim().is_empty() && !self.access_key.trim().is_empty() && self.secret_saved
+        !self.endpoint.trim().is_empty() && !self.bucket.trim().is_empty() && !self.access_key.trim().is_empty() && self.secret_saved && self.links_ready()
     }
 }
 
@@ -338,6 +351,9 @@ impl Uploads {
         if !b.ready() {
             return Err(if is_image(&path) { "Set up sharing in Screenshot settings first".into() } else { "Set up sharing in Video settings first".into() });
         }
+        if s.link == LinkKind::Public && !b.public_ready() {
+            return Err("Add the bucket's Public URL on the Sharing page".into());
+        }
         self.stop(&path);
         let key = load_store().get(&path.display().to_string()).map(|x| x.key.clone()).unwrap_or_else(|| new_key(&s.folder, &path));
         let progress = Arc::new(s3::Progress::default());
@@ -404,6 +420,20 @@ impl Uploads {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn r2_public_links_need_the_public_url() {
+        let mut s = Settings { endpoint: "abc.r2.cloudflarestorage.com".into(), bucket: "b".into(), access_key: "k".into(), secret_saved: true, ..Settings::default() };
+        assert!(s.is_r2() && !s.links_ready() && !s.set_up(VIDEO_ACCOUNT));
+        s.link = LinkKind::Week;
+        assert!(s.links_ready() && s.set_up(VIDEO_ACCOUNT));
+        s.link = LinkKind::Public;
+        s.public_url = "pub-1.r2.dev".into();
+        assert!(s.set_up(VIDEO_ACCOUNT));
+        // other storages make files public themselves
+        let h = Settings { endpoint: "fsn1.your-objectstorage.com".into(), ..s.clone() };
+        assert!(!h.is_r2() && Settings { public_url: String::new(), ..h }.links_ready());
+    }
 
     #[test]
     fn keys_are_random_and_keep_the_extension() {

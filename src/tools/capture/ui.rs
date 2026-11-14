@@ -870,8 +870,15 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let p = ui.painter().clone();
     let shared = super::share::all();
     let ready = c.settings.share.set_up(VIDEO_ACCOUNT);
-    let sub = if ready { format!("{} shared · {}.{}", shared.len(), c.settings.share.bucket.trim(), c.settings.share.endpoint.trim()) } else { "Set up your storage to get links for screenshots and recordings".into() };
-    page_header(&p, r, "Sharing", &sub, if ready { TEXT_DIM() } else { AMBER() });
+    let sub = if ready { format!("{} shared · {}.{}", shared.len(), c.settings.share.bucket.trim(), c.settings.share.endpoint.trim()) } else { String::new() };
+    // the main agent's chat walks them through a bucket and keys
+    let agent = crate::kit::agent::main();
+    let ask = super::share::setup::label(agent);
+    let aw = crate::kit::aicheck::ui::agent_button_width(ui, &ask);
+    let (_, chip_at) = page_header_room(&p, r, "Sharing", &sub, if ready { TEXT_DIM() } else { AMBER() }, aw, r.right() - sp::PAGE_EDGE);
+    if crate::kit::aicheck::ui::agent_button(ui, chip_at, ui.scope_id().with("share-ask"), agent, &ask).clicked() {
+        let _ = std::process::Command::new("open").arg(super::share::setup::chat_url(agent)).spawn();
+    }
     let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H + 1.0), r.max);
     let gap = 20.0;
     let x0 = body.left() + 24.0;
@@ -883,7 +890,20 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let mut shot = c.settings.shot_share.clone();
     let mut y = body.top() + 16.0;
     p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Storage", bold(15.0), TEXT());
-    let labels = ["Endpoint", "Bucket", "Access key", "Secret key", "Region", "Link"];
+    // R2 (the default) needs its public URL for Public links; Region only
+    // for storages it can't be read from (MinIO…) or when already typed
+    let host = s.endpoint.trim().to_lowercase();
+    let known = s.is_r2() || host.contains("your-objectstorage.com") || host.contains("amazonaws.com");
+    let show_public = host.is_empty() || s.is_r2() || !s.public_url.trim().is_empty();
+    let show_region = !s.region.trim().is_empty() || (!host.is_empty() && !known);
+    let mut labels = vec!["Endpoint", "Bucket", "Access key", "Secret key"];
+    if show_public {
+        labels.push("Public URL");
+    }
+    if show_region {
+        labels.push("Region");
+    }
+    labels.push("Link");
     let card = card_rows(&p, x0, y + 28.0, colw, labels.len());
     for (k, l) in labels.iter().enumerate() {
         p.text(Pos2::new(card.left() + 14.0, row_y(card, k)), Align2::LEFT_CENTER, *l, font(13.0), TEXT());
@@ -893,7 +913,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         let y = row_y(card, k);
         Rect::from_min_max(Pos2::new(card.right() - 6.0 - fw, y - sp::CONTROL_H / 2.0), Pos2::new(card.right() - 6.0, y + sp::CONTROL_H / 2.0))
     };
-    field(ui, frect(card, 0), &mut s.endpoint, "fsn1.your-objectstorage.com", false);
+    field(ui, frect(card, 0), &mut s.endpoint, "account-id.r2.cloudflarestorage.com", false);
     field(ui, frect(card, 1), &mut s.bucket, "my-bucket", false);
     field(ui, frect(card, 2), &mut s.access_key, "Access key", false);
     // the secret goes straight to the Keychain and is never shown back
@@ -926,13 +946,20 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
             Err(e) => c.hud(format!("Couldn't save to the Keychain: {e}")),
         }
     }
-    field(ui, frect(card, 4), &mut s.region, "From the endpoint", false);
-    let ly = row_y(card, 5);
+    let mut k = 4;
+    if show_public {
+        field(ui, frect(card, k), &mut s.public_url, "pub-….r2.dev", false);
+        k += 1;
+    }
+    if show_region {
+        field(ui, frect(card, k), &mut s.region, "From the endpoint", false);
+        k += 1;
+    }
+    let ly = row_y(card, k);
     if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - 210.0, ly - 12.0), Pos2::new(card.right() - 12.0, ly + 12.0)), id.with("link"), &["Public", "Expires in 7 days"], (s.link == LinkKind::Week) as usize) {
         s.link = if i == 1 { LinkKind::Week } else { LinkKind::Public };
     }
-    let h = paragraph(&p, Pos2::new(x0, card.bottom() + 10.0), "Any S3-compatible storage: Hetzner, Cloudflare R2, AWS, MinIO. Public links never expire; their names are random.", font(12.0), TEXT_FAINT(), colw);
-    y = card.bottom() + 10.0 + h + 24.0;
+    y = card.bottom() + 24.0;
     p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Folders", bold(15.0), TEXT());
     let fcard = card_rows(&p, x0, y + 28.0, colw, 2);
     for (k, (ico, l)) in [(Icon::Crop, "Screenshots"), (Icon::Camera, "Videos")].into_iter().enumerate() {
@@ -942,7 +969,6 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     }
     field(ui, frect(fcard, 0), &mut shot.folder, SHOT_FOLDER, false);
     field(ui, frect(fcard, 1), &mut s.folder, VIDEO_FOLDER, false);
-    paragraph(&p, Pos2::new(x0, fcard.bottom() + 10.0), "Upload on save and copying the link are switched in Screenshot and Video settings.", font(12.0), TEXT_FAINT(), colw);
     if s != c.settings.share || shot != c.settings.shot_share {
         c.settings.share = s;
         c.settings.shot_share = shot;
