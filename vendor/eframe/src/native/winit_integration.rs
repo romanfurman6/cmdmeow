@@ -70,7 +70,11 @@ impl LastPaint {
         if paint_always() {
             return false;
         }
+        // a window that went without passes for a while may have been hidden
+        // or closed and shown again, and macOS may have dropped its pixels
+        let recent = self.last_pass.is_some_and(|t| t.elapsed() < core::time::Duration::from_millis(250));
         let same = textures_idle
+            && recent
             && self.shown.as_ref().is_some_and(|(s, p, z, at)| at.elapsed().as_secs_f32() < 1.0 && *p == pixels_per_point && *z == size && s.as_slice() == shapes);
         if !same {
             self.shown = Some((shapes.to_vec(), pixels_per_point, size, Instant::now()));
@@ -84,7 +88,7 @@ impl LastPaint {
         self.shown = None;
     }
 
-    /// Call after each pass. A painted pass waits for the display (vsync);
+    /// Call after each pass (after [`Self::same`]). A painted pass waits for the display (vsync);
     /// a skipped one would not, and egui asks for the next pass right away
     /// while the pointer moves, so passes would run back to back (thousands
     /// a second). A skipped pass waits out the rest of a display frame
@@ -313,13 +317,14 @@ mod last_paint_tests {
 
     fn shapes(x: f32) -> Vec<ClippedShape> {
         let clip = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0));
-        vec![ClippedShape { clip_rect: clip, shape: Shape::rect_filled(Rect::from_min_max(Pos2::new(x, 0.0), Pos2::new(50.0, 50.0)), 2.0, Color32::RED) }]
+        vec![ClippedShape::new(clip, Shape::rect_filled(Rect::from_min_max(Pos2::new(x, 0.0), Pos2::new(50.0, 50.0)), 2.0, Color32::RED))]
     }
 
     #[test]
     fn a_pass_that_draws_the_same_is_skipped_anything_else_is_painted() {
         let mut lp = LastPaint::default();
         assert!(!lp.same(&shapes(0.0), 2.0, [200, 200], true), "first pass paints");
+        lp.pace(false, || None);
         assert!(lp.same(&shapes(0.0), 2.0, [200, 200], true), "same frame is skipped");
         assert!(!lp.same(&shapes(1.0), 2.0, [200, 200], true), "a changed shape paints");
         assert!(!lp.same(&shapes(1.0), 1.0, [200, 200], true), "a new scale paints");
@@ -334,9 +339,20 @@ mod last_paint_tests {
     fn a_frame_shown_over_a_second_ago_is_painted_again() {
         let mut lp = LastPaint::default();
         assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+        lp.pace(false, || None);
         if let Some(shown) = lp.shown.as_mut() {
             shown.3 -= std::time::Duration::from_millis(1100);
         }
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+    }
+
+    #[test]
+    fn a_window_that_had_no_passes_for_a_while_is_painted_again() {
+        let mut lp = LastPaint::default();
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+        lp.pace(false, || None);
+        // closed and reopened: no passes in between
+        lp.last_pass = lp.last_pass.map(|t| t - std::time::Duration::from_millis(400));
         assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
     }
 

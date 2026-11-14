@@ -97,7 +97,7 @@ pub fn arc(p: &Painter, c: Pos2, r: f32, color: Color32) {
     let id = ctx.viewport_id();
     // one layer per spot: a spinner that moves gets a fresh one (egui draws
     // it meanwhile), the old one goes when it's no longer asked for
-    let spot = egui::Id::new(("spin-arc", p.layer_id(), (c.x * 2.0).round() as i32, (c.y * 2.0).round() as i32, (r * 2.0).round() as i32));
+    let spot = egui::Id::NULL.with(("spin-arc", p.layer_id(), (c.x * 2.0).round() as i32, (c.y * 2.0).round() as i32, (r * 2.0).round() as i32));
     let req = Request { painter: p.clone(), key: format!("arc-{}", spot.value()), center: c, radius: r, look: Look::Arc, color, hub: Color32::TRANSPARENT };
     PENDING.with(|q| q.borrow_mut().push((id, req)));
 }
