@@ -320,6 +320,7 @@ mod imp {
     static SE: AtomicU8 = AtomicU8::new(0);
     static SE_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     static SE_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static SE_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     fn se_code(r: i32) -> u8 {
         match r {
@@ -344,6 +345,10 @@ mod imp {
         let r = system_events(false);
         if r != -600 {
             return se_code(r);
+        }
+        // started once per run: a user who quits it isn't overruled
+        if SE_STARTED.swap(true, Ordering::AcqRel) {
+            return 1;
         }
         let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
         for _ in 0..10 {
@@ -370,6 +375,10 @@ mod imp {
     fn system_events_status() -> Status {
         let known = SE.load(Ordering::Relaxed);
         if known == 0 {
+            // a background read is already on it (System Events starting)
+            if SE_BUSY.load(Ordering::Acquire) {
+                return Status::NotAsked;
+            }
             // the first read is direct, unless System Events must start first
             let r = system_events(false);
             if r != -600 {
@@ -525,7 +534,11 @@ mod imp {
             Perm::SystemEvents => {
                 std::thread::spawn(|| {
                     // the question needs System Events running
-                    let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
+                    // started once per run: a user who quits it isn't overruled
+        if SE_STARTED.swap(true, Ordering::AcqRel) {
+            return 1;
+        }
+        let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
                     std::thread::sleep(std::time::Duration::from_millis(600));
                     // a "Don't Allow" just shows on the row (its button then
                     // opens Settings); opening Settings here took over the screen
