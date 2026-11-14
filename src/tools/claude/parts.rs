@@ -59,14 +59,40 @@ fn reset_short(s: &str) -> String {
     if s.is_empty() { String::new() } else { format!("Resets {s}") }
 }
 
-/// A ring with a tick where even use would be by now.
+/// A thin ring: a faint arc up to where even use would be by now, the
+/// used share on top in the limit's colour. Running ahead of pace shows as
+/// colour past the faint arc; no extra marks.
 pub fn pace_ring(p: &egui::Painter, c: Pos2, r: f32, w: f32, l: &Limit) {
-    crate::kit::tile::ring(p, c, r, w, l.pct / 100.0, limit_color(l));
+    use std::f32::consts::{FRAC_PI_2, TAU};
+    // solid colours mixed over the card, so overlapping caps don't
+    // double up the way translucent strokes would
+    let base = {
+        let [r_, g, b, a] = CARD().to_srgba_unmultiplied();
+        lerp_color(BG(), Color32::from_rgb(r_, g, b), a as f32 / 255.0)
+    };
+    let ink = |k: f32| lerp_color(base, TEXT(), k);
+    stroke_circle(p, c, r, Stroke::new(w, ink(if is_light() { 0.06 } else { 0.08 })));
+    let arc = |f: f32, col: Color32| {
+        let f = f.clamp(0.0, 1.0);
+        if f <= 0.005 {
+            return;
+        }
+        let a0 = -FRAC_PI_2;
+        if f >= 0.999 {
+            stroke_circle(p, c, r, Stroke::new(w, col));
+            return;
+        }
+        let n = ((f * 96.0) as usize).max(4);
+        p.add(Shape::line(arc_points(c, r, a0, a0 + f * TAU, n), Stroke::new(w, col)));
+        for q in [c + Vec2::angled(a0) * r, c + Vec2::angled(a0 + f * TAU) * r] {
+            p.circle_filled(q, w / 2.0, col);
+        }
+    };
     if let Some(pc) = pace::of_limit(l, now()) {
-        let a = -std::f32::consts::FRAC_PI_2 + pc.expected / 100.0 * std::f32::consts::TAU;
-        let d = Vec2::angled(a);
-        p.line_segment([c + d * (r - w / 2.0 - 2.0), c + d * (r + w / 2.0 + 2.0)], Stroke::new(2.0, TEXT()));
+        // lighter in light mode, where the same mix reads almost solid
+        arc(pc.expected / 100.0, ink(if is_light() { 0.18 } else { 0.22 }));
     }
+    arc(l.pct / 100.0, limit_color(l));
 }
 
 /// A thin bar with the even-use tick.
