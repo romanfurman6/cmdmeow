@@ -92,14 +92,22 @@ pub fn blades(p: &Painter, key: &str, c: Pos2, r: f32, rpm: f32, color: Color32,
 /// A work spinner (an open arc of radius `r` around `c`), turning natively
 /// where it can (no frames of ours, smooth even while the app is busy) and
 /// drawn by egui at the animation pace where it can't.
-pub fn arc(p: &Painter, c: Pos2, r: f32, color: Color32) {
+///
+/// Each spinner keeps one layer across passes, named by where it's drawn
+/// from (`at`, the caller's line) and how many that line drew before it this
+/// pass: a spinner that moves (a growing Disk Map bubble, a scrolled row)
+/// keeps its layer, hidden while it moves, instead of a new layer per frame.
+pub fn arc(p: &Painter, c: Pos2, r: f32, color: Color32, at: &'static std::panic::Location<'static>) {
     let ctx = p.ctx();
     let id = ctx.viewport_id();
-    // one layer per spot: a spinner that moves gets a fresh one (egui draws
-    // it meanwhile), the old one goes when it's no longer asked for
-    let spot = egui::Id::NULL.with(("spin-arc", p.layer_id(), (c.x * 2.0).round() as i32, (c.y * 2.0).round() as i32, (r * 2.0).round() as i32));
-    let req = Request { painter: p.clone(), key: format!("arc-{}", spot.value()), center: c, radius: r, look: Look::Arc, color, hub: Color32::TRANSPARENT };
-    PENDING.with(|q| q.borrow_mut().push((id, req)));
+    PENDING.with(|q| {
+        let mut q = q.borrow_mut();
+        let site = egui::Id::NULL.with(("spin-arc", at.file(), at.line(), at.column(), p.layer_id()));
+        let prefix = format!("arc-{}-", site.value());
+        let n = q.iter().filter(|(v, r)| *v == id && r.key.starts_with(&prefix)).count();
+        let req = Request { painter: p.clone(), key: format!("{prefix}{n}"), center: c, radius: r, look: Look::Arc, color, hub: Color32::TRANSPARENT };
+        q.push((id, req));
+    });
 }
 
 /// The arc egui draws for a spinner pointing at `angle`.

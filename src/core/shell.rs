@@ -67,6 +67,8 @@ pub struct App {
     pub app_open: bool,
     /// When the window was asked for (dev log: how long the first frame took).
     pub app_asked: Option<Instant>,
+    /// When the app window (or setup in it) last drew.
+    app_drawn: Option<Instant>,
     app_focus: bool,
     pending_shape: bool,
     screenshot: Option<PathBuf>,
@@ -156,6 +158,7 @@ impl App {
             last_hide: Instant::now(),
             app_open: false,
             app_asked: None,
+            app_drawn: None,
             app_focus: false,
             pending_shape: true,
             screenshot: opts.screenshot,
@@ -643,7 +646,12 @@ impl eframe::App for App {
                 self.detail = None;
             }
         }
-        if (self.app_open || self.setup.is_some() || tools_need_frames) && !self.visible {
+        // the app window is drawn inside the hidden root window's pass; once
+        // it's on screen eframe runs that pass for it anyway. Asking again
+        // every pass was a loop: each ask is itself a repaint request, so a
+        // still window drew 10 times a second
+        let app_drawing = self.app_drawn.is_some_and(|t| t.elapsed().as_millis() < 1500);
+        if ((self.app_open || self.setup.is_some()) && !app_drawing || tools_need_frames) && !self.visible {
             ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
         }
         // background work slows down and stops asking for frames while
@@ -936,6 +944,7 @@ impl App {
         use super::onboard::Finish;
         let mut finish = Finish::No;
         crate::kit::viewport::show(ctx, id, builder, |ui, _class| {
+            self.app_drawn = Some(Instant::now());
             let vctx = ui.ctx().clone();
             if let Some(at) = self.app_asked.take() {
                 if crate::kit::fs::is_dev() {
