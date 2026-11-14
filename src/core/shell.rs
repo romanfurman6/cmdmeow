@@ -945,6 +945,9 @@ impl App {
             }
             if self.app_focus {
                 self.app_focus = false;
+                // a minimized window comes back up when it's asked for (a
+                // no-op otherwise)
+                vctx.send_viewport_cmd(ViewportCommand::Minimized(false));
                 vctx.send_viewport_cmd(ViewportCommand::Focus);
                 crate::kit::native::activate();
             }
