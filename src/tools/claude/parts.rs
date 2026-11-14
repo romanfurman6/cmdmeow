@@ -71,7 +71,7 @@ pub fn pace_ring(p: &egui::Painter, c: Pos2, r: f32, w: f32, l: &Limit) {
         lerp_color(BG(), Color32::from_rgb(r_, g, b), a as f32 / 255.0)
     };
     let ink = |k: f32| lerp_color(base, TEXT(), k);
-    stroke_circle(p, c, r, Stroke::new(w, ink(0.08)));
+    stroke_circle(p, c, r, Stroke::new(w, ink(if is_light() { 0.06 } else { 0.08 })));
     let arc = |f: f32, col: Color32| {
         let f = f.clamp(0.0, 1.0);
         if f <= 0.005 {
@@ -90,7 +90,7 @@ pub fn pace_ring(p: &egui::Painter, c: Pos2, r: f32, w: f32, l: &Limit) {
     };
     if let Some(pc) = pace::of_limit(l, now()) {
         // lighter in light mode, where the same mix reads almost solid
-        arc(pc.expected / 100.0, ink(if is_light() { 0.13 } else { 0.22 }));
+        arc(pc.expected / 100.0, ink(if is_light() { 0.18 } else { 0.22 }));
     }
     arc(l.pct / 100.0, limit_color(l));
 }
