@@ -1158,7 +1158,15 @@ fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(FontFamily::Name("bold".into()), bold_family);
     fonts.families.insert(FontFamily::Name("hero".into()), hero_family);
     ctx.set_fonts(fonts);
-    ctx.set_visuals(if glass::is_light() { egui::Visuals::light() } else { egui::Visuals::dark() });
+    // one look for every window: egui otherwise picks its dark or light style
+    // per window from that window's own appearance (ours are pinned, and
+    // switch one by one), and the two styles render text differently. A
+    // window on the other style made egui rebuild the shared glyph atlas
+    // under the other, which then drew garbled text
+    let (theme, visuals) = if glass::is_light() { (egui::Theme::Light, egui::Visuals::light()) } else { (egui::Theme::Dark, egui::Visuals::dark()) };
+    ctx.set_theme(theme);
+    ctx.set_visuals_of(egui::Theme::Dark, visuals.clone());
+    ctx.set_visuals_of(egui::Theme::Light, visuals);
     ctx.all_styles_mut(|s| {
         s.visuals.panel_fill = Color32::TRANSPARENT;
         s.visuals.window_fill = glass::BG();
