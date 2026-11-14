@@ -379,21 +379,6 @@ fn step_dots(p: &egui::Painter, full: Rect, steps: usize, from: usize, step: usi
     crate::kit::brand::draw_mascot(p, r, cat_color().gamma_multiply(fade), (0.0, twitch(t, HOP + 0.15)));
 }
 
-/// A soft vertical band of `col`, brightest at `x` and `w` wide, inside `clip`.
-fn glow_band(p: &egui::Painter, clip: Rect, x: f32, w: f32, col: Color32) {
-    let p = p.with_clip_rect(clip.intersect(p.clip_rect()));
-    let mut m = egui::Mesh::default();
-    for (xx, c) in [(x - w / 2.0, Color32::TRANSPARENT), (x, col), (x + w / 2.0, Color32::TRANSPARENT)] {
-        m.colored_vertex(Pos2::new(xx, clip.top()), c);
-        m.colored_vertex(Pos2::new(xx, clip.bottom()), c);
-    }
-    m.add_triangle(0, 1, 2);
-    m.add_triangle(1, 3, 2);
-    m.add_triangle(2, 3, 4);
-    m.add_triangle(3, 5, 4);
-    p.add(m);
-}
-
 /// The whole setup screen in `full` (the app window, or the root in screenshots).
 /// Says whether the person finished it.
 pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
