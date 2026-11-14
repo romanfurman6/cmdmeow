@@ -481,6 +481,12 @@ mod native {
             let frame = (clip, c, r);
             let moved = b.frame != Some(frame);
             let fresh_path = b.frame.is_none_or(|f| f.2 != r) || b.turn.is_none();
+            let edge = crate::kit::glass::white(46);
+            // nothing to change: no transaction at all (this runs every pass,
+            // and a commit costs more than the rest of a quiet pass)
+            if !moved && b.colors == Some((color, hub, edge, space_ptr)) && b.turn == Some(turn) && !b.hidden {
+                return Some(true);
+            }
             unsafe {
                 let _: () = msg_send![class!(CATransaction), begin];
                 let _: () = msg_send![class!(CATransaction), setDisableActions: true];
@@ -516,7 +522,6 @@ mod native {
                     }
                     b.frame = Some(frame);
                 }
-                let edge = crate::kit::glass::white(46);
                 // a window moved to another screen gets new colours too
                 if b.colors != Some((color, hub, edge, space_ptr)) {
                     let sp = space.as_deref();

@@ -52,9 +52,16 @@ pub fn sleep_if_invisible_or_minimized(window: Option<&Window>) {
 /// that reacts). Then tessellation and the GPU frame are skipped: the window
 /// keeps showing the same pixels. Still painted at least once a second, so
 /// a window can't stay stale for long whatever macOS did with its layer.
+/// A skipped pass still takes a display frame (see [`LastPaint::pace`]).
 /// `CMDMEOW_PAINT_ALWAYS=1` turns this off.
 #[derive(Default)]
-pub struct LastPaint(Option<(Vec<egui::epaint::ClippedShape>, f32, [u32; 2], Instant)>);
+pub struct LastPaint {
+    shown: Option<(Vec<egui::epaint::ClippedShape>, f32, [u32; 2], Instant)>,
+    /// When the last pass (painted or not) of this viewport ended.
+    last_pass: Option<Instant>,
+    /// The display's refresh rate and when it was looked up.
+    refresh: Option<(u32, Instant)>,
+}
 
 impl LastPaint {
     /// Whether this pass draws what is already on screen (same shapes, scale
@@ -64,9 +71,9 @@ impl LastPaint {
             return false;
         }
         let same = textures_idle
-            && self.0.as_ref().is_some_and(|(s, p, z, at)| at.elapsed().as_secs_f32() < 1.0 && *p == pixels_per_point && *z == size && s.as_slice() == shapes);
+            && self.shown.as_ref().is_some_and(|(s, p, z, at)| at.elapsed().as_secs_f32() < 1.0 && *p == pixels_per_point && *z == size && s.as_slice() == shapes);
         if !same {
-            self.0 = Some((shapes.to_vec(), pixels_per_point, size, Instant::now()));
+            self.shown = Some((shapes.to_vec(), pixels_per_point, size, Instant::now()));
         }
         PAINTS[usize::from(same)].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         same
@@ -74,7 +81,32 @@ impl LastPaint {
 
     /// The window was hidden (or not drawn): paint the next pass whatever it shows.
     pub fn forget(&mut self) {
-        self.0 = None;
+        self.shown = None;
+    }
+
+    /// Call after each pass. A painted pass waits for the display (vsync);
+    /// a skipped one would not, and egui asks for the next pass right away
+    /// while the pointer moves, so passes would run back to back (thousands
+    /// a second). A skipped pass waits out the rest of a display frame
+    /// (`refresh_hz`, looked up every few seconds, 60 when unknown)
+    /// instead, as painting would have.
+    pub fn pace(&mut self, skipped: bool, refresh_hz: impl FnOnce() -> Option<u32>) {
+        if skipped && let Some(last) = self.last_pass {
+            let hz = match self.refresh {
+                Some((hz, at)) if at.elapsed().as_secs() < 3 => hz,
+                _ => {
+                    let hz = refresh_hz().filter(|h| (24..=240).contains(h)).unwrap_or(60);
+                    self.refresh = Some((hz, Instant::now()));
+                    hz
+                }
+            };
+            let frame = core::time::Duration::from_secs_f64(1.0 / f64::from(hz));
+            let gone = last.elapsed();
+            if gone < frame {
+                std::thread::sleep(frame - gone);
+            }
+        }
+        self.last_pass = Some(Instant::now());
     }
 }
 

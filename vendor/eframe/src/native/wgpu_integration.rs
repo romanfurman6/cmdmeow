@@ -828,7 +828,9 @@ impl WgpuWinitRunning<'_> {
             let size = window.inner_size();
             let wants_shot = viewport.actions_requested.iter().any(|a| matches!(a, ActionRequested::Screenshot(_)));
             let same = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], pending_deltas.is_empty());
-            let vsync_secs = if same && !wants_shot {
+            let skip = same && !wants_shot;
+            viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
+            let vsync_secs = if skip {
                 0.0
             } else {
                 let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
@@ -1325,7 +1327,9 @@ fn render_immediate_viewport(
     if !viewport.info.visible().unwrap_or(true) {
         viewport.last_paint.forget();
     }
-    if !viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty()) {
+    let skip = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty());
+    viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
+    if !skip {
         let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
         painter.paint_and_update_textures(
             ids.this,

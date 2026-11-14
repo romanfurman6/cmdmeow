@@ -716,7 +716,7 @@ impl eframe::App for App {
         // CMDMEOW_SELF_SHOT=<dir>: open the panel, then let screencapture
         // (run by the app, so with its Screen Recording permission) save the
         // screen, to check how the panel looks over the desktop
-        if let Some(dir) = std::env::var_os("CMDMEOW_SELF_SHOT") {
+        if let Some(dir) = env_once("CMDMEOW_SELF_SHOT") {
             if self.frame == 60 {
                 self.open_panel(&ctx);
             }
@@ -727,7 +727,7 @@ impl eframe::App for App {
             }
             ctx.request_repaint();
         }
-        if std::env::var_os("CMDMEOW_SCALE_LOG").is_some() {
+        if env_once("CMDMEOW_SCALE_LOG").is_some() {
             // the scale egui renders at, logged when it changes (the panel
             // shown on another display)
             let scale = (ctx.pixels_per_point(), ctx.input(|i| i.viewport().native_pixels_per_point));
@@ -736,7 +736,7 @@ impl eframe::App for App {
                 eprintln!("[scale] ppp {} native {:?} frame {}\n{}", scale.0, scale.1, self.frame, crate::kit::native::debug_windows());
             }
         }
-        if std::env::var("CMDMEOW_DEBUG").is_ok() {
+        if env_once("CMDMEOW_DEBUG").is_some() {
             match self.frame {
                 30 => eprintln!("== start screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
                 120 => eprintln!("== panel screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
@@ -851,6 +851,19 @@ impl eframe::App for App {
         crate::kit::viewport::end_pass();
         crate::kit::repaint_log::end();
     }
+}
+
+/// A debugging switch from the environment, read once: `getenv` locks, and
+/// the pass runs up to the display's rate.
+fn env_once(key: &'static str) -> Option<&'static std::ffi::OsStr> {
+    static VARS: std::sync::Mutex<Vec<(&'static str, Option<&'static std::ffi::OsStr>)>> = std::sync::Mutex::new(Vec::new());
+    let mut v = VARS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, val)) = v.iter().find(|(k, _)| *k == key) {
+        return *val;
+    }
+    let val: Option<&'static std::ffi::OsStr> = std::env::var_os(key).map(|s| &*Box::leak(s.into_boxed_os_str()));
+    v.push((key, val));
+    val
 }
 
 /// macOS: right after launch the app window kept showing its first frames
