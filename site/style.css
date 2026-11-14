@@ -60,8 +60,6 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .reveal { animation: rise .8s cubic-bezier(.22,1,.36,1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } }
 
-.switcher { padding-top: 48px; padding-bottom: 120px; }
-.switcher h2 { font: 500 44px/52px var(--sans); letter-spacing: -.025em; margin: 0 0 40px; }
 
 
 .foot { display: flex; flex-direction: column; gap: 14px; padding-top: 24px; padding-bottom: 40px; border-top: 1px solid var(--hair); color: var(--ink2); font-size: 14px; }
@@ -80,7 +78,6 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
   .awake-mini { position: relative; top: auto; right: auto; bottom: auto; order: 3; width: auto; max-width: 350px; margin: 12px auto 0; padding: 0 16px; box-sizing: content-box; }
   .hero { position: relative; left: auto; top: auto; transform: none; padding: 56px 16px 0; }
   h1 { font-size: 52px; line-height: 56px; }
-  .switcher { padding-top: 40px; padding-bottom: 80px; }
 }
 @media (max-width: 600px) {
   .wrap { padding-left: 16px; padding-right: 16px; }
@@ -92,9 +89,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
   h1 { font-size: 44px; line-height: 48px; }
   .cta .btn { flex: 1 1 100%; justify-content: center; }
   .cta .ver { flex: 1 1 100%; text-align: center; }
-  .switcher h2 { font-size: 34px; line-height: 40px; margin-bottom: 28px; }
   .desk { padding-bottom: 24px; }
-  .switcher { padding-top: 28px; padding-bottom: 56px; }
   .mk .cl { grid-template-columns: 16px 1fr 64px; }
   .mk .cl .trk { display: none; }
 }
@@ -207,14 +202,6 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 
 /* Yours to keep, Install */
 .trust { padding-top: 24px; padding-bottom: 112px; }
-.tl { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
-.tl li { display: flex; align-items: center; gap: 24px; padding: 24px 28px; border-radius: 16px; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px var(--hair); }
-.kc { display: grid; place-items: center; min-width: 96px; height: 84px; padding: 0 18px; border-radius: 18px; font: 500 38px/1 var(--sans); letter-spacing: -.02em; color: var(--lime); background: linear-gradient(180deg, rgba(200,240,90,.16), rgba(200,240,90,.06)); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 0 1px rgba(200,240,90,.28); }
-
-.tl b { font-weight: 500; font-size: 19px; line-height: 26px; }
-.tl .tx { display: flex; flex-direction: column; gap: 4px; min-width: 0; } .tl .tx span { font-size: 15px; line-height: 22px; color: rgba(255,255,255,.6); }
-.kc { flex: none; width: 120px; padding: 0; }
-.tl li.wide { grid-column: 1 / -1; }
 .inst { padding-top: 104px; padding-bottom: 112px; }
 .steps { list-style: none; counter-reset: s; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 36px; }
 .steps li { counter-increment: s; display: flex; flex-direction: column; gap: 8px; padding-top: 18px; border-top: 1px solid var(--hair); }
@@ -226,7 +213,6 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 @media (max-width: 1100px) { .jobs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) {
   .jobs { grid-template-columns: 1fr; gap: 20px; } .mbx .mn, .mbx .clk, .mbx .mi2.bat { display: none; } .mbx .icons { left: 8px; right: 8px; gap: 0; justify-content: center; } .mbx { height: 520px; } .mpn { right: 10px; width: calc(100% - 20px); padding: 10px; } .wgrid { gap: 6px; } .wg { padding: 8px; min-height: 74px; } .wt b { font-size: 12px; } .wt .dm { font-size: 10.5px; letter-spacing: -.01em; text-overflow: clip; } .wbtn { display: none; } .mbx .mi2 { width: 20px; } .mbx .icons .mi2.ap + .mi2.ap { margin-left: 1px; } .mbx .mi2 .i { width: 14px; height: 14px; } .mbx .mi2.sy { display: none; }
-  .tl { grid-template-columns: minmax(0, 1fr); gap: 12px; } .tl li { padding: 18px; gap: 18px; } .tl .tx span { font-size: 14px; line-height: 20px; } .kc { min-width: 0; width: 88px; height: 64px; font-size: 26px; } .tl b { font-size: 15px; }
   .repl h2, .trust h2, .inst h2 { font-size: 34px; line-height: 40px; }
   .repl, .inst { padding-top: 64px; } .inst { padding-bottom: 72px; }
   .hero .sub { font-size: 21px; line-height: 28px; }

@@ -1,5 +1,5 @@
-// Cmd+Meow home page: the live desktop in the first screen, the app window's
-// tour, and the download button on phones.
+// Cmd+Meow home page: the live desktop in the first screen and the download
+// button on phones.
 (() => {
   const $ = id => document.getElementById(id);
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -33,60 +33,6 @@
   if (!still) ['.hero', '.drop'].forEach((s, i) => {
     const el = document.querySelector(s); if (el) { el.classList.add('reveal'); el.style.animationDelay = (i * 0.12) + 's'; }
   });
-
-  // The app window. When it first comes into view it walks through the tools once,
-  // then rests on Cleanup. Pointing at the window or clicking stops the walk for good.
-  const app = $('app');
-  if (app) {
-    const navs = [...app.querySelectorAll('.nv[data-p]')], panes = [...app.querySelectorAll('.pane')];
-    const STEP = 3500;
-    let sel = 0, held = false, timer = 0, started = false;
-    const show = i => {
-      sel = i; const key = navs[i].dataset.p;
-      navs.forEach((b, k) => { b.classList.toggle('on', k === i); b.setAttribute('aria-pressed', k === i); });
-      panes.forEach(p => { const on = p.dataset.p === key; p.hidden = !on; p.classList.toggle('on', on); });
-      const row = navs[i].parentElement; // on phones the tabs scroll sideways: keep the picked one in view
-      if (row.scrollWidth > row.clientWidth) row.scrollTo({ left: navs[i].offsetLeft - row.offsetLeft - 12, behavior: 'smooth' });
-    };
-    const mark = i => { navs.forEach(b => b.classList.remove('tick')); if (i >= 0) { void navs[i].offsetWidth; navs[i].classList.add('tick'); } };
-    const stop = () => { held = true; clearTimeout(timer); mark(-1); };
-    const step = () => {
-      if (held) return;
-      if (document.hidden) { timer = setTimeout(step, 500); return; }
-      const next = sel + 1;
-      if (next === navs.length) { show(0); mark(-1); held = true; return; }
-      show(next); mark(next); timer = setTimeout(step, STEP);
-    };
-    app.style.setProperty('--tick', STEP + 'ms');
-    navs.forEach((b, i) => b.addEventListener('click', () => { stop(); show(i); }));
-    // play.js: anything done inside the window stops the walk; other parts can open a tool
-    app.addEventListener('pointerdown', stop);
-    app.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') stop(); });
-    app.addEventListener('focusin', stop);
-    window.cmShow = key => { const i = navs.findIndex(b => b.dataset.p === key); if (i >= 0) { stop(); show(i); } };
-    if (!still) new IntersectionObserver((es, io) => {
-      if (!es[0].isIntersecting || started || held) return;
-      started = true; io.disconnect(); mark(0); timer = setTimeout(step, STEP);
-    }, { threshold: 0.4 }).observe(app);
-
-    // Live numbers inside the window
-    const live = seen(app);
-    const hb = $('hc-bars'), hc = $('hc-cpu'), leg = $('hc-leg'), sbr = $('sb-rpm');
-    let hl = 16;
-    const fanTick = still => {
-      const avg = window.cmFanDraw ? window.cmFanDraw(hl, still) : 1900 + hl * 20;
-      if (sbr) sbr.textContent = Math.round(avg).toLocaleString('en-US').replace(',', ' ');
-    };
-    window.cmFanTick = () => fanTick(true);
-    if (!still) setInterval(() => {
-      if (!live()) return;
-      hl = Math.max(6, Math.min(70, hl + (Math.random() - 0.5) * 12));
-      if (hb) { const b = hb.firstElementChild; hb.appendChild(b); const h = 30 + hl; b.style.height = h + '%'; b.className = h > 90 ? 'hot' : ''; }
-      if (hc) hc.textContent = Math.round(hl);
-      fanTick();
-      if (leg) { const u = Math.round(hl * 0.7); leg.innerHTML = `User ${u}%&nbsp;&nbsp; System ${Math.round(hl) - u}%&nbsp;&nbsp; Idle ${100 - Math.round(hl)}%`; }
-    }, 900);
-  }
 
   if (still) return;
 
