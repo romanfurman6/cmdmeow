@@ -320,7 +320,7 @@ impl App {
                 return;
             }
             // first-run setup, one step each
-            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
+            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
@@ -330,8 +330,8 @@ impl App {
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
-                    // AI Usage on: Claude Code's sign-in row shows on the permissions step
-                    let on = super::onboard::ON_AT_FIRST.contains(&id) || (all && more.contains(&id)) || (view == "setup-models" && id == crate::tools::dictation::ID) || (view == "setup-perms" && id == crate::tools::claude::ID);
+                    // AI Usage on: the Sign-ins step (3a) shows
+                    let on = super::onboard::ON_AT_FIRST.contains(&id) || (all && more.contains(&id)) || (view == "setup-models" && id == crate::tools::dictation::ID) || (view == "setup-signins" && id == crate::tools::claude::ID);
                     self.set_tool_on(i, on);
                 }
                 // which steps exist depends on the tools just switched on

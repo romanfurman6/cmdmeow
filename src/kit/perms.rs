@@ -18,8 +18,7 @@ pub enum Perm {
     Bluetooth,
     Notifications,
     /// A tool's own setup step, e.g. Fan Control's privileged helper.
-    /// `why` and `ask` as for the system ones; `hint` shows while it waits.
-    Own { id: &'static str, name: &'static str, icon: Icon, why: &'static str, ask: &'static str, hint: &'static str },
+    Own { id: &'static str, name: &'static str, icon: Icon },
 }
 
 /// One thing a tool needs. `optional`: the tool works without it, only a
@@ -91,7 +90,7 @@ impl Perm {
             Perm::Camera => "Camera in recordings",
             Perm::Bluetooth => "AirPods and device batteries",
             Perm::Notifications => "Alerts from your tools",
-            Perm::Own { why, .. } => why,
+            Perm::Own { .. } => "",
         }
     }
 
@@ -99,7 +98,7 @@ impl Perm {
     pub fn ask_label(self) -> &'static str {
         match self {
             Perm::FullDisk => "Open Settings",
-            Perm::Own { ask, .. } => ask,
+            Perm::Own { .. } => "Install",
             _ => "Allow",
         }
     }

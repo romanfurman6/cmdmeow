@@ -21,6 +21,9 @@ enum Kind {
     Welcome,
     Tools,
     Agents,
+    /// 3a, right after Agents (no dot of its own): the picked agents whose
+    /// sign-in is in the Keychain, each asked for on a click.
+    SignIns,
     Models,
     Perms,
     Crash,
@@ -31,6 +34,9 @@ enum Kind {
 /// builds (screenshots show it too).
 fn kinds(app: &App) -> Vec<Kind> {
     let mut v = vec![Kind::Welcome, Kind::Tools, Kind::Agents];
+    if has_sign_ins(app) {
+        v.push(Kind::SignIns);
+    }
     // only when an enabled tool needs a download (Dictation's speech model)
     // or already has one; models fetched on first use don't count
     if has_models_step(app) {
@@ -49,6 +55,7 @@ pub fn view_step(app: &App, view: &str) -> usize {
     let k = match view {
         "setup-tools" | "setup-tools-all" | "setup-tools-preview" => Kind::Tools,
         "setup-ai" => Kind::Agents,
+        "setup-signins" => Kind::SignIns,
         "setup-models" => Kind::Models,
         "setup-perms" => Kind::Perms,
         "setup-crash" => Kind::Crash,
@@ -440,7 +447,10 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
     let from = app.setup.as_ref().map(|s| s.from).unwrap_or(step).min(steps - 1);
-    step_dots(&p, full, steps, from, step, t);
+    // Sign-ins is 3a: it shares the Agents dot
+    let dot = |i: usize| kinds[..=i].iter().filter(|k| **k != Kind::SignIns).count() - 1;
+    let dots = kinds.iter().filter(|k| **k != Kind::SignIns).count();
+    step_dots(&p, full, dots, dot(from), dot(step), t);
     let body = Rect::from_min_max(Pos2::new(full.left() + 40.0, full.top() + TOP_H), Pos2::new(full.right() - 40.0, full.bottom() - BOTTOM_H));
     // the step slides in from the side it comes from
     let side = if from > step { -1.0 } else { 1.0 };
@@ -452,6 +462,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         Kind::Welcome => next = welcome(app, ui, body, t),
         Kind::Tools => tools(app, ui, body, t),
         Kind::Agents => agents(app, ui, body, t),
+        Kind::SignIns => sign_ins(app, ui, body, t),
         Kind::Models => models_step(app, ui, body, t),
         Kind::Perms => permissions_step(app, ui, body, t, now),
         Kind::Crash => next = crash_step(app, ui, body, t),
@@ -469,7 +480,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let label = match kind {
         // these steps have their own buttons
         Kind::Welcome | Kind::Crash => None,
-        Kind::Tools | Kind::Agents | Kind::Models | Kind::Perms => Some("Continue"),
+        Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some("Continue"),
         Kind::Ready if needs_restart(app) => Some("Restart and open"),
         Kind::Ready => Some("Open panel"),
     };
@@ -498,7 +509,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // setup is an immediate window drawn in the (hidden) root's pass: ask
     // the root for the frames too, or after a click the window kept showing
     // the old step until it was resized (first launch, M1)
-    let animating = (seen && t < 2.5) || app.perm_watch.busy(now) || next;
+    let animating = (seen && t < 2.5) || app.perm_watch.busy(now) || (kind == Kind::SignIns && crate::tools::claude::keychain::busy()) || next;
     if !seen && t < 2.5 {
         // waiting to be seen: look again soon, without drawing flat out
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -1510,6 +1521,86 @@ fn rolling_count(p: &egui::Painter, left_bottom: Pos2, shown: f32, total: usize)
     p.text(Pos2::new(cell.right(), left_bottom.y), Align2::LEFT_BOTTOM, format!("/{total}"), f, TEXT_FAINT());
 }
 
+/// Step 3a exists: AI Usage is on and a picked agent (Main or Track) keeps
+/// its sign-in in the Keychain. Only Claude Code does; Codex and Gemini
+/// keep theirs in files, read without asking.
+fn has_sign_ins(app: &App) -> bool {
+    let usage_on = (0..app.tools.len()).any(|i| app.tools[i].id() == crate::tools::claude::ID && app.tool_on(i));
+    usage_on && crate::tools::claude::keychain::wanted(app.demo)
+}
+
+/// Step 3a: Keychain sign-ins of the picked agents, so AI Usage shows
+/// limits from their accounts. Nothing is read before Allow is pressed;
+/// then macOS asks (Allow / Always Allow / Deny).
+fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
+    use crate::kit::perms::Status;
+    use crate::tools::claude::keychain;
+    let p = ui.painter().clone();
+    let ctx = ui.ctx().clone();
+    let now = ctx.input(|i| i.time);
+    keychain::refocus(&ctx);
+    let w = body.width().min(560.0);
+    let x = body.center().x - w / 2.0;
+    let g = p.text(Pos2::new(x, body.top() + 6.0), Align2::LEFT_TOP, "Sign-ins", bold(22.0), TEXT());
+    let sub = text_wrap(&p, Pos2::new(x, g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "AI Usage shows plan limits from your account. macOS asks to share the sign-in.", ty::body(), TEXT_DIM(), w, 3);
+    let a = ease(t / 0.4);
+    let card = Rect::from_min_size(Pos2::new(x, sub.bottom() + sp::XL + (1.0 - a) * 8.0), Vec2::new(w, sp::ROW_H));
+    glass_card(&p, card, R_CARD, 0.0, false);
+    let r = card;
+    // one row per agent; today only Claude Code keeps it in the Keychain
+    let ib = Rect::from_min_size(Pos2::new(r.left() + sp::L, r.center().y - 15.0), Vec2::splat(30.0));
+    let st = if app.demo { Status::NotAsked } else { keychain::status() };
+    let tint = match st {
+        Status::Allowed => GREEN(),
+        Status::Denied => AMBER(),
+        Status::NotAsked => TEXT_SOFT(),
+    };
+    p.rect_filled(ib, 8.0, white(16));
+    icon(&p, Icon::Lock, ib.shrink(7.0), tint);
+    let name = p.text(Pos2::new(ib.right() + 12.0, r.center().y), Align2::LEFT_CENTER, "Claude Code", ty::title(), TEXT());
+    let right = r.right() - sp::L;
+    let busy = !app.demo && keychain::busy();
+    let err = if app.demo { String::new() } else { keychain::error() };
+    // the status keeps its room; the item's name fills what's left
+    let mut status_left = right;
+    if st == Status::Allowed {
+        let since = ctx.data(|d| d.get_temp::<f64>(egui::Id::new("signin-ok"))).unwrap_or(now - 10.0);
+        check_drawn(&p, Pos2::new(right - 13.0, r.center().y), 12.0, GREEN(), ease(((now - since) / 0.35) as f32));
+        status_left = right - 26.0;
+    } else if busy {
+        let c = Pos2::new(right - 8.0, r.center().y);
+        spinner(&p, c, 6.0, now, BLUE());
+        let h = p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, "Choose Always Allow", font(12.0), TEXT_FAINT());
+        status_left = h.left();
+    } else {
+        let label = if st == Status::Denied || !err.is_empty() { "Try again" } else { "Allow" };
+        let bw = button_width(&p, label, BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - 13.0), Vec2::new(bw, 26.0));
+        if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() && !app.demo {
+            keychain::connect(Some(ctx.clone()));
+        }
+        status_left = b.left();
+        if !err.is_empty() {
+            let e = p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, err.clone(), font(12.0), RED());
+            status_left = e.left();
+        }
+    }
+    let item_w = status_left - sp::M - (name.right() + sp::M);
+    if busy || !err.is_empty() {
+        // the hint or the error says enough
+    } else if item_w > 80.0 {
+        text_fit(&p, Pos2::new(name.right() + sp::M, r.center().y), Align2::LEFT_CENTER, "Keychain · Claude Code-credentials", font(12.0), TEXT_FAINT(), item_w);
+    }
+    // the check pops once when it turns allowed while shown
+    let id = egui::Id::new("signin-ok");
+    let was = ctx.data(|d| d.get_temp::<bool>(id.with("was"))).unwrap_or(st == Status::Allowed);
+    if st == Status::Allowed && !was {
+        ctx.data_mut(|d| d.insert_temp(id, now));
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(id.with("was"), st == Status::Allowed));
+}
+
 fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     use crate::kit::ai::{self, settings};
     let p = ui.painter().clone();
@@ -1832,7 +1923,6 @@ fn ring_ears(p: &egui::Painter, c: Pos2, z: f32, col: Color32) {
 /// The permission rows (setup and Settings › General). Returns the height used.
 pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, now: f64) -> f32 {
     let p = ui.painter().clone();
-    crate::tools::claude::keychain::refocus(ui.ctx());
     let mut y = area.top();
     let mut opt_head = false;
     // rows shrink a little when the list wouldn't fit (8 permissions + Optional)
@@ -1892,7 +1982,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
             // a tool's own step (an admin prompt, a download) isn't in System Settings
             let hint = match r.perm {
                 Perm::FullDisk => "Switch it on in System Settings",
-                Perm::Own { hint, .. } => hint,
+                Perm::Own { .. } => "",
                 _ => "System Settings",
             };
             // macOS asks right here; Settings isn't involved
@@ -1901,9 +1991,6 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         } else {
             let err = app.perm_watch.own_err.get(&r.perm).filter(|e| !e.is_empty());
             let (label, kind) = if err.is_some() {
-                ("Try again", BTN_SECONDARY)
-            } else if st == Status::Denied && matches!(r.perm, Perm::Own { .. }) {
-                // a tool's own step has no System Settings pane: ask again
                 ("Try again", BTN_SECONDARY)
             } else if st == Status::Denied {
                 ("Open Settings", BTN_SECONDARY)

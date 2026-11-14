@@ -18,18 +18,9 @@ use egui::{Rect, Ui};
 pub const ID: ToolId = "claude";
 const LIMITS: &str = "limits";
 
-/// Claude Code's sign-in in the Keychain: setup's permission row and
-/// Settings › AI Usage ask for it; nothing reads it before that.
-pub const KEYCHAIN: crate::kit::perms::Perm = crate::kit::perms::Perm::Own {
-    id: "claude-keychain",
-    name: "Claude Code sign-in",
-    icon: Icon::Lock,
-    why: "Claude limits in AI Usage",
-    ask: "Allow",
-    hint: "Choose Always Allow",
-};
-
-/// Connecting to Claude Code's sign-in (the macOS prompt is up while busy).
+/// Connecting to Claude Code's sign-in in the Keychain (setup's Sign-ins
+/// step and Settings › AI Usage; nothing reads it before that). The macOS
+/// prompt is up while busy.
 pub mod keychain {
     use crate::kit::ai::{self, claude::Connect};
     use crate::kit::sync::LockExt;
@@ -120,12 +111,11 @@ pub mod keychain {
 pub struct Claude {
     all: backend::All,
     demo: bool,
-    ctx: egui::Context,
 }
 
 impl Claude {
     pub fn new(env: &ToolEnv) -> Self {
-        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, ctx: env.ctx.clone() }
+        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo }
     }
 }
 
@@ -197,28 +187,6 @@ impl Tool for Claude {
     }
     fn has_page(&self) -> bool {
         true
-    }
-    fn needs(&self) -> Vec<crate::kit::perms::Need> {
-        if keychain::wanted(self.demo) {
-            vec![crate::kit::perms::Need::may(KEYCHAIN)]
-        } else {
-            Vec::new()
-        }
-    }
-    fn own_status(&self, id: &str) -> crate::kit::perms::Status {
-        if id == "claude-keychain" && !self.demo {
-            keychain::status()
-        } else {
-            crate::kit::perms::Status::NotAsked
-        }
-    }
-    fn own_progress(&self, id: &str) -> Option<(bool, String)> {
-        (id == "claude-keychain").then(|| (keychain::busy(), keychain::error()))
-    }
-    fn ask_own(&mut self, id: &str) {
-        if id == "claude-keychain" && !self.demo {
-            keychain::connect(Some(self.ctx.clone()));
-        }
     }
     fn sidebar_meta(&self) -> String {
         self.menu_bar().unwrap_or_default()
