@@ -714,7 +714,6 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         icon(&p, Icon::Shield, mark.shrink(20.0 * z), BLUE());
     }
     let q = p.text(Pos2::new(c.x, c.y + 62.0), Align2::CENTER_TOP, "Send crash reports?", bold(22.0), TEXT());
-    p.text(Pos2::new(c.x, q.bottom() + sp::LINE_GAP), Align2::CENTER_TOP, "They help fix bugs faster. Your personal data stays on your Mac.", font(13.0), TEXT_FAINT());
     // what a report has, and what it never has
     let facts: [(bool, &str); 3] = [(true, "What went wrong and where in the app"), (true, "App and macOS version"), (false, "Files, names or IP address")];
     let w = 400.0;
@@ -1831,9 +1830,8 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let x = body.center().x - w / 2.0;
     let head = body.top() + 6.0;
     let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, "Download models", bold(22.0), TEXT());
-    let sub = text_wrap(&p, Pos2::new(x, g.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, "They run on this Mac. Each one says which tool uses it. The download keeps going if you continue.", ty::body(), TEXT_DIM(), w, 3);
     let list = models(app);
-    let mut y = sub.bottom() + sp::XL;
+    let mut y = g.bottom() + sp::XL;
     let mut start: Option<(usize, &'static str)> = None;
     for (k, row) in list.iter().enumerate() {
         let (m, i) = (&row.model, row.tools[0].0);

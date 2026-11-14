@@ -284,17 +284,15 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
 }
 
-/// The start screen before the first scan: what the scan finds, and Scan for
+/// The start screen before the first scan: what the tool does, and Scan for
 /// apps. Returns true when it was clicked.
 fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     let p = ui.painter().clone();
     let c = area.center() - Vec2::new(0.0, 40.0);
     tool_chip(&p, Rect::from_center_size(c - Vec2::new(0.0, 70.0), Vec2::splat(64.0)), Icon::AppRemove, TINT());
     p.text(Pos2::new(c.x, c.y - 18.0), Align2::CENTER_CENTER, "Remove apps and what they leave behind", bold(18.0), TEXT());
-    let w = area.width().min(440.0);
-    text_wrap(&p, Pos2::new(c.x, c.y + 6.0), Align2::CENTER_TOP, "The scan lists your apps with their size and files, and finds data left by apps that are gone. Nothing is removed until you choose.", ty::body(), TEXT_DIM(), w, 3);
     let btn = Vec2::new(200.0, 44.0);
-    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 104.0), btn);
+    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 20.0 + sp::XXL), btn);
     let resp = ui.interact(br, ui.scope_id().with("un-fresh-scan"), Sense::click());
     let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
     liquid_capsule(&p, br, Some(BLUE()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
@@ -302,7 +300,7 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    p.text(Pos2::new(c.x, br.bottom() + 22.0), Align2::CENTER_CENTER, "Or drop an app on this window to remove it", font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(c.x, br.bottom() + 22.0), Align2::CENTER_CENTER, "Or drop an app here", font(12.0), TEXT_FAINT());
     resp.clicked()
 }
 

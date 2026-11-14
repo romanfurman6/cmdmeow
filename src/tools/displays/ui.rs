@@ -227,24 +227,12 @@ fn empty(ui: &mut Ui, p: &egui::Painter, r: Rect, color: Color32) {
     p.circle_filled(c, 34.0, white(12));
     icon(p, Icon::Display, Rect::from_center_size(c, Vec2::splat(30.0)), lift(color));
     p.text(c + Vec2::new(0.0, 56.0), Align2::CENTER_CENTER, "No external display", bold(15.0), TEXT());
-    let w = (r.width() - 48.0).min(380.0);
-    let h = paragraph_centered(p, c + Vec2::new(0.0, 80.0), "Connect a monitor over USB-C, DisplayPort or HDMI. Its brightness and speaker volume show up here, and your Mac's keys control them.", font(13.0), TEXT_DIM(), w);
     let label = "Display Settings";
     let bw = button_width(p, label, BTN_SECONDARY);
-    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 80.0 + h + 30.0), Vec2::new(bw, 30.0));
+    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 56.0 + 40.0), Vec2::new(bw, 30.0));
     if pill_button(ui, br, label, BTN_SECONDARY, true).clicked() {
         let _ = std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.Displays-Settings.extension").spawn();
     }
-}
-
-/// `text` wrapped to `w` and centred under `top`; returns its height.
-fn paragraph_centered(p: &egui::Painter, top: Pos2, text: &str, f: egui::FontId, col: Color32, w: f32) -> f32 {
-    let mut job = egui::text::LayoutJob::simple(text.to_string(), f, col, w);
-    job.halign = egui::Align::Center;
-    let g = p.layout_job(job);
-    let h = g.size().y;
-    p.galley(Pos2::new(top.x, top.y), g, col);
-    h
 }
 
 // ---------------------------------------------------------------- the level after a key

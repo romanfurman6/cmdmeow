@@ -932,8 +932,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - 210.0, ly - 12.0), Pos2::new(card.right() - 12.0, ly + 12.0)), id.with("link"), &["Public", "Expires in 7 days"], (s.link == LinkKind::Week) as usize) {
         s.link = if i == 1 { LinkKind::Week } else { LinkKind::Public };
     }
-    let h = paragraph(&p, Pos2::new(x0, card.bottom() + 10.0), "Any S3-compatible storage: Hetzner, Cloudflare R2, AWS, MinIO. Public links never expire; their names are random.", font(12.0), TEXT_FAINT(), colw);
-    y = card.bottom() + 10.0 + h + 24.0;
+    y = card.bottom() + 24.0;
     p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Folders", bold(15.0), TEXT());
     let fcard = card_rows(&p, x0, y + 28.0, colw, 2);
     for (k, (ico, l)) in [(Icon::Crop, "Screenshots"), (Icon::Camera, "Videos")].into_iter().enumerate() {
@@ -943,7 +942,6 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     }
     field(ui, frect(fcard, 0), &mut shot.folder, SHOT_FOLDER, false);
     field(ui, frect(fcard, 1), &mut s.folder, VIDEO_FOLDER, false);
-    paragraph(&p, Pos2::new(x0, fcard.bottom() + 10.0), "Upload on save and copying the link are switched in Screenshot and Video settings.", font(12.0), TEXT_FAINT(), colw);
     if s != c.settings.share || shot != c.settings.shot_share {
         c.settings.share = s;
         c.settings.shot_share = shot;
