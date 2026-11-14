@@ -79,6 +79,8 @@ pub struct App {
     /// on its first frames macOS can still hand focus back to the app that
     /// was in front before the menu bar click.
     app_focus_until: Option<Instant>,
+    /// The app window closed: when its Dock icon goes.
+    dock_off_at: Option<Instant>,
     /// The panel waits for the app window to take focus before it hides;
     /// hiding it first left the app with no window, so macOS activated the
     /// previous app and the new window opened behind it.
@@ -182,6 +184,7 @@ impl App {
             theme_checked: None,
             app_focus: false,
             app_focus_until: None,
+            dock_off_at: None,
             panel_hide_after_open: None,
             pending_shape: true,
             screenshot: opts.screenshot,
@@ -745,6 +748,17 @@ impl eframe::App for App {
         // neither the panel nor the window is on screen (a tool's own small
         // windows, like a pinned capture, show none of it); this heartbeat
         // still runs the ticks and keeps the menu-bar title current
+        if let Some(at) = self.dock_off_at {
+            const DOCK_OFF_AFTER: std::time::Duration = std::time::Duration::from_millis(300);
+            if self.app_open {
+                self.dock_off_at = None;
+            } else if at.elapsed() >= DOCK_OFF_AFTER {
+                self.dock_off_at = None;
+                crate::kit::native::set_dock_icon(false);
+            } else {
+                ctx.request_repaint_after(DOCK_OFF_AFTER - at.elapsed());
+            }
+        }
         let on_screen = self.visible || self.app_open || self.setup.is_some();
         crate::kit::activity::set_visible(on_screen);
         if !on_screen {
@@ -1090,7 +1104,9 @@ impl App {
             if vctx.input(|i| i.viewport().close_requested()) {
                 // closing during setup only hides it: the menu bar brings it back
                 self.app_open = false;
-                crate::kit::native::set_dock_icon(false);
+                // the Dock icon goes a moment later: dropping it while macOS
+                // still flashes the menu title (⌘W) left "Window" highlighted
+                self.dock_off_at = Some(Instant::now());
                 return;
             }
             crate::kit::native::apply_glass(16.0);
