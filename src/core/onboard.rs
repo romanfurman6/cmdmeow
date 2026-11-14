@@ -398,7 +398,10 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let steps = kinds.len();
     let step = step.min(steps - 1);
     let kind = kinds[step];
-    if app.perm_watch.take_refocus() && !app.demo {
+    // `|` not `||`: both flags are read once and must both be cleared
+    let answered = Perm::take_answered();
+    if (app.perm_watch.take_refocus() | answered) && !app.demo {
+        app.perm_watch.polled = 0.0;
         crate::kit::native::activate();
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
