@@ -37,9 +37,17 @@ impl Tool for Sharing {
     fn about(&self) -> &'static str {
         "Uploads screenshots and recordings to your own storage and copies a link"
     }
-    fn sidebar_meta(&self) -> String {
+    fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
-        if c.settings.share.set_up(super::share::VIDEO_ACCOUNT) { String::new() } else { "Set up".into() }
+        c.settings.shortcut(Command::Share).map(|s| vec![("Share last capture", s.display())]).unwrap_or_default()
+    }
+    /// Its shortcut, like Screenshot and Video (before storage is set up
+    /// the shortcut opens Sharing).
+    fn sidebar_meta(&self) -> String {
+        key(&self.0.borrow(), Command::Share)
+    }
+    fn set_on(&mut self, on: bool) {
+        self.0.borrow_mut().set_share_on(on);
     }
     fn has_page(&self) -> bool {
         true

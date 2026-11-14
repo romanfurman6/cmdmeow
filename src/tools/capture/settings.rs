@@ -18,10 +18,12 @@ pub enum Command {
     Ruler,
     History,
     Record,
+    /// Upload the newest screenshot or recording and copy its link.
+    Share,
 }
 
 impl Command {
-    pub const ALL: [Command; 9] = [Command::Area, Command::Window, Command::Screen, Command::Delayed, Command::Text, Command::Color, Command::Ruler, Command::History, Command::Record];
+    pub const ALL: [Command; 10] = [Command::Area, Command::Window, Command::Screen, Command::Delayed, Command::Text, Command::Color, Command::Ruler, Command::History, Command::Record, Command::Share];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -34,6 +36,7 @@ impl Command {
             Command::Ruler => "Measure (ruler)",
             Command::History => "Open history",
             Command::Record => "Record the screen",
+            Command::Share => "Share the last capture",
         }
     }
 
@@ -49,6 +52,7 @@ impl Command {
             Command::Ruler => "ruler",
             Command::History => "history",
             Command::Record => "record",
+            Command::Share => "share",
         }
     }
 
@@ -57,8 +61,11 @@ impl Command {
     }
 
     /// Shortcut on first launch. ⌘⇧3/4/5 belong to macOS, so they're avoided.
+    /// Every ⇧⌘ digit is taken, and ⇧⌘L is Finder's Downloads, so Share
+    /// adds ⌥: ⌥⇧⌘L ("link").
     pub fn default_shortcut(self) -> Option<Shortcut> {
         let key = match self {
+            Command::Share => return Some(Shortcut { cmd: true, shift: true, alt: true, ctrl: false, key: "L".into() }),
             Command::Screen => "1",
             Command::Area => "2",
             Command::Window => "6",
@@ -386,6 +393,16 @@ mod tests {
         let t = chrono::Local.with_ymd_and_hms(2026, 11, 8, 17, 41, 12).unwrap();
         assert_eq!(Settings::default().file_name(t), "Capture 2026-11-08 at 17.41.12.png");
         assert_eq!(Settings::recording_name(t), "Recording 2026-11-08 at 17.41.12.mp4");
+    }
+
+    #[test]
+    fn share_has_its_own_default_keys() {
+        let s = Settings::default();
+        assert_eq!(s.shortcut(Command::Share).unwrap().display(), "⌥⇧⌘L");
+        // existing users get it after the update
+        let mut old = Settings::default();
+        old.shortcuts.retain(|(c, _)| *c != Command::Share);
+        assert_eq!(old.sanitize().shortcut(Command::Share).unwrap().display(), "⌥⇧⌘L");
     }
 
     #[test]

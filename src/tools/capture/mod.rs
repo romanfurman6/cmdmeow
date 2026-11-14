@@ -160,6 +160,8 @@ pub struct Capture {
     /// Which of the two tools are on: Screenshot (`shot_on`) and Video.
     shot_on: bool,
     video_on: bool,
+    /// The Sharing tool is on: its shortcut is registered.
+    share_on: bool,
     /// Recording a new shortcut for this command.
     recording: Option<Command>,
     filter: usize,
@@ -236,6 +238,7 @@ impl Capture {
             vtab: VTab::Recordings,
             shot_on: true,
             video_on: true,
+            share_on: true,
             recording: None,
             filter: 0,
             confirm_clear: None,
@@ -262,10 +265,19 @@ impl Capture {
 
     /// Register the shortcuts from settings (not while one is being recorded).
     fn apply_keys(&mut self) {
-        let (shot, video) = (self.shot_on, self.video_on);
+        let (shot, video, share) = (self.shot_on, self.video_on, self.share_on);
         if let Some(k) = &mut self.keys {
             // only the keys of the tools that are on
-            let bound: Vec<_> = self.settings.bound().into_iter().filter(|(c, _)| if *c == Command::Record { video } else { shot }).collect();
+            let bound: Vec<_> = self
+                .settings
+                .bound()
+                .into_iter()
+                .filter(|(c, _)| match c {
+                    Command::Record => video,
+                    Command::Share => share,
+                    _ => shot,
+                })
+                .collect();
             self.key_errors = k.apply(&bound);
         }
     }
@@ -289,7 +301,7 @@ impl Capture {
             Tool::set_on(self, true);
         }
         if shot == Some(false) {
-            self.queue.retain(|(c, _)| *c == Command::Record);
+            self.queue.retain(|(c, _)| matches!(c, Command::Record | Command::Share));
             self.countdown = None;
             self.preview = None;
             self.pins.clear();
@@ -377,6 +389,7 @@ impl Capture {
                 self.rec.folder = self.settings.folder.clone();
                 self.rec.begin(&self.settings.rec);
             }
+            Command::Share => self.share_last(cx),
         }
     }
 
@@ -457,6 +470,45 @@ impl Capture {
                 self.hud("Link copied");
             }
             None => self.share(path),
+        }
+    }
+
+    /// Turn the Sharing tool's shortcut on or off.
+    fn set_share_on(&mut self, on: bool) {
+        self.share_on = on;
+        if !on {
+            self.queue.retain(|(c, _)| *c != Command::Share);
+        }
+        if self.recording.is_none() {
+            self.apply_keys();
+        }
+    }
+
+    /// The newest capture as a file: a recording's video, or a
+    /// screenshot's history PNG.
+    fn last_capture(&self) -> Option<PathBuf> {
+        let s = self.store.shots.first()?;
+        let path = if s.kind == Kind::Recording { s.saved.clone()? } else { self.store.path(s.id) };
+        path.exists().then_some(path)
+    }
+
+    /// The Sharing shortcut: copy the newest capture's link, uploading it
+    /// first if needed. Without storage it opens Sharing to set it up.
+    fn share_last(&mut self, cx: &mut Cx) {
+        if !self.settings.share.set_up(share::VIDEO_ACCOUNT) {
+            cx.open_page(SHARING_ID, "");
+            return;
+        }
+        match self.last_capture() {
+            Some(path) if self.uploads.progress(&path).is_some() => self.hud("Uploading…"),
+            Some(path) => {
+                let known = share::link_for(&path).is_some();
+                self.copy_link(path);
+                if !known {
+                    self.hud("Uploading…");
+                }
+            }
+            None => self.hud("Nothing to share yet"),
         }
     }
 

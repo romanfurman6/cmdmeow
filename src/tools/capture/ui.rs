@@ -26,6 +26,7 @@ pub fn command_icon(c: Command) -> Ico {
         Command::Ruler => Ico::Ruler,
         Command::History => Ico::History,
         Command::Record => Ico::Record,
+        Command::Share => Ico::Link,
     }
 }
 
@@ -40,6 +41,7 @@ const MODES: [(Command, &str); 3] = [(Command::Area, "Area"), (Command::Window, 
 /// The shortcuts each tool's settings list.
 const SHOT_KEYS: [Command; 8] = [Command::Area, Command::Window, Command::Screen, Command::Delayed, Command::Text, Command::Color, Command::Ruler, Command::History];
 const VIDEO_KEYS: [Command; 1] = [Command::Record];
+const SHARE_KEYS: [Command; 1] = [Command::Share];
 
 /// The Capture widget at `size`.
 pub fn widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
@@ -865,7 +867,8 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
 
 /// The Sharing page: the one storage, a folder for screenshots and one for
 /// videos, and everything shared so far.
-pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
+pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    record_keys(c, ui, cx);
     use super::share::{secret, LinkKind, SHOT_FOLDER, VIDEO_ACCOUNT, VIDEO_FOLDER};
     let p = ui.painter().clone();
     let shared = super::share::all();
@@ -974,6 +977,8 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         c.settings.shot_share = shot;
         c.save_settings();
     }
+    let ky = fcard.bottom() + 24.0;
+    shortcut_card(c, ui, &p, Rect::from_min_max(Pos2::new(x0, ky), Pos2::new(x0 + colw, body.bottom())), &SHARE_KEYS);
 
     // right: what's been shared
     let rx = x0 + colw + gap;
@@ -1087,6 +1092,23 @@ fn record_keys(c: &mut Capture, ui: &mut Ui, cx: &mut Cx) {
 
 /// Returns the bottom of what it drew.
 fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &[Command]) -> f32 {
+    let bottom = shortcut_card(c, ui, p, col, list);
+    let ny = bottom + 10.0;
+    let x0 = col.left();
+    icons::draw(p, Ico::Keyboard, Rect::from_min_size(Pos2::new(x0 + 2.0, ny), Vec2::splat(14.0)), TEXT_FAINT());
+    let h = paragraph(
+        p,
+        Pos2::new(x0 + 22.0, ny),
+        "⌘⇧3, ⌘⇧4 and ⌘⇧5 belong to macOS. Pick one of them and you get a warning; turn the macOS one off in System Settings › Keyboard first.",
+        font(12.0),
+        TEXT_DIM(),
+        col.width() - 24.0,
+    );
+    ny + h
+}
+
+/// The shortcuts card alone; returns its bottom.
+fn shortcut_card(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &[Command]) -> f32 {
     let x0 = col.left();
     p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "Keyboard shortcuts", bold(15.0), TEXT());
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), list.len());
@@ -1148,17 +1170,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
             }
         }
     }
-    let ny = card.bottom() + 10.0;
-    icons::draw(p, Ico::Keyboard, Rect::from_min_size(Pos2::new(x0 + 2.0, ny), Vec2::splat(14.0)), TEXT_FAINT());
-    let h = paragraph(
-        p,
-        Pos2::new(x0 + 22.0, ny),
-        "⌘⇧3, ⌘⇧4 and ⌘⇧5 belong to macOS. Pick one of them and you get a warning; turn the macOS one off in System Settings › Keyboard first.",
-        font(12.0),
-        TEXT_DIM(),
-        col.width() - 24.0,
-    );
-    ny + h
+    card.bottom()
 }
 
 fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
