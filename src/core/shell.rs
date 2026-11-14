@@ -459,7 +459,8 @@ impl App {
                 Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, m::APP_HEIGHT),
                 None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             },
-            Mode::Setup => Vec2::new(super::onboard::SETUP_W, super::onboard::SETUP_H),
+            // setup shows in the app window: screenshots at its size
+            Mode::Setup => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             Mode::FdaHelp => Vec2::new(360.0, 132.0),
         }
     }
@@ -855,22 +856,32 @@ impl eframe::App for App {
 /// (setup frozen on Welcome, clicks working underneath) until it was resized
 /// once; from then on it drew fine. So resize it by a point and back once,
 /// shortly after it first shows.
+static FIRST_FRAMES: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The app window is past its first frames (see [`kick_first_frames`]):
+/// what it draws now is what the person sees.
+pub fn first_frames_shown() -> bool {
+    // the kick needs the window's size; without one, give up waiting after 1.5 s
+    static SINCE: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    FIRST_FRAMES.load(std::sync::atomic::Ordering::Relaxed) >= 2 || SINCE.get_or_init(std::time::Instant::now).elapsed().as_secs_f32() > 1.5
+}
+
 fn kick_first_frames(ctx: &egui::Context) {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    static STATE: AtomicU8 = AtomicU8::new(0);
+    use std::sync::atomic::Ordering;
+    let state = &FIRST_FRAMES;
     let Some(r) = ctx.input(|i| i.viewport().inner_rect) else { return };
     let id = egui::Id::new("kick-first-frames");
     let now = ctx.input(|i| i.time);
     let first = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(id, || now));
     let t = now - first;
-    match STATE.load(Ordering::Relaxed) {
+    match state.load(Ordering::Relaxed) {
         0 if t > 0.5 => {
             ctx.send_viewport_cmd(ViewportCommand::InnerSize(r.size() + egui::vec2(1.0, 0.0)));
-            STATE.store(1, Ordering::Relaxed);
+            state.store(1, Ordering::Relaxed);
         }
         1 if t > 0.6 => {
             ctx.send_viewport_cmd(ViewportCommand::InnerSize(r.size() - egui::vec2(1.0, 0.0)));
-            STATE.store(2, Ordering::Relaxed);
+            state.store(2, Ordering::Relaxed);
         }
         0 | 1 => ctx.request_repaint(),
         _ => {}

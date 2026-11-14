@@ -119,6 +119,12 @@ impl Perm {
         })
     }
 
+    /// macOS answers it with a question over the app (Allow / Don't Allow)
+    /// and never needs System Settings, unless it was refused before.
+    pub fn answered_in_place(self) -> bool {
+        matches!(self, Perm::SystemEvents | Perm::Microphone | Perm::Camera | Perm::Bluetooth | Perm::Notifications)
+    }
+
     /// The live status of a system permission (`Own` ones belong to their tool).
     pub fn status(self) -> Status {
         imp::status(self)
@@ -409,9 +415,9 @@ mod imp {
                     // the question needs System Events running
                     let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
                     std::thread::sleep(std::time::Duration::from_millis(600));
-                    if system_events(true) == -1743 {
-                        super::open_settings(Perm::SystemEvents);
-                    }
+                    // a "Don't Allow" just shows on the row (its button then
+                    // opens Settings); opening Settings here took over the screen
+                    let _ = system_events(true);
                 });
             }
             Perm::Microphone | Perm::Camera => {
