@@ -53,7 +53,8 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     };
     page_header(&p, content, name, "", TEXT_DIM());
     let ok = |app: &App, perm: Perm| app.perm_watch.status(perm) == Status::Allowed;
-    let Some(hero) = needs.iter().filter(|n| !n.optional).map(|n| n.perm).find(|&perm| !ok(app, perm)) else { return };
+    // the same one the lock is for: a status still being read isn't missing
+    let Some(hero) = needs.iter().filter(|n| !n.optional).map(|n| n.perm).find(|&perm| app.perm_watch.known(perm).is_some_and(|s| s != Status::Allowed)) else { return };
     let required = needs.iter().filter(|n| !n.optional).count();
     let chips: Vec<Perm> = needs.iter().filter(|n| n.optional || required > 1).map(|n| n.perm).collect();
     // the block is centred in the body: tile, name, why, button, chips
