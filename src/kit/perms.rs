@@ -313,6 +313,83 @@ mod imp {
         std::fs::File::open(home.join("Library/Application Support/com.apple.TCC/TCC.db")).is_ok() || std::fs::read_dir(home.join("Library/Safari")).is_ok()
     }
 
+    // System Events access as last read: 0 unknown, 1 not asked, 2 denied,
+    // 3 allowed. Reading it is an Apple Event round trip (~8 ms, more while
+    // System Events starts), too slow for the ui thread every second, so
+    // after the first read it's refreshed in the background.
+    static SE: AtomicU8 = AtomicU8::new(0);
+    static SE_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static SE_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    fn se_code(r: i32) -> u8 {
+        match r {
+            0 => 3,
+            -1743 => 2,
+            _ => 1,
+        }
+    }
+
+    fn se_status(v: u8) -> Status {
+        match v {
+            3 => Status::Allowed,
+            2 => Status::Denied,
+            _ => Status::NotAsked,
+        }
+    }
+
+    /// Read it now; when System Events isn't running (-600, which says
+    /// nothing about access), start it quietly and read again, so a granted
+    /// access doesn't show as "Allow".
+    fn read_system_events() -> u8 {
+        let r = system_events(false);
+        if r != -600 {
+            return se_code(r);
+        }
+        let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
+        for _ in 0..10 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let r = system_events(false);
+            if r != -600 {
+                return se_code(r);
+            }
+        }
+        1
+    }
+
+    fn refresh_system_events() {
+        if SE_BUSY.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        SE_AT.store(now_ms(), Ordering::Relaxed);
+        std::thread::spawn(|| {
+            SE.store(read_system_events(), Ordering::Relaxed);
+            SE_BUSY.store(false, Ordering::Release);
+        });
+    }
+
+    fn system_events_status() -> Status {
+        let known = SE.load(Ordering::Relaxed);
+        if known == 0 {
+            // the first read is direct, unless System Events must start first
+            let r = system_events(false);
+            if r != -600 {
+                SE.store(se_code(r), Ordering::Relaxed);
+                SE_AT.store(now_ms(), Ordering::Relaxed);
+                return se_status(se_code(r));
+            }
+            refresh_system_events();
+            return Status::NotAsked;
+        }
+        if now_ms().saturating_sub(SE_AT.load(Ordering::Relaxed)) > 1000 {
+            refresh_system_events();
+        }
+        se_status(known)
+    }
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    }
+
     /// 0 allowed, -1743 refused, -1744 would ask, -600 System Events isn't running.
     fn system_events(ask: bool) -> i32 {
         let id = b"com.apple.systemevents";
@@ -407,11 +484,7 @@ mod imp {
             Perm::Screen => yes(screen_live()),
             Perm::Accessibility => yes(unsafe { AXIsProcessTrusted() }),
             Perm::FullDisk => yes(full_disk()),
-            Perm::SystemEvents => match system_events(false) {
-                0 => Status::Allowed,
-                -1743 => Status::Denied,
-                _ => Status::NotAsked,
-            },
+            Perm::SystemEvents => system_events_status(),
             Perm::Microphone | Perm::Camera => media(p),
             Perm::Bluetooth => bluetooth(),
             Perm::Notifications => notifications(),
@@ -456,7 +529,11 @@ mod imp {
                     std::thread::sleep(std::time::Duration::from_millis(600));
                     // a "Don't Allow" just shows on the row (its button then
                     // opens Settings); opening Settings here took over the screen
-                    let _ = system_events(true);
+                    let r = system_events(true);
+                    if r != -600 {
+                        SE.store(se_code(r), Ordering::Relaxed);
+                        SE_AT.store(now_ms(), Ordering::Relaxed);
+                    }
                     super::answered();
                 });
             }

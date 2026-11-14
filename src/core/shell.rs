@@ -219,6 +219,9 @@ impl App {
             app.app_focus = true;
         }
         crate::kit::native::set_dock_icon(app.mode == Mode::Window || app.app_open || demo);
+        if !demo {
+            crate::kit::native::install_window_menu();
+        }
         app
     }
 
@@ -498,6 +501,47 @@ impl App {
         }
     }
 
+    /// Where the panel's top-left corner goes: under the menu bar icon,
+    /// kept on screen.
+    fn panel_pos(&self, ctx: &egui::Context, size: Vec2) -> Pos2 {
+        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
+        let anchor = self.anchor.unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
+        let right = (anchor.x + m::PANEL_WIDTH / 2.0).clamp(m::PANEL_WIDTH, screen.x - 8.0);
+        Pos2::new((right - size.x).max(8.0), anchor.y + 6.0)
+    }
+
+    /// The panel drifted from its spot (macOS moved it down by the menu
+    /// bar's height after the first light/dark switch): put it back.
+    fn keep_panel_in_place(&mut self, ctx: &egui::Context) {
+        if self.mode != Mode::Panel || !self.visible || self.screenshot.is_some() || self.pending_shape {
+            return;
+        }
+        let Some(at) = ctx.input(|i| i.viewport().outer_rect) else { return };
+        let want = self.panel_pos(ctx, self.window_size(ctx));
+        // only a drop straight down: a panel macOS placed elsewhere on
+        // purpose (another display) is left where it is
+        if (at.min.x - want.x).abs() <= 2.0 && (at.min.y - want.y).abs() > 2.0 {
+            ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(want));
+        }
+    }
+
+    /// The panel opened by itself (after setup's restart), before any click
+    /// on the menu bar icon said where the icon is: ask the icon.
+    fn find_tray_anchor(&mut self, ctx: &egui::Context) {
+        if self.anchor.is_some() || self.mode != Mode::Panel || !self.visible {
+            return;
+        }
+        let Some(rect) = self.tray.as_ref().and_then(|t| t.rect()) else { return };
+        if rect.size.width == 0 || rect.size.height == 0 {
+            return;
+        }
+        let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
+        let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
+        let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
+        self.anchor = Some(Pos2::new(cx, bottom));
+        self.pending_shape = true;
+    }
+
     /// Resize/move the window for the current mode.
     pub fn reshape(&mut self, ctx: &egui::Context) {
         let size = self.window_size(ctx);
@@ -508,10 +552,7 @@ impl App {
         let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
         match self.mode {
             Mode::Panel => {
-                let anchor = self.anchor.unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
-                let right = (anchor.x + m::PANEL_WIDTH / 2.0).clamp(m::PANEL_WIDTH, screen.x - 8.0);
-                let x = (right - size.x).max(8.0);
-                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(Pos2::new(x, anchor.y + 6.0)));
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(self.panel_pos(ctx, size)));
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
                 // the app window may still be open (or minimized) behind the
                 // panel: it keeps its Dock icon. Dropping it made macOS pull
@@ -705,6 +746,7 @@ impl eframe::App for App {
             self.hide(ctx);
         }
         self.handle_tray(ctx);
+        self.find_tray_anchor(ctx);
         self.update_tray_title();
         if self.pending_shape {
             self.pending_shape = false;
@@ -771,6 +813,7 @@ impl eframe::App for App {
             if self.screenshot.is_none() {
                 crate::kit::native::apply_glass(r);
             }
+            self.keep_panel_in_place(&ctx);
         }
         // CMDMEOW_SELF_SHOT=<dir>: open the panel, then let screencapture
         // (run by the app, so with its Screen Recording permission) save the
@@ -1028,6 +1071,10 @@ impl App {
                 } else {
                     vctx.send_viewport_cmd(ViewportCommand::Focus);
                     crate::kit::native::activate();
+                    // macOS may refuse to activate an app it didn't see
+                    // the user ask for (setup on first launch): the window
+                    // still comes to the front instead of opening behind
+                    crate::kit::native::bring_app_window_front();
                     vctx.request_repaint_after(std::time::Duration::from_millis(50));
                 }
             }
