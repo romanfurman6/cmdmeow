@@ -98,8 +98,9 @@ struct Main {
     fading: Option<Retained<AnyObject>>,
     buzz_turn: u32,
     buzzing: bool,
-    /// The pointer watcher (an event monitor), while the eyes follow.
-    pointer: Option<Retained<AnyObject>>,
+    /// The pointer watchers (event monitors: other apps', and ours), while
+    /// the eyes follow.
+    pointer: Vec<Retained<AnyObject>>,
     /// The trackpads being listened to.
     pads: Vec<*mut c_void>,
 }
@@ -155,7 +156,7 @@ extern "C" {
     fn CFArrayGetCount(array: *const c_void) -> isize;
     fn CFArrayGetValueAtIndex(array: *const c_void, i: isize) -> *const c_void;
     fn CFRunLoopGetMain() -> *mut c_void;
-    fn CFRunLoopAddSource(run_loop: *mut c_void, source: *mut c_void, mode: *const c_void);
+    fn CFRunLoopAddSource(run_loop: *const c_void, source: *const c_void, mode: *const c_void);
     static kCFRunLoopCommonModes: *const c_void;
 }
 
@@ -305,12 +306,13 @@ impl Main {
 
     /// Listen to what the switches ask for, and to nothing else.
     fn feel(&mut self, p: &Prefs) {
-        if p.watch != self.pointer.is_some() {
-            match self.pointer.take() {
-                Some(monitor) => unsafe { NSEvent::removeMonitor(&monitor) },
-                None => {
-                    self.pointer = watch_pointer();
-                    self.tell_pointer();
+        if p.watch == self.pointer.is_empty() {
+            if self.pointer.is_empty() {
+                self.pointer = watch_pointer();
+                self.tell_pointer();
+            } else {
+                for monitor in std::mem::take(&mut self.pointer) {
+                    unsafe { NSEvent::removeMonitor(&monitor) };
                 }
             }
         }
@@ -534,19 +536,29 @@ fn observe(name: &str, distributed: bool, f: impl Fn() + 'static) {
 
 // ------------------------------------------------------------- the pointer
 
-/// Tell the cat when the pointer moves in other apps (a listen-only
-/// monitor: no permission needed).
-fn watch_pointer() -> Option<Retained<AnyObject>> {
+/// Tell the cat when the pointer moves (listen-only monitors: no
+/// permission needed). The global one hears other apps; while this app is
+/// in front the moves come to it instead, so a local one hears those.
+fn watch_pointer() -> Vec<Retained<AnyObject>> {
     static LAST: AtomicU64 = AtomicU64::new(0);
-    let block = block2::RcBlock::new(move |_event: std::ptr::NonNull<NSEvent>| {
+    fn moved() {
         let now = uptime_ms();
         if now.saturating_sub(LAST.load(Ordering::Relaxed)) < POINTER_MS {
             return;
         }
         LAST.store(now, Ordering::Relaxed);
         with_main(|m| m.tell_pointer());
+    }
+    let mask = NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged;
+    let global = block2::RcBlock::new(|_event: std::ptr::NonNull<NSEvent>| moved());
+    let local = block2::RcBlock::new(|event: std::ptr::NonNull<NSEvent>| {
+        moved();
+        event.as_ptr()
     });
-    NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged, &block)
+    let global = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &global);
+    // the event goes on to the app unchanged
+    let local = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &local) };
+    global.into_iter().chain(local).collect()
 }
 
 // ------------------------------------------------------------ the trackpad
@@ -665,7 +677,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let Some(item) = (unsafe { Retained::retain(status_item as *mut AnyObject) }) else { return };
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
-    let mut main = Main { item, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pointer: None, pads: Vec::new() };
+    let mut main = Main { item, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pointer: Vec::new(), pads: Vec::new() };
     main.feel(&prefs);
     MAIN.with(|m| *m.borrow_mut() = Some(main));
 
