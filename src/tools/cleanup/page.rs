@@ -489,10 +489,10 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     } else if safe.is_empty() && kept.is_empty() {
         (Some(cols), Rect::NOTHING)
     } else {
-        let lw = ((cols.width() - sp::L) * 0.56).round();
+        let lw = ((cols.width() - sp::XL) * 0.56).round();
         (
             Some(Rect::from_min_size(cols.min, Vec2::new(lw, cols.height()))),
-            Rect::from_min_max(Pos2::new(cols.left() + lw + sp::L, cols.top()), cols.max),
+            Rect::from_min_max(Pos2::new(cols.left() + lw + sp::XL, cols.top()), cols.max),
         )
     };
     const LABEL_H: f32 = 20.0;

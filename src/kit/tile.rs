@@ -78,7 +78,10 @@ pub fn small_ring(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, frac: f32,
     let w = (rr * 0.2).clamp(4.0, 6.0);
     ring(p, c, rr - w / 2.0, w, frac, color);
     icon(p, glyph, Rect::from_center_size(c, Vec2::splat(rr * 0.75)), TEXT_SOFT());
-    text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, caption, ty::title(), TEXT(), rect.width() - 10.0);
+    // a long caption ("Session 19%") steps down a size or two before it's cut
+    let w = rect.width() - 10.0;
+    let fid = [13.0, 12.0, 11.0].into_iter().map(bold).find(|f| p.layout_no_wrap(caption.to_string(), f.clone(), TEXT()).size().x <= w).unwrap_or_else(ty::title);
+    text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, caption, fid, TEXT(), w);
     resp
 }
 

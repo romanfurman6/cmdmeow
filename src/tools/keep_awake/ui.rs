@@ -517,7 +517,8 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     }
     // the rest of the page: the last 7 days
     let wy = y + 26.0 + h + 20.0;
-    if r.bottom() - 20.0 - wy > 100.0 {
+    // only when the bars get a real height (the chart is this less ~100)
+    if r.bottom() - 20.0 - wy > 180.0 {
         week(&p, Rect::from_min_max(Pos2::new(x0, wy), Pos2::new(x1, r.bottom() - 20.0)), &e.week(now));
     }
 }

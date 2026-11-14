@@ -717,7 +717,7 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     // what a report has, and what it never has
     let facts: [(bool, &str); 3] = [(true, "What went wrong and where in the app"), (true, "App and macOS version"), (false, "Files, names or IP address")];
     let w = 400.0;
-    let mut y = c.y + 134.0;
+    let mut y = q.bottom() + sp::XL;
     for (k, (sent, label)) in facts.iter().enumerate() {
         let a = ease((t - 0.15 - 0.08 * k as f32) / 0.4);
         let row = Rect::from_min_size(Pos2::new(c.x - w / 2.0, y - (1.0 - a) * 8.0), Vec2::new(w, 40.0));

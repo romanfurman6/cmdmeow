@@ -1355,11 +1355,11 @@ fn video_card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     y += line_h(&p, &ty::section()) + sp::S;
     let items: Vec<Item> = recordings(c).into_iter().take(4).collect();
     if items.is_empty() {
-        let r = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 48.0));
+        let r = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, (rect.bottom() - 12.0).min(y + 48.0)));
         dashed_rect(&p, r, 6.0, white(40));
         let hint = match c.settings.shortcut(Command::Record) {
             Some(s) => format!("Press {} to record the screen", s.display()),
-            None => "No recordings yet.".into(),
+            None => "No recordings yet".into(),
         };
         text_fit(&p, r.center(), Align2::CENTER_CENTER, &hint, font(12.0), TEXT_FAINT(), r.width() - 16.0);
         return;
