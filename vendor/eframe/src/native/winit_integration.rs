@@ -304,3 +304,56 @@ pub(crate) fn on_accesskit_window_event(
         }
     }
 }
+
+#[cfg(test)]
+mod last_paint_tests {
+    use super::LastPaint;
+    use egui::epaint::{ClippedShape, Shape};
+    use egui::{Color32, Pos2, Rect};
+
+    fn shapes(x: f32) -> Vec<ClippedShape> {
+        let clip = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0));
+        vec![ClippedShape { clip_rect: clip, shape: Shape::rect_filled(Rect::from_min_max(Pos2::new(x, 0.0), Pos2::new(50.0, 50.0)), 2.0, Color32::RED) }]
+    }
+
+    #[test]
+    fn a_pass_that_draws_the_same_is_skipped_anything_else_is_painted() {
+        let mut lp = LastPaint::default();
+        assert!(!lp.same(&shapes(0.0), 2.0, [200, 200], true), "first pass paints");
+        assert!(lp.same(&shapes(0.0), 2.0, [200, 200], true), "same frame is skipped");
+        assert!(!lp.same(&shapes(1.0), 2.0, [200, 200], true), "a changed shape paints");
+        assert!(!lp.same(&shapes(1.0), 1.0, [200, 200], true), "a new scale paints");
+        assert!(!lp.same(&shapes(1.0), 1.0, [201, 200], true), "a new size paints");
+        assert!(!lp.same(&shapes(1.0), 1.0, [201, 200], false), "texture changes paint");
+        assert!(lp.same(&shapes(1.0), 1.0, [201, 200], true));
+        lp.forget();
+        assert!(!lp.same(&shapes(1.0), 1.0, [201, 200], true), "after forget it paints");
+    }
+
+    #[test]
+    fn a_frame_shown_over_a_second_ago_is_painted_again() {
+        let mut lp = LastPaint::default();
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+        if let Some(shown) = lp.shown.as_mut() {
+            shown.3 -= std::time::Duration::from_millis(1100);
+        }
+        assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true));
+    }
+
+    #[test]
+    fn only_skipped_passes_wait_for_the_display() {
+        use std::time::{Duration, Instant};
+        let mut lp = LastPaint::default();
+        lp.pace(false, || Some(30));
+        let t = Instant::now();
+        lp.pace(false, || Some(30));
+        assert!(t.elapsed() < Duration::from_millis(10), "a painted pass doesn't sleep");
+        let t = Instant::now();
+        lp.pace(true, || Some(30));
+        assert!(t.elapsed() >= Duration::from_millis(25), "a skipped pass waits out a 30 Hz frame");
+        let t = Instant::now();
+        lp.pace(true, || None);
+        // the 30 Hz looked up a moment ago is kept for a few seconds
+        assert!(t.elapsed() >= Duration::from_millis(25));
+    }
+}
