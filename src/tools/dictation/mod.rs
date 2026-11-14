@@ -209,9 +209,23 @@ pub struct Dictation {
     try_armed: bool,
     /// Sample data (screenshots): what the try-it field shows.
     try_fake: Option<ui::Shown>,
+    /// Done was pressed on the take: when, and where the field was, so the
+    /// field turns into the newest History entry.
+    try_done: Option<(Instant, egui::Rect)>,
+    /// Where the try-it field was last drawn.
+    try_field: egui::Rect,
 }
 
 impl Dictation {
+    /// Done on the try-it take: the field clears, and if the take was saved
+    /// (History on), the field turns into its History entry.
+    pub(super) fn finish_try(&mut self, field: egui::Rect) {
+        let take = self.try_last.take();
+        self.try_note = None;
+        self.try_armed = false;
+        let saved = take.is_some_and(|t| self.history.items.first().is_some_and(|h| h.at == t.at && h.text == t.text));
+        self.try_done = saved.then(|| (Instant::now(), field));
+    }
     pub fn new(env: &ToolEnv) -> Self {
         let (jobs, job_rx) = channel();
         let (heard_tx, heard) = channel();
@@ -266,6 +280,8 @@ impl Dictation {
             try_focused: false,
             try_armed: false,
             try_fake: None,
+            try_done: None,
+            try_field: egui::Rect::NOTHING,
         }
     }
 
@@ -933,6 +949,19 @@ impl Tool for Dictation {
                 });
                 Some(View::Page)
             }
+            // Done on the first take: the field turns into the History entry
+            // (CMDMEOW_DICT_T picks the moment, in seconds)
+            "dictation-try-finish" => {
+                self.tab = Tab::History;
+                self.history = History::default();
+                let now = chrono::Local::now().timestamp();
+                self.history.add(Said { at: now - 3600, text: "Book the table for four at eight, and ask about the terrace.".into(), app: "Messages".into(), secs: 5.0 });
+                self.history.add(Said { at: now, text: "Okay, this is my first dictation and it already works.".into(), app: String::new(), secs: 4.0 });
+                let at = std::env::var("CMDMEOW_DICT_T").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.2);
+                let field = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(480.0, 112.0));
+                self.try_done = Some((Instant::now() - Duration::from_secs_f32(at), field));
+                Some(View::Page)
+            }
             _ => None,
         }
     }
@@ -957,6 +986,33 @@ mod tests {
         d.follow(Link::Stop);
         d.follow(Link::Cancel);
         assert!(matches!(d.phase, Phase::Idle));
+    }
+
+    #[test]
+    fn done_turns_a_saved_take_into_its_history_entry() {
+        let field = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(480.0, 112.0));
+        let older = Said { at: 1, text: "an older one".into(), app: String::new(), secs: 2.0 };
+        let take = Said { at: 2, text: "hello there".into(), app: String::new(), secs: 2.0 };
+
+        // History on: the take is the newest entry
+        let mut d = demo();
+        d.history = History::default();
+        d.history.add(older.clone());
+        d.history.add(take.clone());
+        d.try_last = Some(take.clone());
+        d.try_armed = true;
+        d.finish_try(field);
+        assert!(d.try_last.is_none() && !d.try_armed);
+        assert_eq!(d.try_done.map(|(_, f)| f), Some(field));
+
+        // History off: older entries stay, but none of them is the take
+        let mut d = demo();
+        d.history = History::default();
+        d.history.add(older);
+        d.try_last = Some(take);
+        d.finish_try(field);
+        assert!(d.try_last.is_none());
+        assert!(d.try_done.is_none());
     }
 
     fn demo() -> Dictation {

@@ -255,6 +255,23 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         try_it(d, ui, body, cx);
         return;
     }
+    // Done on the first take: the field glides into the newest entry, the
+    // rest comes in around it, and the entry glows for a moment
+    const MORPH: f32 = 0.42;
+    const GLOW: f32 = 1.6;
+    let morph = match d.try_done {
+        // sample screenshots hold one moment
+        Some((at, field)) if d.demo || at.elapsed().as_secs_f32() < GLOW => {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+            let s = if d.demo { std::env::var("CMDMEOW_DICT_T").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.2).min(GLOW) } else { at.elapsed().as_secs_f32() };
+            let field = if field.is_positive() && body.contains_rect(field) { field } else { field_rect(body, true) };
+            Some((1.0 - (1.0 - (s / MORPH).min(1.0)).powi(3), 1.0 - s / GLOW, field))
+        }
+        _ => {
+            d.try_done = None;
+            None
+        }
+    };
     let mut child = ui.new_child(UiBuilder::new().max_rect(body));
     let mut copy: Option<String> = None;
     let mut remove: Option<usize> = None;
@@ -268,16 +285,46 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         let (area, _) = ui.allocate_exact_size(Vec2::new(body.width(), total), Sense::hover());
         let mut y = area.top() + 16.0;
         let id = ui.scope_id().with("dict-rows");
+        let mut late: Option<(Rect, Rect)> = None;
         for (k, s) in d.history.items.iter().enumerate() {
             let rr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, heights[k] - ROW_GAP));
-            let resp = ui.interact(rr, id.with(k), Sense::click());
-            let h = ui.ctx().animate_bool(id.with(("h", k)), resp.hovered());
+            // keyed by the entry, not its row: a removed entry's hover stays with it
+            let key = id.with((s.at, s.text.as_str()));
+            let resp = ui.interact(rr, key, Sense::click());
+            let h = ui.ctx().animate_bool(key.with("h"), resp.hovered());
+            // e: how far in the entry is (1 = in place)
+            let (e, glow, field) = match morph {
+                Some((e, g, f)) => (e, g, Some(f)),
+                None => (1.0, 0.0, None),
+            };
+            let mut p = p.clone();
+            if k == 0 && e < 1.0 {
+                if let Some(f) = field {
+                    // drawn after the other rows, so it passes over them
+                    late = Some((f, rr));
+                    y += heights[k];
+                    continue;
+                }
+            } else if k > 0 {
+                p.multiply_opacity(e);
+            }
             p.rect_filled(rr, R_CARD, lerp_color(CARD(), RAISED(), h * 0.5));
+            if k == 0 && glow > 0.0 {
+                p.rect_filled(rr, R_CARD, with_alpha(TINT(), 0.10 * glow));
+                p.rect_stroke(rr, R_CARD, Stroke::new(1.0, with_alpha(TINT(), 0.5 * glow)), StrokeKind::Inside);
+            }
             let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
             p.text(Pos2::new(rr.left() + PAD, rr.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
             paragraph(&p, Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP), &s.text, font(13.0), TEXT(), tw);
             let cr = Rect::from_min_size(Pos2::new(rr.right() - PAD - 64.0, rr.center().y - 13.0), Vec2::new(64.0, 26.0));
             let xr = Rect::from_center_size(Pos2::new(cr.left() - 20.0, cr.center().y), Vec2::splat(22.0));
+            if e < 1.0 {
+                // still fading in with its row: drawn, not yet a button
+                liquid_capsule(&p, cr, None, 0.0, 1.0);
+                p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
+                y += heights[k];
+                continue;
+            }
             if h > 0.01 && icon_button(ui, xr, Icon::Trash, "Remove").clicked() {
                 remove = Some(k);
             }
@@ -285,6 +332,27 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
                 copy = Some(s.text.clone());
             }
             y += heights[k];
+        }
+        if let (Some((f, rr)), Some(s)) = (late, d.history.items.first()) {
+            let (e, glow) = morph.map_or((1.0, 0.0), |(e, g, _)| (e, g));
+            let mut p = p.clone();
+            // the field itself, on its way to the entry
+            let at = Rect::from_min_max(f.min.lerp(rr.min, e), f.max.lerp(rr.max, e));
+            // solid, so an older entry under its path doesn't show through
+            p.rect_filled(at, R_CARD, BG());
+            p.rect_filled(at, R_CARD, CARD());
+            p.rect_filled(at, R_CARD, with_alpha(TINT(), 0.10 * glow));
+            p.rect_stroke(at, R_CARD, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(TINT(), 0.5), glow)), StrokeKind::Inside);
+            let from = f.shrink(sp::L).min;
+            let to = Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP);
+            paragraph(&p, from.lerp(to, e), &s.text, font(15.0 + (13.0 - 15.0) * e), TEXT(), (f.width() - 2.0 * sp::L) + (tw - (f.width() - 2.0 * sp::L)) * e);
+            // the entry's own bits ride on the moving card and come in as it lands
+            p.multiply_opacity(((e - 0.6) / 0.4).clamp(0.0, 1.0));
+            let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
+            p.text(Pos2::new(at.left() + PAD, at.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
+            let cr = Rect::from_min_size(Pos2::new(at.right() - PAD - 64.0, at.center().y - 13.0), Vec2::new(64.0, 26.0));
+            liquid_capsule(&p, cr, None, 0.0, 1.0);
+            p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
         }
     });
     if let Some(t) = copy {
@@ -352,6 +420,20 @@ fn sample_levels() -> Vec<f32> {
     (0..64).map(|k| 0.25 + 0.6 * ((k as f32 * 0.55).sin() * (k as f32 * 0.21).cos()).abs()).collect()
 }
 
+const HINT_H: f32 = 24.0;
+
+/// Where the try-it field sits on the page; `button`: a button shows under it.
+fn field_rect(body: Rect, button: bool) -> Rect {
+    use crate::kit::empty::HERO_H;
+    let field_w = (body.width() - 2.0 * sp::PAGE_EDGE).min(480.0);
+    let field_h = 112.0;
+    // the pill's room above the field is kept, so nothing moves when it shows
+    let pill_room = PILL_H + 6.0;
+    let block = pill_room + field_h + sp::L + HINT_H + if button { sp::XL + HERO_H } else { 0.0 };
+    let top = body.center().y - block / 2.0 - sp::L;
+    Rect::from_min_size(Pos2::new(body.center().x - field_w / 2.0, top + pill_room), Vec2::new(field_w, field_h))
+}
+
 /// The first visit: just a field, as in any app. Click it, press the
 /// shortcut and talk: the pill shows up over the field as it would
 /// anywhere, and the words land in the field (not pasted anywhere), so
@@ -369,20 +451,16 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     let id = ui.scope_id().with("dict-try");
     let key = d.shortcut_label();
     let keys = (!key.is_empty()).then_some(key.as_str());
-    let field_w = (body.width() - 2.0 * sp::PAGE_EDGE).min(480.0);
-    let (field_h, hint_h) = (112.0, 24.0);
+    let hint_h = HINT_H;
     let button = match &state {
         Shown::NeedModel { .. } | Shown::Downloading { .. } | Shown::Done(_) => true,
         _ => keys.is_none(),
     };
-    // the pill's room above the field is kept, so nothing moves when it shows
-    let pill_room = PILL_H + 6.0;
-    let block = pill_room + field_h + sp::L + hint_h + if button { sp::XL + HERO_H } else { 0.0 };
-    let top = body.center().y - block / 2.0 - sp::L;
     let cx0 = body.center().x;
 
     // the field: a click puts the caret in it
-    let fr = Rect::from_min_size(Pos2::new(cx0 - field_w / 2.0, top + pill_room), Vec2::new(field_w, field_h));
+    let fr = field_rect(body, button);
+    d.try_field = fr;
     let quiet = matches!(state, Shown::NeedModel { .. } | Shown::Downloading { .. });
     let field = ui.interact(fr, id.with("field"), if quiet { Sense::hover() } else { Sense::click() });
     if field.clicked() {
@@ -462,7 +540,8 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             Shown::Idle | Shown::Problem(_) => Some(("Click the field, then press", String::new())),
             Shown::Listening { tapped: false, .. } => Some(("Release", "to finish".into())),
             Shown::Listening { tapped: true, .. } => Some(("Press Enter or", "to finish".into())),
-            Shown::Done(_) => Some(("Press", "to try again".into())),
+            // the point of it: the same keys type into any app's field
+            Shown::Done(_) => Some(("Now press", "in any app".into())),
             _ => None,
         };
         if let Some((before, after)) = line {
@@ -500,10 +579,16 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             p.text(r.center(), Align2::CENTER_CENTER, what, bold(15.0), ACCENT());
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
+        // Copy, or Done: on to History, where the take now is
         Shown::Done(s) => {
-            if hero_button(ui, bc, id.with("copy"), "Copy", None, Lead::None, None, true, 0.0).clicked() {
+            let (bw, gap) = (120.0, sp::M);
+            let off = (bw + gap) / 2.0;
+            if hero_button(ui, Pos2::new(cx0 - off, bc.y), id.with("copy"), "Copy", None, Lead::None, None, true, bw).clicked() {
                 ui.ctx().copy_text(s.text.clone());
                 cx.toast("Copied");
+            }
+            if hero_button(ui, Pos2::new(cx0 + off, bc.y), id.with("done"), "Done", None, Lead::None, Some(BLUE()), true, bw).clicked() && !d.demo {
+                d.finish_try(fr);
             }
         }
         // no shortcut set: hold the button instead
