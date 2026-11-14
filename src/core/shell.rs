@@ -1081,8 +1081,16 @@ fn install_fonts(ctx: &egui::Context) {
     use egui::epaint::text::VariationCoords;
     use egui::{FontData, FontDefinitions, FontFamily};
     let mut fonts = FontDefinitions::default();
-    let sf = std::fs::read("/System/Library/Fonts/SFNS.ttf").ok();
-    let mono = std::fs::read("/System/Library/Fonts/SFNSMono.ttf").ok();
+    // read once and shared by every weight (and every theme switch, which
+    // installs the fonts again): SF is one big variable font file, and a
+    // copy per weight held it in memory three times
+    fn system_font(path: &str, cell: &'static std::sync::OnceLock<Option<egui::epaint::text::Blob>>) -> Option<egui::epaint::text::Blob> {
+        cell.get_or_init(|| std::fs::read(path).ok().map(|b| Arc::new(b) as egui::epaint::text::Blob)).clone()
+    }
+    static SF: std::sync::OnceLock<Option<egui::epaint::text::Blob>> = std::sync::OnceLock::new();
+    static MONO: std::sync::OnceLock<Option<egui::epaint::text::Blob>> = std::sync::OnceLock::new();
+    let sf = system_font("/System/Library/Fonts/SFNS.ttf", &SF);
+    let mono = system_font("/System/Library/Fonts/SFNSMono.ttf", &MONO);
     let mut bold_family = vec![];
     let mut hero_family = vec![];
     if let Some(bytes) = sf {
@@ -1090,11 +1098,11 @@ fn install_fonts(ctx: &egui::Context) {
         // mode sets every weight a step up
         let light = glass::is_light();
         let (w_regular, w_bold, w_hero) = if light { (510.0, 680.0, 520.0) } else { (430.0, 620.0, 330.0) };
-        let mut regular = FontData::from_owned(bytes.clone());
+        let mut regular = FontData::from_blob(bytes.clone(), 0);
         regular.tweak.coords = VariationCoords::new([("wght", w_regular)]);
-        let mut semibold = FontData::from_owned(bytes.clone());
+        let mut semibold = FontData::from_blob(bytes.clone(), 0);
         semibold.tweak.coords = VariationCoords::new([("wght", w_bold)]);
-        let mut hero = FontData::from_owned(bytes);
+        let mut hero = FontData::from_blob(bytes, 0);
         hero.tweak.coords = VariationCoords::new([("wght", w_hero)]);
         fonts.font_data.insert("sf".into(), Arc::new(regular));
         fonts.font_data.insert("sf-bold".into(), Arc::new(semibold));
@@ -1104,7 +1112,7 @@ fn install_fonts(ctx: &egui::Context) {
         hero_family.push("sf-hero".to_string());
     }
     if let Some(bytes) = mono {
-        fonts.font_data.insert("sf-mono".into(), Arc::new(FontData::from_owned(bytes)));
+        fonts.font_data.insert("sf-mono".into(), Arc::new(FontData::from_blob(bytes, 0)));
         fonts.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "sf-mono".into());
     }
     let mut fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
