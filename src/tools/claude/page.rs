@@ -294,14 +294,14 @@ fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
     text_fit(p, i.left_bottom(), Align2::LEFT_BOTTOM, line, ty::label(), TEXT_DIM(), i.width());
 }
 
-/// One plan limit: ring with the even-use tick, pace, forecast.
+/// One plan limit: ring with the even-use arc, pace, forecast.
 fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
     glass_card(p, cr, R_CARD, 0.0, false);
     let inner = cr.shrink(sp::L);
     split_line(p, inner.left_top(), inner.right_top(), egui::Align::Min, &backend::short_label(&l.label), ty::title(), TEXT(), &parts::reset_when(l), ty::label(), TEXT_DIM());
     let rr = 34.0;
     let c = Pos2::new(inner.left() + rr + 5.0, inner.bottom() - rr - 5.0);
-    parts::pace_ring(p, c, rr, 9.0, l);
+    parts::pace_ring(p, c, rr, 6.0, l);
     p.text(c, Align2::CENTER_CENTER, format!("{:.0}%", l.pct), ty::lead(), TEXT());
     let tx = c.x + rr + sp::L;
     let w = inner.right() - tx;
