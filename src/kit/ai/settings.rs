@@ -36,8 +36,9 @@ pub struct Settings {
     /// What the menu bar shows: "closest" (the provider nearest a limit)
     /// or a provider id.
     pub menu_bar: String,
-    /// Reading Claude Code's sign-in from the Keychain: "" not asked yet,
-    /// "ok" allowed, "denied" (limits then come from the Claude CLI).
+    /// Reading Claude Code's sign-in from the Keychain: "" not asked yet
+    /// (never read until the person connects it), "ok" allowed, "denied"
+    /// (limits then come from the Claude CLI).
     pub claude_keychain: String,
     /// Settings format: 1 turned the menu bar number off by default. A
     /// file without it is older (0), not the struct default.

@@ -498,15 +498,31 @@ pub fn merge_extra(list: &mut Vec<Device>, paired_pods: &[Device], adverts: &[Po
     let mut models: Vec<_> = best.into_values().collect();
     models.sort_by_key(|a| a.model);
     for a in models {
-        if let Some(d) = list.iter_mut().find(|d| d.product == a.model && d.kind == Kind::Earbuds && d.main.is_none()) {
-            d.left = d.left.or(a.left);
-            d.right = d.right.or(a.right);
-            d.case = d.case.or(a.case);
-            d.charging = a.left_charging || a.right_charging;
-            d.case_charging = a.case_charging;
+        // the connected pair of this model; macOS sometimes reports no
+        // product id for it, so a lone connected pair without one counts too
+        // (Apple's only: other earbuds must never take a stranger's advert)
+        let apple = |d: &Device| {
+            let n = d.name.to_lowercase();
+            n.contains("airpods") || n.contains("beats")
+        };
+        let unknown: Vec<usize> = (0..list.len()).filter(|&i| list[i].kind == Kind::Earbuds && list[i].product == 0 && list[i].live() && apple(&list[i])).collect();
+        let conn = list.iter().position(|d| d.product == a.model && d.kind == Kind::Earbuds && d.live()).or(match unknown[..] {
+            [i] => Some(i),
+            _ => None,
+        });
+        if let Some(i) = conn {
+            let d = &mut list[i];
+            if d.main.is_none() {
+                d.left = d.left.or(a.left);
+                d.right = d.right.or(a.right);
+                d.case = d.case.or(a.case);
+                d.charging = a.left_charging || a.right_charging;
+                d.case_charging = a.case_charging;
+            }
         } else if let [p] = paired_pods.iter().filter(|p| p.product == a.model).collect::<Vec<_>>()[..] {
-            // only when exactly one paired pair is that model
-            if !list.iter().any(|d| d.same(p)) {
+            // only when exactly one paired pair is that model, and it isn't
+            // the connected pair listed under another address
+            if !list.iter().any(|d| d.same(p) || (d.kind == Kind::Earbuds && d.live() && d.name.eq_ignore_ascii_case(&p.name))) {
                 list.push(Device { left: a.left, right: a.right, case: a.case, charging: a.left_charging || a.right_charging, case_charging: a.case_charging, ..p.clone() });
             }
         }
@@ -898,6 +914,28 @@ mod tests {
         assert_eq!((phone.kind, phone.main, phone.charging), (Kind::Phone, Some(64), true));
         assert_eq!(v.iter().find(|d| d.name == "MX Master 3S").unwrap().main, Some(33));
         assert_eq!(v.len(), 6);
+    }
+
+    #[test]
+    fn advert_of_connected_pods_never_adds_a_second_pair() {
+        // connected pair without a product id, and the same pods also in
+        // the paired list under another address: one row only
+        let mut v = vec![Device { name: "AirPods Pro".into(), kind: Kind::Earbuds, address: "aa-01".into(), left: Some(79), right: Some(79), ..Default::default() }];
+        let paired = [Device { name: "AirPods Pro".into(), kind: Kind::Earbuds, address: "aa-02".into(), product: 0x2014, ..Default::default() }];
+        let ad = PodsAdvert { rssi: -40, ..parse_proximity(&advert(0x2014, 0x2b, 0xff, 0x01), -40).unwrap() };
+        merge_extra(&mut v, &paired, &[ad], &[]);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].case, Some(10), "the advert fills the connected pair");
+        // a connected pair with a known id of another model: same name still
+        // keeps the paired pods out
+        let mut v = vec![Device { name: "AirPods Pro".into(), kind: Kind::Earbuds, product: 0x200e, left: Some(50), right: Some(50), ..Default::default() }];
+        merge_extra(&mut v, &paired, &[ad], &[]);
+        assert_eq!(v.len(), 1);
+        // other makers' earbuds without a product id keep their own data
+        let sony = Device { name: "WF-1000XM5".into(), kind: Kind::Earbuds, address: "bb-01".into(), left: Some(60), right: Some(60), ..Default::default() };
+        let mut v = vec![sony.clone()];
+        merge_extra(&mut v, &[], &[ad], &[]);
+        assert_eq!(v, vec![sony]);
     }
 
     fn mouse(b: u8) -> Vec<Device> {

@@ -333,26 +333,29 @@ impl App {
                 return;
             }
             // first-run setup, one step each
-            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
+            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
-                let step = ["setup", "setup-tools", "setup-ai", "setup-models", "setup-perms", "setup-crash", "setup-ready"].iter().position(|v| *v == view).unwrap_or(0);
-                self.setup = Some(super::onboard::Setup::new(step));
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
-                // the full list, with a few more tools on (the cost line fills up)
+                // a few goals picked ("setup-tools" shows none, as a fresh install);
+                // the full list with a few more
+                use crate::tools::*;
+                let picked = [cleanup::ID, lens::ID, uninstaller::ID, clipboard::ID, capture::ID, capture::VIDEO_ID, capture::SHARING_ID];
                 let all = view == "setup-tools-all";
-                let more = [crate::tools::capture::ID, crate::tools::capture::VIDEO_ID, crate::tools::dictation::ID, crate::tools::system::ID];
+                let more = [dictation::ID, system::ID];
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
-                    let on = super::onboard::ON_AT_FIRST.contains(&id) || (all && more.contains(&id)) || (view == "setup-models" && id == crate::tools::dictation::ID);
+                    // AI Usage on: the Sign-ins step (3a) shows
+                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id)) || (view == "setup-models" && id == dictation::ID) || (view == "setup-signins" && id == claude::ID);
                     self.set_tool_on(i, on);
                 }
+                // which steps exist depends on the tools just switched on
+                let step = super::onboard::view_step(self, view);
+                self.setup = Some(super::onboard::Setup::new(step));
                 if all || view == "setup-tools-preview" {
                     let mut s = super::onboard::Setup::new(1);
                     s.all_tools = all;
-                    // the pointer on "Screenshots & video"
-                    s.demo_hover = (!all).then_some(1);
                     self.setup = Some(s);
                 }
                 return;
@@ -470,7 +473,12 @@ impl App {
                 Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, m::APP_HEIGHT),
                 None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             },
-            Mode::Setup => Vec2::new(super::onboard::SETUP_W, super::onboard::SETUP_H),
+            // setup shows in the app window: screenshots at its size
+            // (CMDMEOW_SHOT_W / CMDMEOW_SHOT_H=<pt> check other window sizes)
+            Mode::Setup => {
+                let pt = |k: &str, d: f32| std::env::var(k).ok().filter(|_| self.screenshot.is_some()).and_then(|v| v.parse().ok()).unwrap_or(d);
+                Vec2::new(pt("CMDMEOW_SHOT_W", m::APP_WIDTH), pt("CMDMEOW_SHOT_H", m::APP_HEIGHT))
+            }
             Mode::FdaHelp => Vec2::new(360.0, 132.0),
         }
     }
@@ -490,8 +498,10 @@ impl App {
                 let x = (right - size.x).max(8.0);
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(Pos2::new(x, anchor.y + 6.0)));
                 ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
-                // the app window may still be open behind the panel: keep its Dock icon
-                crate::kit::native::set_dock_icon(self.app_open);
+                // the app window may still be open (or minimized) behind the
+                // panel: it keeps its Dock icon. Dropping it made macOS pull
+                // a minimized window back up, and an open one look quit
+                crate::kit::native::set_dock_icon(self.app_open || self.setup.is_some());
             }
             Mode::Window | Mode::Setup | Mode::FdaHelp => {
                 let pos = Pos2::new(((screen.x - size.x) / 2.0).max(0.0), ((screen.y - size.y) / 2.0).max(30.0));
@@ -868,22 +878,32 @@ impl eframe::App for App {
 /// (setup frozen on Welcome, clicks working underneath) until it was resized
 /// once; from then on it drew fine. So resize it by a point and back once,
 /// shortly after it first shows.
+static FIRST_FRAMES: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The app window is past its first frames (see [`kick_first_frames`]):
+/// what it draws now is what the person sees.
+pub fn first_frames_shown() -> bool {
+    // the kick needs the window's size; without one, give up waiting after 1.5 s
+    static SINCE: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    FIRST_FRAMES.load(std::sync::atomic::Ordering::Relaxed) >= 2 || SINCE.get_or_init(std::time::Instant::now).elapsed().as_secs_f32() > 1.5
+}
+
 fn kick_first_frames(ctx: &egui::Context) {
-    use std::sync::atomic::{AtomicU8, Ordering};
-    static STATE: AtomicU8 = AtomicU8::new(0);
+    use std::sync::atomic::Ordering;
+    let state = &FIRST_FRAMES;
     let Some(r) = ctx.input(|i| i.viewport().inner_rect) else { return };
     let id = egui::Id::new("kick-first-frames");
     let now = ctx.input(|i| i.time);
     let first = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(id, || now));
     let t = now - first;
-    match STATE.load(Ordering::Relaxed) {
+    match state.load(Ordering::Relaxed) {
         0 if t > 0.5 => {
             ctx.send_viewport_cmd(ViewportCommand::InnerSize(r.size() + egui::vec2(1.0, 0.0)));
-            STATE.store(1, Ordering::Relaxed);
+            state.store(1, Ordering::Relaxed);
         }
         1 if t > 0.6 => {
             ctx.send_viewport_cmd(ViewportCommand::InnerSize(r.size() - egui::vec2(1.0, 0.0)));
-            STATE.store(2, Ordering::Relaxed);
+            state.store(2, Ordering::Relaxed);
         }
         0 | 1 => ctx.request_repaint(),
         _ => {}
@@ -945,6 +965,9 @@ impl App {
             if self.app_focus {
                 self.app_focus = false;
                 self.app_focus_until = Some(Instant::now() + APP_FOCUS_GRACE);
+                // a minimized window comes back up when it's asked for (a
+                // no-op otherwise)
+                vctx.send_viewport_cmd(ViewportCommand::Minimized(false));
                 vctx.send_viewport_cmd(ViewportCommand::Focus);
                 crate::kit::native::activate();
             } else if let Some(until) = self.app_focus_until {

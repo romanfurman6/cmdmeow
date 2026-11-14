@@ -136,6 +136,19 @@ pub fn read_claude_keychain() -> KeychainRead {
     KeychainRead::Missing
 }
 
+/// Whether Claude Code keeps a sign-in in the Keychain. Only the item's
+/// attributes are looked at, never its secret, so macOS doesn't ask.
+#[cfg(target_os = "macos")]
+pub fn claude_keychain_exists() -> bool {
+    use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
+    ItemSearchOptions::new().class(ItemClass::generic_password()).service("Claude Code-credentials").load_attributes(true).limit(Limit::Max(1)).search().is_ok_and(|v| !v.is_empty())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn claude_keychain_exists() -> bool {
+    false
+}
+
 /// Claude Code's credentials file (used where there's no Keychain item).
 pub fn claude_creds_file() -> Option<ClaudeCreds> {
     let home = dirs::home_dir()?;

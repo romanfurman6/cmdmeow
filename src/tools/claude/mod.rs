@@ -18,6 +18,96 @@ use egui::{Rect, Ui};
 pub const ID: ToolId = "claude";
 const LIMITS: &str = "limits";
 
+/// Connecting to Claude Code's sign-in in the Keychain (setup's Sign-ins
+/// step and Settings › AI Usage; nothing reads it before that). The macOS
+/// prompt is up while busy.
+pub mod keychain {
+    use crate::kit::ai::{self, claude::Connect};
+    use crate::kit::sync::LockExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static BUSY: AtomicBool = AtomicBool::new(false);
+    /// The macOS prompt was answered: our window goes back in front (it can
+    /// end up behind another app's window).
+    static ANSWERED: AtomicBool = AtomicBool::new(false);
+    static ERROR: Mutex<String> = Mutex::new(String::new());
+    /// Whether the item exists, looked up at most every 30 s (setup draws
+    /// the permission rows every frame).
+    static SEEN: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+
+    fn exists() -> bool {
+        let mut g = SEEN.lock_ok();
+        match *g {
+            Some((at, v)) if at.elapsed() < Duration::from_secs(30) => v,
+            _ => {
+                let v = ai::account::claude_keychain_exists();
+                *g = Some((Instant::now(), v));
+                v
+            }
+        }
+    }
+
+    /// Whether to offer it: Claude is tracked and Claude Code keeps its
+    /// sign-in in the Keychain (or it's connected already).
+    pub fn wanted(demo: bool) -> bool {
+        let set = ai::settings::get();
+        demo || ((set.is_on("claude") || set.main == "claude") && (set.claude_keychain == "ok" || exists()))
+    }
+
+    pub fn status() -> crate::kit::perms::Status {
+        use crate::kit::perms::Status;
+        match ai::settings::get().claude_keychain.as_str() {
+            "ok" => Status::Allowed,
+            "denied" => Status::Denied,
+            _ => Status::NotAsked,
+        }
+    }
+
+    pub fn busy() -> bool {
+        BUSY.load(Ordering::Relaxed)
+    }
+
+    pub fn error() -> String {
+        ERROR.lock_ok().clone()
+    }
+
+    /// Bring the window back in front once the prompt was answered (call
+    /// every frame where the Allow / Connect button is drawn).
+    pub fn refocus(ctx: &egui::Context) {
+        if ANSWERED.swap(false, Ordering::Relaxed) {
+            crate::kit::native::activate();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+    }
+
+    /// Read it now (macOS asks), off the ui thread; limits refresh after.
+    pub fn connect(ctx: Option<egui::Context>) {
+        if BUSY.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        ERROR.lock_ok().clear();
+        std::thread::spawn(move || {
+            let r = ai::claude::connect_keychain();
+            eprintln!("[ai] claude keychain: {r:?}");
+            *ERROR.lock_ok() = match r {
+                Connect::Ok | Connect::Denied => String::new(),
+                Connect::Missing => "Sign in to Claude Code first".into(),
+                Connect::Failed => "Keychain didn't answer".into(),
+            };
+            if r == Connect::Ok {
+                super::backend::request_refresh();
+            }
+            BUSY.store(false, Ordering::Relaxed);
+            ANSWERED.store(true, Ordering::Relaxed);
+            if let Some(c) = ctx {
+                c.request_repaint();
+            }
+        });
+    }
+}
+
 pub struct Claude {
     all: backend::All,
     demo: bool,
@@ -143,5 +233,43 @@ impl Tool for Claude {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keychain;
+    use crate::kit::ai::{self, claude::Connect};
+    use crate::kit::perms::Status;
+
+    #[test]
+    fn keychain_row_and_status() {
+        let set = |state: &str, main: &str, off: &[&str]| {
+            let (state, main, off) = (state.to_string(), main.to_string(), off.iter().map(|s| s.to_string()).collect());
+            ai::settings::update(false, move |s| {
+                s.claude_keychain = state;
+                s.main = main;
+                s.off = off;
+            });
+        };
+        // connected: the row shows as allowed while Claude is tracked
+        set("ok", "claude", &[]);
+        assert!(keychain::wanted(false));
+        assert_eq!(keychain::status(), Status::Allowed);
+        set("ok", "codex", &["claude"]);
+        assert!(!keychain::wanted(false));
+        set("denied", "claude", &[]);
+        assert_eq!(keychain::status(), Status::Denied);
+        set("", "claude", &[]);
+        assert_eq!(keychain::status(), Status::NotAsked);
+        // screenshots always show it
+        assert!(keychain::wanted(true));
+        // no sign-in in the Keychain (always so off macOS): nothing is remembered
+        if !cfg!(target_os = "macos") {
+            assert!(!keychain::wanted(false));
+            assert_eq!(ai::claude::connect_keychain(), Connect::Missing);
+            assert_eq!(ai::settings::get().claude_keychain, "");
+        }
+        set("", "claude", &[]);
     }
 }

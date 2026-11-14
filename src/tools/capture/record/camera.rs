@@ -1,11 +1,10 @@
 //! The camera bubble: a round, always-on-top native window showing the
-//! camera, mirrored like a mirror; drag it anywhere. Its frames also go to
-//! the recorder (when it asks, through [`set_sink`]) to be written as their
-//! own track, so the bubble's look can be changed after recording. macOS
-//! only.
+//! camera, mirrored like a mirror; drag it anywhere. The recorder keeps it
+//! in the video where it is on screen. It shows only once the camera sends
+//! its first frame, so it never flashes black. macOS only.
 
 #[cfg(target_os = "macos")]
-pub use imp::{bubble, set_sink, Camera};
+pub use imp::Camera;
 
 #[cfg(not(target_os = "macos"))]
 pub struct Camera;
@@ -27,15 +26,18 @@ impl Camera {
         false
     }
     pub fn set_visible(&self, _on: bool) {}
+    pub fn stalled(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(target_os = "macos")]
 mod imp {
     use egui::Pos2;
-    use dispatch2::DispatchQueue;
+    use dispatch2::{DispatchQueue, DispatchTime};
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, ProtocolObject};
-    use objc2::{define_class, msg_send, AnyThread, MainThreadMarker, MainThreadOnly};
+    use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
     use objc2_av_foundation::{
         AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession, AVCaptureSessionPreset1280x720, AVCaptureVideoDataOutput, AVCaptureVideoDataOutputSampleBufferDelegate,
@@ -43,61 +45,54 @@ mod imp {
     };
     use objc2_core_media::CMSampleBuffer;
     use objc2_foundation::{NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
-    use std::cell::RefCell;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
-    pub type Sink = Box<dyn FnMut(&CMSampleBuffer) + Send>;
-
-    /// Who gets the camera's frames (the recorder, while it records).
-    static SINK: Mutex<Option<Sink>> = Mutex::new(None);
-
-    pub fn set_sink(sink: Option<Sink>) {
-        if let Ok(mut s) = SINK.lock() {
-            *s = sink;
-        }
-    }
-
-    thread_local! {
-        /// The bubble's window, for [`bubble`] (main thread).
-        static BUBBLE: RefCell<Option<Retained<NSWindow>>> = const { RefCell::new(None) };
-    }
-
-    /// The bubble now: its frame (global points, top-left origin) and
-    /// whether it shows. Main thread.
-    pub fn bubble() -> Option<(egui::Rect, bool)> {
-        let mtm = MainThreadMarker::new()?;
-        let top = NSScreen::screens(mtm).firstObject().map(|s| s.frame().size.height).unwrap_or(0.0);
-        BUBBLE.with(|b| {
-            let b = b.borrow();
-            let w = b.as_ref()?;
-            let f = w.frame();
-            Some((egui::Rect::from_min_size(Pos2::new(f.origin.x as f32, (top - f.origin.y - f.size.height) as f32), egui::vec2(f.size.width as f32, f.size.height as f32)), w.isVisible()))
-        })
+    /// Shows the bubble when the camera's first frame comes in.
+    struct Reveal {
+        window: Mutex<Option<SendBox<Retained<NSWindow>>>>,
+        /// A frame came: the picture is live.
+        live: AtomicBool,
     }
 
     define_class!(
         #[unsafe(super(NSObject))]
         #[name = "CmdMeowCameraFrames"]
+        #[ivars = Reveal]
         struct Frames;
 
         unsafe impl NSObjectProtocol for Frames {}
 
         unsafe impl AVCaptureVideoDataOutputSampleBufferDelegate for Frames {
             #[unsafe(method(captureOutput:didOutputSampleBuffer:fromConnection:))]
-            fn did_output(&self, _output: &AVCaptureOutput, sample: &CMSampleBuffer, _connection: &AVCaptureConnection) {
-                if let Ok(mut s) = SINK.lock() {
-                    if let Some(f) = s.as_mut() {
-                        f(sample);
-                    }
+            fn did_output(&self, _output: &AVCaptureOutput, _sample: &CMSampleBuffer, _connection: &AVCaptureConnection) {
+                let r = self.ivars();
+                if r.live.swap(true, Ordering::Relaxed) {
+                    return;
                 }
+                let Some(w) = r.window.lock().ok().and_then(|mut w| w.take()) else { return };
+                // the preview layer draws the frame a moment after we get it
+                let when = DispatchTime::try_from(std::time::Duration::from_millis(120)).unwrap_or(DispatchTime::NOW);
+                let _ = DispatchQueue::main().after(when, move || {
+                    let w = w;
+                    fade_in(&w.0);
+                });
             }
         }
     );
 
     impl Frames {
-        fn new() -> Retained<Self> {
-            let this = Self::alloc().set_ivars(());
+        fn new(window: Retained<NSWindow>) -> Retained<Self> {
+            let this = Self::alloc().set_ivars(Reveal { window: Mutex::new(Some(SendBox(window))), live: AtomicBool::new(false) });
             unsafe { msg_send![super(this), init] }
+        }
+    }
+
+    /// Bring the hidden bubble in over a moment. Main thread.
+    fn fade_in(w: &NSWindow) {
+        unsafe {
+            let anim: Retained<AnyObject> = msg_send![w, animator];
+            let _: () = msg_send![&*anim, setAlphaValue: 1.0f64];
         }
     }
 
@@ -105,7 +100,8 @@ mod imp {
         window: Retained<NSWindow>,
         session: Retained<AVCaptureSession>,
         preview: Retained<AVCaptureVideoPreviewLayer>,
-        _frames: Option<(Retained<AVCaptureVideoDataOutput>, Retained<Frames>)>,
+        frames: Option<(Retained<AVCaptureVideoDataOutput>, Retained<Frames>)>,
+        opened: std::time::Instant,
     }
 
     struct SendBox<T>(T);
@@ -135,25 +131,13 @@ mod imp {
                 if session.canSetSessionPreset(AVCaptureSessionPreset1280x720) {
                     session.setSessionPreset(AVCaptureSessionPreset1280x720);
                 }
-                let frames = {
-                    let out = AVCaptureVideoDataOutput::new();
-                    let fmt = NSNumber::new_u32(u32::from_be_bytes(*b"420v"));
-                    let key = NSString::from_str("PixelFormatType");
-                    out.setVideoSettings(Some(&NSDictionary::from_slices(&[&*key], &[&*fmt as &AnyObject])));
-                    out.setAlwaysDiscardsLateVideoFrames(true);
-                    let delegate = Frames::new();
-                    let queue = DispatchQueue::new("cmdmeow.camera", None);
-                    out.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(&*delegate)), Some(&queue));
-                    session.canAddOutput(&out).then(|| {
-                        session.addOutput(&out);
-                        (out, delegate)
-                    })
-                };
 
                 let top = NSScreen::screens(mtm).firstObject().map(|s| s.frame().size.height).unwrap_or(0.0);
                 let d = diameter as f64;
                 let origin = NSPoint::new(center.x as f64 - d / 2.0, top - center.y as f64 - d / 2.0);
                 let window = NSWindow::initWithContentRect_styleMask_backing_defer(NSWindow::alloc(mtm), NSRect::new(origin, NSSize::new(d, d)), NSWindowStyleMask::Borderless, NSBackingStoreType::Buffered, false);
+                // see-through until the first frame (no black circle meanwhile)
+                window.setAlphaValue(0.0);
                 window.setReleasedWhenClosed(false);
                 window.setOpaque(false);
                 window.setBackgroundColor(Some(&NSColor::clearColor()));
@@ -173,8 +157,26 @@ mod imp {
                         c.setVideoMirrored(true);
                     }
                 }
-                BUBBLE.with(|b| *b.borrow_mut() = Some(window.clone()));
-                let cam = Camera { window, session, preview, _frames: frames };
+                // the frames only tell when the picture is live
+                let frames = {
+                    let out = AVCaptureVideoDataOutput::new();
+                    let fmt = NSNumber::new_u32(u32::from_be_bytes(*b"420v"));
+                    let key = NSString::from_str("PixelFormatType");
+                    out.setVideoSettings(Some(&NSDictionary::from_slices(&[&*key], &[&*fmt as &AnyObject])));
+                    out.setAlwaysDiscardsLateVideoFrames(true);
+                    let delegate = Frames::new(window.clone());
+                    let queue = DispatchQueue::new("cmdmeow.camera", None);
+                    out.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(&*delegate)), Some(&queue));
+                    session.canAddOutput(&out).then(|| {
+                        session.addOutput(&out);
+                        (out, delegate)
+                    })
+                };
+                if frames.is_none() {
+                    // nothing will say when it's live: show it now
+                    window.setAlphaValue(1.0);
+                }
+                let cam = Camera { window, session, preview, frames, opened: std::time::Instant::now() };
                 cam.lay_out(d);
                 if let Some(root) = view.layer() {
                     root.addSublayer(&cam.preview);
@@ -192,6 +194,10 @@ mod imp {
 
         fn lay_out(&self, d: f64) {
             unsafe {
+                // at once, with the window: an animated layer would lag
+                // behind it and the bubble would jump
+                let _: () = msg_send![objc2::class!(CATransaction), begin];
+                let _: () = msg_send![objc2::class!(CATransaction), setDisableActions: true];
                 let r = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(d, d));
                 let layer: &AnyObject = &self.preview;
                 let _: () = msg_send![layer, setFrame: r];
@@ -201,6 +207,7 @@ mod imp {
                 let white = NSColor::whiteColor();
                 let cg: *const std::ffi::c_void = msg_send![&*white, CGColor];
                 let _: () = msg_send![layer, setBorderColor: cg];
+                let _: () = msg_send![objc2::class!(CATransaction), commit];
             }
         }
 
@@ -231,6 +238,13 @@ mod imp {
             self.window.isVisible()
         }
 
+        /// On for a while and still no picture: the camera sends none (a
+        /// closed lid, another app holding it).
+        pub fn stalled(&self) -> bool {
+            let live = self.frames.as_ref().is_none_or(|(_, f)| f.ivars().live.load(Ordering::Relaxed));
+            !live && self.opened.elapsed().as_secs_f32() > 3.0
+        }
+
         /// Hide the bubble (and turn the camera off) or bring it back. The
         /// window stays, so a running recording keeps it in the video.
         pub fn set_visible(&self, on: bool) {
@@ -255,23 +269,23 @@ mod imp {
             });
         }
 
+        /// Grow or shrink around the centre, kept on its screen.
         pub fn set_diameter(&self, d: f32) {
             let d = d as f64;
             let f = self.window.frame();
             let c = NSPoint::new(f.origin.x + f.size.width / 2.0, f.origin.y + f.size.height / 2.0);
-            self.window.setFrame_display(NSRect::new(NSPoint::new(c.x - d / 2.0, c.y - d / 2.0), NSSize::new(d, d)), true);
+            let (mut x, mut y) = (c.x - d / 2.0, c.y - d / 2.0);
+            if let Some(v) = self.window.screen().map(|s| s.visibleFrame()) {
+                x = x.min(v.origin.x + v.size.width - d).max(v.origin.x);
+                y = y.min(v.origin.y + v.size.height - d).max(v.origin.y);
+            }
+            self.window.setFrame_display(NSRect::new(NSPoint::new(x, y), NSSize::new(d, d)), true);
             self.lay_out(d);
         }
     }
 
     impl Drop for Camera {
         fn drop(&mut self) {
-            BUBBLE.with(|b| {
-                let mut b = b.borrow_mut();
-                if b.as_ref().is_some_and(|w| Retained::as_ptr(w) == Retained::as_ptr(&self.window)) {
-                    *b = None;
-                }
-            });
             self.window.orderOut(None);
             self.window.close();
             let s = SendBox(self.session.clone());

@@ -860,7 +860,7 @@ fn scan_brew(c: &mut Ctx) {
     c.brew = true;
     if bytes >= m::MIN_ITEM_BYTES {
         let prefix = brew.parent().and_then(|b| b.parent()).map(Path::to_path_buf).unwrap_or_default();
-        c.add_action(Group::Developer, "Homebrew old versions and downloads", prefix.join("Cellar"), "Caches", Verdict::Safe, "Older versions of what you installed with brew, and its downloads; brew fetches them again", Action::BrewCleanup, bytes);
+        c.add_action(Group::Developer, "Homebrew old versions", prefix.join("Cellar"), "Caches", Verdict::Safe, "Old versions and downloads; brew gets them again", Action::BrewCleanup, bytes);
     }
 }
 /// What `brew cleanup --dry-run` says it would free ("…free approximately 1.2GB…").
