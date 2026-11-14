@@ -293,7 +293,9 @@ mod imp {
             if w.level() != level {
                 w.setLevel(level);
             }
-            let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary;
+            // stationary: a click on the wallpaper ("show desktop") or
+            // Mission Control leaves the bar where it is
+            let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary;
             if w.collectionBehavior() != behavior {
                 w.setCollectionBehavior(behavior);
             }

@@ -672,7 +672,7 @@ fn next_beat(now: f64, fps: f64) -> f64 {
 /// used to pass the clock).
 #[track_caller]
 pub fn spinner(painter: &Painter, center: Pos2, radius: f32, _t: f64, color: Color32) {
-    crate::kit::spin::arc(painter, center, radius, color, std::panic::Location::caller());
+    crate::kit::spin::arc_at(painter, center, radius, color, std::panic::Location::caller());
 }
 
 pub fn checkbox(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {

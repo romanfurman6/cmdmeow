@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 const WIN_R: f32 = 12.0;
 const ROW_H: f32 = sp::ROW_H;
 const ASIDE_W: f32 = 330.0;
+/// The Size column: room for "999.9 MB".
+const SIZE_W: f32 = 72.0;
 /// Icons are loaded a few per frame so a long list doesn't stall.
 const ICONS_PER_FRAME: usize = 4;
 
@@ -383,8 +385,10 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
     glass_card(&p, list, R_CARD, 0.0, false);
     // column heads
     let hy = list.top() + sp::TABLE_HEAD_H / 2.0;
-    let c_size = list.right() - 14.0;
-    let c_used = c_size - 70.0 - 12.0;
+    // rows live in a scroll area that keeps a gutter on the right for the
+    // bar (R12): the columns line up with the rows, not with the card edge
+    let c_size = list.right() - sp::SCROLL_GUTTER - sp::L;
+    let c_used = c_size - SIZE_W - sp::L;
     let c_name = list.left() + 14.0 + 16.0 + 10.0 + 26.0 + 10.0;
     section_header(&p, Pos2::new(c_name, hy), Align2::LEFT_CENTER, "Name");
     section_header(&p, Pos2::new(c_used, hy), Align2::RIGHT_CENTER, "Last used");
@@ -444,8 +448,14 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
                 let ir = Rect::from_center_size(Pos2::new(cb.right() + 10.0 + 13.0, r.center().y), Vec2::splat(26.0));
                 app_icon(u, &ctx, &p, ir, Some(&a.path), &a.name, &mut budget);
                 let tc = if dim { TEXT_FAINT() } else { TEXT() };
-                let size = if a.locked.is_some() { "—".to_string() } else if a.sized { human_bytes(total) } else { "…".into() };
-                p.text(Pos2::new(c_size - area.left() + area.left(), r.center().y), Align2::RIGHT_CENTER, size, font(13.0), tc);
+                if a.locked.is_some() || a.sized {
+                    let size = if a.locked.is_some() { "—".to_string() } else { human_bytes(total) };
+                    p.text(Pos2::new(c_size, r.center().y), Align2::RIGHT_CENTER, size, font(13.0), tc);
+                } else {
+                    // still measuring: a quiet placeholder, not a cut "…"
+                    let ph = Rect::from_min_max(Pos2::new(c_size - 28.0, r.center().y - 2.0), Pos2::new(c_size, r.center().y + 2.0));
+                    p.rect_filled(ph, 2.0, white(26));
+                }
                 let stale = a.last_used.is_some_and(|t| now - t > UNUSED_DAYS * 86400) && !dim;
                 p.text(Pos2::new(c_used, r.center().y), Align2::RIGHT_CENTER, ago(now, a.last_used), font(12.0), if stale { AMBER() } else { TEXT_FAINT() });
                 // the name gets the room first; the source chip only shows
@@ -940,8 +950,8 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
     // list
     let list = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, sc.top() - sp::L));
     glass_card(&p, list, R_CARD, 0.0, false);
-    let c_size = list.right() - 14.0;
-    let c_when = c_size - 70.0 - 12.0;
+    let c_size = list.right() - sp::SCROLL_GUTTER - sp::L;
+    let c_when = c_size - SIZE_W - sp::L;
     let c_where = c_when - 90.0 - 16.0 - 250.0;
     let c_name = list.left() + 14.0 + 16.0 + 12.0;
     let hy = list.top() + sp::TABLE_HEAD_H / 2.0;
