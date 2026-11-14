@@ -1803,7 +1803,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let demo_top = after + sp::XL;
     let a = ease((t - 0.35) / 0.5);
     if body.bottom() - demo_top >= 232.0 && a > 0.0 {
-        ai_check_demo(ui, &p, Pos2::new(x, demo_top + (1.0 - a) * 8.0), w, &set.main, a);
+        ai_check_demo(ui, &p, Pos2::new(x, demo_top + (1.0 - a) * 8.0), w, &set.main, a, t);
     }
     if let Some(f) = change {
         settings::update(!app.demo, f);
@@ -1812,11 +1812,16 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
 
 /// How long one round of the AI Check demo takes, in seconds.
 const DEMO_LOOP: f32 = 7.0;
+/// The demo starts this long after the step opens.
+const DEMO_DELAY: f32 = 0.6;
+/// The round stops here: every row has its answer and the header says so.
+const DEMO_END: f32 = 0.8;
 
 /// The AI agents step's demo of AI Check: four everyday Cleanup finds, the
-/// main agent checks them one by one and answers each, then it starts over.
-/// Returns its height.
-fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str, a: f32) -> f32 {
+/// main agent checks them one by one and answers each. It plays once when
+/// the step opens (`t`, seconds since) and then holds the answers: no
+/// repaint loop (R-anim). Returns its height.
+fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str, a: f32, t: f32) -> f32 {
     // (name, size, the reason when it needs an OK)
     const ROWS: [(&str, &str, Option<&str>); 4] = [
         ("Safari cache", "1.8 GB", None),
@@ -1829,10 +1834,11 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     let r = Rect::from_min_size(top_left, Vec2::new(w, h));
     p.rect_filled(r, R_CARD, CARD().gamma_multiply(a));
     let now = ui.ctx().input(|i| i.time);
-    let c = (now as f32) % DEMO_LOOP / DEMO_LOOP;
+    // the round's fraction, stopped once every row has its answer
+    let c = ((t - DEMO_DELAY) / DEMO_LOOP).clamp(0.0, DEMO_END);
     // one row every 16% of the round, its answer 15% after it starts
     let lit = |k: usize| (0.10 + 0.16 * k as f32, 0.25 + 0.16 * k as f32);
-    let shown = |at: f32| ease(((c - at) / 0.03).clamp(0.0, 1.0)) * (1.0 - ease(((c - 0.95) / 0.05).clamp(0.0, 1.0)));
+    let shown = |at: f32| ease(((c - at) / 0.03).clamp(0.0, 1.0));
     let done = c >= 0.75;
     // header: the agent's mark, AI Check, and the state on the right
     let hy = r.top() + sp::XS + head_h / 2.0;
@@ -1840,7 +1846,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     let x1 = r.right() - sp::L;
     agent_mark(p, Rect::from_center_size(Pos2::new(x0 + 9.0, hy), Vec2::splat(18.0)), agent, false);
     p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
-    if done && c < 0.95 {
+    if done {
         p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, format!("{} checked", ROWS.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
     } else if !done {
         let t = p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, "Checking", font(12.0), TEXT_DIM().gamma_multiply(a));
@@ -1887,12 +1893,10 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
         }
         y += rh;
     }
-    // frames only while something moves: the checking part and the fades
-    let ctx = ui.ctx();
-    if !(0.8..=0.93).contains(&c) {
-        ctx.request_repaint();
-    } else {
-        ctx.request_repaint_after(std::time::Duration::from_secs_f32((0.93 - c) * DEMO_LOOP));
+    // frames only while it plays (setup draws in the root's pass: ask it too)
+    if c < DEMO_END {
+        ui.ctx().request_repaint();
+        ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
     }
     h
 }
