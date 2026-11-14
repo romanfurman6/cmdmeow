@@ -81,14 +81,19 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
             group_header(&p, Pos2::new(x + 8.0, y), section);
             y += head;
         }
+        // a required permission is missing: a lock where the shortcut sits
+        let locked = super::gate::missing(app, i).is_some();
         let t = &app.tools[i];
         let busy = t.busy();
-        let (label, badge, meta, id) = (t.name(), t.badge(), if busy { String::new() } else { no_zero(t.sidebar_meta()) }, t.id());
+        let (label, badge, meta, id) = (t.name(), t.badge(), if busy || locked { String::new() } else { no_zero(t.sidebar_meta()) }, t.id());
         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, SIDEBAR_ROW_H));
         if sidebar_item(ui, r, ui.scope_id().with(("nav", id)), badge.icon, badge.color, label, &meta, app.page == i && !app.settings_open, false).clicked() {
             app.page = i;
             app.settings_open = false;
             app.drag = None;
+        }
+        if locked && !busy {
+            icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(r.right() - 14.0, r.center().y), Vec2::splat(12.0)), TEXT_FAINT());
         }
         if busy {
             // working in the background: a small spinner where the count sits
@@ -143,17 +148,13 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
     // a required permission is missing: Allow row on top, the page dimmed and off
     super::gate::watch(app, &ctx);
     let lock = super::gate::missing(app, app.page);
-    let content = match lock {
-        Some(perm) => super::gate::page_bar(app, ui, content, perm),
-        None => content,
-    };
+    if lock.is_some() {
+        super::gate::perm_page(app, ui, content, app.page);
+        return;
+    }
     let tool = &mut app.tools[app.page];
     let tid = tool.id();
     let mut child = ui.new_child(UiBuilder::new().max_rect(content).id_salt(("page", tid)));
-    if lock.is_some() {
-        child.disable();
-        child.multiply_opacity(0.5);
-    }
     if super::tool::guard(tid, || tool.page_ui(&mut child, content, cx)).is_none() {
         stopped_page(app, ui, content, cx);
     }

@@ -291,10 +291,11 @@ impl App {
 
     /// `--view`: "panel", or whatever a tool recognizes.
     fn apply_view(&mut self, view: &str) {
-        // "locked-<view>": the same view with Screen Recording and Full Disk Access missing
+        // "locked-<view>": the same view with Screen Recording, Full Disk Access
+        // and Accessibility missing
         if let Some(rest) = view.strip_prefix("locked-") {
             use crate::kit::perms::{Perm, Status};
-            self.perm_watch.demo = Some(Perm::SYSTEM.into_iter().map(|p| (p, if matches!(p, Perm::Screen | Perm::FullDisk) { Status::NotAsked } else { Status::Allowed })).collect());
+            self.perm_watch.demo = Some(Perm::SYSTEM.into_iter().map(|p| (p, if matches!(p, Perm::Screen | Perm::FullDisk | Perm::Accessibility) { Status::NotAsked } else { Status::Allowed })).collect());
             return self.apply_view(rest);
         }
         match view {

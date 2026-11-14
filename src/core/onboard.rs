@@ -167,9 +167,6 @@ pub struct Row {
     pub optional: bool,
     /// (tool index) of the enabled tools that need it.
     pub tools: Vec<usize>,
-    /// The bar on a locked page: the row says what is missing ("Needs Full
-    /// Disk Access") instead of naming the permission and why it's asked.
-    pub locked: bool,
 }
 
 /// What the enabled tools need, required rows first, in a stable order.
@@ -185,7 +182,7 @@ pub fn rows(app: &App) -> Vec<Row> {
                     r.optional &= n.optional;
                     r.tools.push(i);
                 }
-                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i], locked: false }),
+                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i] }),
             }
         }
     }
@@ -2214,7 +2211,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         };
         p.rect_filled(ib, 8.0, white(16));
         icon(&p, r.perm.icon(), ib.shrink(7.0), tint);
-        let name = if r.locked && !ok { format!("Needs {}", r.perm.name()) } else { r.perm.name().to_string() };
+        let name = r.perm.name().to_string();
         p.text(Pos2::new(ib.right() + 12.0, rr.center().y), Align2::LEFT_CENTER, name, bold(13.0), TEXT().gamma_multiply(a));
         // status on the right
         let right = rr.right() - 12.0;
@@ -2230,7 +2227,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         // button or the waiting hint wider (never cut the reason, R10)
         let status_w = if ok { 40.0 } else if waiting { 230.0 } else { 150.0 };
         let why_w = right - status_w - why_x;
-        if why_w > 60.0 && !r.locked && !r.perm.why().is_empty() {
+        if why_w > 60.0 && !r.perm.why().is_empty() {
             text_fit(&p, Pos2::new(why_x, rr.center().y), Align2::LEFT_CENTER, r.perm.why(), font(12.0), TEXT_FAINT().gamma_multiply(a), why_w);
         }
         if ok {
