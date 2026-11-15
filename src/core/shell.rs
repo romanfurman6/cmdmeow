@@ -141,6 +141,12 @@ impl App {
                 .build()
                 .ok()
         };
+        // the icon is the cat's face (see kit::cat)
+        #[cfg(target_os = "macos")]
+        if let Some(item) = tray.as_ref().and_then(|t| t.ns_status_item()) {
+            let saved = cc.storage.and_then(|s| eframe::get_value(s, crate::kit::cat::STORAGE_KEY));
+            crate::kit::cat::start(saved, objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void);
+        }
 
         // screenshots always use the default widgets
         let prefs: WidgetPrefs = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::STORAGE_KEY)) }.unwrap_or_default();
@@ -256,6 +262,7 @@ impl App {
             eframe::set_value(storage, super::settings::STORAGE_KEY, &WidgetPrefs::from_entries(&self.widgets));
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
+            eframe::set_value(storage, crate::kit::cat::STORAGE_KEY, &crate::kit::cat::prefs());
         }
     }
 
@@ -386,7 +393,7 @@ impl App {
                 self.mode = Mode::FdaHelp;
                 return;
             }
-            "customize" | "settings-tools" | "settings-general" | "settings-ai" | "settings-ai-check" => {
+            "customize" | "settings-tools" | "settings-general" | "settings-ai" | "settings-ai-check" | "settings-cat" => {
                 self.mode = Mode::Window;
                 self.settings_open = true;
                 self.settings_tab = match view {
@@ -394,6 +401,7 @@ impl App {
                     "settings-tools" => 1,
                     "settings-ai" => 3,
                     "settings-ai-check" => 4,
+                    "settings-cat" => 5,
                     _ => 2,
                 };
                 return;
@@ -705,10 +713,16 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::kit::repaint_log::begin(ctx);
         crate::kit::url_scheme::after_launch();
         self.follow_links(ctx);
+        // the cat's switches changed (in Settings, or it showed a reaction for the first time)
+        if crate::kit::cat::take_unsaved() {
+            if let Some(s) = frame.storage_mut() {
+                self.save_widgets(s);
+            }
+        }
         crate::kit::update::tick();
         if crate::kit::update::take_restart() {
             self.quit(ctx);
@@ -805,6 +819,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        crate::kit::cat::quit();
         // tools save some files in the background; let them land
         crate::kit::fs::flush_writes();
     }

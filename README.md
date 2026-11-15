@@ -83,6 +83,7 @@ Every action has a link for scripts, Raycast or Shortcuts: `open cmdmeow://…`
 | `awake/on`, `awake/off`, `awake/toggle` | Keep Awake |
 | `capture/area`, `window`, `screen`, `delayed`, `text`, `color`, `ruler`, `record`, `history` | Screenshot and Video |
 | `dictation/toggle`, `start`, `stop`, `cancel` | Dictation |
+| `cat/purr`, `hiss`, `hungry`, `eat`, `hello` | The cat's reactions |
 | `open/<tool>[/<page>]`, e.g. `open/disk-map`, `open/capture/settings`, `open/settings` | Open a page |
 | `open/window` | Open the window (also what opening the app again from Finder or Spotlight does) |
 
