@@ -182,7 +182,7 @@ fn recent_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: 
             let c0 = tr.center();
             p.add(egui::Shape::convex_polygon(vec![c0 + Vec2::new(-3.0, -5.0), c0 + Vec2::new(5.5, 0.0), c0 + Vec2::new(-3.0, 5.0)], Color32::WHITE, Stroke::NONE));
             let len = it.meta.trim_start_matches("Video · ");
-            let g = p.layout_no_wrap(len.to_string(), bold(10.0), Color32::WHITE);
+            let g = p.layout_no_wrap(len.to_string(), bold(11.0), Color32::WHITE);
             let lr = Rect::from_min_size(Pos2::new(tr.right() - 5.0 - g.size().x - 8.0, tr.bottom() - 5.0 - g.size().y - 2.0), g.size() + Vec2::new(8.0, 2.0));
             p.rect_filled(lr, 4.0, Color32::from_black_alpha(140));
             p.galley(lr.min + Vec2::new(4.0, 1.0), g, Color32::WHITE);
@@ -651,7 +651,7 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let foot = scr.bottom() + 12.0;
     p.line_segment([Pos2::new(scr.center().x, scr.bottom()), Pos2::new(scr.center().x, foot)], Stroke::new(2.5, tint));
     p.line_segment([Pos2::new(scr.center().x - 12.0, foot), Pos2::new(scr.center().x + 12.0, foot)], Stroke::new(2.5, tint));
-    let g = p.layout_no_wrap("REC".into(), bold(10.0), RED());
+    let g = p.layout_no_wrap("REC".into(), bold(11.0), RED());
     let rec = Rect::from_center_size(scr.center(), Vec2::new(8.0 + 5.0 + g.size().x + 16.0, 20.0));
     p.rect_filled(rec, 8.0, with_alpha(RED(), 0.18));
     let on = (t * 0.7).fract() < 0.6;

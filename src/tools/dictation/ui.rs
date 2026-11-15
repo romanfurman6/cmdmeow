@@ -522,7 +522,7 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             text_wrap(&p, Pos2::new(inner.left(), inner.top()), Align2::LEFT_TOP, &s.text, font(15.0), TEXT(), inner.width(), 4);
         }
         Shown::Problem(m) => {
-            text_wrap(&p, inner.center(), Align2::CENTER_CENTER, m, font(14.0), AMBER(), inner.width(), 2);
+            text_wrap(&p, inner.center(), Align2::CENTER_CENTER, m, font(13.0), AMBER(), inner.width(), 2);
         }
     }
 

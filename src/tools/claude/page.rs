@@ -327,7 +327,7 @@ fn saved_card(p: &egui::Painter, r: Rect, cl: &UsageInfo) {
     let saved = api - plan;
     p.text(i.left_top(), Align2::LEFT_TOP, "Saved · 30 days", ty::title(), TEXT());
     let hero = if saved > 0.0 { parts::usd(saved) } else { "$0".into() };
-    let hr = text_fit(p, Pos2::new(i.left(), i.top() + 16.0 + sp::M), Align2::LEFT_TOP, &hero, ty::hero(), if saved > 0.0 { GREEN() } else { TEXT() }, i.width());
+    let hr = text_fit(p, Pos2::new(i.left(), i.top() + 16.0 + sp::M), Align2::LEFT_TOP, &hero, ty::hero(), TEXT(), i.width());
     if plan > 0.0 {
         text_fit(p, Pos2::new(hr.right() + sp::S, hr.bottom() - 4.0), Align2::LEFT_BOTTOM, &format!("{:.1}× plan", api / plan), ty::label(), TEXT_DIM(), i.right() - hr.right());
     }

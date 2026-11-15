@@ -913,7 +913,7 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         // what each tool asks macOS for is on the Permissions step, in words
         let px = inner.right();
         let nx = inner.left() + 26.0;
-        text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal.name, bold(14.0), TEXT(), px - nx - 6.0);
+        text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal.name, ty::title(), TEXT(), px - nx - 6.0);
         if resp.clicked() {
             flip = Some((idx, !picked));
         }
@@ -1232,7 +1232,7 @@ fn loop_voice(p: &egui::Painter, f: Rect, mic: Rect, now: f32) {
     const SAID: [&str; 3] = ["Ship it today", "Call me at 5", "Sounds good!"];
     let said = SAID[(now / 4.2) as usize % SAID.len()];
     let q = (now / 4.2).fract() * 4.2;
-    let fnt = font(11.5);
+    let fnt = font(12.0);
     let widest = SAID.iter().map(|s| p.layout_no_wrap((*s).into(), fnt.clone(), TEXT()).size().x).fold(0.0, f32::max);
     let n = (((f.width() - 10.0 - widest) / 6.0).floor() as i32).clamp(5, 12) as usize;
     let cy = mic.center().y;

@@ -274,7 +274,7 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             right -= 16.0;
         }
         let tx = th.right() + 9.0;
-        let title_font = if e.kind == Kind::Code { mono(11.5) } else { font(12.0) };
+        let title_font = if e.kind == Kind::Code { mono(11.0) } else { font(12.0) };
         text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &e.title(), title_font, TEXT(), right - tx - 4.0);
         if resp.on_hover_text("Click to copy").clicked() && c.copy(e.id, false) {
             cx.toast("Copied");
