@@ -352,6 +352,35 @@ mod mac {
         (ids, names)
     }
 
+    /// Apps in the Dock that are running now (not background helpers).
+    pub fn open_apps() -> Vec<super::OpenApp> {
+        use objc2_app_kit::NSApplicationActivationPolicy;
+        let me = std::process::id() as i32;
+        NSWorkspace::sharedWorkspace()
+            .runningApplications()
+            .iter()
+            .filter(|a| a.activationPolicy() == NSApplicationActivationPolicy::Regular && !a.isTerminated() && a.processIdentifier() != me)
+            .map(|a| super::OpenApp {
+                pid: a.processIdentifier(),
+                id: a.bundleIdentifier().map(|s| s.to_string()).unwrap_or_default(),
+                name: a.localizedName().map(|s| s.to_string()).unwrap_or_default(),
+                bundle: a.bundleURL().and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())),
+            })
+            .collect()
+    }
+
+    /// Ask an app to quit, like ⌘Q: it may save, ask, or refuse. Never forced.
+    pub fn quit_app(pid: i32) -> bool {
+        use objc2_app_kit::NSRunningApplication;
+        NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(|a| a.terminate())
+    }
+
+    /// The app with this process id is still running.
+    pub fn app_alive(pid: i32) -> bool {
+        use objc2_app_kit::NSRunningApplication;
+        NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(|a| !a.isTerminated())
+    }
+
     /// Move a file or folder to the Trash the way Finder does: it lands in the
     /// Trash of its own volume (so external drives work) and can be put back.
     pub fn trash_item(p: &std::path::Path) -> Result<(), String> {
@@ -392,6 +421,15 @@ mod mac {
 #[cfg(target_os = "macos")]
 pub use mac::*;
 
+/// A running app the person can see (in the Dock).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OpenApp {
+    pub pid: i32,
+    pub id: String,
+    pub name: String,
+    pub bundle: Option<std::path::PathBuf>,
+}
+
 /// Windows whose title starts with this get no glass layer behind them: a
 /// tool's floating windows that draw everything themselves (pinned images,
 /// overlays).
@@ -423,6 +461,15 @@ mod other {
     }
     pub fn running_apps() -> (Vec<String>, Vec<String>) {
         (vec![], vec![])
+    }
+    pub fn open_apps() -> Vec<super::OpenApp> {
+        vec![]
+    }
+    pub fn quit_app(_pid: i32) -> bool {
+        false
+    }
+    pub fn app_alive(_pid: i32) -> bool {
+        false
     }
     /// Move into ~/.Trash. Refuses (instead of deleting) when the item is on
     /// another volume, so "Move to Trash" never turns into a permanent delete.

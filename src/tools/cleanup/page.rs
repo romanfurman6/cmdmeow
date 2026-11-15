@@ -10,6 +10,7 @@ use crate::kit::aicheck::{self, ui::Event};
 use crate::kit::claude_code::{self as cc, Availability};
 use crate::kit::glass::{self, *};
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2};
+use crate::kit::native::OpenApp;
 use std::path::PathBuf;
 
 /// Window corner radius (the footer rounds its bottom-right corner to match).
@@ -193,14 +194,14 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     let mut y = r.top() + PAGE_HEADER_H + 20.0;
     // headline number
     let (big, caption) = if phase == Phase::Cleaning {
-        (human_bytes(st.cleaned_bytes), format!("cleaned so far · {} items", st.cleaned_count))
+        (human_bytes(st.cleaned_bytes), format!("cleaned so far · {}", items_n(st.cleaned_count)))
     } else if phase == Phase::Scanning {
         // the items arrive at the end; the live tallies grow as each place is measured
         let bytes: u64 = st.live.iter().map(|l| l.bytes).sum();
         let n: usize = st.live.iter().map(|l| l.items).sum();
-        (human_bytes(bytes), format!("found so far · {n} items"))
+        (human_bytes(bytes), format!("found so far · {}", items_n(n)))
     } else {
-        (human_bytes(st.items.iter().filter(|i| i.verdict != Verdict::Keep).map(|i| i.bytes).sum()), format!("found so far · {} items", st.items.len()))
+        (human_bytes(st.items.iter().filter(|i| i.verdict != Verdict::Keep).map(|i| i.bytes).sum()), format!("found so far · {}", items_n(st.items.len())))
     };
     let g = p.layout_no_wrap(big, bold(28.0), TEXT());
     let gw = g.size().x;
@@ -278,15 +279,14 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
 fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    let (total, pending, ai_used, ai_error, selected) = {
+    let (total, pending, ai_error, selected) = {
         let g = app.clean.lock_ok();
-        (g.total(), g.pending_questions(), g.ai_used, g.ai_error.clone(), g.selected_bytes())
+        (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_bytes())
     };
     let mut sub = format!("{} found", human_bytes(total));
     if let Some(e) = &ai_error {
         sub = format!("{sub} · {e}");
     }
-    let _ = ai_used;
     // AI Check: a chip after the title
     let ai_n = app.clean.lock_ok().items.iter().filter(|i| i.verdict != Verdict::Keep).count();
     let cw = aicheck::ui::chip_width(&app.ai, ui, ai_n > 0);
@@ -338,9 +338,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
                 app.ai.start(&ctx, ask);
             }
             Some(Event::Act(rec)) => {
-                let i = app.clean.lock_ok().items.iter().position(|it| it.path.display().to_string() == rec.key);
-                if let Some(i) = i {
-                    answer_items(app, &[i], if rec.action == "keep" { Verdict::Keep } else { Verdict::Safe });
+                let idx = bundle_for_key(&app.clean.lock_ok().items, &rec.key);
+                if !idx.is_empty() {
+                    answer_items(app, &idx, if rec.action == "keep" { Verdict::Keep } else { Verdict::Safe });
                 }
                 app.ai.done(&rec);
             }
@@ -349,190 +349,11 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         }
     }
 
-    // the groups as tabs: All, then each group that found something
-    let mut tabs: Vec<(Option<Group>, String, u64, usize, Color32)> = vec![];
-    {
-        let g = app.clean.lock_ok();
-        let asks = |f: &dyn Fn(&Item) -> bool| g.items.iter().filter(|i| f(i) && i.verdict == Verdict::Ask && i.by != Who::You).count();
-        tabs.push((None, "All".into(), total, asks(&|_| true), TEXT_DIM()));
-        for (k, grp) in Group::ALL.iter().enumerate() {
-            if g.items.iter().any(|i| i.group == *grp) {
-                tabs.push((Some(*grp), grp.title().into(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
-            }
-        }
-    }
-    if !tabs.iter().any(|t| t.0 == app.clean_group) {
-        app.clean_group = None;
-    }
-    let mut x = body.left();
-    let tab_h = 30.0;
-    for (grp, title, bytes, q, dot) in &tabs {
-        let size = human_bytes(*bytes);
-        let tw = p.layout_no_wrap(title.clone(), ty::body(), TEXT()).size().x;
-        let sw = p.layout_no_wrap(size.clone(), ty::body(), TEXT()).size().x;
-        let bw = if *q > 0 { (q.to_string().len() as f32 * 7.0 + 14.0).max(20.0) + sp::S } else { 0.0 };
-        let w = 12.0 + 8.0 + sp::S + tw + sp::S + sw + bw + 12.0;
-        let tr = Rect::from_min_size(Pos2::new(x, body.top()), Vec2::new(w, tab_h));
-        let sel = app.clean_group == *grp;
-        let id = ui.scope_id().with(("tab", title.as_str()));
-        let resp = ui.interact(tr, id, Sense::click());
-        let hv = ctx.animate_bool(id, resp.hovered());
-        if sel {
-            p.rect_filled(tr, R_BUTTON, with_alpha(ACTION(), 0.16));
-            p.rect_stroke(tr, R_BUTTON, Stroke::new(1.0, with_alpha(ACTION(), 0.45)), StrokeKind::Inside);
-        } else {
-            p.rect_filled(tr, R_BUTTON, lerp_color(CARD(), RAISED(), hv));
-            p.rect_stroke(tr, R_BUTTON, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
-        }
-        let mut cx_ = tr.left() + 12.0;
-        p.circle_filled(Pos2::new(cx_ + 4.0, tr.center().y), 4.0, *dot);
-        cx_ += 8.0 + sp::S;
-        let t = p.text(Pos2::new(cx_, tr.center().y), Align2::LEFT_CENTER, title, ty::body(), if sel { ACCENT() } else { TEXT() });
-        let s = p.text(Pos2::new(t.right() + sp::S, tr.center().y), Align2::LEFT_CENTER, &size, ty::body(), TEXT_DIM());
-        if *q > 0 {
-            badge(&p, Pos2::new(s.right() + sp::S, tr.center().y), Align2::LEFT_CENTER, &q.to_string());
-        }
-        let resp = match grp {
-            Some(g) => resp.on_hover_text(g.blurb()),
-            None => resp,
-        };
-        if resp.clicked() {
-            app.clean_group = *grp;
-        }
-        if resp.hovered() {
-            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        x = tr.right() + sp::S;
-    }
-
-    // the chosen tab's items, split three ways
-    let (asks, safe, kept): (Vec<usize>, Vec<usize>, Vec<usize>) = {
-        let g = app.clean.lock_ok();
-        let mut mine: Vec<usize> = g.items.iter().enumerate().filter(|(_, it)| app.clean_group.is_none_or(|gr| it.group == gr)).map(|(i, _)| i).collect();
-        mine.sort_by_key(|&i| std::cmp::Reverse(g.items[i].bytes));
-        let asks = mine.iter().copied().filter(|&i| g.items[i].verdict == Verdict::Ask && g.items[i].by != Who::You).collect();
-        let safe = mine.iter().copied().filter(|&i| g.items[i].verdict == Verdict::Safe || (g.items[i].verdict == Verdict::Ask && g.items[i].by == Who::You)).collect();
-        let kept = mine.iter().copied().filter(|&i| g.items[i].verdict == Verdict::Keep).collect();
-        (asks, safe, kept)
-    };
-    let shared = app.clean.clone();
-    let sum = |v: &[usize]| -> u64 {
-        let g = shared.lock_ok();
-        v.iter().map(|&i| g.items[i].bytes).sum()
-    };
-    let cols = Rect::from_min_max(Pos2::new(body.left(), body.top() + tab_h + sp::L), body.max);
-    let (left, right) = if asks.is_empty() {
-        (None, cols)
-    } else if safe.is_empty() && kept.is_empty() {
-        (Some(cols), Rect::NOTHING)
-    } else {
-        let lw = ((cols.width() - sp::XL) * 0.56).round();
-        (
-            Some(Rect::from_min_size(cols.min, Vec2::new(lw, cols.height()))),
-            Rect::from_min_max(Pos2::new(cols.left() + lw + sp::XL, cols.top()), cols.max),
-        )
-    };
-    const LABEL_H: f32 = 20.0;
-
-    // left: questions, one card each
-    if let Some(lc) = left {
-        let lab = section_label(&p, lc.left_top(), "Needs your OK", AMBER(), asks.len(), sum(&asks));
-        let mut answer: Option<Verdict> = None;
-        let a = link(ui, Pos2::new(lc.right(), lab.center().y), Align2::RIGHT_CENTER, "Keep all", 12.0);
-        if a.clicked() {
-            answer = Some(Verdict::Keep);
-        }
-        if link(ui, Pos2::new(a.rect.left() - sp::M, lab.center().y), Align2::RIGHT_CENTER, "Clean all", 12.0).clicked() {
-            answer = Some(Verdict::Safe);
-        }
-        if let Some(v) = answer {
-            answer_items(app, &asks, v);
-        }
-        let area = Rect::from_min_max(Pos2::new(lc.left(), lc.top() + LABEL_H + sp::S), lc.max);
-        scroll_rows(ui, area, format!("asks-{:?}", app.clean_group), asks.len(), |_, _| ASK_H, sp::S, |ui, k, rr| ask_card(app, ui, asks[k], rr));
-    }
-
-    // AI Check tips go under the right column; a tip about a Safe item sits
-    // on that item's row instead, so the list and the tip never disagree
-    let tips: Vec<aicheck::Rec> = if right.is_positive() {
-        let g = app.clean.lock_ok();
-        app.ai.tips().into_iter().filter(|t| !safe.iter().any(|&i| g.items[i].path.display().to_string() == t.key)).collect()
-    } else {
-        Vec::new()
-    };
-    let tip_w = right.width();
-    let tip_hs: Vec<f32> = tips.iter().map(|t| tip_height(&p, t, tip_w)).collect();
-    // at most a third of the column, so the lists always keep room
-    let tips_h: f32 = if tips.is_empty() { 0.0 } else { (sp::M + tip_hs.iter().sum::<f32>() + sp::S * (tips.len() - 1) as f32).min(right.height() / 3.0) };
-    let right = if right.is_positive() { Rect::from_min_max(right.min, Pos2::new(right.right(), right.bottom() - tips_h)) } else { right };
-
-    // right: what will go (Safe) and what stays (Kept)
-    if right.is_positive() {
-        // a reason that doesn't fit on one line wraps and makes its row taller
-        let row_tips = app.ai.tips();
-        let items: Vec<Item> = app.clean.lock_ok().items.iter().map(|it| with_row_tip(it, &row_tips)).collect();
-        let row_h = |idx: &[usize], k: usize, w: f32| row_height(&p, &items[idx[k]], w);
-        let need = |idx: &[usize]| if idx.is_empty() { 0.0 } else { LABEL_H + sp::S + (0..idx.len()).map(|k| row_h(idx, k, right.width())).sum::<f32>() + 8.0 };
-        let (mut safe_h, mut kept_h) = (need(&safe), need(&kept));
-        let gap = if safe_h > 0.0 && kept_h > 0.0 { sp::L } else { 0.0 };
-        if safe_h + kept_h + gap > right.height() {
-            kept_h = kept_h.min(if safe_h > 0.0 { right.height() * 0.4 } else { right.height() });
-            safe_h = (right.height() - kept_h - gap).max(0.0);
-        }
-        let safe_r = Rect::from_min_size(right.min, Vec2::new(right.width(), safe_h));
-        if !safe.is_empty() {
-            let lab = section_label(&p, safe_r.left_top(), "Safe", ACCENT(), safe.len(), sum(&safe));
-            let all_on = {
-                let g = app.clean.lock_ok();
-                safe.iter().all(|&i| g.items[i].selected || g.items[i].hard_keep)
-            };
-            if link(ui, Pos2::new(safe_r.right(), lab.center().y), Align2::RIGHT_CENTER, if all_on { "None" } else { "Select all" }, 12.0).clicked() {
-                let mut g = app.clean.lock_ok();
-                for &i in &safe {
-                    let it = &mut g.items[i];
-                    it.selected = !all_on && !it.hard_keep && !it.permanent;
-                }
-            }
-            let card = Rect::from_min_max(Pos2::new(safe_r.left(), safe_r.top() + LABEL_H + sp::S), safe_r.max);
-            glass_card(&p, card, R_CARD, 0.0, false);
-            scroll_rows(ui, card.shrink2(Vec2::new(0.0, 4.0)), format!("safe-{:?}", app.clean_group), safe.len(), |k, w| row_h(&safe, k, w), 0.0, |ui, k, rr| safe_row(app, ui, safe[k], rr));
-        }
-        if !kept.is_empty() {
-            let kr = Rect::from_min_size(Pos2::new(right.left(), safe_r.bottom() + gap), Vec2::new(right.width(), kept_h));
-            section_label(&p, kr.left_top(), "Kept", TEXT_DIM(), kept.len(), sum(&kept));
-            let card = Rect::from_min_max(Pos2::new(kr.left(), kr.top() + LABEL_H + sp::S), kr.max);
-            glass_card(&p, card, R_CARD, 0.0, false);
-            scroll_rows(ui, card.shrink2(Vec2::new(0.0, 4.0)), format!("kept-{:?}", app.clean_group), kept.len(), |k, w| row_h(&kept, k, w), 0.0, |ui, k, rr| kept_row(app, ui, kept[k], rr));
-        }
-        // under the lists, right after the last one
-        let mut ty_ = right.top() + safe_h + gap + kept_h + sp::M;
-        let mut act = None;
-        for (t, h) in tips.iter().zip(&tip_hs) {
-            if ty_ + h > right.bottom() + tips_h {
-                break;
-            }
-            if let Some(e) = tip_row(ui, Rect::from_min_size(Pos2::new(right.left(), ty_), Vec2::new(tip_w, *h)), t) {
-                act = Some(e);
-            }
-            ty_ += h + sp::S;
-        }
-        if let Some(rec) = act {
-            let i = app.clean.lock_ok().items.iter().position(|it| it.path.display().to_string() == rec.key);
-            if let Some(i) = i {
-                let ask = app.clean.lock_ok().items[i].verdict == Verdict::Ask;
-                if rec.action == "keep" {
-                    answer_items(app, &[i], Verdict::Keep);
-                } else if ask {
-                    answer_items(app, &[i], Verdict::Safe);
-                } else {
-                    let mut g = app.clean.lock_ok();
-                    let it = &mut g.items[i];
-                    it.selected = !it.hard_keep && !it.permanent;
-                }
-            }
-            app.ai.done(&rec);
-        }
-    }
+    // the groups on the left, what the chosen one found on the right
+    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height()));
+    group_rail(app, ui, rail);
+    let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), body.max);
+    result_list(app, ui, list);
 
     // footer
     let f = page_footer(&p, r, WIN_R);
@@ -547,7 +368,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let cw = button_width(&p, &clean_label, BTN_PRIMARY).max(120.0);
     let cr = Rect::from_min_size(Pos2::new(f.right() - 24.0 - cw, fy - 16.0), Vec2::new(cw, 32.0));
     if pill_button(ui, cr, &clean_label, BTN_PRIMARY, selected > 0).clicked() {
-        app.clean_confirm = true;
+        open_confirm(app);
     }
     let seg = Rect::from_min_size(Pos2::new(cr.left() - 16.0 - 200.0, fy - 14.0), Vec2::new(200.0, 28.0));
     if let Some(k) = segmented(ui, seg, ui.scope_id().with("removal"), &["Move to Trash", "Delete now"], app.delete_now as usize) {
@@ -558,35 +379,718 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     }
 }
 
+/// The group list on the left of the results.
+const RAIL_W: f32 = 232.0;
+/// A row of that list.
+const GROUP_ROW_H: f32 = 40.0;
+/// A section title ("Needs your OK  5 · 29.8 GB") above its card.
+const LABEL_H: f32 = 20.0;
+/// The size column of a question.
+const SIZE_W: f32 = 72.0;
+/// Rows of a bundle sit this far in from the bundle's own row.
+const MEMBER_INDENT: f32 = 28.0;
+/// From this many alike items on, they are offered as one row.
+const BUNDLE_MIN: usize = 3;
+
+/// A question the person hasn't answered yet.
+fn is_question(it: &Item) -> bool {
+    it.verdict == Verdict::Ask && it.by != Who::You
+}
+
+/// Items of one kind that are offered together (dozens of macOS caches,
+/// Claude Code's per-session files, build folders of recent projects), so
+/// one answer covers them all. The name is the bundle's title.
+fn bundle_of(it: &Item) -> Option<&'static str> {
+    let apple = it.path.components().any(|c| c.as_os_str().to_string_lossy().starts_with("com.apple."));
+    match it.group {
+        Group::AppCaches if apple => Some("macOS caches"),
+        Group::AiTools if it.title.starts_with("Edit history · ") => Some("Claude Code edit history"),
+        Group::AiTools if it.title.starts_with("Uploaded files · ") => Some("Claude Code uploads"),
+        Group::AiTools if it.kind == "Old Sessions" && it.title.starts_with("Project · ") => Some("Old Claude Code chats"),
+        Group::Projects if it.rule_verdict == Verdict::Ask => Some("Recent build output"),
+        _ => None,
+    }
+}
+
+/// One row of a results list: one item, or a bundle of alike items.
+#[derive(Clone, Debug, PartialEq)]
+struct Entry {
+    /// The bundle's title; `None` for a single item.
+    name: Option<&'static str>,
+    /// Its items, biggest first.
+    idx: Vec<usize>,
+    bytes: u64,
+}
+
+/// `idx` (biggest first) as rows: alike items bundled once there are
+/// [`BUNDLE_MIN`] of them, biggest row first.
+fn entries(items: &[Item], idx: &[usize]) -> Vec<Entry> {
+    let mut out: Vec<Entry> = Vec::new();
+    let mut bundles: Vec<(&'static str, Vec<usize>)> = Vec::new();
+    for &i in idx {
+        match bundle_of(&items[i]) {
+            Some(b) => match bundles.iter_mut().find(|x| x.0 == b) {
+                Some(x) => x.1.push(i),
+                None => bundles.push((b, vec![i])),
+            },
+            None => out.push(Entry { name: None, idx: vec![i], bytes: items[i].bytes }),
+        }
+    }
+    for (b, v) in bundles {
+        if v.len() >= BUNDLE_MIN {
+            let bytes = v.iter().map(|&i| items[i].bytes).sum();
+            out.push(Entry { name: Some(b), idx: v, bytes });
+        } else {
+            out.extend(v.into_iter().map(|i| Entry { name: None, idx: vec![i], bytes: items[i].bytes }));
+        }
+    }
+    out.sort_by_key(|e| std::cmp::Reverse(e.bytes));
+    out
+}
+
+/// Bundles whose members are alike enough for one AI answer to cover them
+/// all (system caches macOS rebuilds). Other bundles hold the person's own
+/// files (chats, uploads, project builds) and are answered item by item.
+fn one_answer(name: &str) -> bool {
+    name == "macOS caches"
+}
+
+/// The open questions an answer about `key` covers: the whole bundle when
+/// `key` names the biggest item of a one-answer bundle (what AI Check is
+/// asked about), else that item.
+fn bundle_for_key(items: &[Item], key: &str) -> Vec<usize> {
+    let mut asks: Vec<usize> = (0..items.len()).filter(|&i| is_question(&items[i])).collect();
+    asks.sort_by_key(|&i| std::cmp::Reverse(items[i].bytes));
+    for e in entries(items, &asks) {
+        if e.name.is_some_and(one_answer) && items[e.idx[0]].path.display().to_string() == key {
+            return e.idx;
+        }
+    }
+    items.iter().position(|it| it.path.display().to_string() == key).into_iter().collect()
+}
+
+/// The groups as a list: All, then each group that found something, with
+/// its size; an amber badge counts a group's questions
+/// (items, like the "Needs your OK" count).
+fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
+    let ctx = ui.ctx().clone();
+    let p = ui.painter().clone();
+    let mut rows: Vec<(Option<Group>, &'static str, u64, usize, Color32)> = vec![];
+    {
+        let g = app.clean.lock_ok();
+        let asks = |f: &dyn Fn(&Item) -> bool| g.items.iter().filter(|i| f(i) && is_question(i)).count();
+        rows.push((None, "All", g.total(), asks(&|_| true), TEXT_DIM()));
+        for (k, grp) in Group::ALL.iter().enumerate() {
+            if g.items.iter().any(|i| i.group == *grp) {
+                rows.push((Some(*grp), grp.title(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
+            }
+        }
+    }
+    if !rows.iter().any(|t| t.0 == app.clean_group) {
+        app.clean_group = None;
+    }
+    let card = Rect::from_min_size(rail.min, Vec2::new(rail.width(), (rows.len() as f32 * GROUP_ROW_H + 2.0 * sp::XS).min(rail.height())));
+    glass_card(&p, card, R_CARD, 0.0, false);
+    for (k, (grp, title, bytes, q, col)) in rows.iter().enumerate() {
+        let rr = Rect::from_min_size(Pos2::new(card.left() + sp::XS, card.top() + sp::XS + k as f32 * GROUP_ROW_H), Vec2::new(card.width() - 2.0 * sp::XS, GROUP_ROW_H));
+        if rr.bottom() > card.bottom() + 0.5 {
+            break;
+        }
+        let sel = app.clean_group == *grp;
+        let id = ui.scope_id().with(("group", *title));
+        let resp = ui.interact(rr, id, Sense::click());
+        let hv = ctx.animate_bool(id, resp.hovered());
+        if sel {
+            // H3
+            p.rect_filled(rr, 8.0, with_alpha(ACTION(), 0.16));
+        } else if hv > 0.0 {
+            // ROW_HOVER (ui-rules H1), inset radius 8 in the rail
+            p.rect_filled(rr, 8.0, white((ROW_HOVER as f32 * hv) as u8));
+        }
+        let c = Pos2::new(rr.left() + sp::S + 12.0, rr.center().y);
+        p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
+        let ir = Rect::from_center_size(c, Vec2::splat(14.0));
+        match grp {
+            Some(g) => group_icon(&p, *g, ir, *col),
+            None => icon(&p, Icon::Disk, ir, *col),
+        }
+        let size = p.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(*bytes), ty::body(), TEXT_DIM());
+        let x = c.x + 12.0 + sp::M;
+        let label = q.to_string();
+        let bw = if *q > 0 { (p.layout_no_wrap(label.clone(), bold(11.0), BG()).size().x + 14.0).max(20.0) + sp::S } else { 0.0 };
+        let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, title, ty::body(), if sel { ACCENT() } else { TEXT() }, size.left() - sp::S - bw - x);
+        if *q > 0 {
+            badge(&p, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, &label);
+        }
+        let resp = match grp {
+            Some(g) => resp.on_hover_text(g.blurb()),
+            None => resp,
+        };
+        if resp.clicked() {
+            app.clean_group = *grp;
+        }
+        if resp.hovered() {
+            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Sec {
+    Ask,
+    Safe,
+    Kept,
+}
+
+/// A line of the results list.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Line {
+    Label(Sec),
+    Gap(f32),
+    /// A row: the section and the entry's index.
+    Entry(Sec, usize),
+    /// An item of an open bundle: section, entry, item.
+    Member(Sec, usize, usize),
+    /// "Kept  34 · 5.91 GB", folds the kept items.
+    KeptHead,
+    /// An AI Check tip about nothing in the list.
+    Tip(usize),
+}
+
+impl Line {
+    fn card(self) -> Option<Sec> {
+        match self {
+            Line::Entry(s, _) | Line::Member(s, _, _) => Some(s),
+            Line::KeptHead => Some(Sec::Kept),
+            _ => None,
+        }
+    }
+}
+
+/// What a click in the list asks for; done after drawing.
+enum Act {
+    Answer(Vec<usize>, Verdict),
+    /// Tick or untick; `true` also ticks items that can't be put back.
+    Select(Vec<usize>, bool, bool),
+    Undo(Vec<usize>),
+    Fold(String),
+    Tip(aicheck::Rec),
+}
+
+/// Which bundles (and Kept) are open, by key.
+fn open_rows(ctx: &egui::Context) -> std::collections::HashSet<String> {
+    ctx.data(|d| d.get_temp::<std::collections::HashSet<String>>(egui::Id::unique("cleanup-open")).unwrap_or_default())
+}
+
+fn fold(ctx: &egui::Context, key: String) {
+    ctx.data_mut(|d| {
+        let set = d.get_temp_mut_or_default::<std::collections::HashSet<String>>(egui::Id::unique("cleanup-open"));
+        if !set.remove(&key) {
+            set.insert(key);
+        }
+    });
+}
+
+fn fold_key(sec: Sec, e: &Entry) -> String {
+    format!("{sec:?}:{}", e.name.unwrap_or(""))
+}
+
+/// "Claude: keep. Large to download again…", wrapped to `w`.
+fn answer_job(agent: &str, a: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
+    let verdict = if a.action == "keep" { "keep" } else { "clean" };
+    let mut job = egui::text::LayoutJob::default();
+    job.append(&format!("{agent}: {verdict}. "), 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
+    job.append(&a.why, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT(), ..Default::default() });
+    job.wrap.max_width = w.max(1.0);
+    job
+}
+
+/// The agent's answer for a row: about its biggest item, which is what
+/// AI Check is asked about for a bundle.
+fn row_answer(app: &App, items: &[Item], e: &Entry) -> Option<aicheck::Rec> {
+    e.idx.iter().find_map(|&i| app.ai.answer_for(&items[i].path.display().to_string()))
+}
+
+/// Room for a question's text in a row `w` wide.
+fn ask_text_w(p: &egui::Painter, w: f32, bundle: bool) -> f32 {
+    let btns = button_width(p, "Clean", BTN_PRIMARY) + sp::S + button_width(p, "Keep", BTN_PRIMARY);
+    w - 2.0 * sp::L - if bundle { 20.0 } else { 0.0 } - SIZE_W - 2.0 * sp::COL_GAP - btns
+}
+
+/// What a question says under its name: the rule's words, or how many
+/// items a bundle holds.
+fn ask_detail(items: &[Item], e: &Entry) -> String {
+    match e.name {
+        Some(_) => items_n(e.idx.len()),
+        None => {
+            let it = &items[e.idx[0]];
+            if it.rule_reason.is_empty() { it.kind.to_string() } else { it.rule_reason.clone() }
+        }
+    }
+}
+
+/// A question's height: name, what it is (wrapped, never cut), and the
+/// agent's answer only once there is one.
+fn ask_height(p: &egui::Painter, items: &[Item], e: &Entry, ans: Option<&aicheck::Rec>, agent: &str, w: f32) -> f32 {
+    let tw = ask_text_w(p, w, e.name.is_some());
+    let detail = p.layout(ask_detail(items, e), ty::label(), TEXT_SOFT(), tw.max(1.0)).size().y;
+    let answer = ans.map(|a| sp::LINE_GAP + p.layout_job(answer_job(agent, a, tw)).size().y).unwrap_or(0.0);
+    sp::M + line_h(p, &ty::title()) + sp::LINE_GAP + detail + answer + sp::M
+}
+
+/// A Safe row: taller when AI Check has a tip about it.
+fn safe_height(p: &egui::Painter, tip: Option<&aicheck::Rec>, agent: &str, w: f32) -> f32 {
+    match tip {
+        Some(t) => sp::M + line_h(p, &ty::body()) + sp::LINE_GAP + p.layout_job(tip_job(agent, t, safe_tip_w(p, w))).size().y + sp::M,
+        None => sp::ROW_H,
+    }
+}
+
+fn safe_tip_w(p: &egui::Painter, w: f32) -> f32 {
+    w - 2.0 * sp::L - 16.0 - sp::M - SIZE_W - sp::COL_GAP - p.layout_no_wrap("Keep".into(), bold(12.0), TEXT()).size().x - sp::COL_GAP
+}
+
+/// "Claude: keep. You built MyApp today", wrapped to `w`.
+fn tip_job(agent: &str, t: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
+    let verdict = if t.action == "keep" { "keep" } else { "clean" };
+    let mut job = egui::text::LayoutJob::default();
+    job.append(&format!("{agent}: {verdict}. "), 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
+    job.append(&t.why, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT_SOFT(), ..Default::default() });
+    job.wrap.max_width = w.max(1.0);
+    job
+}
+
+/// One list of what the chosen group found: the questions, what will go
+/// (Safe), what stays (Kept, folded), then AI Check's other tips.
+fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
+    let ctx = ui.ctx().clone();
+    let p = ui.painter().clone();
+    let items: Vec<Item> = app.clean.lock_ok().items.clone();
+    let grp = app.clean_group;
+    let mut mine: Vec<usize> = (0..items.len()).filter(|&i| grp.is_none_or(|g| items[i].group == g)).collect();
+    mine.sort_by_key(|&i| std::cmp::Reverse(items[i].bytes));
+    let asks: Vec<usize> = mine.iter().copied().filter(|&i| is_question(&items[i])).collect();
+    let safe: Vec<usize> = mine.iter().copied().filter(|&i| items[i].verdict == Verdict::Safe || (items[i].verdict == Verdict::Ask && items[i].by == Who::You)).collect();
+    let kept: Vec<usize> = mine.iter().copied().filter(|&i| items[i].verdict == Verdict::Keep).collect();
+    let es = [entries(&items, &asks), entries(&items, &safe), entries(&items, &kept)];
+    let sec_i = |s: Sec| match s {
+        Sec::Ask => 0,
+        Sec::Safe => 1,
+        Sec::Kept => 2,
+    };
+    let open = open_rows(&ctx);
+    let agent = if app.demo { Agent::Claude.name() } else { super::agent::main().name() };
+    let running = app.ai.phase() == aicheck::Phase::Running;
+    let all_tips = app.ai.tips();
+    let key_of = |i: usize| items[i].path.display().to_string();
+    let row_tip = |e: &Entry| -> Option<aicheck::Rec> { if e.name.is_some() { None } else { all_tips.iter().find(|t| t.key == key_of(e.idx[0])).cloned() } };
+    // a tip about a listed Safe item sits on its row; the rest go under the list
+    let tips: Vec<aicheck::Rec> = all_tips.iter().filter(|t| !safe.iter().any(|&i| key_of(i) == t.key)).cloned().collect();
+    let answers: Vec<Option<aicheck::Rec>> = es[0].iter().map(|e| row_answer(app, &items, e)).collect();
+
+    let mut lines: Vec<Line> = Vec::new();
+    let push_entries = |lines: &mut Vec<Line>, sec: Sec| {
+        for (k, e) in es[sec_i(sec)].iter().enumerate() {
+            lines.push(Line::Entry(sec, k));
+            if e.name.is_some() && open.contains(&fold_key(sec, e)) {
+                lines.extend((0..e.idx.len()).map(|m| Line::Member(sec, k, m)));
+            }
+        }
+    };
+    if !es[0].is_empty() {
+        lines.extend([Line::Label(Sec::Ask), Line::Gap(sp::M)]);
+        push_entries(&mut lines, Sec::Ask);
+    }
+    if !es[1].is_empty() {
+        if !lines.is_empty() {
+            lines.push(Line::Gap(sp::XL));
+        }
+        lines.extend([Line::Label(Sec::Safe), Line::Gap(sp::M)]);
+        push_entries(&mut lines, Sec::Safe);
+    }
+    let kept_open = open.contains("kept");
+    if !es[2].is_empty() {
+        if !lines.is_empty() {
+            lines.push(Line::Gap(sp::XL));
+        }
+        lines.push(Line::KeptHead);
+        if kept_open {
+            push_entries(&mut lines, Sec::Kept);
+        }
+    }
+    for k in 0..tips.len() {
+        lines.push(Line::Gap(if k == 0 { sp::L } else { sp::S }));
+        lines.push(Line::Tip(k));
+    }
+
+    let height = |l: Line, w: f32| -> f32 {
+        match l {
+            Line::Label(_) => LABEL_H,
+            Line::Gap(g) => g,
+            Line::Entry(Sec::Ask, k) => ask_height(&p, &items, &es[0][k], answers[k].as_ref(), agent, w),
+            Line::Entry(Sec::Safe, k) => safe_height(&p, row_tip(&es[1][k]).as_ref(), agent, w),
+            Line::Tip(k) => tip_height(&p, &tips[k], w),
+            _ => sp::ROW_H,
+        }
+    };
+    // rows stop short of the scroll bar only when the list scrolls
+    let full: Vec<f32> = lines.iter().map(|&l| height(l, area.width())).collect();
+    let w = if scrolls(area.height(), full.iter().copied(), 0.0) { area.width() - sp::SCROLL_GUTTER } else { area.width() };
+    let hs: Vec<f32> = if w == area.width() { full } else { lines.iter().map(|&l| height(l, w)).collect() };
+    let total: f32 = hs.iter().sum();
+
+    let mut acts: Vec<Act> = Vec::new();
+    let mut child = ui.new_child(UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
+    child.set_clip_rect(area.intersect(ui.clip_rect()));
+    ScrollArea::vertical().id_salt(("results", grp)).auto_shrink([false, false]).show(&mut child, |ui| {
+        let (all, _) = ui.allocate_exact_size(Vec2::new(w, total), Sense::hover());
+        let p = ui.painter().clone();
+        // the cards behind runs of rows
+        let mut y = all.top();
+        let mut run: Option<(Sec, f32)> = None;
+        for (k, &l) in lines.iter().enumerate() {
+            match (run, l.card()) {
+                (Some((s, _)), Some(c)) if s == c => {}
+                (prev, cur) => {
+                    if let Some((_, top)) = prev {
+                        glass_card(&p, Rect::from_min_max(Pos2::new(all.left(), top), Pos2::new(all.right(), y)), R_CARD, 0.0, false);
+                    }
+                    run = cur.map(|c| (c, y));
+                }
+            }
+            y += hs[k];
+        }
+        if let Some((_, top)) = run {
+            glass_card(&p, Rect::from_min_max(Pos2::new(all.left(), top), Pos2::new(all.right(), y)), R_CARD, 0.0, false);
+        }
+        // the rows
+        let mut y = all.top();
+        for (k, &l) in lines.iter().enumerate() {
+            let rr = Rect::from_min_size(Pos2::new(all.left(), y), Vec2::new(w, hs[k]));
+            y += hs[k];
+            if !ui.is_rect_visible(rr) {
+                continue;
+            }
+            // hairlines between the rows of a card
+            if k > 0 && l.card().is_some() && lines[k - 1].card() == l.card() {
+                p.line_segment([rr.left_top(), rr.right_top()], Stroke::new(1.0, CARD_EDGE()));
+            }
+            let act = match l {
+                Line::Label(Sec::Ask) => {
+                    let lab = section_label(&p, rr.left_top(), "Needs your OK", AMBER(), asks.len(), asks.iter().map(|&i| items[i].bytes).sum());
+                    let a = link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, "Keep all", 12.0);
+                    if a.clicked() {
+                        Some(Act::Answer(asks.clone(), Verdict::Keep))
+                    } else if link(ui, Pos2::new(a.rect.left() - sp::M, lab.center().y), Align2::RIGHT_CENTER, "Clean all", 12.0).clicked() {
+                        Some(Act::Answer(asks.clone(), Verdict::Safe))
+                    } else {
+                        None
+                    }
+                }
+                Line::Label(_) => {
+                    let lab = section_label(&p, rr.left_top(), "Safe", ACCENT(), safe.len(), safe.iter().map(|&i| items[i].bytes).sum());
+                    let all_on = safe.iter().all(|&i| items[i].selected || items[i].hard_keep);
+                    link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, if all_on { "None" } else { "Select all" }, 12.0).clicked().then(|| Act::Select(safe.clone(), !all_on, false))
+                }
+                Line::Gap(_) => None,
+                Line::Entry(Sec::Ask, e) => ask_row(app, ui, rr, &items, &es[0][e], answers[e].as_ref(), agent, running, open.contains(&fold_key(Sec::Ask, &es[0][e]))),
+                Line::Member(Sec::Ask, e, m) => ask_member(app, ui, rr, &items, es[0][e].idx[m], agent),
+                Line::Entry(sec, e) => list_row(ui, rr, &items, sec, &es[sec_i(sec)][e], row_tip(&es[sec_i(sec)][e]).as_ref(), agent, open.contains(&fold_key(sec, &es[sec_i(sec)][e])), app.ai.hovered.as_deref()),
+                Line::Member(sec, e, m) => list_member(ui, rr, &items, sec, es[sec_i(sec)][e].idx[m]),
+                Line::KeptHead => kept_head(ui, rr, kept.len(), kept.iter().map(|&i| items[i].bytes).sum(), kept_open),
+                Line::Tip(t) => tip_row(ui, rr, &tips[t]).map(Act::Tip),
+            };
+            acts.extend(act);
+        }
+    });
+
+    for act in acts {
+        match act {
+            Act::Answer(idx, v) => answer_items(app, &idx, v),
+            Act::Select(idx, on, any) => {
+                let mut g = app.clean.lock_ok();
+                for i in idx {
+                    let it = &mut g.items[i];
+                    it.selected = on && !it.hard_keep && (any || !it.permanent);
+                }
+            }
+            Act::Undo(idx) => {
+                for i in idx {
+                    undo_item(app, i);
+                }
+            }
+            Act::Fold(key) => fold(&ctx, key),
+            Act::Tip(rec) => {
+                let i = items.iter().position(|it| it.path.display().to_string() == rec.key);
+                if let Some(i) = i {
+                    let ask = app.clean.lock_ok().items[i].verdict == Verdict::Ask;
+                    if rec.action == "keep" {
+                        answer_items(app, &[i], Verdict::Keep);
+                    } else if ask {
+                        answer_items(app, &[i], Verdict::Safe);
+                    } else {
+                        let mut g = app.clean.lock_ok();
+                        let it = &mut g.items[i];
+                        it.selected = !it.hard_keep && !it.permanent;
+                    }
+                }
+                app.ai.done(&rec);
+            }
+        }
+    }
+}
+
 /// "Needs your OK  5 · 29.8 GB": a section title with its count and size.
 fn section_label(p: &egui::Painter, at: Pos2, title: &str, col: Color32, n: usize, bytes: u64) -> Rect {
-    let t = p.text(Pos2::new(at.x, at.y + 10.0), Align2::LEFT_CENTER, title, ty::title(), col);
+    let t = p.text(Pos2::new(at.x, at.y + LABEL_H / 2.0), Align2::LEFT_CENTER, title, ty::title(), col);
     let s = p.text(Pos2::new(t.right() + sp::S, t.center().y), Align2::LEFT_CENTER, format!("{n} · {}", human_bytes(bytes)), ty::label(), TEXT_DIM());
     t.union(s)
 }
 
-/// A scrolling list of `n` rows in `area`, row `k` `row_h(k, width)` tall;
-/// only the rows in view are drawn.
-fn scroll_rows(ui: &mut Ui, area: Rect, salt: String, n: usize, row_h: impl Fn(usize, f32) -> f32, gap: f32, mut f: impl FnMut(&mut Ui, usize, Rect)) {
-    if n == 0 || !area.is_positive() {
-        return;
+/// A light highlight under the pointer; true when the row was clicked.
+fn row_hover(ui: &mut Ui, rr: Rect, salt: impl std::hash::Hash + std::fmt::Debug) -> egui::Response {
+    let resp = ui.interact(rr, ui.scope_id().with(("row", salt)), Sense::click());
+    if resp.hovered() {
+        // ROW_HOVER (ui-rules H1): edge to edge in lists
+        ui.painter().rect_filled(rr.shrink(1.0), 0.0, white(ROW_HOVER));
     }
-    let mut child = ui.new_child(UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
-    child.set_clip_rect(area.intersect(ui.clip_rect()));
-    // when it scrolls, the rows stop short of the scroll bar (and may wrap
-    // more in the narrower width)
-    let w = area.width() - if scrolls(area.height(), (0..n).map(|k| row_h(k, area.width())), gap) { sp::M } else { 0.0 };
-    ScrollArea::vertical().id_salt(salt).auto_shrink([false, false]).show(&mut child, |ui| {
-        ui.spacing_mut().item_spacing.y = gap;
-        for k in 0..n {
-            // never past the scroll gutter (sp::SCROLL_GUTTER) either
-            let rw = w.min(ui.available_width());
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(rw, row_h(k, rw)), Sense::hover());
-            if ui.is_rect_visible(rect) {
-                f(ui, k, rect);
-            }
+    resp
+}
+
+/// A bundle's fold arrow at `x`, centred on `cy`.
+fn fold_arrow(p: &egui::Painter, x: f32, cy: f32, open: bool) {
+    icon(p, if open { Icon::Down } else { Icon::Forward }, Rect::from_center_size(Pos2::new(x + 6.0, cy), Vec2::splat(12.0)), TEXT_DIM());
+}
+
+/// Clean / Keep at the right of `rr`, the agent's pick lit; nothing lit
+/// before it answered. Returns the answer clicked.
+fn clean_keep(ui: &mut Ui, rr: Rect, ans: Option<&aicheck::Rec>) -> Option<Verdict> {
+    let p = ui.painter().clone();
+    let keep_lit = ans.is_some_and(|a| a.action == "keep");
+    let clean_lit = ans.is_some_and(|a| a.action != "keep");
+    let style = |lit: bool| if lit { BTN_PRIMARY } else { BTN_SECONDARY };
+    let cy = rr.center().y;
+    let kw = button_width(&p, "Keep", style(keep_lit));
+    let cw = button_width(&p, "Clean", style(clean_lit));
+    let kr = Rect::from_min_size(Pos2::new(rr.right() - sp::L - kw, cy - sp::CONTROL_H / 2.0), Vec2::new(kw, sp::CONTROL_H));
+    let cr = Rect::from_min_size(Pos2::new(kr.left() - sp::S - cw, kr.top()), Vec2::new(cw, sp::CONTROL_H));
+    if pill_button(ui, cr, "Clean", style(clean_lit), true).clicked() {
+        return Some(Verdict::Safe);
+    }
+    if pill_button(ui, kr, "Keep", style(keep_lit), true).clicked() {
+        return Some(Verdict::Keep);
+    }
+    None
+}
+
+/// The right edge of a question's size column.
+fn ask_size_right(p: &egui::Painter, rr: Rect) -> f32 {
+    rr.right() - sp::L - button_width(p, "Keep", BTN_PRIMARY) - sp::S - button_width(p, "Clean", BTN_PRIMARY) - sp::COL_GAP
+}
+
+/// One question: name, what it is, the agent's answer once it came, the
+/// size, Clean and Keep. A bundle folds open to its items.
+#[allow(clippy::too_many_arguments)]
+fn ask_row(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], e: &Entry, ans: Option<&aicheck::Rec>, agent: &str, running: bool, open: bool) -> Option<Act> {
+    let p = ui.painter().clone();
+    let first = &items[e.idx[0]];
+    let key = first.path.display().to_string();
+    let resp = row_hover(ui, rr, &key);
+    // the AI Check answer under the pointer points at its row
+    if app.ai.hovered.as_deref() == Some(key.as_str()) {
+        p.rect_stroke(rr.shrink(1.0), R_SMALL, Stroke::new(2.0, with_alpha(AI(), 0.7)), StrokeKind::Inside);
+    }
+    let mut act = None;
+    if e.name.is_some() {
+        if resp.clicked() {
+            act = Some(Act::Fold(fold_key(Sec::Ask, e)));
         }
-    });
+    } else {
+        let resp = resp.on_hover_text(short_path(&first.path));
+        if resp.double_clicked() {
+            let _ = std::process::Command::new("open").arg("-R").arg(&first.path).spawn();
+        }
+    }
+    let mut x = rr.left() + sp::L;
+    let th = line_h(&p, &ty::title());
+    let ty0 = rr.top() + sp::M + th / 2.0;
+    if e.name.is_some() {
+        fold_arrow(&p, x, ty0, open);
+        x += 20.0;
+    }
+    let tw = ask_text_w(&p, rr.width(), e.name.is_some());
+    let size_r = ask_size_right(&p, rr);
+    p.text(Pos2::new(size_r, rr.center().y), Align2::RIGHT_CENTER, human_bytes(e.bytes), ty::title(), TEXT());
+    // name, then the "Permanent" chip and the agent's spinner after it
+    let mut right = x + tw;
+    let perm = e.idx.iter().any(|&i| items[i].permanent);
+    if perm {
+        right -= p.layout_no_wrap("Permanent".into(), bold(11.0), TEXT()).size().x + 16.0 + sp::S;
+    }
+    let waiting = running && ans.is_none() && app.ai.answer.contains(&key);
+    if waiting {
+        right -= 10.0 + sp::S;
+    }
+    let t = text_fit(&p, Pos2::new(x, ty0), Align2::LEFT_CENTER, e.name.unwrap_or(&first.title), ty::title(), TEXT(), right - x);
+    let mut after = t.right() + sp::S;
+    if perm {
+        after = chip(&p, Pos2::new(after, ty0), Align2::LEFT_CENTER, "Permanent", CHIP_RISK()).right() + sp::S;
+    }
+    if waiting {
+        spinner(&p, Pos2::new(after + 5.0, ty0), 5.0, ui.input(|i| i.time), AI());
+        ui.ctx().request_repaint();
+    }
+    // what it is, wrapped
+    let dy = rr.top() + sp::M + th + sp::LINE_GAP;
+    let g = p.layout(ask_detail(items, e), ty::label(), TEXT_SOFT(), tw.max(1.0));
+    let dh = g.size().y;
+    p.galley(Pos2::new(x, dy), g, TEXT_SOFT());
+    // the agent's answer, only once it gave one
+    if let Some(a) = ans {
+        let g = p.layout_job(answer_job(agent, a, tw));
+        p.galley(Pos2::new(x, dy + dh + sp::LINE_GAP), g, TEXT());
+    }
+    if let Some(v) = clean_keep(ui, rr, ans) {
+        act = Some(Act::Answer(e.idx.clone(), v));
+    }
+    act
+}
+
+/// An item of an open question bundle: name, size, its own Clean / Keep.
+fn ask_member(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], i: usize, agent: &str) -> Option<Act> {
+    let p = ui.painter().clone();
+    let it = &items[i];
+    let key = it.path.display().to_string();
+    let ans = app.ai.answer_for(&key);
+    let tip = match &ans {
+        Some(a) => format!("{}\n{agent}: {}. {}", short_path(&it.path), if a.action == "keep" { "keep" } else { "clean" }, a.why),
+        None => short_path(&it.path),
+    };
+    let resp = row_hover(ui, rr, &key).on_hover_text(tip);
+    if resp.double_clicked() {
+        let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
+    }
+    let x = rr.left() + sp::L + MEMBER_INDENT;
+    let size_r = ask_size_right(&p, rr);
+    let s = p.text(Pos2::new(size_r, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::body(), TEXT_DIM());
+    text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT_SOFT(), s.left() - sp::COL_GAP - x);
+    clean_keep(ui, rr, ans.as_ref()).map(|v| Act::Answer(vec![i], v))
+}
+
+/// A Safe or Kept row: a checkbox (Safe) or room for the lock (Kept), the
+/// name, Undo after a Clean / Keep given here, the size. A bundle shows how
+/// many items it holds and folds open; AI Check's tip about an item sits
+/// under its name.
+#[allow(clippy::too_many_arguments)]
+fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Option<&aicheck::Rec>, agent: &str, open: bool, hovered: Option<&str>) -> Option<Act> {
+    let p = ui.painter().clone();
+    let first = &items[e.idx[0]];
+    let key = first.path.display().to_string();
+    let resp = row_hover(ui, rr, &key);
+    if hovered == Some(key.as_str()) {
+        p.rect_stroke(rr.shrink(1.0), R_SMALL, Stroke::new(2.0, with_alpha(AI(), 0.7)), StrokeKind::Inside);
+    }
+    let mut act = None;
+    if e.name.is_some() {
+        if resp.clicked() {
+            act = Some(Act::Fold(fold_key(sec, e)));
+        }
+    } else {
+        let resp = resp.on_hover_text(format!("{}\n{}", first.reason, short_path(&first.path)));
+        if resp.double_clicked() {
+            let _ = std::process::Command::new("open").arg("-R").arg(&first.path).spawn();
+        }
+    }
+    let dim = sec == Sec::Kept;
+    let lh = line_h(&p, &ty::body());
+    let cy = if tip.is_some() { rr.top() + sp::M + lh / 2.0 } else { rr.center().y };
+    let mut x = rr.left() + sp::L;
+    if sec == Sec::Safe {
+        let can: Vec<usize> = e.idx.iter().copied().filter(|&i| !items[i].hard_keep).collect();
+        let on = !can.is_empty() && can.iter().all(|&i| items[i].selected);
+        let cb = Rect::from_center_size(Pos2::new(x + 8.0, cy), Vec2::splat(16.0));
+        if checkbox(ui, cb, ui.scope_id().with(("sel", &key, e.name)), on, !can.is_empty()).clicked() && !can.is_empty() {
+            act = Some(Act::Select(e.idx.clone(), !on, e.name.is_none()));
+        }
+    }
+    x += 16.0 + sp::M;
+    if e.name.is_some() {
+        fold_arrow(&p, x, cy, open);
+        x += 20.0;
+    }
+    let s = p.text(Pos2::new(rr.right() - sp::L, cy), Align2::RIGHT_CENTER, human_bytes(e.bytes), if dim { ty::body() } else { ty::title() }, if dim { TEXT_DIM() } else { TEXT() });
+    let mut right = s.left() - sp::COL_GAP;
+    if let Some(t) = tip {
+        let l = link(ui, Pos2::new(right, cy), Align2::RIGHT_CENTER, &t.label, 12.0);
+        if l.clicked() {
+            act = Some(Act::Tip(t.clone()));
+        }
+        right = l.rect.left() - sp::M;
+    }
+    let perm = e.name.is_none() && first.permanent;
+    if perm {
+        right = chip(&p, Pos2::new(right, cy), Align2::RIGHT_CENTER, "Permanent", CHIP_RISK()).left() - sp::S;
+    }
+    let undo = e.name.is_none() && undoable(first);
+    let undo_w = if undo { p.layout_no_wrap("Undo".into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
+    let title = e.name.unwrap_or(&first.title);
+    let t = text_fit(&p, Pos2::new(x, cy), Align2::LEFT_CENTER, title, ty::body(), if dim { TEXT_DIM() } else { TEXT() }, right - undo_w - x);
+    if e.name.is_some() {
+        p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, items_n(e.idx.len()), ty::label(), TEXT_DIM());
+    }
+    if undo && link(ui, Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
+        act = Some(Act::Undo(vec![e.idx[0]]));
+    }
+    if let Some(t) = tip {
+        let g = p.layout_job(tip_job(agent, t, safe_tip_w(&p, rr.width())));
+        p.galley(Pos2::new(x, rr.top() + sp::M + lh + sp::LINE_GAP), g, TEXT());
+    }
+    act
+}
+
+/// An item of an open Safe or Kept bundle.
+fn list_member(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, i: usize) -> Option<Act> {
+    let p = ui.painter().clone();
+    let it = &items[i];
+    let key = it.path.display().to_string();
+    let resp = row_hover(ui, rr, &key).on_hover_text(format!("{}\n{}", it.reason, short_path(&it.path)));
+    if resp.double_clicked() {
+        let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
+    }
+    let mut act = None;
+    let x0 = rr.left() + sp::L + MEMBER_INDENT;
+    if sec == Sec::Safe {
+        let cb = Rect::from_center_size(Pos2::new(x0 + 8.0, rr.center().y), Vec2::splat(16.0));
+        if checkbox(ui, cb, ui.scope_id().with(("sel", &key)), it.selected, !it.hard_keep).clicked() && !it.hard_keep {
+            act = Some(Act::Select(vec![i], !it.selected, true));
+        }
+    }
+    let x = x0 + 16.0 + sp::M;
+    let s = p.text(Pos2::new(rr.right() - sp::L, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::body(), TEXT_DIM());
+    let undo = undoable(it);
+    let undo_w = if undo { p.layout_no_wrap("Undo".into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
+    let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT_SOFT(), s.left() - sp::COL_GAP - undo_w - x);
+    if undo && link(ui, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
+        act = Some(Act::Undo(vec![i]));
+    }
+    act
+}
+
+/// "🔒 Kept  34 · 5.91 GB  ›": the kept items, folded until clicked.
+fn kept_head(ui: &mut Ui, rr: Rect, n: usize, bytes: u64, open: bool) -> Option<Act> {
+    let p = ui.painter().clone();
+    let resp = row_hover(ui, rr, "kept-head");
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let cy = rr.center().y;
+    icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(rr.left() + sp::L + 8.0, cy), Vec2::splat(14.0)), TEXT_FAINT());
+    let t = p.text(Pos2::new(rr.left() + sp::L + 16.0 + sp::M, cy), Align2::LEFT_CENTER, "Kept", ty::title(), TEXT_DIM());
+    p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, n.to_string(), ty::label(), TEXT_DIM());
+    let ax = rr.right() - sp::L - 12.0;
+    fold_arrow(&p, ax, cy, open);
+    p.text(Pos2::new(ax - sp::M, cy), Align2::RIGHT_CENTER, human_bytes(bytes), ty::body(), TEXT_DIM());
+    resp.clicked().then(|| Act::Fold("kept".into()))
 }
 
 /// Whether rows `hs` tall, `gap` apart, are taller than `h`.
@@ -602,7 +1106,7 @@ fn answer_items(app: &mut App, idx: &[usize], v: Verdict) {
         let mut g = app.clean.lock_ok();
         for &i in idx {
             let it = &mut g.items[i];
-            // AI Check's answer stays: Undo brings the card back with it
+            // AI Check's answer stays: Undo brings the question back with it
             if v == Verdict::Keep {
                 kept.push(it.path.clone());
             }
@@ -617,29 +1121,27 @@ fn answer_items(app: &mut App, idx: &[usize], v: Verdict) {
     }
 }
 
-/// "✦ Tip: title. why" wrapped, with its action as a link on the right.
+/// "Tip: title. why" wrapped, with its action as a link on the right.
 fn tip_text(t: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
-    job.append("Tip: ", 0.0, egui::TextFormat { font_id: bold(12.0), color: tint::HEALTH(), ..Default::default() });
+    job.append("Tip: ", 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
     let title = t.title.trim_end_matches('.');
     let body = if t.why.is_empty() { format!("{title}.") } else { format!("{title}. {}", t.why) };
     job.append(&body, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT_SOFT(), ..Default::default() });
     job.wrap.max_width = w.max(1.0);
-    job.wrap.max_rows = 3;
     job
 }
 
 const TIP_LINK_W: f32 = 64.0;
 
 fn tip_height(p: &egui::Painter, t: &aicheck::Rec, w: f32) -> f32 {
-    p.layout_job(tip_text(t, w - 18.0 - TIP_LINK_W)).size().y.max(16.0)
+    p.layout_job(tip_text(t, w - TIP_LINK_W)).size().y.max(16.0)
 }
 
 fn tip_row(ui: &mut Ui, r: Rect, t: &aicheck::Rec) -> Option<aicheck::Rec> {
     let p = ui.painter().clone();
-    icon(&p, Icon::Sparkle, Rect::from_center_size(Pos2::new(r.left() + 6.0, r.top() + 8.0), Vec2::splat(12.0)), tint::HEALTH());
-    let g = p.layout_job(tip_text(t, r.width() - 18.0 - TIP_LINK_W));
-    p.galley(Pos2::new(r.left() + 18.0, r.top()), g, TEXT());
+    let g = p.layout_job(tip_text(t, r.width() - TIP_LINK_W));
+    p.galley(r.left_top(), g, TEXT());
     link(ui, Pos2::new(r.right(), r.top() + 8.0), Align2::RIGHT_CENTER, &t.label, 12.0).clicked().then(|| t.clone())
 }
 
@@ -667,230 +1169,120 @@ fn undoable(it: &Item) -> bool {
     it.by == Who::You
 }
 
-/// A question card: name and size, what it is, the path, then a strip with
-/// the agent's answer and Clean / Keep.
-const ASK_H: f32 = 144.0;
-const STRIP_H: f32 = 48.0;
+// ---------------------------------------------------------------- confirm
 
-/// Hover: a light highlight, and the path when the row doesn't show it;
-/// double click: show in Finder.
-fn row_extras(ui: &mut Ui, rr: Rect, it: &Item, path_tip: bool) {
-    let resp = ui.interact(rr, ui.scope_id().with(("row", &it.path)), Sense::click());
-    if resp.hovered() {
-        ui.painter().rect_filled(rr, R_SMALL, white(6));
-    }
-    let resp = if path_tip { resp.on_hover_text(short_path(&it.path)) } else { resp };
-    if resp.double_clicked() {
-        let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
-    }
+/// An open app whose files are in the selection, on the confirm sheet.
+#[derive(Clone, Debug)]
+pub(crate) struct QuitRow {
+    pub app: OpenApp,
+    /// Selected items that belong to it.
+    pub idx: Vec<usize>,
+    pub bytes: u64,
+    pub state: Quit,
 }
 
-/// Each line a wrapped reason adds to a Safe / Kept row.
-const REASON_LINE: f32 = 16.0;
-
-/// The room for the reason in a Safe / Kept row `w` wide: after the
-/// checkbox (or lock), before the size, the "Permanent" chip and Undo.
-fn reason_room(p: &egui::Painter, it: &Item, w: f32) -> f32 {
-    let size_w = p.layout_no_wrap(human_bytes(it.bytes), ty::title(), TEXT()).size().x;
-    let chip_w = if it.permanent { p.layout_no_wrap("Permanent".into(), bold(11.0), TEXT()).size().x + 16.0 + sp::S } else { 0.0 };
-    let lead = 4.0 + sp::M + 16.0 + sp::M;
-    let undo = if undoable(it) { UNDO_W } else { 0.0 };
-    (w - 4.0 - sp::M - size_w - sp::M - chip_w - lead - undo).max(60.0)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Quit {
+    Open,
+    /// Asked to quit at this time (seconds, egui clock).
+    Quitting(f64),
+    Closed,
+    /// Didn't quit in time (it may be asking to save).
+    Stuck,
 }
 
-/// Room left for "Undo" after the reason.
-const UNDO_W: f32 = 60.0;
+/// How long an app gets to quit before its row says "Still open".
+const QUIT_WAIT: f64 = 10.0;
+const SHEET_W: f32 = 440.0;
+const SHEET_PAD: f32 = 24.0;
+const SHEET_ROWS_MAX: usize = 6;
 
-/// The reason wrapped to the row's room: the app's own words are never cut.
-fn reason_galley(p: &egui::Painter, it: &Item, room: f32, color: Color32) -> std::sync::Arc<egui::Galley> {
-    p.layout(it.reason.clone(), ty::label(), color, room)
+/// Cleaning these while their app runs would be skipped or rebuilt at once.
+fn quit_kind(kind: &str) -> bool {
+    matches!(kind, "Caches" | "Temp Files" | "Build Data")
 }
 
-/// A Safe / Kept row's height for width `w`: taller by a line for each line
-/// the reason wraps onto.
-fn row_height(p: &egui::Painter, it: &Item, w: f32) -> f32 {
-    if it.reason.is_empty() {
-        return sp::ROW2_H;
+/// The item's files belong to this app: its bundle id is a folder on the
+/// path, or the title is the app's name (or starts with it).
+fn belongs(app: &OpenApp, it: &Item) -> bool {
+    let id = app.id.to_lowercase();
+    if !id.is_empty() && it.path.components().any(|c| c.as_os_str().to_string_lossy().to_lowercase() == id) {
+        return true;
     }
-    let lines = reason_galley(p, it, reason_room(p, it, w), TEXT_DIM()).rows.len().max(1);
-    sp::ROW2_H + (lines - 1) as f32 * REASON_LINE
+    let name = app.name.to_lowercase();
+    let title = it.title.to_lowercase();
+    !name.is_empty() && (title == name || title.starts_with(&format!("{name} ")))
 }
 
-/// Title and wrapped reason of a Safe / Kept row, centred in `rr`; returns
-/// the reason's rect (Undo goes after its last line).
-fn row_text(p: &egui::Painter, rr: Rect, x: f32, title_right: f32, it: &Item, title_col: Color32, reason_col: Color32) -> Option<Rect> {
-    let room = reason_room(p, it, rr.width() + 8.0);
-    let g = (!it.reason.is_empty()).then(|| reason_galley(p, it, room, reason_col));
-    let th = line_h(p, &ty::body());
-    let gh = g.as_ref().map(|g| g.size().y).unwrap_or(0.0);
-    let block = th + if g.is_some() { sp::LINE_GAP + gh } else { 0.0 };
-    let top = rr.center().y - block / 2.0;
-    text_fit(p, Pos2::new(x, top + th / 2.0), Align2::LEFT_CENTER, &it.title, ty::body(), title_col, title_right - x);
-    g.map(|g| {
-        let at = Pos2::new(x, top + th + sp::LINE_GAP);
-        let r = Rect::from_min_size(at, g.size());
-        p.galley(at, g, reason_col);
-        r
-    })
-}
-
-/// One question: name and size, what it is, the path; under them a strip
-/// with the agent's answer (its button lit) and Clean / Keep.
-fn ask_card(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
-    let it = app.clean.lock_ok().items[i].clone();
-    let key = it.path.display().to_string();
-    let p = ui.painter().clone();
-    glass_card(&p, rr, R_CARD, 0.0, false);
-    // the AI Check answer under the pointer points at its card
-    if app.ai.hovered.as_deref() == Some(key.as_str()) {
-        p.rect_stroke(rr, R_CARD, Stroke::new(2.0, with_alpha(tint::HEALTH(), 0.7)), StrokeKind::Inside);
-    }
-    row_extras(ui, rr, &it, false);
-    let tx = rr.left() + sp::L;
-    let tw = rr.right() - sp::L - tx;
-    // name … size
-    let mut y = rr.top() + sp::L;
-    let sz = p.text(Pos2::new(rr.right() - sp::L, y), Align2::RIGHT_TOP, human_bytes(it.bytes), ty::title(), TEXT());
-    let mut right = sz.left() - sp::M;
-    if it.permanent {
-        right = chip(&p, Pos2::new(right, y - 2.0), Align2::RIGHT_TOP, "Permanent", CHIP_RISK()).left() - sp::S;
-    }
-    let t = text_fit(&p, Pos2::new(tx, y), Align2::LEFT_TOP, &it.title, ty::title(), TEXT(), right - tx);
-    y = t.bottom() + sp::LINE_GAP;
-    // what it is (the rule's words), then where
-    let what = if it.rule_reason.is_empty() { it.kind.to_string() } else { it.rule_reason.clone() };
-    let w = text_fit(&p, Pos2::new(tx, y), Align2::LEFT_TOP, &what, ty::label(), TEXT_SOFT(), tw);
-    y = w.bottom() + sp::LINE_GAP;
-    text_fit(&p, Pos2::new(tx, y), Align2::LEFT_TOP, &middle_ellipsis(&short_path(&it.path), 90), mono(11.0), TEXT_FAINT(), tw);
-
-    // the strip: the agent's answer, Clean and Keep
-    let strip = Rect::from_min_max(Pos2::new(rr.left() + sp::M, rr.bottom() - sp::M - STRIP_H), Pos2::new(rr.right() - sp::M, rr.bottom() - sp::M));
-    let ans = app.ai.answer_for(&key);
-    let agent = if app.demo { Agent::Claude.name() } else { super::agent::main().name() };
-    let ai = tint::HEALTH();
-    p.rect_filled(strip, R_SMALL, if ans.is_some() { with_alpha(ai, 0.08) } else { white(5) });
-    let keep_lit = ans.as_ref().is_some_and(|a| a.action == "keep");
-    let clean_lit = !keep_lit;
-    let style = |lit: bool| if lit { BTN_PRIMARY } else { BTN_SECONDARY };
-    let cy = strip.center().y;
-    let kw = button_width(&p, "Keep", style(keep_lit));
-    let cw = button_width(&p, "Clean", style(clean_lit));
-    let kr = Rect::from_min_size(Pos2::new(strip.right() - sp::S - kw, cy - sp::CONTROL_H / 2.0), Vec2::new(kw, sp::CONTROL_H));
-    let cr = Rect::from_min_size(Pos2::new(kr.left() - sp::S - cw, kr.top()), Vec2::new(cw, sp::CONTROL_H));
-    let lx = strip.left() + sp::M;
-    let lw = cr.left() - sp::M - lx;
-    let running = app.ai.phase() == aicheck::Phase::Running && app.ai.answer.contains(&key);
-    if let Some(a) = &ans {
-        icon(&p, Icon::Sparkle, Rect::from_center_size(Pos2::new(lx + 6.0, cy), Vec2::splat(12.0)), ai);
-        let verdict = if keep_lit { "keep" } else { "clean" };
-        let mut job = egui::text::LayoutJob::default();
-        job.append(&format!("{}: {verdict}. ", agent), 0.0, egui::TextFormat { font_id: bold(12.0), color: ai, ..Default::default() });
-        job.append(&a.why, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT(), ..Default::default() });
-        job.wrap.max_width = (lw - 18.0).max(1.0);
-        job.wrap.max_rows = 2;
-        let g = p.layout_job(job);
-        let gr = Align2::LEFT_CENTER.anchor_size(Pos2::new(lx + 18.0, cy), g.size());
-        p.galley(gr.min, g, TEXT());
-    } else if running {
-        spinner(&p, Pos2::new(lx + 6.0, cy), 5.0, ui.input(|i| i.time), ai);
-        p.text(Pos2::new(lx + 18.0, cy), Align2::LEFT_CENTER, format!("{} is checking…", agent), ty::label(), TEXT_DIM());
-        ui.ctx().request_repaint();
-    }
-    if pill_button(ui, cr, "Clean", style(clean_lit), true).clicked() {
-        answer_items(app, &[i], Verdict::Safe);
-    }
-    if pill_button(ui, kr, "Keep", style(keep_lit), true).clicked() {
-        answer_items(app, &[i], Verdict::Keep);
-    }
-}
-
-/// One safe item: checkbox, name, size.
-/// The AI Check tip about this item, if any (matched by path).
-fn row_tip(it: &Item, tips: &[aicheck::Rec]) -> Option<aicheck::Rec> {
-    let key = it.path.display().to_string();
-    tips.iter().find(|t| t.key == key).cloned()
-}
-
-/// The item with its reason replaced by the agent's tip ("Xcode: keep. You
-/// built MyApp today"), so heights and drawing agree.
-fn with_row_tip(it: &Item, tips: &[aicheck::Rec]) -> Item {
-    let mut it = it.clone();
-    if let Some(t) = row_tip(&it, tips) {
-        let verdict = if t.action == "keep" { "keep" } else { "clean" };
-        it.reason = if t.why.is_empty() { format!("{}: {verdict}", t.name) } else { format!("{}: {verdict}. {}", t.name, t.why) };
-    }
-    it
-}
-
-fn safe_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
-    let tips = app.ai.tips();
-    let raw = app.clean.lock_ok().items[i].clone();
-    let tip = row_tip(&raw, &tips);
-    let it = with_row_tip(&raw, &tips);
-    let p = ui.painter().clone();
-    let rr = rr.shrink2(Vec2::new(4.0, 0.0));
-    row_extras(ui, rr, &it, true);
-    if app.ai.hovered.as_deref() == Some(it.path.display().to_string().as_str()) {
-        p.rect_stroke(rr, R_SMALL, Stroke::new(2.0, with_alpha(tint::HEALTH(), 0.7)), StrokeKind::Inside);
-    }
-    let can = !it.hard_keep;
-    let cb = Rect::from_center_size(Pos2::new(rr.left() + sp::M + 8.0, rr.center().y), Vec2::splat(16.0));
-    if checkbox(ui, cb, ui.scope_id().with(("sel", &it.path)), it.selected, can).clicked() && can {
-        let mut g = app.clean.lock_ok();
-        g.items[i].selected = !g.items[i].selected;
-    }
-    let sz = p.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::title(), TEXT());
-    let mut right = sz.left() - sp::M;
-    if it.permanent {
-        right = chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "Permanent", CHIP_RISK()).left() - sp::S;
-    }
-    let x = cb.right() + sp::M;
-    let reason = row_text(&p, rr, x, right, &it, TEXT(), if tip.is_some() { tint::HEALTH() } else { TEXT_DIM() });
-    match (tip, reason) {
-        // the tip's action after its last line, like Undo
-        (Some(t), Some(r)) => {
-            let last_w = p.layout(it.reason.clone(), ty::label(), TEXT_DIM(), r.width().max(1.0) + 0.5).rows.last().map(|row| row.rect().width()).unwrap_or(0.0);
-            let ly = r.bottom() - line_h(&p, &ty::label()) / 2.0;
-            if link(ui, Pos2::new(x + last_w + sp::S, ly), Align2::LEFT_CENTER, &t.label, 12.0).clicked() {
-                if t.action == "keep" {
-                    answer_items(app, &[i], Verdict::Keep);
-                } else {
-                    let mut g = app.clean.lock_ok();
-                    let it = &mut g.items[i];
-                    it.selected = !it.hard_keep && !it.permanent;
-                }
-                app.ai.done(&t);
-            }
+/// Open apps with selected files, largest first. Each item counts once.
+pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>) -> Vec<QuitRow> {
+    let mut taken = vec![false; items.len()];
+    let mut rows: Vec<QuitRow> = Vec::new();
+    for app in apps {
+        let idx: Vec<usize> = (0..items.len()).filter(|&i| !taken[i] && items[i].selected && quit_kind(items[i].kind) && belongs(&app, &items[i])).collect();
+        if idx.is_empty() {
+            continue;
         }
-        _ => undo_link(app, ui, i, &it, x, reason),
+        for &i in &idx {
+            taken[i] = true;
+        }
+        let bytes = idx.iter().map(|&i| items[i].bytes).sum();
+        rows.push(QuitRow { app, idx, bytes, state: Quit::Open });
     }
+    rows.sort_by_key(|r| std::cmp::Reverse(r.bytes));
+    rows
 }
 
-/// "Undo" after the reason of an answered question (after its last line).
-fn undo_link(app: &mut App, ui: &mut Ui, i: usize, it: &Item, x: f32, reason: Option<Rect>) {
-    if !undoable(it) {
+/// Open the confirm sheet for the current selection.
+fn open_confirm(app: &mut App) {
+    let apps = if app.demo { demo_apps() } else { crate::kit::native::open_apps() };
+    app.quit = quit_rows(&app.clean.lock_ok().items, apps);
+    app.quit_then_clean = false;
+    app.clean_confirm = true;
+}
+
+fn quit_one(app: &mut App, k: usize, now: f64) {
+    let row = &mut app.quit[k];
+    if app.demo {
+        row.state = Quit::Quitting(now);
         return;
     }
-    let Some(r) = reason else { return };
-    let p = ui.painter().clone();
-    let last_w = p.layout(it.reason.clone(), ty::label(), TEXT_DIM(), r.width().max(1.0) + 0.5).rows.last().map(|row| row.rect().width()).unwrap_or(0.0);
-    let ly = r.bottom() - line_h(&p, &ty::label()) / 2.0;
-    if link(ui, Pos2::new(x + last_w + sp::S, ly), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
-        undo_item(app, i);
+    let asked = crate::kit::native::quit_app(row.app.pid);
+    row.state = if !asked && !crate::kit::native::app_alive(row.app.pid) { Quit::Closed } else { Quit::Quitting(now) };
+}
+
+/// Move quitting rows on: closed once the app is gone, stuck after a while.
+fn poll_quits(app: &mut App, ctx: &egui::Context, now: f64) {
+    let demo = app.demo;
+    let mut waiting = false;
+    for row in &mut app.quit {
+        if let Quit::Quitting(t) = row.state {
+            let gone = if demo { now - t > 0.9 } else { !crate::kit::native::app_alive(row.app.pid) };
+            row.state = if gone {
+                Quit::Closed
+            } else if now - t > QUIT_WAIT {
+                Quit::Stuck
+            } else {
+                waiting = true;
+                Quit::Quitting(t)
+            };
+        }
+    }
+    if waiting {
+        ctx.request_repaint_after(std::time::Duration::from_millis(200));
     }
 }
 
-/// One kept item: a lock, the name, the size, dimmed.
-fn kept_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
-    let it = app.clean.lock_ok().items[i].clone();
-    let p = ui.painter().clone();
-    let rr = rr.shrink2(Vec2::new(4.0, 0.0));
-    row_extras(ui, rr, &it, true);
-    icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(rr.left() + sp::M + 8.0, rr.center().y), Vec2::splat(14.0)), TEXT_FAINT());
-    let sz = p.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::body(), TEXT_DIM());
-    let x = rr.left() + sp::M + 16.0 + sp::M;
-    let reason = row_text(&p, rr, x, sz.left() - sp::M, &it, TEXT_DIM(), TEXT_FAINT());
-    undo_link(app, ui, i, &it, x, reason);
+fn start(app: &mut App, ctx: egui::Context) {
+    app.clean_confirm = false;
+    app.quit_then_clean = false;
+    app.quit.clear();
+    cleanup::start_clean(app.clean.clone(), ctx, app.delete_now);
+}
+
+/// "1 item", "3 items".
+fn items_n(n: usize) -> String {
+    if n == 1 { "1 item".into() } else { format!("{n} items") }
 }
 
 fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
@@ -899,59 +1291,193 @@ fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
 
 fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     let ctx = ui.ctx().clone();
+    let now = ui.input(|i| i.time);
+    poll_quits(app, &ctx, now);
+    let open_left = app.quit.iter().filter(|q| q.state != Quit::Closed).count();
+    let busy = app.quit.iter().any(|q| matches!(q.state, Quit::Quitting(_)));
+    // "Quit all and clean": go as soon as every app is closed
+    if app.quit_then_clean && open_left == 0 {
+        start(app, ctx);
+        return;
+    }
     let p = ui.painter().clone();
     // block clicks to the page underneath
-    let _ = ui.interact(r, ui.scope_id().with("confirm-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, crate::kit::glass::SCRIM());
-    let (n, bytes, perm, trashed, rebuilt, emptied, tools) = {
+    let dim = ui.interact(r, ui.scope_id().with("confirm-scrim"), Sense::click());
+    p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, SCRIM());
+    let (n, bytes, perm, trashed) = {
         let g = app.clean.lock_ok();
         let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected).collect();
         let trashed = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).count();
-        let rebuilt = sel.iter().filter(|i| !i.permanent && i.rebuilds()).count();
-        let emptied = sel.iter().any(|i| i.group == Group::Trash);
-        let tools = sel.iter().any(|i| i.by_command());
-        (sel.len(), sel.iter().map(|i| i.bytes).sum::<u64>(), sel.iter().any(|i| i.permanent), trashed, rebuilt, emptied, tools)
+        let perm = sel.iter().any(|i| i.permanent || i.group == Group::Trash || i.by_command());
+        (sel.len(), sel.iter().map(|i| i.bytes).sum::<u64>(), perm, trashed)
     };
-    let mut body = if app.delete_now {
-        "They'll be deleted right away. This can't be undone.".to_string()
+    let warn = if app.delete_now {
+        Some("Can't be undone")
+    } else if perm {
+        Some("Some items can't be put back")
     } else {
-        let mut parts: Vec<String> = Vec::new();
-        if rebuilt > 0 {
-            parts.push("Caches and logs are deleted; apps rebuild them.".into());
-        }
-        if trashed > 0 {
-            parts.push(if rebuilt == 0 { "They go to the Trash, so you can put anything back.".into() } else { format!("The other {trashed} go to the Trash.") });
-        }
-        if emptied {
-            parts.push("Emptying the Trash is permanent.".into());
-        }
-        if tools {
-            parts.push("Simulators and Homebrew leftovers are removed by their own tools, for good.".into());
-        }
-        parts.join(" ")
+        None
     };
-    body.push_str(" Quit the apps involved first for the best result.");
-    let bw = 440.0 - 44.0;
-    let body_h = p.layout(body.clone(), font(13.0), TEXT_SOFT(), bw).size().y;
-    let m = Rect::from_center_size(r.center(), Vec2::new(440.0, 22.0 + 22.0 + 14.0 + body_h + 18.0 + 30.0 + 22.0));
-    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
+    let rows_shown = app.quit.len().min(SHEET_ROWS_MAX);
+    let card_h = if app.quit.is_empty() { 0.0 } else { sp::L + rows_shown as f32 * sp::ROW_H };
+    let warn_h = if warn.is_some() { sp::L + 16.0 } else { 0.0 };
+    let h = SHEET_PAD + 20.0 + card_h + warn_h + sp::XL + sp::CONTROL_H + SHEET_PAD;
+    let m = Rect::from_center_size(r.center(), Vec2::new(SHEET_W.min(r.width() - 2.0 * sp::XL), h));
+    float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
-    p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
-    p.text(m.min + Vec2::new(22.0, 22.0), Align2::LEFT_TOP, format!("Clean {} items ({})?", n, human_bytes(bytes)), bold(15.0), TEXT());
-    paragraph(&p, m.min + Vec2::new(22.0, 58.0), &body, font(13.0), TEXT_SOFT(), bw);
+    p.rect_stroke(m, 14.0, Stroke::new(1.0, POPOVER_EDGE()), StrokeKind::Inside);
+    let inner = m.shrink(SHEET_PAD);
+    p.text(Pos2::new(inner.left(), inner.top() + 10.0), Align2::LEFT_CENTER, format!("Clean {} ({})?", items_n(n), human_bytes(bytes)), bold(15.0), TEXT());
+    let mut y = inner.top() + 20.0;
+    let mut act: Option<usize> = None;
+    if !app.quit.is_empty() {
+        let card = Rect::from_min_size(Pos2::new(inner.left(), y + sp::L), Vec2::new(inner.width(), rows_shown as f32 * sp::ROW_H));
+        glass_card(&p, card, R_CARD, 0.0, false);
+        let mut child = ui.new_child(UiBuilder::new().max_rect(card));
+        child.set_clip_rect(card.intersect(ui.clip_rect()));
+        ScrollArea::vertical().id_salt("confirm-apps").auto_shrink([false, false]).show(&mut child, |ui| {
+            let (all, _) = ui.allocate_exact_size(Vec2::new(card.width(), app.quit.len() as f32 * sp::ROW_H), Sense::hover());
+            for k in 0..app.quit.len() {
+                let rr = Rect::from_min_size(Pos2::new(all.left(), all.top() + k as f32 * sp::ROW_H), Vec2::new(all.width(), sp::ROW_H));
+                if k > 0 {
+                    ui.painter().line_segment([rr.left_top(), rr.right_top()], Stroke::new(1.0, CARD_EDGE()));
+                }
+                if quit_row(app, ui, rr, k) {
+                    act = Some(k);
+                }
+            }
+        });
+        y = card.bottom();
+    }
+    if let Some(k) = act {
+        quit_one(app, k, now);
+    }
+    if let Some(w) = warn {
+        p.text(Pos2::new(inner.left(), y + sp::L + 8.0), Align2::LEFT_CENTER, w, font(12.0), AMBER());
+    }
+    // buttons, right to left
+    let by = inner.bottom() - sp::CONTROL_H;
     let danger = app.delete_now || perm;
-    let ok_label = if app.delete_now { "Delete now" } else if trashed == 0 { "Clean" } else { "Move to Trash" };
+    let done_label = if app.delete_now { "Delete now" } else if trashed == 0 { "Clean" } else { "Move to Trash" };
+    let ok_label = if open_left > 0 { "Quit all and clean" } else { done_label };
     let okw = button_width(&p, ok_label, BTN_PRIMARY);
-    let ok = Rect::from_min_size(Pos2::new(m.right() - 22.0 - okw, m.bottom() - 22.0 - 30.0), Vec2::new(okw, 30.0));
+    let ok = Rect::from_min_size(Pos2::new(inner.right() - okw, by), Vec2::new(okw, sp::CONTROL_H));
+    let mut left = ok.left();
+    let rest = if open_left > 0 {
+        let w = button_width(&p, "Clean the rest", BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(left - sp::S - w, by), Vec2::new(w, sp::CONTROL_H));
+        left = b.left();
+        Some(b)
+    } else {
+        None
+    };
     let cw = button_width(&p, "Cancel", BTN_SECONDARY);
-    let cancel = Rect::from_min_size(Pos2::new(ok.left() - 8.0 - cw, ok.top()), Vec2::new(cw, 30.0));
-    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    let cancel = Rect::from_min_size(Pos2::new(left - sp::S - cw, by), Vec2::new(cw, sp::CONTROL_H));
+    // P4: Esc closes unless apps are quitting; a click on the dim closes unless destructive
+    let outside = dim.interact_pointer_pos().is_some_and(|q| !m.contains(q));
+    let dim_closes = dim.clicked() && outside && !danger && !busy && !app.quit_then_clean;
+    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || dim_closes || (!busy && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
         app.clean_confirm = false;
+        app.quit_then_clean = false;
+        app.quit.clear();
+        return;
     }
-    if pill_button(ui, ok, ok_label, if danger { BTN_DANGER } else { BTN_PRIMARY }, true).clicked() {
-        app.clean_confirm = false;
-        cleanup::start_clean(app.clean.clone(), ctx, app.delete_now);
+    if let Some(b) = rest {
+        if pill_button(ui, b, "Clean the rest", BTN_SECONDARY, !busy).clicked() {
+            // leave the open apps' files alone (and the apps open)
+            let keep: Vec<usize> = app.quit.iter().filter(|q| q.state != Quit::Closed).flat_map(|q| q.idx.clone()).collect();
+            let any_left = {
+                let mut g = app.clean.lock_ok();
+                for i in keep {
+                    if let Some(it) = g.items.get_mut(i) {
+                        it.selected = false;
+                    }
+                }
+                g.items.iter().any(|i| i.selected)
+            };
+            if any_left {
+                start(app, ctx);
+            } else {
+                app.clean_confirm = false;
+                app.quit.clear();
+            }
+            return;
+        }
     }
+    let kind = if danger && open_left == 0 { BTN_DANGER } else { BTN_PRIMARY };
+    if pill_button(ui, ok, ok_label, kind, !busy).clicked() {
+        if open_left == 0 {
+            start(app, ctx);
+        } else {
+            app.quit_then_clean = true;
+            for k in 0..app.quit.len() {
+                if matches!(app.quit[k].state, Quit::Open | Quit::Stuck) {
+                    quit_one(app, k, now);
+                }
+            }
+        }
+    }
+}
+
+/// One open app on the confirm sheet; true when its Quit was clicked.
+fn quit_row(app: &mut App, ui: &mut Ui, rr: Rect, k: usize) -> bool {
+    let ctx = ui.ctx().clone();
+    let p = ui.painter().clone();
+    let row = app.quit[k].clone();
+    let closed = row.state == Quit::Closed;
+    let a = if closed { 0.55 } else { 1.0 };
+    let ic = Rect::from_center_size(Pos2::new(rr.left() + sp::L + 12.0, rr.center().y), Vec2::splat(24.0));
+    app_tile(app, &ctx, &p, ic, &row.app, a);
+    let x = ic.right() + sp::M;
+    let name = p.layout_no_wrap(row.app.name.clone(), font(13.0), with_alpha(TEXT(), a));
+    let nw = name.size().x;
+    p.galley(Pos2::new(x, rr.center().y - name.size().y / 2.0), name, TEXT());
+    p.text(Pos2::new(x + nw + sp::M, rr.center().y), Align2::LEFT_CENTER, human_bytes(row.bytes), font(13.0), with_alpha(TEXT_DIM(), a));
+    let right = rr.right() - sp::L;
+    let quit_btn = |ui: &mut Ui, right: f32| {
+        let w = button_width(&p, "Quit", BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(right - w, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(w, sp::CONTROL_H));
+        (pill_button(ui, b, "Quit", BTN_SECONDARY, true).clicked(), b.left())
+    };
+    match row.state {
+        Quit::Open => quit_btn(ui, right).0,
+        Quit::Quitting(_) => {
+            spinner(&p, Pos2::new(right - 6.0, rr.center().y), 5.0, 0.0, TEXT_DIM());
+            false
+        }
+        Quit::Stuck => {
+            let (hit, l) = quit_btn(ui, right);
+            p.text(Pos2::new(l - sp::S, rr.center().y), Align2::RIGHT_CENTER, "Still open", font(12.0), AMBER());
+            hit
+        }
+        Quit::Closed => {
+            icon(&p, Icon::Check, Rect::from_center_size(Pos2::new(right - 8.0, rr.center().y), Vec2::splat(16.0)), ACCENT());
+            false
+        }
+    }
+}
+
+/// The app's own icon, else a tile with its first letter.
+fn app_tile(app: &mut App, ctx: &egui::Context, p: &egui::Painter, r: Rect, a: &OpenApp, alpha: f32) {
+    if let Some(path) = &a.bundle {
+        if !app.icons.contains_key(path) {
+            let tex = crate::kit::macos::app_icon(path, 64).map(|(n, rgba)| ctx.load_texture(format!("cleanup-icon:{}", path.display()), egui::ColorImage::from_rgba_unmultiplied([n, n], &rgba), egui::TextureOptions::LINEAR));
+            app.icons.insert(path.clone(), tex);
+        }
+        if let Some(Some(t)) = app.icons.get(path) {
+            p.image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), with_alpha(Color32::WHITE, alpha));
+            return;
+        }
+    }
+    p.rect_filled(r, 6.0, with_alpha(TEXT_DIM(), 0.35 * alpha));
+    let l: String = a.name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
+    p.text(r.center(), Align2::CENTER_CENTER, l, bold(12.0), with_alpha(TEXT(), alpha));
+}
+
+/// Screenshots: apps "open" over the demo results.
+pub(crate) fn demo_apps() -> Vec<OpenApp> {
+    let app = |pid, id: &str, name: &str| OpenApp { pid, id: id.into(), name: name.into(), bundle: None };
+    vec![app(1, "com.spotify.client", "Spotify"), app(2, "com.google.chrome", "Google Chrome"), app(3, "com.anthropic.claudefordesktop", "Claude")]
 }
 
 // ---------------------------------------------------------------- done
@@ -991,7 +1517,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let total = st.cleaned_count + st.failed.len();
     let (ly1, ly2) = two_lines_y(&p, c.y, &ty::title(), &ty::caption());
     p.text(Pos2::new(tx, ly1), Align2::LEFT_CENTER, "Cleanup finished", ty::title(), TEXT());
-    p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, format!("{} of {} items", st.cleaned_count, total), ty::caption(), ty::caption_color());
+    p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, format!("{} of {}", st.cleaned_count, items_n(total)), ty::caption(), ty::caption_color());
     let mut y = li.top() + 44.0 + sp::L;
     let freed = st.cleaned_bytes.saturating_sub(st.trashed_bytes);
     let g = p.layout_no_wrap(human_bytes(if freed > 0 { freed } else { st.cleaned_bytes }), ty::hero(), TEXT());
@@ -1107,6 +1633,10 @@ pub fn demo_results() -> cleanup::State {
     items.push(tg);
     items.push(mk(Group::Developer, "Gradle caches", "~/.gradle/caches", 1_100_000_000, "Caches", Verdict::Safe, "Gradle downloads, fetched again when needed", Who::Rule));
     items.push(mk(Group::Developer, "CocoaPods cache", "~/Library/Caches/CocoaPods", 310_000_000, "Caches", Verdict::Safe, "Pod downloads, fetched again when needed", Who::Rule));
+    // dozens of alike questions show as one row
+    for (name, bytes) in [("com.apple.Safari", 640_000_000), ("com.apple.Music", 410_000_000), ("com.apple.helpd", 120_000_000), ("com.apple.Maps", 96_000_000)] {
+        items.push(mk(Group::AppCaches, &name.replace("com.apple.", ""), &format!("~/Library/Caches/{name}"), bytes, "Caches", Verdict::Ask, "macOS system cache, usually safe, rebuilt by macOS", Who::Rule));
+    }
     cleanup::State { phase: Phase::Results, items, ai_used: true, ..Default::default() }
 }
 
@@ -1130,12 +1660,31 @@ fn check_ask(clean: &cleanup::Shared) -> aicheck::Ask {
     let mut idx: Vec<usize> = (0..g.items.len()).filter(|&i| g.items[i].verdict != Verdict::Keep).collect();
     // what waits on the user first (all of it is sent), then by size
     idx.sort_by_key(|&i| (g.items[i].verdict != Verdict::Ask, std::cmp::Reverse(g.items[i].bytes)));
-    let answer: Vec<String> = idx.iter().filter(|&&i| g.items[i].verdict == Verdict::Ask && g.items[i].by != Who::You).take(aicheck::MAX_ANSWERS).map(|&i| g.items[i].path.display().to_string()).collect();
+    // a one-answer bundle is asked once, by its biggest item, and the answer
+    // covers the bundle (see `bundle_for_key`); other bundles item by item
+    let asks: Vec<usize> = idx.iter().copied().filter(|&i| is_question(&g.items[i])).collect();
+    let mut stands_for: std::collections::HashMap<usize, (&'static str, usize, u64)> = std::collections::HashMap::new();
+    let mut covered: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let questions = entries(&g.items, &asks);
+    for e in &questions {
+        if let Some(name) = e.name.filter(|n| one_answer(n)) {
+            stands_for.insert(e.idx[0], (name, e.idx.len(), e.bytes));
+            covered.extend(e.idx[1..].iter().copied());
+        }
+    }
+    let answer: Vec<String> = questions
+        .iter()
+        .flat_map(|e| if e.name.is_some_and(one_answer) { vec![e.idx[0]] } else { e.idx.clone() })
+        .take(aicheck::MAX_ANSWERS)
+        .map(|i| g.items[i].path.display().to_string())
+        .collect();
     let items = idx
         .into_iter()
+        .filter(|i| !covered.contains(i))
         .take(40)
         .map(|i| {
             let it = &g.items[i];
+            let bundle = stands_for.get(&i).map(|(name, n, bytes)| format!(" · stands for {n} alike items ({name}, {} in all): the answer covers them all", human_bytes(*bytes))).unwrap_or_default();
             let now = match it.verdict {
                 Verdict::Safe => "marked safe",
                 Verdict::Ask => "needs the user's OK",
@@ -1144,7 +1693,7 @@ fn check_ask(clean: &cleanup::Shared) -> aicheck::Ask {
             let why = if it.reason.is_empty() { String::new() } else { format!(" ({})", it.reason) };
             aicheck::Item {
                 key: it.path.display().to_string(),
-                line: format!("{} · {} · {} · {} · untouched {} days · {}{}{}", it.group.title(), it.title, short_path(&it.path), human_bytes(it.bytes), it.age_days.round(), now, why, if it.selected { " · ticked for cleaning" } else { "" }),
+                line: format!("{} · {} · {} · {} · untouched {} days · {}{}{}{}", it.group.title(), it.title, short_path(&it.path), human_bytes(it.bytes), it.age_days.round(), now, why, if it.selected { " · ticked for cleaning" } else { "" }, bundle),
                 icon: None,
                 name: it.title.clone(),
             }
@@ -1197,5 +1746,69 @@ mod tests {
         assert!(scrolls(200.0, rows(3), 8.0));
         assert!(!scrolls(0.0, rows(0), 8.0));
         assert!(scrolls(100.0, [52.0, 68.0].into_iter(), 0.0), "a wrapped row counts its extra line");
+    }
+
+    #[test]
+    fn alike_questions_become_one_bundle() {
+        let st = demo_results();
+        let items = &st.items;
+        let asks: Vec<usize> = (0..items.len()).filter(|&i| is_question(&items[i])).collect();
+        let es = entries(items, &asks);
+        let mac = es.iter().find(|e| e.name == Some("macOS caches")).expect("macOS caches bundle");
+        assert_eq!(mac.idx.len(), 4);
+        assert!(mac.idx.windows(2).all(|w| items[w[0]].bytes >= items[w[1]].bytes), "biggest first");
+        assert_eq!(mac.bytes, mac.idx.iter().map(|&i| items[i].bytes).sum::<u64>());
+        // everything else stays on its own
+        assert!(es.iter().filter(|e| e.name.is_none()).all(|e| e.idx.len() == 1));
+        assert_eq!(es.iter().map(|e| e.idx.len()).sum::<usize>(), asks.len());
+        // the AI's answer for the biggest member covers the bundle; any other key is one item
+        let key = items[mac.idx[0]].path.display().to_string();
+        assert_eq!(bundle_for_key(items, &key).len(), 4);
+        let key = items[mac.idx[1]].path.display().to_string();
+        assert_eq!(bundle_for_key(items, &key), vec![mac.idx[1]]);
+        // the person's own files: one answer never covers the others
+        let mut items = items.clone();
+        let base = items.iter().position(|i| i.group == Group::AiTools && is_question(i)).unwrap();
+        for (k, mb) in [300u64, 200, 100].into_iter().enumerate() {
+            let mut it = items[base].clone();
+            it.title = format!("Uploaded files · chat {k}");
+            it.path = PathBuf::from(format!("/Users/me/.claude/uploads/chat-{k}"));
+            it.bytes = mb * 1_000_000;
+            items.push(it);
+        }
+        let asks: Vec<usize> = (0..items.len()).filter(|&i| is_question(&items[i])).collect();
+        let up = entries(&items, &asks).into_iter().find(|e| e.name == Some("Claude Code uploads")).expect("uploads bundle");
+        assert_eq!(up.idx.len(), 3, "still shown as one row");
+        let key = items[up.idx[0]].path.display().to_string();
+        assert_eq!(bundle_for_key(&items, &key), vec![up.idx[0]]);
+    }
+
+    #[test]
+    fn open_apps_claim_their_selected_files() {
+        let mut st = demo_results();
+        let rows = quit_rows(&st.items, demo_apps());
+        let names: Vec<&str> = rows.iter().map(|r| r.app.name.as_str()).collect();
+        assert_eq!(names, ["Spotify", "Google Chrome", "Claude"], "biggest first");
+        let claude = &rows[2];
+        assert!(claude.idx.iter().all(|&i| st.items[i].title.starts_with("Claude ") && quit_kind(st.items[i].kind)));
+        // not selected, not counted
+        for it in st.items.iter_mut().filter(|i| i.title == "Spotify") {
+            it.selected = false;
+        }
+        assert!(quit_rows(&st.items, demo_apps()).iter().all(|r| r.app.name != "Spotify"));
+        // a name inside a word doesn't match
+        let app = OpenApp { pid: 9, id: "com.example.music".into(), name: "Music".into(), bundle: None };
+        let mut it = st.items[0].clone();
+        it.title = "Musicbox cache".into();
+        assert!(!belongs(&app, &it));
+        it.title = "Music".into();
+        assert!(belongs(&app, &it));
+    }
+
+    #[test]
+    fn item_counts_are_singular_for_one() {
+        assert_eq!(items_n(1), "1 item");
+        assert_eq!(items_n(0), "0 items");
+        assert_eq!(items_n(12), "12 items");
     }
 }

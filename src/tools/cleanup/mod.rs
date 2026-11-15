@@ -32,6 +32,11 @@ pub struct Cleanup {
     /// Group shown in the results; `None` = "Needs your OK".
     pub(crate) clean_group: Option<Group>,
     pub(crate) clean_confirm: bool,
+    /// Open apps with selected files, on the confirm sheet.
+    pub(crate) quit: Vec<page::QuitRow>,
+    /// "Quit all and clean" was pressed: clean once they're all closed.
+    pub(crate) quit_then_clean: bool,
+    pub(crate) icons: std::collections::HashMap<std::path::PathBuf, Option<egui::TextureHandle>>,
     pub(crate) clean_log: bool,
     /// Screenshots: show Cleanup as if Claude were in this state.
     pub(crate) demo_claude: Option<crate::kit::claude_code::Availability>,
@@ -50,6 +55,9 @@ impl Cleanup {
             delete_now: false,
             clean_group: None,
             clean_confirm: false,
+            quit: Vec::new(),
+            quit_then_clean: false,
+            icons: Default::default(),
             clean_log: false,
             demo_claude: None,
             ai: {
@@ -251,6 +259,18 @@ impl Tool for Cleanup {
                 self.ai.actions = vec![("select", "Clean"), ("keep", "Keep")];
                 self.ai.open = false;
                 Some(View::Page)
+            }
+            "results-confirm" => {
+                let v = self.demo_view("results");
+                let items = self.clean.lock_ok().items.clone();
+                self.quit = page::quit_rows(&items, page::demo_apps());
+                // one of each state
+                let states = [page::Quit::Stuck, page::Quit::Open, page::Quit::Closed];
+                for (row, st) in self.quit.iter_mut().zip(states) {
+                    row.state = st;
+                }
+                self.clean_confirm = true;
+                v
             }
             "cleanup-scanning" => {
                 // mid-scan: some groups measured, some still going
