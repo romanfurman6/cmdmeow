@@ -1,12 +1,12 @@
 //! Disk Map: measure a folder tree in the background, then browse it as a
 //! drill-down treemap; selected items go to the Trash after review.
 
-use crate::kit::sync::LockExt;
+use crate::kit::sync::{LockExt, RwLockExt};
 use std::os::unix::fs::MetadataExt;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Node {
@@ -47,7 +47,9 @@ pub struct Scan {
     pub files: AtomicU64,
     pub bytes: AtomicU64,
     pub current: Mutex<String>,
-    pub result: Mutex<Option<Node>>,
+    /// The map. A read-write lock: the page reads it every frame, and an
+    /// update copies it at the same time without making the page wait.
+    pub result: RwLock<Option<Node>>,
     /// When the map in `result` was made (Unix seconds).
     pub when: Mutex<Option<i64>>,
     /// The saved map is being read back from disk.
@@ -150,7 +152,7 @@ fn full(shared: &Shared, root: &Path, ctx: &egui::Context) {
     shared.stop.store(false, Ordering::SeqCst);
     shared.files.store(0, Ordering::SeqCst);
     shared.bytes.store(0, Ordering::SeqCst);
-    *shared.result.lock_ok() = None;
+    set_result(shared, None);
     *shared.live.lock_ok() = None;
     let event = super::history::current();
     let w = Walker::new(root, shared, ctx);
@@ -166,7 +168,7 @@ fn full(shared: &Shared, root: &Path, ctx: &egui::Context) {
     shared.partial.store(stopped, Ordering::SeqCst);
     *shared.when.lock_ok() = Some(now);
     *shared.event.lock_ok() = event;
-    *shared.result.lock_ok() = Some(node);
+    set_result(shared, Some(node));
     shared.maps.fetch_add(1, Ordering::SeqCst);
     *shared.live.lock_ok() = None;
     shared.running.store(false, Ordering::SeqCst);
@@ -174,6 +176,14 @@ fn full(shared: &Shared, root: &Path, ctx: &egui::Context) {
     if !stopped {
         crate::kit::sound::play(crate::kit::sound::Cue::Ready);
     }
+}
+
+/// Show `node` as the map. The old map is freed after the lock is let go:
+/// freeing a whole disk's tree takes a while, and the page waits for this
+/// lock every frame.
+fn set_result(shared: &Scan, node: Option<Node>) {
+    let old = std::mem::replace(&mut *shared.result.write_ok(), node);
+    drop(old);
 }
 
 /// How old a map may be and still be updated from the change history;
@@ -199,7 +209,7 @@ pub fn update(shared: Shared, ctx: egui::Context, quiet: bool) {
     shared.updating.store(true, Ordering::SeqCst);
     std::thread::spawn(move || {
         below_ui();
-        let old = shared.result.lock_ok().clone();
+        let old = shared.result.read_ok().clone();
         let since = *shared.event.lock_ok();
         let when = shared.when.lock_ok().unwrap_or(0);
         let fresh = chrono::Utc::now().timestamp() - when < UPDATE_MAX_AGE;
@@ -253,7 +263,7 @@ pub fn update(shared: Shared, ctx: egui::Context, quiet: bool) {
             }
             *shared.when.lock_ok() = Some(now);
             *shared.event.lock_ok() = now_event;
-            *shared.result.lock_ok() = Some(node);
+            set_result(&shared, Some(node));
             shared.partial.store(false, Ordering::SeqCst);
         }
         shared.updating.store(false, Ordering::SeqCst);
@@ -341,7 +351,7 @@ pub fn save(root: &Node, when: i64, event: Option<u64>) {
 pub fn save_later(shared: &Shared) {
     let s = shared.clone();
     std::thread::spawn(move || {
-        let node = s.result.lock_ok().clone();
+        let node = s.result.read_ok().clone();
         let when = *s.when.lock_ok();
         let event = *s.event.lock_ok();
         if let (Some(node), Some(when)) = (node, when) {
@@ -368,7 +378,7 @@ pub fn load(shared: &Shared, ctx: &egui::Context) -> bool {
         below_ui();
         let saved: Option<Saved> = std::fs::File::open(&path).ok().and_then(|f| serde_json::from_reader(std::io::BufReader::new(f)).ok());
         if let Some(saved) = saved {
-            let mut r = s.result.lock_ok();
+            let mut r = s.result.write_ok();
             if r.is_none() && !s.running.load(Ordering::SeqCst) {
                 *r = Some(saved.root);
                 s.maps.fetch_add(1, Ordering::SeqCst);
@@ -760,7 +770,7 @@ mod tests {
         while shared.running.load(Ordering::SeqCst) && t0.elapsed().as_secs() < 20 {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        let n = shared.result.lock_ok().take().unwrap();
+        let n = shared.result.write_ok().take().unwrap();
         n
     }
 
@@ -876,7 +886,7 @@ mod tests {
         while shared.running.load(Ordering::SeqCst) && t0.elapsed().as_secs() < 20 {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        let root = shared.result.lock_ok().take().unwrap();
+        let root = shared.result.write_ok().take().unwrap();
         assert_eq!(shared.files.load(Ordering::SeqCst), 6 * 5 * 4 + 1);
         assert_eq!(root.children.len(), 6);
         assert_eq!(root.children[0].name, "t0"); // biggest first
