@@ -61,8 +61,8 @@ enum Target {
 }
 
 /// Settings tabs by id, and the order they're shown in.
-const TAB_NAMES: [&str; 5] = ["Widgets", "Tools", "General", "AI Usage", "AI Check"];
-const TAB_ORDER: [usize; 5] = [2, 1, 3, 4, 0];
+const TAB_NAMES: [&str; 6] = ["Widgets", "Tools", "General", "AI Usage", "AI Check", "Cat"];
+const TAB_ORDER: [usize; 6] = [2, 1, 3, 4, 5, 0];
 /// The tab Settings opens on from the sidebar.
 pub const TAB_GENERAL: usize = 2;
 
@@ -72,7 +72,7 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     hairline(&p, top.left_bottom(), top.right_bottom());
     p.text(Pos2::new(top.left() + 24.0, top.center().y), Align2::LEFT_CENTER, "Settings", bold(15.0), TEXT());
     // shown General first; `settings_tab` keeps its ids (0 Widgets, 1 Tools,
-    // 2 General, 3 AI Usage, 4 AI Check) so links and Edit widgets… land on the right tab
+    // 2 General, 3 AI Usage, 4 AI Check, 5 Cat) so links and Edit widgets… land on the right tab
     let labels: Vec<&str> = TAB_ORDER.iter().map(|&t| TAB_NAMES[t]).collect();
     let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, 28.0));
     let shown = TAB_ORDER.iter().position(|&t| t == app.settings_tab).unwrap_or(0);
@@ -86,6 +86,7 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
         1 => tools_tab(app, ui, body),
         2 => general_tab(app, ui, body),
         4 => scroll_body(ui, body, "settings-ai-check", |ui, body| ai_check_list(app, ui, body)),
+        5 => scroll_body(ui, body, "settings-cat", |ui, body| cat_list(app, ui, body)),
         _ => {
             let demo = app.demo;
             scroll_body(ui, body, "settings-ai", |ui, body| crate::tools::claude::settings_ui::list(ui, body, demo));
@@ -818,6 +819,64 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     y + 30.0 + 24.0
 }
 
+/// Settings › Cat: what the cat reacts to (see [`crate::kit::cat`]), a
+/// switch each, and when the big cat shows on screen. All off, the cat is
+/// not there.
+fn cat_list(app: &App, ui: &mut Ui, body: Rect) -> f32 {
+    let w = 600.0f32.min(body.width() - 48.0);
+    let x = body.center().x - w / 2.0;
+    cat_card(app, ui, Pos2::new(x, body.top() + 24.0), w) + 24.0
+}
+
+/// The cat's switches as one card. Returns the card's bottom.
+fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
+    use crate::kit::cat::{self, Show};
+    let p = ui.painter().clone();
+    let row_h = 44.0;
+    let before = if app.demo { cat::Prefs::all_on() } else { cat::prefs() };
+    let mut prefs = before.clone();
+    let switches: [(&str, &mut bool); 6] = [
+        ("Purr when petted", &mut prefs.purr),
+        ("Hiss when slapped", &mut prefs.hiss),
+        ("Meow on low battery", &mut prefs.meow),
+        ("Eat on the charger", &mut prefs.eat),
+        ("Greet when the lid opens", &mut prefs.greet),
+        ("Watch the pointer", &mut prefs.watch),
+    ];
+    let card = Rect::from_min_size(at, Vec2::new(w, row_h * (switches.len() + 1) as f32));
+    glass_card(&p, card, R_CARD, 0.0, false);
+    let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * row_h), Vec2::new(w, row_h));
+    let label = |r: Rect, text: &str| {
+        if r.top() > card.top() {
+            hairline(&p, Pos2::new(r.left() + 16.0, r.top()), Pos2::new(r.right() - 16.0, r.top()));
+        }
+        p.text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, text, font(13.0), TEXT());
+    };
+    let n = switches.len();
+    for (k, (text, on)) in switches.into_iter().enumerate() {
+        let r = row(k);
+        label(r, text);
+        let sw = Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
+        if switch(ui, sw, ui.scope_id().with(("cat", k)), *on, true).clicked() {
+            *on = !*on;
+        }
+    }
+    let r = row(n);
+    label(r, "Show on screen");
+    let shows = [Show::Always, Show::FirstTime, Show::Off];
+    let seg = Rect::from_min_size(Pos2::new(r.right() - 12.0 - 216.0, r.center().y - 13.0), Vec2::new(216.0, 26.0));
+    let picked = shows.iter().position(|s| *s == prefs.show).unwrap_or(1);
+    if let Some(i) = segmented(ui, seg, ui.scope_id().with("cat-show"), &["Always", "First time", "Off"], picked) {
+        prefs.show = shows[i];
+        // "First time" starts over: every reaction shows once more
+        prefs.seen.clear();
+    }
+    if prefs != before && !app.demo {
+        cat::set_prefs(prefs);
+    }
+    card.bottom()
+}
+
 /// "Remove Cmd+Meow": a second click within a few seconds removes the app
 /// and everything it keeps (see [`crate::kit::remove`]), then quits.
 fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) {
@@ -863,5 +922,6 @@ mod tab_tests {
         assert_eq!(TAB_NAMES[TAB_ORDER[0]], "General");
         assert_eq!(TAB_ORDER[0], TAB_GENERAL);
         assert_eq!(TAB_NAMES[*TAB_ORDER.last().unwrap()], "Widgets");
+        assert_eq!(TAB_NAMES[5], "Cat");
     }
 }
