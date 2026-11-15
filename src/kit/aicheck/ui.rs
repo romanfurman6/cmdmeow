@@ -88,7 +88,7 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     }
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    let ai = tint::HEALTH();
+    let ai = AI();
     let phase = c.phase();
     let w = chip_width(c, ui, has_data);
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(w, CHIP_H));
@@ -183,7 +183,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         p.rect_stroke(rr, 12.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
         // header: sparkle, AI Check, Check again; the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
-        sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, tint::HEALTH());
+        sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, AI());
         p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, "AI Check", ty::title(), TEXT());
         let again = if matches!(phase, Phase::Failed(_)) { "Try again" } else { "Check again" };
         let aw = p.layout_no_wrap(again.into(), ty::body(), TEXT()).size().x;
@@ -248,7 +248,7 @@ pub fn agent_button_width(ui: &Ui, label: &str) -> f32 {
 /// thing, its left edge centred on `at`: "Ask Claude to set up".
 pub fn agent_button(ui: &mut Ui, at: Pos2, id: egui::Id, a: Agent, label: &str) -> egui::Response {
     let p = ui.painter().clone();
-    let ai = tint::HEALTH();
+    let ai = AI();
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(agent_button_width(ui, label), CHIP_H));
     let resp = ui.interact(r, id, Sense::click());
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
@@ -390,7 +390,7 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool
     let top = cy - (th + if wh > 0.0 { sp::LINE_GAP + wh } else { 0.0 }) / 2.0;
     let t = text_wrap(&p, Pos2::new(tx, top), Align2::LEFT_TOP, &r.title, ty::title(), TEXT(), tw - vw, 2);
     if !r.value.is_empty() {
-        p.text(Pos2::new(tx + tw, top), Align2::RIGHT_TOP, &r.value, ty::title(), tint::HEALTH());
+        p.text(Pos2::new(tx + tw, top), Align2::RIGHT_TOP, &r.value, ty::title(), AI());
     }
     if wh > 0.0 {
         text_wrap(&p, Pos2::new(tx, t.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, &r.why, ty::label(), TEXT_DIM(), tw, 3);

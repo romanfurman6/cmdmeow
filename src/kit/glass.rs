@@ -97,6 +97,10 @@ pub fn AMBER() -> Color32 { pick(hex(0xF7B267), hex(0xC06A12)) }
 /// Problems and low battery.
 #[allow(non_snake_case)]
 pub fn RED() -> Color32 { pick(hex(0xFF9B7A), hex(0xC2391D)) }
+/// Everything AI suggests or points at: the AI Check chip, its tips and
+/// the "show where" ring. The Monitor cyan today, its own token by rule.
+#[allow(non_snake_case)]
+pub fn AI() -> Color32 { tint::HEALTH() }
 /// Claude's limit bars and rings: the Monitor cyan.
 #[allow(non_snake_case)]
 pub fn CLAUDE() -> Color32 { tint::HEALTH() }
@@ -266,7 +270,7 @@ pub mod reveal {
         if k <= 0.0 {
             return;
         }
-        let ai = tint::HEALTH();
+        let ai = AI();
         p.rect_filled(r, radius, with_alpha(ai, FILL * k));
         p.rect_stroke(r, radius, Stroke::new(RING_W, with_alpha(ai, k)), egui::StrokeKind::Inside);
     }
@@ -276,7 +280,7 @@ pub mod reveal {
         if k <= 0.0 {
             return;
         }
-        let ai = tint::HEALTH();
+        let ai = AI();
         p.circle_filled(c, rad, with_alpha(ai, FILL * k));
         stroke_circle(p, c, rad, Stroke::new(RING_W, with_alpha(ai, k)));
         stroke_circle(p, c, rad + 4.0, Stroke::new(3.0, with_alpha(ai, 0.18 * k)));

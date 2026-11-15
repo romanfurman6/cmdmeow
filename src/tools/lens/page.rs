@@ -1033,7 +1033,7 @@ fn rings(app: &mut App, ui: &mut Ui, pa: Rect, root: &Node, node: &Node, here: &
             let n = (((a1 - a0) / 0.02).ceil() as usize).max(2);
             let mut pts: Vec<Pos2> = (0..=n).map(|j| c + Vec2::angled(a0 + (a1 - a0) * j as f32 / n as f32) * r1).collect();
             pts.extend((0..=n).rev().map(|j| c + Vec2::angled(a0 + (a1 - a0) * j as f32 / n as f32) * r0));
-            p.add(egui::Shape::closed_line(pts, Stroke::new(reveal::RING_W, with_alpha(tint::HEALTH(), kr))));
+            p.add(egui::Shape::closed_line(pts, Stroke::new(reveal::RING_W, with_alpha(AI(), kr))));
         }
     }
     // names on the slices that have room
