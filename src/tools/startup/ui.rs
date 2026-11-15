@@ -49,14 +49,6 @@ fn app_icon(s: &mut Startup, ctx: &egui::Context, p: &egui::Painter, r: Rect, pa
     letter_tile(p, r, name, a);
 }
 
-fn outline_chip(p: &egui::Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {
-    let g = p.layout_no_wrap(label.to_string(), font(11.0), col);
-    let r = align.anchor_size(pos, g.size() + Vec2::new(10.0, 2.0));
-    // quiet text, no box: a tag is meta, not a button
-    p.galley(r.center() - g.size() / 2.0, g, col);
-    r
-}
-
 fn flag_color(f: Flag) -> Color32 {
     if f.strong() { RED() } else { AMBER() }
 }
@@ -818,7 +810,7 @@ fn name_line(p: &egui::Painter, c: &Cols, name: &str, col: Color32, tags: &[(&st
         if x > c.text_x + c.name_max {
             break;
         }
-        x = outline_chip(p, Pos2::new(x, c.y1), Align2::LEFT_CENTER, t, *tc).right() + sp::XS;
+        x = tag(p, Pos2::new(x, c.y1), Align2::LEFT_CENTER, t, *tc).right() + sp::XS;
     }
     nr
 }

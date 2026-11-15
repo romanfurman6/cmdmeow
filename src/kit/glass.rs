@@ -62,6 +62,14 @@ pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255,
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
+/// The hairline round a floating surface. With no shadow under it, light
+/// mode needs a firmer ink line to part a white popover from white cards.
+#[allow(non_snake_case)]
+pub fn POPOVER_EDGE() -> Color32 { if is_light() { white(52) } else { white(30) } }
+/// The dim under dialogs, sheets and the loader: black 45% in dark, ink
+/// 24% in light.
+#[allow(non_snake_case)]
+pub fn SCRIM() -> Color32 { pick(Color32::from_black_alpha(115), Color32::from_rgba_unmultiplied(14, 20, 5, 61)) }
 /// Window sidebar.
 #[allow(non_snake_case)]
 pub fn SIDEBAR() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128)) }
@@ -275,8 +283,8 @@ pub const R_BUTTON: f32 = 10.0;
 pub const R_SMALL: f32 = 7.0;
 pub const HAIRLINE: u8 = 15; // white at ~6%
 pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
-/// A popover list row under the pointer: the whole row, edge to edge (the
-/// popover's corners round the last one).
+/// The one hover fill for rows (H1): lists, rails, popovers, start lists,
+/// as `white(ROW_HOVER)`. In a popover the whole row, edge to edge.
 pub const ROW_HOVER: u8 = 10;
 
 /// "Show where": the ring on the item an AI Check suggestion points at.
@@ -381,6 +389,23 @@ pub fn rounded_points(rect: Rect, r: f32) -> Vec<Pos2> {
         }
     }
     pts
+}
+
+/// The one shadow under everything that floats over the page (menus, tips,
+/// popovers, dialogs, toasts, floating bars): "Whisper", a tight key under a
+/// soft ambient, lighter in light mode. Draw it right before the surface;
+/// `alpha` fades it with the surface.
+pub fn float_shadow(p: &Painter, rect: Rect, radius: f32, alpha: f32) {
+    let (key, amb) = if is_light() { (0.06, 0.06) } else { (0.30, 0.20) };
+    let c = |x: f32| Color32::from_black_alpha((x * alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
+    p.add(egui::epaint::Shadow { offset: [0, 1], blur: 2, spread: 0, color: c(key) }.as_shape(rect, radius));
+    p.add(egui::epaint::Shadow { offset: [0, 4], blur: 10, spread: 0, color: c(amb) }.as_shape(rect, radius));
+}
+
+/// [`float_shadow`] for egui's own menus and tooltips, which take one layer.
+pub fn float_shadow_egui() -> egui::epaint::Shadow {
+    let a = if is_light() { 0.08 } else { 0.32 };
+    egui::epaint::Shadow { offset: [0, 3], blur: 8, spread: 0, color: Color32::from_black_alpha((a * 255.0) as u8) }
 }
 
 /// The window surface: a radial glow from the top centre (moss in dark
@@ -569,8 +594,19 @@ pub fn capsule_look(tint: Option<Color32>) -> key::Look {
     }
 }
 
-/// A 30 pt square icon button (panel header, sheet actions).
+/// Legal button heights (B2): 44 hero, 32 headers/footers/dialogs, 28 in
+/// cards and rows. A square or round button snaps to 32 or 28 around the
+/// centre of the rect its caller gives.
+pub const BTN_H: f32 = 32.0;
+pub const BTN_H_ROW: f32 = 28.0;
+fn snap_square(rect: Rect) -> Rect {
+    let s = if rect.height() >= 30.0 { BTN_H } else { BTN_H_ROW };
+    Rect::from_center_size(rect.center(), Vec2::splat(s))
+}
+
+/// A square icon button: 32 in headers, 28 in rows (B1).
 pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
+    let rect = snap_square(rect);
     let id = ui.scope_id().with(("icon-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let k = key::press(ui, rect, id, true, Some(Click::Icon));
     let p = ui.painter();
@@ -579,8 +615,9 @@ pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
     k.resp.on_hover_text(tip)
 }
 
-/// The round 26 pt close / refresh button used in sheet headers.
+/// The round 28 pt close / refresh button used in sheet headers (B1).
 pub fn round_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
+    let rect = Rect::from_center_size(rect.center(), Vec2::splat(BTN_H_ROW));
     let id = ui.scope_id().with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let k = key::press(ui, rect, id, true, Some(Click::Round));
     let p = ui.painter();
@@ -668,6 +705,56 @@ pub fn stacked_bar(painter: &Painter, rect: Rect, segments: &[(f32, Color32)]) {
         };
         clip.rect_filled(seg, cr, c);
     }
+}
+
+/// The disk ring of tool start screens (Cleanup, Disk Map): how wide it is.
+pub const DISK_RING_D: f32 = 208.0;
+/// The ring plus the name line under it.
+pub const DISK_RING_H: f32 = DISK_RING_D + sp::M + 18.0;
+
+/// A start screen's disk: used space as a `tint` arc from 12 o'clock, the
+/// free space in the middle ("1.33 TB" over "free of 2.00 TB") and the
+/// volume's name under the ring. `top` is the top centre of the ring; the
+/// whole thing is [`DISK_RING_H`] tall.
+pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint: Color32) {
+    use egui::epaint::{PathShape, PathStroke};
+    const STROKE: f32 = 12.0;
+    let r = (DISK_RING_D - STROKE) / 2.0 - 2.0;
+    let c = Pos2::new(top.x, top.y + DISK_RING_D / 2.0);
+    p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
+    if total > 0 {
+        let used = disk_used(total, free);
+        if used > 0.0 {
+            let a0 = -std::f32::consts::FRAC_PI_2;
+            let a1 = a0 + std::f32::consts::TAU * used.max(0.01);
+            p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, tint)));
+            // round caps
+            for a in [a0, a1] {
+                p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, tint);
+            }
+        }
+        let big = line_h(p, &ty::hero());
+        let small = line_h(p, &ty::label());
+        let y0 = c.y - (big + 2.0 + small) / 2.0;
+        p.text(Pos2::new(c.x, y0), Align2::CENTER_TOP, human_bytes(free), ty::hero(), TEXT());
+        p.text(Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, format!("free of {}", human_bytes(total)), ty::label(), TEXT_DIM());
+    }
+    // the name, with the disk glyph in front, centred as one
+    let ny = top.y + DISK_RING_D + sp::M + 9.0;
+    // a volume or folder name people bring may be cut (R10), to the column
+    let room = DISK_RING_D + sp::XXL - 22.0;
+    let nw = p.layout_no_wrap(name.to_owned(), ty::body(), TEXT_SOFT()).size().x.min(room);
+    let x = c.x - (22.0 + nw) / 2.0;
+    icon(p, Icon::Disk, Rect::from_center_size(Pos2::new(x + 8.0, ny), Vec2::splat(16.0)), TEXT_SOFT());
+    text_fit(p, Pos2::new(x + 22.0, ny), Align2::LEFT_CENTER, name, ty::body(), TEXT_SOFT(), room);
+}
+
+/// How full a disk is, 0..1 (0 when its size is unknown).
+pub fn disk_used(total: u64, free: u64) -> f32 {
+    if total == 0 {
+        return 0.0;
+    }
+    (1.0 - free.min(total) as f32 / total as f32).clamp(0.0, 1.0)
 }
 
 pub fn arc_points(center: Pos2, radius: f32, a0: f32, a1: f32, n: usize) -> Vec<Pos2> {
@@ -1025,17 +1112,23 @@ pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str)
 
 /// A window sidebar row: tint chip (or dashed chip when `planned`), label and
 /// a small right-aligned `meta` text. Selected rows get the blue fill.
-pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, meta: &str, selected: bool, planned: bool) -> Response {
+/// `indent`: how far the icon moves right to sit under its section title
+/// (H6); 0 for rows with no section, [`SIDEBAR_INDENT`] under a dotted one.
+#[allow(clippy::too_many_arguments)]
+pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, meta: &str, selected: bool, planned: bool, indent: f32) -> Response {
     let resp = ui.interact(rect, id, if planned { Sense::hover() } else { Sense::click() });
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !planned);
     let p = ui.painter();
     let active_text = ACCENT();
     if selected {
-        p.rect_filled(rect, 8.0, pick(Color32::from_rgba_unmultiplied(200, 240, 90, 41), Color32::from_rgba_unmultiplied(125, 181, 25, 41)));
+        // H3: lime at 16%, radius 8, text ACCENT
+        p.rect_filled(rect, 8.0, with_alpha(ACTION(), 0.16));
     } else if h > 0.0 {
-        p.rect_filled(rect, 6.0, white((12.0 * h) as u8));
+        // H1: ROW_HOVER, inset radius 8 in the sidebar
+        p.rect_filled(rect, 8.0, white((ROW_HOVER as f32 * h) as u8));
     }
-    let chip_r = Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.center().y - 8.0), Vec2::splat(16.0));
+    // H6: one 16 box for every glyph, so the glyph size never moves the label
+    let chip_r = Rect::from_min_size(Pos2::new(rect.left() + 8.0 + indent, rect.center().y - 8.0), Vec2::splat(16.0));
     let glyph_col = if planned {
         TEXT_MUTED()
     } else if selected {
@@ -1056,6 +1149,10 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     }
     resp
 }
+
+/// How far a sidebar item under a dotted section title moves its icon, so
+/// the icon starts under the title text (H6).
+pub const SIDEBAR_INDENT: f32 = 12.0;
 
 /// Height of a [`sidebar_item`] row.
 pub const SIDEBAR_ROW_H: f32 = 28.0;
@@ -1371,6 +1468,8 @@ pub enum Icon {
     Sun,
     Speaker,
     SpeakerOff,
+    /// A plus: add something.
+    Plus,
 }
 
 /// The SF Symbol behind each icon (outline variants: icons are monochrome strokes).
@@ -1426,6 +1525,7 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Home => "house",
         Icon::Window => "macwindow",
         Icon::Close => "xmark",
+        Icon::Plus => "plus",
         Icon::Refresh => "arrow.clockwise",
         Icon::Search => "magnifyingglass",
         Icon::Grip => "circle.grid.2x3.fill",
@@ -1700,6 +1800,10 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(6.0, 6.0), (18.0, 18.0)]);
             open(&[(18.0, 6.0), (6.0, 18.0)]);
         }
+        Icon::Plus => {
+            open(&[(12.0, 5.0), (12.0, 19.0)]);
+            open(&[(5.0, 12.0), (19.0, 12.0)]);
+        }
         Icon::Refresh => {
             arc(12.0, 12.0, 8.0, -PI * 0.25, PI * 1.6);
             open(&[(20.0, 4.0), (20.0, 9.0), (15.0, 9.0)]);
@@ -1854,6 +1958,16 @@ mod tests {
         assert!(mid > 0.0 && mid < 1.0);
         assert!(strength(HOLD + FADE * 0.25) > strength(HOLD + FADE * 0.75));
         assert_eq!(strength(HOLD + FADE), 0.0);
+    }
+
+    #[test]
+    fn disk_ring_fill_is_how_full_the_disk_is() {
+        assert_eq!(disk_used(0, 0), 0.0);
+        assert_eq!(disk_used(100, 100), 0.0);
+        assert_eq!(disk_used(100, 0), 1.0);
+        assert!((disk_used(2_000, 1_330) - 0.335).abs() < 1e-6);
+        // free reported above the size (APFS purgeable) never goes negative
+        assert_eq!(disk_used(100, 150), 0.0);
     }
 
     #[test]
@@ -2040,4 +2154,52 @@ pub fn search_field(ui: &mut Ui, r: Rect, text: &mut String, hint: &str, focus: 
 pub fn stroke_circle(p: &Painter, c: Pos2, r: f32, stroke: impl Into<Stroke>) {
     let s: Stroke = stroke.into();
     p.circle_stroke(c, (r - s.width / 2.0).max(0.0), s);
+}
+
+/// Filter chip height (B2: 28, inside cards and rows).
+pub const FILTER_CHIP_H: f32 = 28.0;
+
+/// One filter chip, top-left at `at`: label 12, optional coloured dot.
+/// On: lime 22% fill, ACCENT edge. Off: hairline, ROW_HOVER on hover.
+pub fn filter_chip(ui: &mut Ui, p: &Painter, at: Pos2, id: egui::Id, label: &str, on: bool, dot: Option<Color32>) -> Response {
+    let g = p.layout_no_wrap(label.to_owned(), font(12.0), TEXT());
+    let w = g.size().x + 22.0 + if dot.is_some() { 12.0 } else { 0.0 };
+    let r = Rect::from_min_size(at, Vec2::new(w, FILTER_CHIP_H));
+    let resp = ui.interact(r, id, Sense::click());
+    let rr = r.height() / 2.0;
+    p.rect_filled(r, rr, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(ROW_HOVER) } else { Color32::TRANSPARENT });
+    p.rect_stroke(r, rr, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
+    let mut tx = r.left() + 11.0;
+    if let Some(c) = dot {
+        p.circle_filled(Pos2::new(tx + 3.5, r.center().y), 3.5, c);
+        tx += 12.0;
+    }
+    p.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, label, font(12.0), if on { TEXT() } else { TEXT_DIM() });
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// A row of [`filter_chip`]s from `x`, 6 apart; a click picks one.
+/// Returns the right edge.
+#[allow(clippy::too_many_arguments)]
+pub fn filter_chips<T: PartialEq + Copy>(ui: &mut Ui, p: &Painter, x: f32, y: f32, items: &[(&str, T)], cur: &mut T, salt: &str, dot: impl Fn(&T) -> Option<Color32>) -> f32 {
+    let mut x = x;
+    for (i, (label, f)) in items.iter().enumerate() {
+        let resp = filter_chip(ui, p, Pos2::new(x, y), ui.scope_id().with((salt, i)), label, *cur == *f, dot(f));
+        if resp.clicked() {
+            *cur = *f;
+        }
+        x = resp.rect.right() + 6.0;
+    }
+    x
+}
+
+/// A quiet text tag (no box): meta, not a button.
+pub fn tag(p: &Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {
+    let g = p.layout_no_wrap(label.to_string(), font(11.0), col);
+    let r = align.anchor_size(pos, g.size() + Vec2::new(10.0, 2.0));
+    p.galley(r.center() - g.size() / 2.0, g, col);
+    r
 }

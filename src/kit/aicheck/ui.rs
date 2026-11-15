@@ -9,7 +9,7 @@ use crate::kit::agent::Agent;
 use crate::kit::glass::*;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-const CHIP_H: f32 = 26.0;
+const CHIP_H: f32 = 28.0;
 const POP_W: f32 = 560.0;
 const POP_HEAD_H: f32 = 44.0;
 const POP_SEC_H: f32 = 28.0;
@@ -175,12 +175,17 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
     let x = chip.left().min(screen.right() - sp::L - w).max(screen.left() + sp::L);
     let rect = Rect::from_min_size(Pos2::new(x, chip.bottom() + 6.0), Vec2::new(w, h));
     let mut ev = None;
+    // the page under the popover stays still while it's open
+    if live {
+        crate::kit::modal::shield(&ctx);
+    }
     let area = egui::Area::new(ui.scope_id().with(("ai-pop", c.tool))).order(egui::Order::Foreground).fixed_pos(rect.min).interactable(live).show(&ctx, |ui| {
         ui.multiply_opacity(alpha);
         let (rr, _) = ui.allocate_exact_size(rect.size(), Sense::click());
         let p = ui.painter().clone();
+        crate::kit::glass::float_shadow(&p, rr, 12.0, 1.0);
         p.rect_filled(rr, 12.0, POPOVER());
-        p.rect_stroke(rr, 12.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
+        p.rect_stroke(rr, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
         // header: sparkle, AI Check, Check again; the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
         sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, AI());
@@ -222,8 +227,8 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         c.hovered = None;
         return None;
     }
-    // close on a click elsewhere (the chip toggles itself) or Escape
-    let clicked_out = ctx.input(|i| i.pointer.any_pressed()) && ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !area.response.rect.contains(pos) && !chip.contains(pos));
+    // close on a click elsewhere (the chip too: it sits under the cover) or Escape
+    let clicked_out = ctx.input(|i| i.pointer.any_pressed()) && ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !area.response.rect.contains(pos));
     if clicked_out || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         c.open = false;
         c.hovered = None;

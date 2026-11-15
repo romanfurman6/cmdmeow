@@ -65,6 +65,8 @@ const TAB_NAMES: [&str; 6] = ["Widgets", "Tools", "General", "AI Usage", "AI Che
 const TAB_ORDER: [usize; 6] = [2, 1, 3, 4, 5, 0];
 /// The tab Settings opens on from the sidebar.
 pub const TAB_GENERAL: usize = 2;
+/// Settings › Tools.
+pub const TAB_TOOLS: usize = 1;
 
 pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
@@ -247,7 +249,6 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
     let shown = panel::place(app, panel::inner_width()).0.len();
     p.text(Pos2::new(reset.left() - 10.0, title_y + 12.0), Align2::RIGHT_CENTER, format!("{shown} widget{}", if shown == 1 { "" } else { "s" }), font(12.0), TEXT_FAINT());
     let boxr = Rect::from_min_max(Pos2::new(px, title_y + 36.0), Pos2::new(px + pw, pr.bottom() - 20.0 - SIZE_BAR_H));
-    p.rect_filled(boxr.translate(Vec2::new(0.0, 12.0)).expand(4.0), 18.0, Color32::from_black_alpha(70));
     p.rect_filled(boxr, 14.0, BG());
     p.rect_stroke(boxr, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
     panel::title_line(app, &p, boxr.left() + 16.0, boxr.top(), pw - 32.0);
@@ -300,7 +301,7 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
             // a slim tag, so the insert line under it stays visible
             let size = Vec2::new(d.size.x.min(240.0), 44.0);
             let gr = Rect::from_min_size(q - Vec2::new(d.grab.x.min(size.x - 12.0), 22.0), size);
-            gp.rect_filled(gr.translate(Vec2::new(0.0, 8.0)).expand(2.0), R_CARD + 2.0, Color32::from_black_alpha(80));
+            crate::kit::glass::float_shadow(&gp, gr, R_CARD, 1.0);
             gp.rect_filled(gr, R_CARD, POPOVER());
             gp.rect_stroke(gr, R_CARD, Stroke::new(1.0, if target == Target::Hide { RED() } else { white(40) }), StrokeKind::Inside);
             text_fit(&gp, Pos2::new(gr.left() + 12.0, gr.center().y), Align2::LEFT_CENTER, &d.label, bold(13.0), TEXT(), gr.width() - 24.0);

@@ -76,6 +76,8 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
         return None;
     }
     let ease = 1.0 - (1.0 - a).powi(3);
+    // nothing under the dialog reacts while it's up
+    crate::kit::modal::shield(&ctx);
     let full = ctx.content_rect();
     let mut again = None;
     egui::Area::new(id().with("area"))
@@ -87,7 +89,7 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
             ui.set_min_size(full.size());
             // the scrim swallows clicks; a click on it closes the modal
             let scrim = ui.interact(full, id().with("scrim"), Sense::click());
-            ui.painter().rect_filled(full, CornerRadius::same(WINDOW_R), Color32::from_black_alpha((115.0 * ease) as u8));
+            ui.painter().rect_filled(full, CornerRadius::same(WINDOW_R), crate::kit::glass::SCRIM().gamma_multiply(ease));
             ui.multiply_opacity(ease);
             let h = PAD + 28.0 + sp::M + 2.0 * DIAL_R + sp::L + 56.0 + sp::L + 30.0 + PAD;
             let m = Rect::from_center_size(full.center() + Vec2::new(0.0, (1.0 - ease) * 18.0), Vec2::new(W.min(full.width() - 32.0), h));
@@ -107,10 +109,9 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
 }
 
 fn card_bg(p: &egui::Painter, m: Rect) {
-    let shadow = egui::epaint::Shadow { offset: [0, 20], blur: 60, spread: 0, color: Color32::from_black_alpha(128) };
-    p.add(shadow.as_shape(m, CornerRadius::same(16)));
+    crate::kit::glass::float_shadow(p, m, 16.0, 1.0);
     p.rect_filled(m, 16.0, POPOVER());
-    p.rect_stroke(m, 16.0, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
+    p.rect_stroke(m, 16.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
 }
 
 /// One cell of the ping · download · upload row.
