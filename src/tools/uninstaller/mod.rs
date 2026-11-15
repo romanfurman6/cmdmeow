@@ -169,6 +169,12 @@ pub struct State {
     pub orphans: Vec<Orphan>,
     /// A removal is running: its progress line.
     pub working: Option<String>,
+    /// The removal loader is up: its title ("Removing Steam…"), the bytes
+    /// planned and handled so far.
+    pub loader: bool,
+    pub work_title: String,
+    pub work_total: u64,
+    pub work_done: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// The last removal, for Undo and the summary.
     pub last: Option<(Report, Instant)>,
     pub notice: Option<Notice>,
@@ -378,6 +384,12 @@ impl Uninstaller {
             return;
         }
         g.working = Some("Starting…".into());
+        g.loader = true;
+        g.work_title = work_title(&targets);
+        g.work_total = targets.iter().flat_map(|t| t.items.iter().filter(|i| i.selected && !(t.reset && i.kind.is_part()))).map(|i| i.bytes).sum();
+        g.work_done = Default::default();
+        let done = g.work_done.clone();
+        crate::kit::loader::reset(&self.ctx, "uninstaller");
         for t in targets.iter().filter(|t| !t.reset) {
             g.removed_by_us.insert(t.id.clone());
         }
@@ -388,7 +400,7 @@ impl Uninstaller {
             .spawn(move || {
                 let st2 = st.clone();
                 let c2 = ctx.clone();
-                let rep = remove::run(&targets, &roots, &app_roots, move |line| {
+                let rep = remove::run(&targets, &roots, &app_roots, &done, move |line| {
                     st2.lock_ok().working = Some(line);
                     c2.request_repaint();
                 });
@@ -410,6 +422,7 @@ impl Uninstaller {
 
     /// Put the last removal back.
     pub fn undo(&self) {
+        self.st.lock_ok().loader = false;
         let Some((rep, _)) = self.st.lock_ok().last.take() else { return };
         if self.demo {
             return;
@@ -988,6 +1001,22 @@ impl Tool for Uninstaller {
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
         ui::demo::fill(self, view)
+    }
+}
+
+/// The loader's title for a removal: "Removing Steam…", "Removing 3 apps…",
+/// "Resetting Steam…", "Removing leftovers…".
+pub fn work_title(targets: &[Target]) -> String {
+    let who = match targets {
+        [t] => t.name.clone(),
+        ts => format!("{} apps", ts.len()),
+    };
+    if targets.iter().all(|t| t.reset) {
+        format!("Resetting {who}…")
+    } else if targets.iter().all(|t| t.app.is_none()) {
+        "Removing leftovers…".to_string()
+    } else {
+        format!("Removing {who}…")
     }
 }
 

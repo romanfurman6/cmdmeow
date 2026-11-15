@@ -186,6 +186,8 @@ pub struct Dictation {
     /// A word being typed into the Words list.
     pub word_draft: String,
     pub download: Option<Download>,
+    /// The speech model being removed, under the loader.
+    pub removing: Option<crate::kit::loader::Task>,
     download_error: Option<String>,
     /// Shell requests made outside a ui pass.
     actions: Vec<Action>,
@@ -268,6 +270,7 @@ impl Dictation {
             pending: None,
             word_draft: String::new(),
             download: None,
+            removing: None,
             download_error: None,
             actions: Vec::new(),
             ctx: env.ctx.clone(),

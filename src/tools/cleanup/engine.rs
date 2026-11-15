@@ -158,6 +158,12 @@ pub struct State {
     /// once it's emptied).
     pub trashed_bytes: u64,
     pub cleaned_count: usize,
+    /// While cleaning: bytes of everything planned, and of what was gone
+    /// through so far (removed or skipped), for the loader's "x of y".
+    pub clean_total: u64,
+    pub clean_done: u64,
+    /// The clean was stopped before the end.
+    pub stopped: bool,
     /// Group and size of each item removed (they leave `items`).
     pub cleaned: Vec<(Group, u64)>,
     pub failed: Vec<(String, String)>,
@@ -598,6 +604,14 @@ pub fn stop_scan(shared: &Shared) {
     let mut g = shared.lock_ok();
     g.cancel.store(true, Ordering::SeqCst);
     *g = State::default();
+}
+
+/// Stop a clean after the item in hand (what's done stays done).
+pub fn stop_clean(shared: &Shared) {
+    let g = shared.lock_ok();
+    if g.phase == Phase::Cleaning {
+        g.cancel.store(true, Ordering::SeqCst);
+    }
 }
 
 /// Stop the AI check: the results show now, judged by the built-in rules
@@ -1180,8 +1194,14 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         g.log.clear();
         g.trashed_bytes = 0;
         g.cleaned.clear();
-        plan_clean(&g.items, delete_now)
+        g.stopped = false;
+        g.clean_done = 0;
+        g.cancel = Arc::new(AtomicBool::new(false));
+        let plan = plan_clean(&g.items, delete_now);
+        g.clean_total = plan.iter().map(|(it, _)| it.bytes).sum();
+        plan
     };
+    let cancel = shared.lock_ok().cancel.clone();
     std::thread::spawn(move || {
         let n = plan.len().max(1);
         // minutes may have passed since the scan: an app opened since then keeps its cache
@@ -1189,12 +1209,24 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         // and what every process has open right now (one lsof run)
         let open = if plan.iter().any(|(it, _)| it.action == Action::Files && live_kind(it.kind)) { super::inuse::OpenFiles::snapshot() } else { None };
         let mut journal = super::journal::Entry::now();
+        // bytes of the items before the one in hand
+        let mut base = 0u64;
         for (k, (it, how)) in plan.iter().enumerate() {
+            if k > 0 {
+                base += plan[k - 1].0.bytes;
+            }
+            // Stop: what's left stays (a deletion stops mid-item, below)
+            if cancel.load(Ordering::SeqCst) {
+                shared.lock_ok().stopped = true;
+                break;
+            }
             {
                 let mut g = shared.lock_ok();
                 g.current = it.path.display().to_string();
                 g.progress = k as f32 / n as f32;
+                g.clean_done = base;
             }
+            crate::kit::loader::test_pause();
             ctx.request_repaint();
             let skip = |why: String, shared: &Shared, journal: &mut super::journal::Entry| {
                 let mut g = shared.lock_ok();
@@ -1225,9 +1257,33 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
                 (How::Command, Action::BrewCleanup) => run_brew_cleanup(),
                 (How::Command, a) => super::xcode::remove(a).or_else(|e| if matches!(a, Action::SimDevice(_)) && it.path.is_dir() { remove(&it.path) } else { Err(e) }),
                 (How::Trash, _) => move_to_trash(&it.path),
-                (How::Deleted, _) => remove(&it.path),
+                (How::Deleted, _) => {
+                    // file by file, so the counter moves and Stop cuts in
+                    let mut last = std::time::Instant::now();
+                    let mut tick = |gone: u64| {
+                        shared.lock_ok().clean_done = base + gone.min(it.bytes);
+                        if last.elapsed().as_millis() >= 50 {
+                            last = std::time::Instant::now();
+                            ctx.request_repaint();
+                        }
+                    };
+                    remove_tracked(&it.path, &cancel, &mut tick)
+                }
             };
             let mut g = shared.lock_ok();
+            if let Some(Stopped(gone)) = res.as_ref().err().and_then(|e| stopped_bytes(e.clone())) {
+                // stopped inside the item: what went is cleaned, the rest stays
+                let gone = gone.min(it.bytes);
+                g.stopped = true;
+                g.cleaned_bytes += gone;
+                g.cleaned.push((it.group, gone));
+                g.log.push(format!("Stopped in {} ({} removed)", it.path.display(), crate::kit::glass::human_bytes(gone)));
+                if let Some(x) = g.items.iter_mut().find(|x| x.path == it.path) {
+                    x.bytes = x.bytes.saturating_sub(gone);
+                }
+                journal.items.push(super::journal::Removed { title: it.title.clone(), path: it.path.display().to_string(), bytes: gone, how: *how });
+                break;
+            }
             match res {
                 Ok(()) => {
                     if *how == How::Trash {
@@ -1257,6 +1313,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         }
         let mut g = shared.lock_ok();
         g.progress = 1.0;
+        g.clean_done = g.clean_total;
         g.phase = Phase::Done;
         if g.cleaned_bytes > 0 {
             record_clean(g.cleaned_bytes);
@@ -1329,6 +1386,53 @@ pub fn days_ago(when: i64) -> String {
         1 => "yesterday".into(),
         d => format!("{d} days ago"),
     }
+}
+
+/// A deletion cut short by Stop, with the bytes removed until then.
+struct Stopped(u64);
+
+const STOPPED: &str = "\u{0}stopped";
+
+/// `Err` of a cut-short [`remove_tracked`] reads "\0stopped <bytes>".
+fn stopped_bytes(e: String) -> Option<Stopped> {
+    e.strip_prefix(STOPPED).and_then(|n| n.trim().parse().ok()).map(Stopped)
+}
+
+/// Delete `p` file by file: `tick` gets the bytes gone so far, and `cancel`
+/// stops it between files (`Err` per [`stopped_bytes`]). Anything the walk
+/// couldn't take goes the usual way ([`remove`]) at the end.
+fn remove_tracked(p: &Path, cancel: &AtomicBool, tick: &mut dyn FnMut(u64)) -> Result<(), String> {
+    fn walk(p: &Path, cancel: &AtomicBool, gone: &mut u64, tick: &mut dyn FnMut(u64)) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(md) = p.symlink_metadata() else { return true };
+        if md.is_dir() {
+            if let Ok(rd) = std::fs::read_dir(p) {
+                for e in rd.flatten() {
+                    if !walk(&e.path(), cancel, gone, tick) {
+                        return false;
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir(p);
+            return true;
+        }
+        if cancel.load(Ordering::SeqCst) {
+            return false;
+        }
+        if std::fs::remove_file(p).is_ok() {
+            *gone += md.blocks() * 512;
+            tick(*gone);
+        }
+        true
+    }
+    let mut gone = 0;
+    if !walk(p, cancel, &mut gone, tick) {
+        return Err(format!("{STOPPED} {gone}"));
+    }
+    if p.symlink_metadata().is_err() {
+        return Ok(());
+    }
+    remove(p)
 }
 
 fn remove(p: &Path) -> Result<(), String> {
@@ -1759,5 +1863,53 @@ mod tests {
         found.sort();
         assert_eq!(found, vec!["Bundle.pkg", "Old.dmg", "sub/Deep.PKG"]);
         std::fs::remove_dir_all(&base).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod remove_tracked_tests {
+    use super::*;
+
+    fn tree(name: &str, files: usize) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("cmdmeow-rt-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        for i in 0..files {
+            let sub = d.join(format!("d{}", i % 3));
+            std::fs::create_dir_all(&sub).unwrap();
+            std::fs::write(sub.join(format!("f{i}")), vec![7u8; 5000]).unwrap();
+        }
+        d
+    }
+
+    #[test]
+    fn deletes_file_by_file_and_counts() {
+        let d = tree("all", 12);
+        let mut ticks = vec![];
+        assert_eq!(remove_tracked(&d, &AtomicBool::new(false), &mut |b| ticks.push(b)), Ok(()));
+        assert!(!d.exists());
+        assert_eq!(ticks.len(), 12);
+        assert!(ticks.windows(2).all(|w| w[0] < w[1]), "the counter only goes up");
+    }
+
+    #[test]
+    fn stop_cuts_in_between_files() {
+        let d = tree("stop", 12);
+        let cancel = AtomicBool::new(false);
+        let mut n = 0;
+        let res = remove_tracked(&d, &cancel, &mut |_| {
+            n += 1;
+            if n == 4 {
+                cancel.store(true, Ordering::SeqCst);
+            }
+        });
+        let gone = res.err().and_then(stopped_bytes).map(|Stopped(b)| b);
+        assert!(gone.is_some_and(|b| b > 0), "stopped, with what went");
+        assert!(d.exists(), "the rest stays");
+        assert_eq!(walkdir_count(&d), 8);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn walkdir_count(p: &Path) -> usize {
+        std::fs::read_dir(p).map(|rd| rd.flatten().map(|e| if e.path().is_dir() { walkdir_count(&e.path()) } else { 1 }).sum()).unwrap_or(0)
     }
 }

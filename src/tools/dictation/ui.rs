@@ -253,6 +253,9 @@ pub fn page(d: &mut Dictation, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         Tab::History => history(d, ui, body, cx),
         Tab::Settings => settings_page(d, ui, body, cx),
     }
+    if d.removing.as_ref().is_some_and(|t| t.show(ui, r).is_some()) {
+        d.removing = None;
+    }
 }
 
 fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
@@ -780,11 +783,19 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
                 Engine::Parakeet => format!("Delete the model ({})", human_bytes(engine.bytes())),
                 Engine::Whisper => format!("Delete the model ({}); Capture's transcripts use it too", human_bytes(engine.bytes())),
             };
-            if rr.on_hover_text(tip).clicked() {
-                match engine {
-                    Engine::Parakeet => crate::kit::parakeet::remove(),
-                    Engine::Whisper => crate::kit::whisper::Model::Accurate.remove(),
-                }
+            if rr.on_hover_text(tip).clicked() && d.removing.is_none() {
+                let (name, size) = (engine.name(), human_bytes(engine.bytes()));
+                let path = match engine {
+                    Engine::Parakeet => crate::kit::parakeet::dir(),
+                    Engine::Whisper => crate::kit::whisper::Model::Accurate.path(),
+                };
+                d.removing = Some(crate::kit::loader::Task::spawn(ui.ctx(), "dictation-model", format!("Removing {name}…"), path.display().to_string(), move || {
+                    match engine {
+                        Engine::Parakeet => crate::kit::parakeet::remove(),
+                        Engine::Whisper => crate::kit::whisper::Model::Accurate.remove(),
+                    }
+                    crate::kit::loader::Status::Finished { title: format!("Removed {name}"), sub: format!("{size} freed"), problem: None, put_back: false }
+                }));
             }
         }
         _ => {

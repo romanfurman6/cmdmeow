@@ -107,6 +107,7 @@ enum Row {
 }
 
 pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    trash_loader(s, ui, r);
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     s.load_apps();
@@ -696,6 +697,23 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 
 /// "2 updaters that check in the background, Steam Cleaner, and 1 agent of an app you removed."
 /// What AI Check gets: each login app and background job that's on.
+/// The removal loader while a job's file goes to the Trash (it can wait on
+/// the admin password).
+fn trash_loader(s: &mut Startup, ui: &mut Ui, r: Rect) {
+    use crate::kit::loader::{self, Click, Count, Status};
+    let Some((name, file, res)) = s.state().trashing.clone() else {
+        return;
+    };
+    let status = match res {
+        None => Status::Working { title: format!("Removing {name}…"), count: Count::Unknown, current: file, can_stop: false },
+        Some(Ok(())) => Status::Finished { title: format!("Removed {name}"), sub: "Moved to the Trash".into(), problem: None, put_back: false },
+        Some(Err(e)) => Status::Failed { title: format!("{name} couldn't be removed"), problem: e },
+    };
+    if let Some(Click::Done | Click::Ended | Click::PutBack) = loader::show(ui, r, "startup-trash", &status) {
+        s.state().trashing = None;
+    }
+}
+
 fn startup_ask(jobs: &[Job], apps: &[LoginApp]) -> aicheck::Ask {
     let mut items: Vec<aicheck::Item> = apps
         .iter()

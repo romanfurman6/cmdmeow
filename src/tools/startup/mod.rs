@@ -177,7 +177,13 @@ pub struct State {
     pub last: Option<(Vec<Change>, Instant)>,
     /// Something is being switched: its line.
     pub busy: Option<String>,
+    /// A job going to the Trash, for the removal loader: its name, its file
+    /// and, once done, how it went.
+    pub trashing: Option<Trashing>,
 }
+
+/// Name, file, and once done how it went.
+pub type Trashing = (String, String, Option<Result<(), String>>);
 
 impl State {
     pub fn trusted(&self, j: &Job) -> bool {
@@ -447,18 +453,31 @@ impl Startup {
         }
         let j = j.clone();
         let demo = self.demo;
-        self.work(
-            format!("Moving {} to the Trash…", j.name),
-            move |st| {
-                if !demo {
-                    items::trash_job(&j)?;
-                }
+        if self.state().busy.is_none() {
+            self.state().trashing = Some((j.name.clone(), j.plist.display().to_string(), None));
+            crate::kit::loader::reset(&self.ctx, "startup-trash");
+        }
+        self.work(format!("Moving {} to the Trash…", j.name), move |st| {
+            crate::kit::loader::test_pause();
+            let res = if demo { Ok(()) } else { items::trash_job(&j) };
+            {
                 let mut g = st.lock_ok();
-                g.trashed.insert(j.plist.clone());
-                g.jobs.retain(|x| x.key() != j.key());
-                Ok(())
-            },
-        );
+                match &res {
+                    // the password was not given: nothing to report
+                    Err(e) if e == "Cancelled" => g.trashing = None,
+                    r => {
+                        if let Some(t) = g.trashing.as_mut() {
+                            t.2 = Some(r.clone());
+                        }
+                    }
+                }
+            }
+            res?;
+            let mut g = st.lock_ok();
+            g.trashed.insert(j.plist.clone());
+            g.jobs.retain(|x| x.key() != j.key());
+            Ok(())
+        });
     }
 
     pub fn toggle_cron(&self, c: &CronJob) {

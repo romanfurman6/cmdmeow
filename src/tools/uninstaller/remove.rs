@@ -253,7 +253,13 @@ fn trash_dest(trash: &Path, name: &str) -> PathBuf {
 }
 
 /// Remove `targets`. `progress` gets a line for the UI as it goes.
-pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], mut progress: impl FnMut(String)) -> Report {
+/// `done` counts the bytes of the items handled so far (moved or not), for
+/// the removal loader's "x of y".
+pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std::sync::atomic::AtomicU64, mut progress: impl FnMut(String)) -> Report {
+    let tick = |b: u64| {
+        crate::kit::loader::test_pause();
+        done.fetch_add(b, std::sync::atomic::Ordering::Relaxed);
+    };
     let mut rep = Report { reset: targets.iter().all(|t| t.reset), ..Default::default() };
     let trash = crate::kit::fs::home().join(".Trash");
     // what didn't move, per target, for another try
@@ -278,6 +284,7 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], mut progres
             if mac::is_running(&t.id) {
                 rep.failed.push((t.name.clone(), "It is still open. Quit it, then try again.".into()));
                 retry[k] = t.items.iter().filter(|i| i.selected).cloned().collect();
+                tick(retry[k].iter().map(|i| i.bytes).sum());
                 continue;
             }
         }
@@ -295,6 +302,9 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], mut progres
         for it in t.items.iter().filter(|i| i.selected) {
             if t.reset && it.kind.is_part() {
                 continue;
+            }
+            if !(it.admin || needs_root(&it.path)) {
+                tick(it.bytes);
             }
             if !it.path.exists() && it.path.symlink_metadata().is_err() {
                 continue;
@@ -317,7 +327,10 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], mut progres
                     rep.moved.push(Moved { from: it.path.clone(), to, admin: false, bytes: it.bytes, owner: None });
                 }
                 // root's, or locked down some other way: one more go with the password
-                Err(e) if e.to_lowercase().contains("permission") => admin.push((k, it.clone())),
+                Err(e) if e.to_lowercase().contains("permission") => {
+                    done.fetch_sub(it.bytes, std::sync::atomic::Ordering::Relaxed);
+                    admin.push((k, it.clone()));
+                }
                 Err(e) => {
                     rep.failed.push((it.path.display().to_string(), e));
                     retry[k].push(it.clone());
@@ -369,6 +382,7 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], mut progres
         }
         cmd.push_str("true");
         let res = mac::run_admin(&cmd, "Cmd+Meow wants to move apps and their files to your Trash.");
+        tick(admin.iter().map(|(_, it)| it.bytes).sum());
         for (k, it, m) in planned {
             let why = match &res {
                 Ok(_) if m.to.symlink_metadata().is_ok() && m.from.symlink_metadata().is_err() => {
@@ -520,7 +534,7 @@ mod tests {
             pkgs: Vec::new(),
         };
         let mut lines = Vec::new();
-        let rep = run(&[t], &f.roots, &[f.root.join("apps")], |l| lines.push(l));
+        let rep = run(&[t], &f.roots, &[f.root.join("apps")], &Default::default(), |l| lines.push(l));
         assert!(rep.failed.is_empty(), "{:?}", rep.failed);
         assert_eq!(rep.moved.len(), 3);
         assert_eq!(rep.bytes(), 30);
@@ -547,7 +561,7 @@ mod tests {
             reset: true,
             pkgs: Vec::new(),
         };
-        let rep = run(&[t], &f.roots, &[f.root.join("apps")], |_| {});
+        let rep = run(&[t], &f.roots, &[f.root.join("apps")], &Default::default(), |_| {});
         assert!(app.exists(), "reset keeps the app");
         assert!(!support.exists());
         assert!(outside.exists());
@@ -589,7 +603,7 @@ mod tests {
         let outside = f.file("elsewhere/file", "x");
         let item = |p: &Path, kind| Item { path: p.to_path_buf(), kind, bytes: 1, admin: false, selected: true };
         let t = Target { name: "Thing".into(), id: "com.retry.app".into(), app: Some(app.clone()), items: vec![item(&app, Kind::App), item(&outside, Kind::Support)], reset: false, pkgs: Vec::new() };
-        let rep = run(&[t], &f.roots, &[f.root.join("apps")], |_| {});
+        let rep = run(&[t], &f.roots, &[f.root.join("apps")], &Default::default(), |_| {});
         assert_eq!(rep.apps, vec!["Thing".to_string()]);
         assert!(rep.kept.is_empty(), "the app moved");
         // a path outside app places is refused for good, not offered again

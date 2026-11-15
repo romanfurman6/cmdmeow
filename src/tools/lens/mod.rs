@@ -27,6 +27,8 @@ pub struct Lens {
     /// (0 = the folder itself).
     pub(crate) lens_skip: usize,
     pub(crate) lens_review: bool,
+    /// Moving the picked items to the Trash, on its own thread.
+    pub(crate) lens_trash: Option<std::sync::Arc<std::sync::Mutex<page::TrashJob>>>,
     pub(crate) lens_msg: Option<String>,
     /// The folder list while mapping, refreshed a few times a second:
     /// (when, root, rows).
@@ -133,6 +135,7 @@ impl Lens {
             lens_cursor: None,
             lens_freed: 0,
             lens_confirm: false,
+            lens_trash: None,
             lens_menu_act: None,
             lens_dirty: None,
             lens_auto_at: 0.0,

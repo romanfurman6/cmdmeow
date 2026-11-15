@@ -37,6 +37,8 @@ pub struct Cleanup {
     /// "Quit all and clean" was pressed: clean once they're all closed.
     pub(crate) quit_then_clean: bool,
     pub(crate) icons: std::collections::HashMap<std::path::PathBuf, Option<egui::TextureHandle>>,
+    /// The removal loader is up for the clean in progress (or just done).
+    pub(crate) clean_loading: bool,
     pub(crate) clean_log: bool,
     /// Screenshots: show Cleanup as if Claude were in this state.
     pub(crate) demo_claude: Option<crate::kit::claude_code::Availability>,
@@ -58,6 +60,7 @@ impl Cleanup {
             quit: Vec::new(),
             quit_then_clean: false,
             icons: Default::default(),
+            clean_loading: false,
             clean_log: false,
             demo_claude: None,
             ai: {
