@@ -133,11 +133,11 @@ Planned consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET`
 
 | # | Rule | Status |
 |---|------|---|
-| H1 | One hover fill for rows everywhere (lists, rails, popovers): `HOVER` = `white(12)`. | ⏳ conflict K2 |
+| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar): `ROW_HOVER` = `white(10)`. | ⏳ conflict K2 |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
 | H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(BLUE, .16)`), radius 8, text `ACCENT`. | ✅ |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
-| H5 | Reveal: a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ⏳ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
+| H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ⏳ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
 
 ## 9. Motion
 
@@ -218,7 +218,7 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 | # | Conflict | Proposed pick |
 |---|------|---|
 | K1 | Dim under dialogs in light mode: dialogs use black 45% in both themes; the loader uses ink 24% in light. | One `SCRIM()`: black 45% dark, ink 24% light. |
-| K2 | Row hover is `white(10)` on Cleanup start, `white(12)` on the group rail and sidebar, `white(13)` r8 inset on Keep Awake, a 4 pt inset pill in popovers. | One `HOVER` = `white(12)`, edge to edge in lists and popovers (H2); inset r8 only in the sidebar and rail. |
+| K2 | Row hover is `white(10)` on Cleanup start, `white(12)` on the group rail and sidebar, `white(13)` r8 inset on Keep Awake, a 4 pt inset pill in popovers. | One `ROW_HOVER` = `white(10)` (already in PR #211, the value Roman saw in hover A), edge to edge in lists and popovers (H2); inset r8 only in the sidebar and rail. |
 | K3 | Lime glow under primary buttons: the B3 tokens have it, the shadow rule and the key press drop it. | No glow (B4). |
 | K4 | Button heights: B2 says 44/32/28, but side buttons and toggle chips are 34, action tiles 40–44. | Side and toggle chips go to 32; action tiles are tiles, not push buttons. |
 | K5 | AI uses Monitor cyan, so AI marks look like Monitor data on Clean screens (C3). | Keep cyan as the AI colour (C15) under its own name, `AI()`. |
