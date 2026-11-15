@@ -57,8 +57,10 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         v.dedup();
         v.len() + usize::from(!planned.is_empty())
     };
-    let n_rows = pages.len() + planned.len();
-    let need = |gap: f32, head: f32, step: f32| n_sections as f32 * (gap + head) + n_rows as f32 * step;
+    // some tools are off: a quiet row into Settings › Tools under the list
+    let add = (0..app.tools.len()).any(|i| app.tools[i].has_page() && !app.tool_on(i));
+    let n_rows = pages.len() + planned.len() + usize::from(add);
+    let need = |gap: f32, head: f32, step: f32| n_sections as f32 * (gap + head) + f32::from(u8::from(add)) * gap + n_rows as f32 * step;
     let (gap, head, step) = if need(12.0, 18.0, SIDEBAR_ROW_H + 2.0) <= list.height() { (12.0, 18.0, SIDEBAR_ROW_H + 2.0) } else { (6.0, 16.0, SIDEBAR_ROW_H) };
     let overflow = (need(gap, head, step) + 4.0 - list.height()).max(0.0);
     let scroll_id = ui.scope_id().with("sidebar-scroll");
@@ -113,7 +115,14 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
             y += step;
         }
     }
-    let _ = y;
+    if add {
+        y += gap;
+        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, SIDEBAR_ROW_H));
+        if sidebar_item(ui, r, ui.scope_id().with("nav-add-tools"), Icon::Plus, tint::NEUTRAL(), "Add more tools", "", false, false).clicked() {
+            app.settings_open = true;
+            app.settings_tab = super::editor::TAB_TOOLS;
+        }
+    }
     // back to the whole window for Settings and the page
     let ui = &mut *outer;
     let p = ui.painter().clone();
