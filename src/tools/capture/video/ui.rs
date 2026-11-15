@@ -15,7 +15,11 @@ const TIMELINE_H: f32 = 136.0;
 const PANEL_W: f32 = 340.0;
 const PAD: f32 = 18.0;
 /// Trim handles.
-const TRIM: Color32 = Color32::from_rgb(0xFF, 0xC4, 0x2E);
+/// The kept part's frame and handles: the action colour (C rules).
+#[allow(non_snake_case)]
+fn TRIM() -> Color32 {
+    ACTION()
+}
 
 /// The viewer window, when one is open.
 pub fn show(c: &mut Capture, ctx: &egui::Context) {
@@ -411,23 +415,24 @@ fn timeline(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         }
     }
 
-    // what's kept: a yellow frame with handles at both ends
+    // what's kept: a lime frame with handles at both ends
     let (ks, ke) = (x_of(v.edl.start()), x_of(v.edl.end()));
     let kept = Rect::from_min_max(Pos2::new(ks, lane.top()), Pos2::new(ke, lane.bottom()));
-    p.rect_stroke(kept, 4.0, Stroke::new(2.0, TRIM), StrokeKind::Outside);
+    p.rect_stroke(kept, 4.0, Stroke::new(2.0, TRIM()), StrokeKind::Outside);
     for (x, left) in [(ks, true), (ke, false)] {
         let hr = if left { Rect::from_min_max(Pos2::new(x - 10.0, lane.top() - 2.0), Pos2::new(x, lane.bottom() + 2.0)) } else { Rect::from_min_max(Pos2::new(x, lane.top() - 2.0), Pos2::new(x + 10.0, lane.bottom() + 2.0)) };
         let cr = if left { egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 } } else { egui::CornerRadius { nw: 0, sw: 0, ne: 4, se: 4 } };
-        p.rect_filled(hr, cr, TRIM);
+        p.rect_filled(hr, cr, TRIM());
         p.line_segment([Pos2::new(hr.center().x, hr.center().y - 7.0), Pos2::new(hr.center().x, hr.center().y + 7.0)], Stroke::new(1.5, Color32::from_black_alpha(140)));
     }
 
     // selection
     if let Some((a, b)) = v.sel {
         let sr = Rect::from_min_max(Pos2::new(x_of(a), lane.top()), Pos2::new(x_of(b), lane.bottom()));
-        p.rect_filled(sr, 0.0, with_alpha(ACCENT(), 0.28));
-        p.rect_stroke(sr, 0.0, Stroke::new(1.5, ACCENT()), StrokeKind::Inside);
-        p.text(Pos2::new(sr.center().x, wave.bottom() + 11.0), Align2::CENTER_CENTER, format!("{:.1} s selected", b - a), font(11.0), ACCENT());
+        // the selection stays neutral, so it never reads as the kept part
+        p.rect_filled(sr, 0.0, white(20));
+        p.rect_stroke(sr, 0.0, Stroke::new(1.5, TEXT()), StrokeKind::Inside);
+        p.text(Pos2::new(sr.center().x, wave.bottom() + 11.0), Align2::CENTER_CENTER, format!("{:.1} s selected", b - a), font(11.0), TEXT_DIM());
     }
 
     // playhead
@@ -665,17 +670,21 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         y += 22.0;
         y += 12.0;
         for m in Model::ALL {
-            let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 50.0));
+            // the line under the name wraps, never cut (R10)
+            let about = p.layout(m.about().to_string(), font(12.0), TEXT_DIM(), r.width() - 24.0);
+            let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 34.0 + about.size().y));
             let resp = ui.interact(row, ui.scope_id().with(("model", m.name())), Sense::click());
             let on = m == model;
-            p.rect_filled(row, 8.0, if on { with_alpha(ACTION(), 0.18) } else { white(if resp.hovered() { 14 } else { 8 }) });
+            // H3: the picked one lime 16%, its name ACCENT
             if on {
-                p.rect_stroke(row, 8.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.7)), StrokeKind::Inside);
+                crate::kit::glass::selected_fill(&p, row, 8.0);
+            } else {
+                p.rect_filled(row, 8.0, white(if resp.hovered() { 8 + ROW_HOVER } else { 8 }));
             }
             let size = if m.ready() { "Downloaded".to_string() } else { human_bytes(m.bytes()) };
-            p.text(Pos2::new(row.left() + 12.0, row.top() + 16.0), Align2::LEFT_CENTER, m.name(), bold(13.0), TEXT());
+            p.text(Pos2::new(row.left() + 12.0, row.top() + 16.0), Align2::LEFT_CENTER, m.name(), bold(13.0), if on { ACCENT() } else { TEXT() });
             p.text(Pos2::new(row.right() - 12.0, row.top() + 16.0), Align2::RIGHT_CENTER, size, font(12.0), if m.ready() { GREEN() } else { TEXT_FAINT() });
-            text_fit(&p, Pos2::new(row.left() + 12.0, row.top() + 34.0), Align2::LEFT_CENTER, m.about(), font(12.0), TEXT_DIM(), row.width() - 24.0);
+            p.galley(Pos2::new(row.left() + 12.0, row.top() + 27.0), about, TEXT_DIM());
             if resp.clicked() && !on {
                 v.prefs.model = m;
                 v.save_prefs();
@@ -688,7 +697,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             v.transcribe();
         }
         y = go.bottom() + 10.0;
-        if v.prefs.model.ready() && link(ui, Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, &format!("Remove the {} model", v.prefs.model.name().to_lowercase()), 11.5).clicked() {
+        if v.prefs.model.ready() && link(ui, Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, &format!("Remove the {} model", v.prefs.model.name().to_lowercase()), 12.0).clicked() {
             v.prefs.model.remove();
         }
         return;
