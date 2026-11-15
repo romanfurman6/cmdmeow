@@ -64,9 +64,30 @@ pub fn paint_row(p: &egui::Painter, r: Rect, label: &str, hover: f32, on: bool, 
     }
 }
 
+
+/// The width every row of this menu takes: the widest row's own width,
+/// measured as the rows are added (last pass's widest, so all rows match).
+/// A menu is as wide as its widest item, never as wide as the window.
+fn width(ui: &Ui, own: f32) -> f32 {
+    let id = ui.id().with("kit-menu-w");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let (mut at, mut cur, mut last) = ui.data(|d| d.get_temp::<(u64, f32, f32)>(id)).unwrap_or((pass, 0.0, 0.0));
+    if at != pass {
+        last = cur;
+        cur = 0.0;
+        at = pass;
+    }
+    cur = cur.max(own.max(MIN_W));
+    ui.data_mut(|d| d.insert_temp(id, (at, cur, last)));
+    if ui.is_sizing_pass() { cur } else { cur.max(last) }
+}
+
+fn label_w(ui: &Ui, label: &str) -> f32 {
+    ui.painter().layout_no_wrap(label.to_string(), font(13.0), TEXT()).size().x
+}
+
 fn row(ui: &mut Ui, label: &str, on: bool, has_sub: bool, enabled: bool) -> Response {
-    ui.set_min_width(MIN_W);
-    let w = ui.available_width().max(MIN_W);
+    let w = width(ui, label_w(ui, label) + 2.0 * INSET + if on || has_sub { 24.0 } else { 0.0 });
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), sense);
     // rows highlight only: no press, no sound (B10)
@@ -90,8 +111,7 @@ pub fn item(ui: &mut Ui, label: &str) -> Response {
 
 /// A destructive row (Move to Trash…): `DANGER` text (B6).
 pub fn danger(ui: &mut Ui, label: &str, enabled: bool) -> Response {
-    ui.set_min_width(MIN_W);
-    let w = ui.available_width().max(MIN_W);
+    let w = width(ui, label_w(ui, label) + 2.0 * INSET);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), if enabled { Sense::click() } else { Sense::hover() });
     let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
     if h > 0.0 && enabled {
@@ -112,7 +132,6 @@ pub fn choice(ui: &mut Ui, label: &str, on: bool) -> Response {
 pub fn sub<R>(ui: &mut Ui, label: &str, content: impl FnOnce(&mut Ui) -> R) -> Option<R> {
     let r = row(ui, label, false, true, true);
     SubMenu::new().config(config()).show(ui, &r, |ui| {
-        ui.set_min_width(MIN_W * 0.7);
         content(ui)
     }).map(|i| i.inner)
 }
@@ -120,18 +139,17 @@ pub fn sub<R>(ui: &mut Ui, label: &str, content: impl FnOnce(&mut Ui) -> R) -> O
 /// A line of information at the top of a menu (state, signature): caption
 /// 11 dim, wraps, never clickable. `mono` for commands and paths.
 pub fn note(ui: &mut Ui, text: &str, mono: bool) {
-    ui.set_min_width(MIN_W);
     // notes wrap at 320 so a long command never makes the menu wide
-    let w = ui.available_width().clamp(MIN_W, 320.0) - 2.0 * INSET;
     let f = if mono { egui::FontId::monospace(11.0) } else { font(11.0) };
-    let g = ui.painter().layout(text.to_string(), f, TEXT_DIM(), w);
-    let (r, _) = ui.allocate_exact_size(Vec2::new(w + 2.0 * INSET, g.size().y + 12.0), Sense::hover());
+    let g = ui.painter().layout(text.to_string(), f, TEXT_DIM(), 320.0 - 2.0 * INSET);
+    let w = width(ui, g.size().x + 2.0 * INSET);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(w, g.size().y + 12.0), Sense::hover());
     ui.painter().galley(Pos2::new(r.left() + INSET, r.top() + 6.0), g, TEXT_DIM());
 }
 
 /// A hairline between groups of rows, edge to edge with 4 above and below.
 pub fn separator(ui: &mut Ui) {
-    let w = ui.available_width().max(MIN_W);
+    let w = width(ui, MIN_W);
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, 9.0), Sense::hover());
     ui.painter().hline(r.x_range(), r.center().y, Stroke::new(1.0, white(HAIRLINE)));
 }
