@@ -49,7 +49,6 @@ fn app_icon(s: &mut Startup, ctx: &egui::Context, p: &egui::Painter, r: Rect, pa
     letter_tile(p, r, name, a);
 }
 
-
 fn flag_color(f: Flag) -> Color32 {
     if f.strong() { RED() } else { AMBER() }
 }

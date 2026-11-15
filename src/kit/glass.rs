@@ -924,6 +924,7 @@ pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str)
 /// a small right-aligned `meta` text. Selected rows get the blue fill.
 /// `indent`: how far the icon moves right to sit under its section title
 /// (H6); 0 for rows with no section, [`SIDEBAR_INDENT`] under a dotted one.
+#[allow(clippy::too_many_arguments)]
 pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, meta: &str, selected: bool, planned: bool, indent: f32) -> Response {
     let resp = ui.interact(rect, id, if planned { Sense::hover() } else { Sense::click() });
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !planned);
@@ -936,7 +937,7 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
         // H1: ROW_HOVER, inset radius 8 in the sidebar
         p.rect_filled(rect, 8.0, white((10.0 * h) as u8));
     }
-    // H6: one 16 box for every glyph, so the label never shifts
+    // H6: one 16 box for every glyph, so the glyph size never moves the label
     let chip_r = Rect::from_min_size(Pos2::new(rect.left() + 8.0 + indent, rect.center().y - 8.0), Vec2::splat(16.0));
     let glyph_col = if planned {
         TEXT_MUTED()
@@ -1963,6 +1964,7 @@ pub fn filter_chip(ui: &mut Ui, p: &Painter, at: Pos2, id: egui::Id, label: &str
 
 /// A row of [`filter_chip`]s from `x`, 6 apart; a click picks one.
 /// Returns the right edge.
+#[allow(clippy::too_many_arguments)]
 pub fn filter_chips<T: PartialEq + Copy>(ui: &mut Ui, p: &Painter, x: f32, y: f32, items: &[(&str, T)], cur: &mut T, salt: &str, dot: impl Fn(&T) -> Option<Color32>) -> f32 {
     let mut x = x;
     for (i, (label, f)) in items.iter().enumerate() {
