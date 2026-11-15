@@ -49,7 +49,7 @@ Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, 
 | **Sharing** | Upload a shot or a recording to your own S3 and copy a link |
 | **Dictation** | ⌥D types what you say at the caret; speech stays on the Mac |
 | **Clipboard** | History with search, pins and quick paste |
-| **Keep Awake** | Keeps the Mac awake, also while Claude Code works |
+| **Keep Awake** | Off · Auto · On: Auto keeps the Mac awake while an AI agent works |
 | **Displays** | Brightness and volume of external monitors from your keys |
 
 Every tool can be turned off, and the panel is a grid of widgets you arrange
@@ -80,7 +80,7 @@ Every action has a link for scripts, Raycast or Shortcuts: `open cmdmeow://…`
 
 | Link | Does |
 | --- | --- |
-| `awake/on`, `awake/off`, `awake/toggle` | Keep Awake |
+| `awake/on`, `awake/auto`, `awake/off`, `awake/toggle` | Keep Awake |
 | `capture/area`, `window`, `screen`, `delayed`, `text`, `color`, `ruler`, `record`, `history` | Screenshot and Video |
 | `dictation/toggle`, `start`, `stop`, `cancel` | Dictation |
 | `cat/purr`, `hiss`, `hungry`, `eat`, `hello` | The cat's reactions |
@@ -281,7 +281,7 @@ cmdmeow/
 │       ├── dictation/       speech to text at the caret
 │       ├── clipboard/       clipboard history and quick paste
 │       ├── fan/             fan speeds, temperatures, helper
-│       ├── keep_awake/      keep the Mac awake, also while Claude works
+│       ├── keep_awake/      keep the Mac awake: Off, Auto (AI agents) or On
 │       ├── displays/        brightness and volume of external displays
 │       └── claude/          AI Usage: usage of Claude, Codex, Gemini, OpenCode
 ├── vendor/eframe/        eframe 0.37 with one patch (see Cargo.toml)

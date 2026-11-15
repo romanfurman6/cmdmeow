@@ -1,4 +1,4 @@
-//! Which sessions of the main AI agent are busy. Each agent writes its
+//! Which AI agent sessions are busy. Each agent writes its
 //! session as it works, so a session written in the last couple of minutes
 //! is working. Where the log shows a tool call still waiting for its result
 //! (a long build, tests), that counts as working too, even though the log
@@ -28,7 +28,9 @@ const TAIL_BYTES: u64 = 256 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Session {
-    /// The project's folder name (where Claude Code ran).
+    /// The agent it belongs to.
+    pub source: Source,
+    /// The project's folder name (where the agent ran).
     pub project: String,
     /// Unix seconds of the last write to the session's logs.
     pub last_write: i64,
@@ -65,10 +67,17 @@ impl Source {
     pub const ALL: [Source; 4] = [Source::Claude, Source::Codex, Source::Gemini, Source::OpenCode];
 
     /// By provider id ("claude", "codex", …), as `ai::settings` keeps it.
+    #[cfg(test)]
     pub fn of(id: &str) -> Option<Source> {
         Source::ALL.into_iter().find(|s| s.id() == id)
     }
 
+    /// Used on this Mac: its sessions folder is there.
+    pub fn installed(self) -> bool {
+        self.root().is_dir()
+    }
+
+    #[cfg(test)]
     pub fn id(self) -> &'static str {
         match self {
             Source::Claude => "claude",
@@ -97,11 +106,6 @@ impl Source {
         }
     }
 
-    /// The main agent picked in setup (Settings › AI Usage), when it has
-    /// been used on this Mac. None: nothing to watch, so the trigger hides.
-    pub fn main() -> Option<Source> {
-        Source::of(&crate::kit::ai::settings::get().main).filter(|s| s.root().is_dir())
-    }
 }
 
 /// Remembers project names so each log's first lines are read only once.
@@ -156,7 +160,7 @@ impl Scanner {
                 }
                 let project = self.name(&folder, &log);
                 let tool_running = now - t <= TOOL_CAP_SECS && self.tool_open(&log, t);
-                out.push(Session { project, last_write: t, tool_running });
+                out.push(Session { source: Source::Claude, project, last_write: t, tool_running });
             }
         }
         out
@@ -181,7 +185,7 @@ impl Scanner {
                 },
             };
             let tool_running = now - t <= TOOL_CAP_SECS && self.cached_open(&log, t, codex_open_call);
-            out.push(Session { project, last_write: t, tool_running });
+            out.push(Session { source: Source::Codex, project, last_write: t, tool_running });
         }
         out
     }
@@ -207,7 +211,7 @@ impl Scanner {
                     .ok()
                     .and_then(|r| Path::new(r.trim()).file_name().map(|s| s.to_string_lossy().into_owned()))
                     .unwrap_or_else(|| Source::Gemini.name().into());
-                out.push(Session { project, last_write: t, tool_running: false });
+                out.push(Session { source: Source::Gemini, project, last_write: t, tool_running: false });
             }
         }
         out
@@ -384,6 +388,7 @@ fn opencode_sessions(msgs: &[Msg], now: i64) -> Vec<Session> {
     by.into_values()
         .filter(|(t, ..)| now - t <= RECENT_SECS)
         .map(|(t, running, project)| Session {
+            source: Source::OpenCode,
             project: if project.is_empty() { Source::OpenCode.name().into() } else { project.into() },
             last_write: t,
             tool_running: running && now - t <= TOOL_CAP_SECS,
@@ -459,7 +464,7 @@ mod tests {
         assert!(!open_tool_call(&log(&[a_tool, its_result])));
         assert!(!open_tool_call(&log(&[a_tool, its_result, text])));
         assert!(!open_tool_call(b""));
-        let s = Session { project: "x".into(), last_write: 1000, tool_running: true };
+        let s = Session { source: Source::Claude, project: "x".into(), last_write: 1000, tool_running: true };
         assert!(s.working(1000 + 1800), "a long build keeps it working");
         assert!(!s.working(1000 + TOOL_CAP_SECS + 200), "an abandoned call stops counting");
         let quiet = Session { tool_running: false, ..s };

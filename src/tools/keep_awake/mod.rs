@@ -1,8 +1,9 @@
-//! Keep Awake: keeps the Mac from sleeping, by hand with one switch, or by
-//! itself while the main AI agent (Claude Code, Codex, Gemini CLI or
-//! OpenCode, picked in Settings › AI Usage) is working, and a few minutes
-//! after, so a pause between prompts doesn't put the Mac to sleep. Uses macOS power
-//! assertions, the same thing `caffeinate` uses, without a helper process.
+//! Keep Awake: one control, Off · Auto · On. Auto keeps the Mac from
+//! sleeping while any AI agent (Claude Code, Codex, Gemini CLI, OpenCode)
+//! is working, and 5 minutes after, so a pause between prompts doesn't put
+//! it to sleep; On keeps it and the screen awake until turned off. Uses
+//! macOS power assertions, the same thing `caffeinate` uses, without a
+//! helper process.
 //!
 //! Page routes: "" only.
 
@@ -12,10 +13,10 @@ mod power;
 mod sessions;
 mod ui;
 
-use crate::core::tool::{Badge, Cx, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM};
+use crate::core::tool::{Badge, Cx, Size, Tool, ToolEnv, ToolId, View, WidgetSpec};
 use crate::kit::glass::{tint, Icon};
 use egui::{Rect, Ui};
-use engine::{now, Engine, State};
+use engine::{now, Engine, Mode, State, Via};
 use crate::kit::hotkeys::{Keys, Shortcut};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -30,6 +31,10 @@ const RESCAN: Duration = Duration::from_secs(60);
 
 type Shared = Arc<Mutex<Engine>>;
 
+/// Wakes the background loop when the mode changes, so picking Auto finds
+/// a working agent at once instead of at the next poll.
+pub(crate) static MODE_CHANGED: crate::kit::activity::Kick = crate::kit::activity::Kick::new();
+
 pub struct KeepAwake {
     engine: Shared,
     /// Sample data for screenshots: the clock is frozen at this time.
@@ -37,7 +42,7 @@ pub struct KeepAwake {
     pub keys: KeyRec,
 }
 
-/// The switch's shortcut: what is bound, and the recorder on the page.
+/// On's shortcut: what is bound, and the recorder on the page.
 #[derive(Default)]
 pub struct KeyRec {
     keys: Option<Keys<()>>,
@@ -112,42 +117,46 @@ impl KeepAwake {
         self.engine.lock_ok().state(self.now())
     }
 
-    pub fn toggle(&mut self) {
+    /// On, or back to the mode before it.
+    pub fn toggle(&mut self, via: Via) {
         let t = self.now();
-        let mut e = self.engine.lock_ok();
-        let on = e.manual_since.is_none();
-        e.set_manual(on, t);
+        self.engine.lock_ok().toggle(via, t);
+    }
+
+    pub fn set_mode(&mut self, mode: Mode, via: Via) {
+        let t = self.now();
+        self.engine.lock_ok().set_mode(mode, via, t);
     }
 }
 
-/// `cmdmeow://awake/on`, `/off` and `/toggle` work the switch.
+/// `cmdmeow://awake/on`, `/auto`, `/off` pick the mode; `/toggle` turns
+/// On on, or back to the mode before it.
 fn url_routes(engine: &Shared, ctx: &egui::Context) {
     let (engine, ctx) = (engine.clone(), ctx.clone());
     crate::kit::url_scheme::route("awake", move |action| {
         let t = now();
         let mut e = engine.lock_ok();
-        let on = match action {
-            "on" => true,
-            "off" => false,
-            "toggle" => e.manual_since.is_none(),
+        match action {
+            "on" => e.set_mode(Mode::On, Via::Link, t),
+            "auto" => e.set_mode(Mode::Auto, Via::Link, t),
+            "off" => e.set_mode(Mode::Off, Via::Link, t),
+            "toggle" => e.toggle(Via::Link, t),
             _ => return false,
-        };
-        e.set_manual(on, t);
+        }
         drop(e);
         crate::kit::activity::repaint(&ctx);
         true
     });
 }
 
-/// The background loop: follow the main agent, read its logs and keep the
-/// assertions in line, also while every window is hidden.
+/// The background loop: while Auto decides, read the agents' logs; keep
+/// the assertions in line, also while every window is hidden.
 fn watch(engine: Shared, ctx: egui::Context) {
     crate::kit::activity::low_priority();
     let mut scanner = sessions::Scanner::default();
     // logs are read again only when macOS says they changed (and once a
     // minute in case an event was missed); the cheap state step still runs
-    // every POLL so timers and the switch stay prompt. Every agent's folder
-    // is watched, so switching the main one needs no new stream
+    // every POLL so timers and the switch stay prompt
     static CHANGED: crate::kit::activity::Kick = crate::kit::activity::Kick::new();
     let roots: Vec<_> = sessions::Source::ALL.iter().map(|s| s.root()).collect();
     let hooked = crate::kit::fswatch::watch(&roots, 1.0, &CHANGED);
@@ -155,25 +164,19 @@ fn watch(engine: Shared, ctx: egui::Context) {
     let mut was_watching = None;
     loop {
         let t = now();
-        let source = sessions::Source::main();
-        let watching = {
-            let mut e = engine.lock_ok();
-            if e.agent != source {
-                e.set_agent(source, t);
-                scanner = sessions::Scanner::default();
-                crate::kit::activity::repaint(&ctx);
-            }
-            e.settings.agent.then_some(source).flatten()
-        };
-        let fresh = !hooked || CHANGED.take() || was_watching != watching || rescan.due(RESCAN);
-        was_watching = watching;
+        // with Off picked nothing is read
+        let watching = engine.lock_ok().watching();
+        let fresh = !hooked || CHANGED.take() || was_watching != Some(watching) || rescan.due(RESCAN);
+        was_watching = Some(watching);
         let found = match (watching, fresh) {
-            (None, _) => Some(Vec::new()),
-            (Some(src), true) => {
+            (false, _) => Some(Vec::new()),
+            (true, true) => {
                 rescan.mark();
-                Some(scanner.scan(src, t))
+                let mut all: Vec<_> = sessions::Source::ALL.into_iter().filter(|s| s.installed()).flat_map(|s| scanner.scan(s, t)).collect();
+                all.sort_by_key(|s| std::cmp::Reverse(s.last_write));
+                Some(all)
             }
-            (Some(_), false) => None,
+            (true, false) => None,
         };
         {
             let mut e = engine.lock_ok();
@@ -186,7 +189,7 @@ fn watch(engine: Shared, ctx: egui::Context) {
                 crate::kit::activity::repaint(&ctx);
             }
         }
-        std::thread::sleep(POLL);
+        crate::kit::activity::nap(POLL, Some(&MODE_CHANGED));
     }
 }
 
@@ -194,61 +197,50 @@ fn badge() -> Badge {
     Badge { icon: Icon::Cup, color: tint::KEEP_AWAKE() }
 }
 
-/// Sample data for screenshots, showing `state`.
+/// Sample data for screenshots, showing `state` (Off and On, or Auto
+/// with agents working, winding down or none).
 fn demo_engine(state: State) -> (Engine, i64) {
-    demo_engine_for(state, Some(sessions::Source::Claude))
+    demo_engine_auto(state, false)
 }
 
-/// The same, watching `agent` (None: no agent on this Mac).
-fn demo_engine_for(state: State, agent: Option<sessions::Source>) -> (Engine, i64) {
-    use sessions::Session;
+/// The same; `idle`: Auto with no agent working.
+fn demo_engine_auto(state: State, idle: bool) -> (Engine, i64) {
+    use sessions::{Session, Source};
     let t = engine::today_start(now()) + 13 * 3600 + 7 * 60;
     let mut e = Engine::new(None);
-    e.agent = agent;
     let h = |x: f64| t - ((13.0 + 7.0 / 60.0 - x) * 3600.0) as i64;
-    e.log = vec![
-        engine::Span { start: h(9.2), end: h(9.9), agent: false, by: None },
-        engine::Span { start: h(10.7), end: h(11.3), agent: agent.is_some(), by: agent },
-        engine::Span { start: h(11.3), end: h(11.9), agent: false, by: None },
-    ];
-    // earlier days of the week
-    for (d, c, m) in [(6, 2.5, 0.5), (5, 4.0, 1.0), (4, 1.0, 0.0), (3, 5.5, 0.8), (2, 0.0, 1.5), (1, 3.2, 0.4)] {
-        let base = t - d * 86_400;
-        if agent.is_some() {
-            e.log.insert(0, engine::Span { start: base - ((c + m) * 3600.0) as i64, end: base - (m * 3600.0) as i64, agent: true, by: agent });
-        }
-        if m > 0.0 {
-            e.log.push(engine::Span { start: base - (m * 3600.0) as i64, end: base, agent: false, by: None });
-        }
-    }
-    e.log.sort_by_key(|s| s.start);
-    let idle = Session { project: "notes".into(), last_write: t - 3 * 3600, tool_running: false };
+    let span = |a: f64, b: f64, who: Option<(Source, &str)>, via: Option<Via>| engine::Span {
+        start: h(a),
+        end: h(b),
+        agent: who.is_some(),
+        by: who.map(|w| w.0),
+        who: who.map(|(s, p)| vec![(s, p.to_string())]).unwrap_or_default(),
+        via,
+    };
+    e.log = vec![span(9.2, 9.9, None, Some(Via::Panel)), span(10.7, 11.3, Some((Source::Codex, "api-server")), None), span(11.3, 11.9, None, Some(Via::Shortcut))];
+    let s = |src: Source, p: &str, at: i64| Session { source: src, project: p.into(), last_write: at, tool_running: false };
+    let idle_s = s(Source::Claude, "notes", t - 3 * 3600);
+    let auto = matches!(state, State::Agent | State::WindDown { .. }) || idle;
+    e.settings.auto = auto;
     match state {
-        State::Off => {
-            e.sessions = vec![idle];
-            e.step(t);
-        }
-        State::Manual => {
-            e.sessions = vec![idle];
-            e.set_manual(true, t - 25 * 60);
+        State::Off => e.sessions = vec![idle_s],
+        State::On => {
+            e.sessions = vec![idle_s];
+            e.on = Some((h(11.9), Via::Page));
         }
         State::Agent => {
-            e.sessions = vec![
-                Session { project: "cmdmeow".into(), last_write: h(11.9), tool_running: false },
-                Session { project: "api-server".into(), last_write: h(11.9), tool_running: false },
-                idle.clone(),
-            ];
+            e.sessions = vec![s(Source::Claude, "cmdmeow", h(11.9)), s(Source::Codex, "api-server", h(11.9)), idle_s];
             e.step(h(11.9));
             e.sessions[0].last_write = t - 12;
             e.sessions[1].last_write = t - 48;
         }
         State::WindDown { .. } => {
-            e.sessions = vec![Session { project: "cmdmeow".into(), last_write: t - 300, tool_running: false }, idle];
-            e.step(t - 300);
+            e.sessions = vec![s(Source::Claude, "cmdmeow", h(11.9)), idle_s];
+            e.step(h(11.9));
+            // quiet for 2:48: 4:12 of the 5 minutes left
+            e.sessions[0].last_write = t - 168;
+            e.step(t - 168);
         }
-    }
-    if agent.is_none() {
-        e.sessions.clear();
     }
     e.step(t);
     (e, t)
@@ -268,10 +260,10 @@ impl Tool for KeepAwake {
         "Utilities"
     }
     fn about(&self) -> &'static str {
-        "Keep the Mac awake, or only while your AI agent works"
+        "Keep the Mac awake"
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Keep Awake", about: "The switch, and what keeps your Mac up.", sizes: UP_TO_MEDIUM, size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: "Keep Awake", about: "Off, Auto or On", sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);
@@ -294,12 +286,12 @@ impl Tool for KeepAwake {
             let want = self.engine.lock_ok().settings.shortcut.clone();
             self.keys.bind(ctx, want);
             if self.keys.pressed() {
-                self.toggle();
+                self.toggle(Via::Shortcut);
                 crate::kit::activity::repaint(ctx);
             }
         }
-        // the steam holds still; only the clocks and the ring move, by the
-        // second, while awake and on screen. The watcher thread does the
+        // nothing loops; only the clocks and the ring move, by the second,
+        // while awake and on screen. The watcher thread does the
         // rest (60 fps here kept an open panel at ~24% CPU)
         if crate::kit::activity::visible() && self.state().awake() {
             ctx.request_repaint_after(crate::kit::glass::next_second());
@@ -307,18 +299,15 @@ impl Tool for KeepAwake {
         false
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
-        use sessions::Source;
-        let (state, agent) = match view {
-            "awake" | "awake-claude" => (State::Agent, Some(Source::Claude)),
-            "awake-codex" => (State::Agent, Some(Source::Codex)),
-            "awake-off" => (State::Off, Some(Source::Claude)),
-            // the main agent isn't on this Mac: no trigger, no sessions
-            "awake-no-agent" => (State::Off, None),
-            "awake-manual" => (State::Manual, Some(Source::Claude)),
-            "awake-winddown" => (State::WindDown { left: 0 }, Some(Source::Claude)),
+        let (state, idle) = match view {
+            "awake" | "awake-claude" => (State::Agent, false),
+            "awake-off" => (State::Off, false),
+            "awake-auto" => (State::Off, true),
+            "awake-on" | "awake-manual" => (State::On, false),
+            "awake-winddown" => (State::WindDown { left: 0 }, false),
             _ => return None,
         };
-        let (e, t) = demo_engine_for(state, agent);
+        let (e, t) = demo_engine_auto(state, idle);
         *self.engine.lock_ok() = e;
         self.demo_now = Some(t);
         Some(View::Page)
@@ -333,12 +322,14 @@ mod tests {
     fn demo_states_show_what_they_say() {
         for (want, matches) in [
             (State::Off, (|s: State| s == State::Off) as fn(State) -> bool),
-            (State::Manual, |s| s == State::Manual),
+            (State::On, |s| s == State::On),
             (State::Agent, |s| s == State::Agent),
             (State::WindDown { left: 0 }, |s| matches!(s, State::WindDown { .. })),
         ] {
             let (e, t) = demo_engine(want);
             assert!(matches(e.state(t)), "{want:?} → {:?}", e.state(t));
         }
+        let (e, t) = demo_engine_auto(State::Off, true);
+        assert_eq!((e.mode(), e.state(t)), (Mode::Auto, State::Off));
     }
 }
