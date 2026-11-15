@@ -252,28 +252,36 @@ fn plan(mode: SpeedMode) -> Plan {
     }
 }
 
+/// Lost pings in a row after which the line counts as down and pinging stops.
+const LOST_IN_A_ROW: usize = 3;
+
 /// `n` round trips with `ping`, each under `SPEED_TEST_PING_TIMEOUT`.
 /// A lost one counts for nothing, and the next ping first opens a fresh
 /// connection uncounted (with the longer connect deadline), so a handshake
-/// never reads as a round trip. `report` gets the trips so far and 0..1.
+/// never reads as a round trip. After [`LOST_IN_A_ROW`] losses it gives up,
+/// so a dead line ends the phase in seconds. `report` gets the trips so far
+/// and 0..1.
 fn round_trips(n: usize, stopped: &dyn Fn() -> bool, ping: impl Fn(Duration) -> Option<f64>, report: impl Fn(&[f64], f32)) -> Vec<f64> {
     let mut rtts = Vec::new();
-    let mut lost = false;
+    let mut lost = 0;
     for i in 0..n {
+        if lost > 0 {
+            let _ = ping(m::SPEED_TEST_CONNECT_TIMEOUT);
+        }
         if stopped() {
             break;
-        }
-        if lost {
-            let _ = ping(m::SPEED_TEST_CONNECT_TIMEOUT);
         }
         match ping(m::SPEED_TEST_PING_TIMEOUT) {
             Some(ms) => {
                 rtts.push(ms);
-                lost = false;
+                lost = 0;
             }
-            None => lost = true,
+            None => lost += 1,
         }
         report(&rtts, (i + 1) as f32 / n as f32);
+        if lost >= LOST_IN_A_ROW {
+            break;
+        }
     }
     rtts
 }
@@ -556,6 +564,19 @@ mod tests {
         assert_eq!(calls[3], m::SPEED_TEST_CONNECT_TIMEOUT);
         assert!(calls.iter().enumerate().all(|(k, l)| k == 3 || *l == m::SPEED_TEST_PING_TIMEOUT));
         assert!(jitter(&rtts).unwrap() < 5.0);
+    }
+
+    #[test]
+    fn a_dead_line_gives_up_after_a_few_lost_pings() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let rtts = round_trips(10, &|| false, |_| {
+            calls.set(calls.get() + 1);
+            None
+        }, |_, _| {});
+        assert!(rtts.is_empty());
+        // 3 pings and the 2 reconnects between them, not 10 of each
+        assert_eq!(calls.get(), 2 * LOST_IN_A_ROW - 1);
     }
 
     #[test]
