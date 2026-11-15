@@ -421,6 +421,10 @@ mod tests {
         assert_eq!(heat(200.0), RED());
         assert_eq!(heat_text(50.0), TEXT());
         assert_eq!(heat_text(90.0), RED());
+        // under 68 °C a cell keeps the cyan step and gets stronger as it warms
+        assert_eq!(heat_cell(30.0).a(), 89);
+        assert!(heat_cell(60.0).a() > heat_cell(40.0).a());
+        assert_eq!(heat_cell(80.0), AMBER());
         assert_eq!(rpm_text(2140.4), "2 140");
         assert_eq!(rpm_text(980.0), "980");
         assert_eq!(rpm_text(12345.0), "12 345");
