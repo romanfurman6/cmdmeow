@@ -1215,12 +1215,17 @@ fn tidy_log() -> PathBuf {
 fn put_back_now() {
     let Ok(text) = std::fs::read_to_string(tidy_log()) else { return };
     let mut spots = Vec::new();
+    let mut back = 0;
     for l in text.lines() {
         let mut it = l.split('\t');
         let (Some(from), Some(to)) = (it.next().map(PathBuf::from), it.next().map(PathBuf::from)) else { continue };
         if !to.exists() || from.exists() || std::fs::rename(&to, &from).is_err() {
+            if log() {
+                eprintln!("[cat] could not put back {}", from.display());
+            }
             continue;
         }
+        back += 1;
         let x: Option<f64> = it.next().and_then(|v| v.parse().ok());
         let y: Option<f64> = it.next().and_then(|v| v.parse().ok());
         if let (Some(x), Some(y)) = (x, y) {
@@ -1228,6 +1233,13 @@ fn put_back_now() {
         }
     }
     let _ = std::fs::remove_file(tidy_log());
+    if log() {
+        eprintln!("[cat] put back {} file(s)", back);
+    }
+    // the box folder goes too once it is empty (remove_dir leaves a full one alone)
+    if let Some(dir) = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop").join(TIDY_FOLDER)) {
+        let _ = std::fs::remove_dir(dir);
+    }
     if spots.is_empty() {
         return;
     }
@@ -1260,10 +1272,16 @@ fn desktop_files() -> Vec<(PathBuf, Option<(f64, f64)>)> {
     let Some(desktop) = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop")) else { return Vec::new() };
     let script = r#"tell application "Finder"
 set out to ""
-repeat with f in (every item of desktop)
+repeat with f in (get every item of desktop)
+try
 try
 set p to desktop position of f
-set out to out & (POSIX path of (f as alias)) & tab & (item 1 of p) & tab & (item 2 of p) & linefeed
+on error
+set p to position of f
+end try
+set out to out & (name of f) & tab & ((item 1 of p) as text) & tab & ((item 2 of p) as text) & linefeed
+on error e
+set out to out & "!" & tab & e & linefeed
 end try
 end repeat
 return out
@@ -1283,7 +1301,7 @@ end tell"#;
         .lines()
         .filter_map(|l| {
             let mut it = l.split('\t');
-            let path = PathBuf::from(it.next()?.trim());
+            let path = desktop.join(it.next()?.trim());
             Some((path, num(it.next()?)?, num(it.next()?)?))
         })
         .collect();
