@@ -940,7 +940,7 @@ impl eframe::App for App {
                 let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
                 let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), g.size() + Vec2::new(28.0, 16.0));
                 p.rect_filled(r, r.height() / 2.0, POPOVER());
-                p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, CARD_EDGE()), egui::StrokeKind::Inside);
+                p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), egui::StrokeKind::Inside);
                 p.galley(r.center() - g.size() / 2.0, g, TEXT());
                 ctx.request_repaint();
             } else {
@@ -1313,6 +1313,7 @@ fn install_fonts(ctx: &egui::Context) {
         // flat menus, tips and windows: no drop shadow anywhere
         s.visuals.window_shadow = egui::epaint::Shadow::NONE;
         s.visuals.popup_shadow = egui::epaint::Shadow::NONE;
+        s.visuals.window_stroke = egui::Stroke::new(1.0, glass::POPOVER_EDGE());
         // one scroll bar everywhere: slim, floating, in a gutter the content
         // leaves free, so even hovered it never sits on a row or button
         s.spacing.scroll.bar_width = glass::sp::SCROLL_BAR_W;

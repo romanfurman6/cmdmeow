@@ -110,7 +110,7 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
 
 fn card_bg(p: &egui::Painter, m: Rect) {
     p.rect_filled(m, 16.0, POPOVER());
-    p.rect_stroke(m, 16.0, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
+    p.rect_stroke(m, 16.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
 }
 
 /// One cell of the ping · download · upload row.

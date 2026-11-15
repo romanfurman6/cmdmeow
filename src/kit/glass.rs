@@ -60,6 +60,10 @@ pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255,
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
+/// The hairline round a floating surface. With no shadow under it, light
+/// mode needs a firmer ink line to part a white popover from white cards.
+#[allow(non_snake_case)]
+pub fn POPOVER_EDGE() -> Color32 { if is_light() { white(52) } else { white(30) } }
 /// Window sidebar.
 #[allow(non_snake_case)]
 pub fn SIDEBAR() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128)) }

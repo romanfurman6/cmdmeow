@@ -118,7 +118,7 @@ fn draw(v: &mut Viewer, ui: &mut Ui, full: Rect, upload: Option<f32>) -> bool {
             let g = p.layout_no_wrap(m.clone(), font(13.0), TEXT());
             let r = Rect::from_center_size(Pos2::new(pic.center().x, pic.bottom() - 30.0), g.size() + Vec2::new(28.0, 16.0));
             p.rect_filled(r, r.height() / 2.0, POPOVER());
-            p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
+            p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
             p.galley(r.center() - g.size() / 2.0, g, TEXT());
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         } else {

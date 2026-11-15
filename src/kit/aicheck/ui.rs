@@ -165,7 +165,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
         let (rr, _) = ui.allocate_exact_size(rect.size(), Sense::click());
         let p = ui.painter().clone();
         p.rect_filled(rr, 12.0, POPOVER());
-        p.rect_stroke(rr, 12.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
+        p.rect_stroke(rr, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
         // header: sparkle, AI Check, Check again; the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
         sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, tint::HEALTH());
