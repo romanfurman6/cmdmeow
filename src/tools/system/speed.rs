@@ -109,7 +109,7 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
 }
 
 fn card_bg(p: &egui::Painter, m: Rect) {
-    crate::kit::glass::float_shadow(&p, m, 16.0, 1.0);
+    crate::kit::glass::float_shadow(p, m, 16.0, 1.0);
     p.rect_filled(m, 16.0, POPOVER());
     p.rect_stroke(m, 16.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
 }

@@ -134,7 +134,7 @@ fn scrim(ui: &mut Ui, r: Rect, salt: &str) {
 
 fn modal_card(p: &egui::Painter, m: Rect) {
     // opaque: nothing of the page behind may show through
-    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
+    crate::kit::glass::float_shadow(p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
     p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
 }

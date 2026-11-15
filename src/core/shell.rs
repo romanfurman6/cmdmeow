@@ -954,7 +954,7 @@ impl eframe::App for App {
                 let p = ui.painter();
                 let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
                 let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), g.size() + Vec2::new(28.0, 16.0));
-                crate::kit::glass::float_shadow(&p, r, r.height() / 2.0, 1.0);
+                crate::kit::glass::float_shadow(p, r, r.height() / 2.0, 1.0);
                 p.rect_filled(r, r.height() / 2.0, POPOVER());
                 p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), egui::StrokeKind::Inside);
                 p.galley(r.center() - g.size() / 2.0, g, TEXT());
