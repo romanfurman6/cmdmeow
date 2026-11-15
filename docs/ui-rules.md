@@ -95,7 +95,7 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 |---|------|---|
 | S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. | ✅ |
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. | ✅ |
-| S3 | A tool's start screen (before the first run) has no cards: content is centred on the backdrop. Cards are for pages with live data and lists. | ⏳ (R13 proposal) |
+| S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
 | S4 | A list is one card with full-bleed rows and hairlines between them. No card per item. | ⏳ |
 | S5 | No drop shadows on anything floating (menus, tooltips, popovers, dialogs, sheets, toasts, drag tags). Native window shadows and the screenshot frame "Shadow" option stay. | ✅ |
 | S6 | Group tile (tool icon): group colour 12% fill, 28% edge, glyph in group colour. Neutral tools: `white(18)`. | ✅ |
@@ -169,8 +169,9 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 
 | # | Pattern | Status |
 |---|------|---|
-| SP1 | **Start screen** (before the first run): no cards (S3), content centred: disk ring or icon, one Hero button, the list below it on the backdrop with 44 rows and hairlines. | ⏳ |
-| SP2 | **Disk ring** (Cleanup and Disk Map start): 208 across, 12 stroke, used in the group tint, track `white(16)`. Inside: free space at hero 28/600 over "free of 2.00 TB" in label dim. Under it: disk icon and "Macintosh HD" in body soft. One shared component. | ⏳ |
+| SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. | ✅ |
+| SP2 | **Disk ring** (`kit`, one function, Cleanup and Disk Map start): 208 across, 12 stroke, track `white(16)`, used arc in the tool tint with a round cap from 12 o'clock clockwise. Centre: free space in hero 28/600 over "free of <total>" in label 12 `TEXT_DIM`. 12 below the ring: a 16 disk icon and the volume name in body `TEXT_SOFT`. Disk Map's own ring (r 64, "X of Y used") goes. | ✅ |
+| SP10 | **Start list rows on the backdrop** (Cleanup groups): a 44 head line with "Last scan 2 days ago" as a 12/600 section title and the total right; rows 44 with a 28 tinted icon circle and the name, hairlines between, `ROW_HOVER` on hover. A group's description shows on hover only. After a scan each row gets a 4 pt bar and a right-aligned size. | ✅ |
 | SP3 | **Group rail** (results): a card 232 wide left of the content, 16 gap, 4 padding, rows 40 with a 24 group chip, name body 13, size right in dim; selection H3. | ⏳ |
 | SP4 | **Bundles**: 3+ alike items fold into one row with an arrow and "N items"; children are 44 rows indented 28. Kept items fold into one "Kept" row. | ⏳ |
 | SP5 | **Empty state**: R6. | ✅ |
