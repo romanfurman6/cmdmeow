@@ -836,13 +836,14 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
     let row_h = 44.0;
     let before = if app.demo { cat::Prefs::all_on() } else { cat::prefs() };
     let mut prefs = before.clone();
-    let switches: [(&str, &mut bool); 6] = [
+    let switches: [(&str, &mut bool); 7] = [
         ("Purr when petted", &mut prefs.purr),
         ("Hiss when slapped", &mut prefs.hiss),
         ("Meow on low battery", &mut prefs.meow),
         ("Eat on the charger", &mut prefs.eat),
         ("Greet when the lid opens", &mut prefs.greet),
         ("Watch the pointer", &mut prefs.watch),
+        ("Tidy the desktop", &mut prefs.tidy),
     ];
     let card = Rect::from_min_size(at, Vec2::new(w, row_h * (switches.len() + 1) as f32));
     glass_card(&p, card, R_CARD, 0.0, false);
@@ -858,6 +859,20 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
         let r = row(k);
         label(r, text);
         let sw = Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
+        if k == n - 1 {
+            let keys = p.text(Pos2::new(sw.left() - 12.0, r.center().y), Align2::RIGHT_CENTER, cat::TIDY_KEYS, font(13.0), TEXT_DIM());
+            // right-aligned above the keys, so it never runs past the window's edge
+            if ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).hovered() {
+                egui::Area::new(ui.scope_id().with("cat-put-back"))
+                    .order(Order::Tooltip)
+                    .interactable(false)
+                    .pivot(Align2::RIGHT_BOTTOM)
+                    .fixed_pos(Pos2::new(keys.right(), keys.top() - 6.0))
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(format!("Put back  {}", cat::PUT_BACK_KEYS)));
+                    });
+            }
+        }
         if switch(ui, sw, ui.scope_id().with(("cat", k)), *on, true).clicked() {
             *on = !*on;
         }

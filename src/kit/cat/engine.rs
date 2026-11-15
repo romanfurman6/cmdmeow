@@ -28,6 +28,8 @@ pub enum Event {
     /// A link asked for a reaction.
     Sim(Kind),
     Prefs(Prefs),
+    /// Nothing for the rules: the cat's thread looks again at what it watches.
+    Nudge,
 }
 
 /// What the cat does about it, besides changing its face.
@@ -209,6 +211,7 @@ impl Engine {
                     }
                 }
             }
+            Event::Nudge => {}
             Event::Wake => {
                 self.quiet_until = now + WAKE_QUIET;
                 self.greet(now);

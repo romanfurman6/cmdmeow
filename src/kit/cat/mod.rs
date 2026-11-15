@@ -1,11 +1,13 @@
 //! The Mac behaves like a cat. It purrs while a hand lies on the trackpad,
 //! hisses when slapped, meows when the battery is low, eats when put on the
 //! charger and says hello when the lid opens. The menu bar icon is its
-//! face; a big cat shows in the middle of the screen with each reaction.
+//! face; a drawn cat at the bottom of the screen acts out each reaction.
 //!
 //! - `face`: what the cat looks like in each mood, as plain drawing.
 //! - `engine`: which mood it is in and what it does next, as plain rules.
-//! - `mac`: the menu bar icon, the big cat, the sounds and what the Mac
+//! - `desk`: what the desktop cat does for each reaction, frame by frame.
+//! - `screen`: the desktop cat's window, played with Core Animation.
+//! - `mac`: the menu bar icon, the desktop cat, the sounds and what the Mac
 //!   feels (trackpad, power, wake, lid, pointer).
 //! - `slap`: which jolts of the body are slaps, and the sensor that feels
 //!   them.
@@ -15,10 +17,13 @@
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+mod desk;
 mod engine;
 pub mod face;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod screen;
 mod slap;
 
 use serde::{Deserialize, Serialize};
@@ -112,6 +117,8 @@ pub struct Prefs {
     /// The eyes follow the pointer.
     pub watch: bool,
     pub show: Show,
+    /// The tidy shortcut carries the desktop's files into a folder.
+    pub tidy: bool,
     /// Reactions the big cat has shown already (their slugs).
     pub seen: Vec<String>,
 }
@@ -119,7 +126,7 @@ pub struct Prefs {
 /// The cat starts switched off: each reaction is turned on in Settings.
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { purr: false, hiss: false, meow: false, eat: false, greet: false, watch: false, show: Show::FirstTime, seen: Vec::new() }
+        Prefs { purr: false, hiss: false, meow: false, eat: false, greet: false, watch: false, show: Show::FirstTime, tidy: false, seen: Vec::new() }
     }
 }
 
@@ -132,7 +139,7 @@ impl Prefs {
     /// Something is switched on. With everything off the cat is not there:
     /// the menu bar icon is the plain mark and links do nothing.
     pub fn awake(&self) -> bool {
-        self.purr || self.hiss || self.meow || self.eat || self.greet || self.watch
+        self.purr || self.hiss || self.meow || self.eat || self.greet || self.watch || self.tidy
     }
 }
 
@@ -170,6 +177,36 @@ pub fn take_unsaved() -> bool {
 /// Make the cat do `kind` now, as if the Mac had felt it.
 pub fn simulate(kind: Kind) {
     send(engine::Event::Sim(kind));
+}
+
+/// The tidy shortcut, as Settings shows it, and as the key recorder writes it.
+pub const TIDY_KEYS: &str = "⌃⌥⌘T";
+pub fn tidy_shortcut() -> crate::kit::hotkeys::Shortcut {
+    crate::kit::hotkeys::Shortcut { cmd: true, shift: false, alt: true, ctrl: true, key: "T".into() }
+}
+
+/// Puts the last tidy's files back where they were.
+pub const PUT_BACK_KEYS: &str = "⇧⌃⌥⌘T";
+pub fn put_back_shortcut() -> crate::kit::hotkeys::Shortcut {
+    crate::kit::hotkeys::Shortcut { shift: true, ..tidy_shortcut() }
+}
+
+/// The put back shortcut was pressed: the last tidy's files go back.
+pub fn put_back() {
+    #[cfg(target_os = "macos")]
+    mac::put_back();
+}
+
+/// The tidy shortcut was pressed: the cat carries the desktop's files
+/// into a folder (main thread).
+pub fn tidy() {
+    #[cfg(target_os = "macos")]
+    mac::tidy();
+}
+
+/// The tidy shortcut is wanted (the switch is on).
+pub fn tidy_on() -> bool {
+    PREFS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|p| p.tidy)
 }
 
 /// The app quits. Call on the way out.

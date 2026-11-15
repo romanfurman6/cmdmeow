@@ -105,6 +105,9 @@ pub struct App {
     links: Option<crate::kit::url_scheme::Inbox<(String, String)>>,
     /// The update banner was shown last frame (see `kit::update`).
     update_banner: bool,
+    /// The cat's tidy shortcut, and whether it is bound.
+    cat_keys: Option<crate::kit::hotkeys::Keys<bool>>,
+    cat_bound: bool,
 }
 
 impl App {
@@ -202,6 +205,8 @@ impl App {
             toast: None,
             setup: first_run.then(|| super::onboard::Setup::new(super::onboard::saved_step())),
             perm_watch: Default::default(),
+            cat_keys: None,
+            cat_bound: false,
             // the menu bar app starts out of sight: the panel shows on a click
             // (or after setup's "Open panel" restart), never by itself
             start_hidden: !demo && !crate::kit::perms::launched_to_panel(),
@@ -726,6 +731,42 @@ impl App {
     }
 }
 
+impl App {
+    /// The cat's tidy shortcut: bound while its switch is on.
+    fn cat_tidy_key(&mut self, ctx: &egui::Context) {
+        use crate::kit::cat;
+        if self.demo {
+            return;
+        }
+        let want = cat::tidy_on();
+        if want != self.cat_bound {
+            if self.cat_keys.is_none() {
+                self.cat_keys = crate::kit::hotkeys::Keys::new(ctx.clone());
+            }
+            if let Some(keys) = self.cat_keys.as_mut() {
+                if want {
+                    let failed = keys.apply(&[(false, cat::tidy_shortcut()), (true, cat::put_back_shortcut())]);
+                    if let Some((_, e)) = failed.first() {
+                        eprintln!("[cat] tidy shortcut: {e}");
+                    }
+                } else {
+                    keys.clear();
+                }
+            }
+            self.cat_bound = want;
+        }
+        if self.cat_bound {
+            for back in self.cat_keys.as_ref().map(|k| k.poll()).unwrap_or_default() {
+                if back {
+                    cat::put_back();
+                } else {
+                    cat::tidy();
+                }
+            }
+        }
+    }
+}
+
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::kit::repaint_log::begin(ctx);
@@ -737,6 +778,7 @@ impl eframe::App for App {
                 self.save_widgets(s);
             }
         }
+        self.cat_tidy_key(ctx);
         crate::kit::update::tick();
         if crate::kit::update::take_restart() {
             self.quit(ctx);

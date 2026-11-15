@@ -629,6 +629,9 @@ pub fn icon(pose: &Pose, px: u32) -> Vec<u8> {
     pm.take()
 }
 
+/// The big cat on its card. Not on screen any more (the desktop cat in
+/// `desk` took its place); kept for the previews and the tests.
+///
 /// Side of the big cat's card, in points.
 pub const BEZEL_PT: f32 = 200.0;
 /// Side of the cat on it.
@@ -672,6 +675,7 @@ pub fn bezel(pose: &Pose, scale: f32) -> Vec<u8> {
 }
 
 /// The card alone, as `bezel` draws it under the cat.
+#[allow(dead_code)]
 pub fn card(scale: f32) -> Vec<u8> {
     let n = bezel_px(scale);
     let Some(mut pm) = Pixmap::new(n, n) else { return vec![0; (n * n * 4) as usize] };
@@ -681,6 +685,7 @@ pub fn card(scale: f32) -> Vec<u8> {
 
 /// The cat alone, clear around it: laid over `card` it is `bezel`, so a
 /// moving cat only redraws itself.
+#[allow(dead_code)]
 pub fn bezel_cat(pose: &Pose, scale: f32) -> Vec<u8> {
     let n = bezel_px(scale);
     let Some(mut pm) = Pixmap::new(n, n) else { return vec![0; (n * n * 4) as usize] };
@@ -720,6 +725,7 @@ fn draw_bezel_cat(pm: &mut Pixmap, pose: &Pose, scale: f32) {
     draw_muzzle(pm, t, pose, &inks);
 }
 
+#[allow(dead_code)]
 pub fn bezel_px(scale: f32) -> u32 {
     (BEZEL_PT * scale).round() as u32
 }

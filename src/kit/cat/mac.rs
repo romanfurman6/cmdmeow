@@ -1,18 +1,20 @@
-//! The cat on a Mac: its face in the menu bar icon, the big cat in the
-//! middle of the screen, its voice, and what the Mac feels (a hand on the
-//! trackpad, the charger, the lid, the pointer).
+//! The cat on a Mac: its face in the menu bar icon, the desktop cat at the
+//! bottom of the screen (`screen`), its voice, and what the Mac feels (a
+//! hand on the trackpad, the charger, the lid, the pointer).
 //!
 //! The cat's own thread decides and draws; everything that touches AppKit
 //! runs on the main thread. The thread sleeps until something moves, so a
 //! resting cat costs nothing.
 
 use super::engine::{Cmd, Engine, Event};
-use super::{face, Kind, Prefs};
+use super::screen::{self, Desk};
+use super::desk::{Do, Rest};
+use super::{desk, face, Kind, Prefs, Show};
 use dispatch2::{DispatchQueue, DispatchTime};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{class, msg_send, MainThreadMarker};
-use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+use objc2_app_kit::NSWindow;
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr};
@@ -25,13 +27,23 @@ use std::time::{Duration, Instant};
 /// The menu bar icon: 18 pt at 2x.
 const ICON_PX: u32 = 36;
 const ICON_PT: f64 = 18.0;
-/// Frames a second while only the icon moves, and while the big cat shows
-/// (each of its frames is a 400 px picture: 60 would cost twice as much
-/// for a cat on screen for two or three seconds).
+/// Frames a second while the icon moves.
 const ICON_FPS: f64 = 30.0;
-const BIG_FPS: f64 = 30.0;
-/// The big cat fades in and out over this long.
+/// The desktop cat fades in and out over this long.
 const FADE: f64 = 0.15;
+/// A cat that lives on screen does a small thing (a blink, a wash) every
+/// so often, this many seconds apart at least and at most…
+const LIFE_EVERY: (f64, f64) = (25.0, 70.0);
+/// …and curls up asleep when nothing happened for this long.
+const NAP_AFTER: Duration = Duration::from_secs(240);
+/// A pointer that rests on the cat this long is played with; one that has
+/// left it this long has gone.
+const HOVER_IN: f64 = 0.3;
+const HOVER_OUT: f64 = 0.4;
+/// The pointer is looked for on the cat this often.
+const HOVER_EVERY: f64 = 0.15;
+/// The folder on the Desktop the tidy carries files into.
+const TIDY_FOLDER: &str = "Tidy";
 /// The purr fades out in this many steps of this long.
 const HUSH_STEPS: u8 = 6;
 const HUSH_STEP: Duration = Duration::from_millis(60);
@@ -58,8 +70,6 @@ const LOOK_MAX: (f32, f32) = (150.0, 70.0);
 const NEAR_SHARE: f64 = 0.6;
 
 static TX: Mutex<Option<Sender<Event>>> = Mutex::new(None);
-/// Pixels a point on the screen the big cat shows on, as `f32` bits.
-static BIG_SCALE: AtomicU32 = AtomicU32::new(0x4000_0000);
 static LOG: OnceLock<bool> = OnceLock::new();
 
 /// `CMDMEOW_CAT_LOG=1` prints what the cat feels and does.
@@ -96,10 +106,23 @@ struct Main {
     /// The menu bar icon (`NSStatusItem`).
     item: Retained<AnyObject>,
     over: Option<Over>,
-    big: Option<Big>,
-    /// Counts the big cat's comings and goings, so a late "take it off
-    /// screen" knows it is out of date.
-    big_turn: u32,
+    /// The desktop cat (made the first time it shows).
+    desk: Option<Desk>,
+    /// It lives on screen, in the corner.
+    live: bool,
+    /// What it is doing (None: resting, or not on screen), and how it
+    /// rests once that is done.
+    doing: Option<Do>,
+    rest_next: Rest,
+    /// Counts the acts asked for: one whose sheets come late is dropped.
+    asked: u32,
+    /// Since when nothing happened to the cat (it naps after a while).
+    quiet: Instant,
+    /// A tidy is on its way (asking Finder, or carrying files).
+    tidying: bool,
+    /// Where Finder showed each file of the tidy, so Put back can lay it there again.
+    spots: Vec<(PathBuf, f64, f64)>,
+    seed: u32,
     /// The sound that plays (`NSSound`) and whether it is the looping purr.
     voice: Option<(Retained<AnyObject>, bool)>,
     /// The purr that is fading out.
@@ -131,15 +154,6 @@ struct Over {
     /// screen as they are, not converted every frame.
     space: *mut c_void,
     on: bool,
-}
-
-struct Big {
-    window: Retained<NSWindow>,
-    /// The card, drawn once for each screen scale, and the cat over it,
-    /// drawn every frame.
-    card: Retained<AnyObject>,
-    card_scale: f32,
-    layer: Retained<AnyObject>,
 }
 
 thread_local! {
@@ -224,28 +238,15 @@ fn cg_image_in(rgba: &[u8], px: u32, space: *mut c_void) -> Option<*mut c_void> 
     }
 }
 
-/// One drawn moment: the icon (and whether it is the mark at rest), and
-/// the big cat when it shows.
+/// One drawn moment of the icon (and whether it is the mark at rest).
 struct Frame {
     icon: Option<(Vec<u8>, bool)>,
-    big: Option<(Vec<u8>, u32)>,
 }
 
 impl Main {
     fn show(&mut self, f: Frame) {
         if let Some((px, rest)) = f.icon {
             self.set_icon(&px, rest);
-        }
-        if let (Some((px, n)), Some(big)) = (f.big, &self.big) {
-            if let Some(image) = cg_image(&px, n, true) {
-                unsafe {
-                    let _: () = msg_send![class!(CATransaction), begin];
-                    let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-                    let _: () = msg_send![&*big.layer, setContents: image as *mut AnyObject];
-                    let _: () = msg_send![class!(CATransaction), commit];
-                    CGImageRelease(image);
-                }
-            }
         }
     }
 
@@ -306,47 +307,248 @@ impl Main {
         }
     }
 
-    /// The big cat comes (in the middle of the screen in use) or goes.
-    fn set_big(&mut self, on: bool) {
+    /// A reaction began: the desktop cat acts it out.
+    fn react(&mut self, kind: Kind) {
+        self.quiet = Instant::now();
+        self.tidying = false;
+        self.act(Do::React(kind));
+    }
+
+    /// Start `what`: its sheets are decoded off the main thread, then it plays.
+    fn act(&mut self, what: Do) {
         let Some(mtm) = MainThreadMarker::new() else { return };
-        self.big_turn = self.big_turn.wrapping_add(1);
-        if on {
-            if self.big.is_none() {
-                self.big = big_window(mtm);
+        let Some(area) = screen::area(mtm) else { return };
+        if self.desk.is_none() {
+            self.desk = Desk::new(mtm);
+        }
+        let Some(d) = &self.desk else { return };
+        let script = desk::script(what, area.size.width, d.rest, self.live);
+        self.load(Some(what), script, Vec::new());
+    }
+
+    fn load(&mut self, what: Option<Do>, script: desk::Script, files: Vec<(screen::File, PathBuf)>) {
+        self.asked = self.asked.wrapping_add(1);
+        let ask = self.asked;
+        self.doing = what;
+        let _ = std::thread::Builder::new().name("cat sheets".into()).spawn(move || {
+            let frames = screen::load(&script);
+            if frames.is_none() && log() {
+                eprintln!("[cat] sprites missing for {what:?}");
             }
-            let Some(big) = &mut self.big else { return };
-            if let Some(screen) = NSScreen::mainScreen(mtm) {
-                let f = screen.frame();
-                let side = face::BEZEL_PT as f64;
-                big.window.setFrameOrigin(NSPoint::new(f.origin.x + (f.size.width - side) / 2.0, f.origin.y + (f.size.height - side) / 2.0));
-                let scale = screen.backingScaleFactor() as f32;
-                BIG_SCALE.store(scale.to_bits(), Ordering::Relaxed);
-                if scale != big.card_scale {
-                    if let Some(image) = cg_image(&face::card(scale), face::bezel_px(scale), true) {
-                        unsafe {
-                            let _: () = msg_send![class!(CATransaction), begin];
-                            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-                            let _: () = msg_send![&*big.card, setContents: image as *mut AnyObject];
-                            let _: () = msg_send![class!(CATransaction), commit];
-                            CGImageRelease(image);
-                        }
-                        big.card_scale = scale;
-                    }
+            on_main(move |m| {
+                if let Some(frames) = frames {
+                    m.start(ask, what, script, frames, files);
+                } else if m.asked == ask {
+                    m.doing = None;
+                    m.tidying = false;
                 }
-            }
-            big.window.orderFrontRegardless();
-            fade(&big.window, 1.0);
-        } else if let Some(big) = &self.big {
-            fade(&big.window, 0.0);
-            let turn = self.big_turn;
-            later(Duration::from_secs_f64(FADE + 0.05), move |m| {
-                if m.big_turn == turn {
-                    if let Some(big) = &m.big {
-                        big.window.orderOut(None);
-                    }
+            });
+        });
+    }
+
+    /// The sheets are in: play, unless something newer was asked for meanwhile.
+    fn start(&mut self, ask: u32, what: Option<Do>, script: desk::Script, frames: screen::Frames, files: Vec<(screen::File, PathBuf)>) {
+        if ask != self.asked {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(area) = screen::area(mtm) else { return };
+        let Some(d) = &mut self.desk else { return };
+        let (files, paths): (Vec<_>, Vec<_>) = files.into_iter().unzip();
+        let ends = d.play(area, &script, frames, files);
+        if d.window().alphaValue() < 1.0 {
+            fade(d.window(), 1.0);
+        }
+        self.rest_next = script.rest;
+        self.doing = what;
+        let turn = d.turn;
+        // each file goes into the box folder as it starts to fall
+        for f in &script.fetch {
+            let Some(path) = paths.get(f.file).cloned() else { continue };
+            later(Duration::from_secs_f64(f.fall as f64 / desk::FPS), move |m| {
+                if m.desk.as_ref().is_some_and(|d| d.turn == turn) {
+                    let spot = m.spots.iter().find(|(p, ..)| *p == path).map(|(_, x, y)| (*x, *y));
+                    put_away(&path, spot);
                 }
             });
         }
+        if let Some(secs) = ends {
+            self.over_in(secs);
+        }
+    }
+
+    /// The act is over in `secs`, unless another one starts first.
+    fn over_in(&mut self, secs: f64) {
+        let Some(turn) = self.desk.as_ref().map(|d| d.turn) else { return };
+        later(Duration::from_secs_f64(secs), move |m| m.over(turn));
+    }
+
+    /// The act is over: back to rest in the corner, or off the screen.
+    fn over(&mut self, turn: u32) {
+        let Some(d) = &mut self.desk else { return };
+        if d.turn != turn {
+            return;
+        }
+        self.doing = None;
+        self.tidying = false;
+        let rest = if self.live { self.rest_next } else { Rest::Away };
+        if rest != Rest::Away {
+            let Some(area) = MainThreadMarker::new().and_then(screen::area) else { return };
+            d.settle(area, rest, None);
+            set_hot(d.hot());
+            self.life_later();
+            return;
+        }
+        set_hot(None);
+        fade(d.window(), 0.0);
+        let turn = d.turn;
+        later(Duration::from_secs_f64(FADE + 0.05), move |m| {
+            if let Some(d) = &mut m.desk {
+                if d.turn == turn {
+                    d.clear();
+                }
+            }
+        });
+    }
+
+    /// The reaction is over: a held act (the purr) plays its way out.
+    fn desk_end(&mut self) {
+        if let Some(secs) = self.desk.as_mut().filter(|d| d.holding()).and_then(|d| d.end()) {
+            self.over_in(secs);
+        }
+    }
+
+    /// The cat moves in to its corner, or out of the screen.
+    fn set_live(&mut self, on: bool) {
+        if on == self.live {
+            return;
+        }
+        self.live = on;
+        if on {
+            self.quiet = Instant::now();
+            if self.doing.is_none() {
+                self.act(Do::Blink);
+            }
+        } else if self.doing.is_none() {
+            set_hot(None);
+            if let Some(d) = &mut self.desk {
+                d.clear();
+            }
+        }
+    }
+
+    /// A pointer came to rest on the cat (or left it).
+    fn hover(&mut self, on: bool) {
+        if on {
+            if self.live && self.doing.is_none() {
+                self.quiet = Instant::now();
+                self.act(Do::Play);
+            }
+        } else if self.doing == Some(Do::Play) {
+            self.desk_end();
+        }
+    }
+
+    /// Something small, a while from now.
+    fn life_later(&mut self) {
+        let Some(turn) = self.desk.as_ref().map(|d| d.turn) else { return };
+        let (lo, hi) = LIFE_EVERY;
+        let secs = lo + (hi - lo) * self.random();
+        later(Duration::from_secs_f64(secs), move |m| m.life(turn));
+    }
+
+    fn life(&mut self, turn: u32) {
+        let Some(d) = &self.desk else { return };
+        if !self.live || self.doing.is_some() || d.turn != turn || d.rest != Rest::Sit {
+            return;
+        }
+        if self.quiet.elapsed() >= NAP_AFTER {
+            self.act(Do::Nap);
+        } else if self.random() < 0.35 {
+            self.act(Do::Wash);
+        } else {
+            self.act(Do::Blink);
+        }
+    }
+
+    /// 0–1, from a small xorshift.
+    fn random(&mut self) -> f64 {
+        let mut x = self.seed;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.seed = x;
+        x as f64 / u32::MAX as f64
+    }
+
+    /// The tidy shortcut: ask Finder where the files lie (off the main
+    /// thread: the first time macOS asks the person), then fetch them.
+    fn tidy(&mut self) {
+        if self.tidying {
+            return;
+        }
+        self.tidying = true;
+        self.quiet = Instant::now();
+        let _ = std::thread::Builder::new().name("cat tidy".into()).spawn(|| {
+            let found = desktop_files();
+            on_main(move |m| m.tidy_go(found));
+        });
+    }
+
+    fn tidy_go(&mut self, found: Vec<(PathBuf, Option<(f64, f64)>)>) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let (Some(area), Some(top)) = (screen::area(mtm), first_screen_height(mtm)) else {
+            self.tidying = false;
+            return;
+        };
+        // Finder counts down from the top of the main screen; the window, up from the bottom of its usable area
+        let mut files = Vec::new();
+        self.spots = found.iter().filter_map(|(p, at)| at.map(|(x, y)| (p.clone(), x, y))).collect();
+        let _ = std::fs::remove_file(tidy_log());
+        // a file Finder could not place gets the next spot of Finder's own
+        // layout (a column from the top right); one off the screen comes onto its edge
+        let (w, h) = (area.size.width, area.size.height);
+        let mut next = 0usize;
+        for (path, spot) in found {
+            let at = match spot {
+                Some((x, y)) => NSPoint::new(x - area.origin.x, top - y - area.origin.y),
+                None => {
+                    let per = ((h - 60.0) / 100.0).max(1.0) as usize;
+                    let (col, row) = (next / per, next % per);
+                    next += 1;
+                    NSPoint::new(w - 60.0 - col as f64 * 100.0, h - 60.0 - row as f64 * 100.0)
+                }
+            };
+            let at = NSPoint::new(at.x.clamp(40.0, w - 40.0), at.y.clamp(40.0, h - 40.0));
+            if log() {
+                eprintln!("[cat] tidy {} at {:.0},{:.0} (Finder {:?})", path.display(), at.x, at.y, spot);
+            }
+            files.push((path, at));
+        }
+        if files.is_empty() {
+            if log() {
+                eprintln!("[cat] nothing to tidy");
+            }
+            self.tidying = false;
+            return;
+        }
+        if self.desk.is_none() {
+            self.desk = Desk::new(mtm);
+        }
+        let Some(d) = &self.desk else { return };
+        let xs: Vec<f64> = files.iter().map(|(_, at)| at.x).collect();
+        let script = desk::tidy(area.size.width, d.rest, &xs);
+        let mut carried = Vec::new();
+        let mut fetch = Vec::new();
+        for f in &script.fetch {
+            let (path, at) = &files[f.file];
+            let Some(icon) = screen::icon_for(path) else { continue };
+            fetch.push(desk::Fetch { file: carried.len(), ..*f });
+            carried.push((screen::File { icon, at: *at }, path.clone()));
+        }
+        let script = desk::Script { fetch, ..script };
+        set_hot(None);
+        self.load(None, script, carried);
     }
 
     /// Play `kind`'s sound `n`, unless the Mac should be quiet now.
@@ -404,6 +606,7 @@ impl Main {
 
     /// Listen to what the switches ask for, and to nothing else.
     fn feel(&mut self, p: &Prefs) {
+        self.set_live(p.awake() && p.show == Show::Always);
         if p.purr != !self.pads.is_empty() {
             if p.purr {
                 self.pads = pads_start();
@@ -580,38 +783,6 @@ fn tint(rgba: &[u8], ink: [f32; 4]) -> Vec<u8> {
         out.extend([(ink[0] * a) as u8, (ink[1] * a) as u8, (ink[2] * a) as u8, a as u8]);
     }
     out
-}
-
-/// The big cat's window: clear, above everything, on every Space, and
-/// clicks go through it.
-fn big_window(mtm: MainThreadMarker) -> Option<Big> {
-    let side = face::BEZEL_PT as f64;
-    let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(side, side));
-    let window = unsafe { NSWindow::initWithContentRect_styleMask_backing_defer(mtm.alloc(), rect, NSWindowStyleMask::Borderless, NSBackingStoreType::Buffered, false) };
-    unsafe { window.setReleasedWhenClosed(false) };
-    window.setOpaque(false);
-    window.setBackgroundColor(Some(&NSColor::clearColor()));
-    window.setHasShadow(false);
-    window.setIgnoresMouseEvents(true);
-    window.setLevel(25);
-    // the pictures are sRGB: drawn into an sRGB window they go in as they
-    // are, and the screen converts the whole window once, on its own
-    unsafe {
-        let srgb: Retained<AnyObject> = msg_send![class!(NSColorSpace), sRGBColorSpace];
-        let _: () = msg_send![&*window, setColorSpace: &*srgb];
-    }
-    window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
-    window.setAlphaValue(0.0);
-    let view = window.contentView()?;
-    view.setWantsLayer(true);
-    let root = view.layer()?;
-    let [card, layer] = [(); 2].map(|_| unsafe {
-        let layer: Retained<AnyObject> = msg_send![class!(CALayer), layer];
-        let _: () = msg_send![&*layer, setFrame: rect];
-        let _: () = msg_send![&*root, addSublayer: &*layer];
-        layer
-    });
-    Some(Big { window, card, card_scale: 0.0, layer })
 }
 
 /// Fade a window to `alpha`.
@@ -995,6 +1166,200 @@ pub fn quit() {
     super::slap::quit();
 }
 
+/// Where a cat that lives on screen rests, for the pointer to find it:
+/// points down from the top of the first screen. None: not resting there.
+static HOT: Mutex<Option<NSRect>> = Mutex::new(None);
+
+/// Tell the cat's thread where the resting cat is (AppKit points).
+fn set_hot(rect: Option<NSRect>) {
+    let top = MainThreadMarker::new().and_then(first_screen_height);
+    let flipped = rect.zip(top).map(|(r, top)| NSRect::new(NSPoint::new(r.origin.x, top - r.origin.y - r.size.height), r.size));
+    *HOT.lock().unwrap_or_else(|e| e.into_inner()) = flipped;
+    // the cat's thread starts looking now
+    send(Event::Nudge);
+}
+
+fn first_screen_height(mtm: MainThreadMarker) -> Option<f64> {
+    let screens = objc2_app_kit::NSScreen::screens(mtm);
+    screens.firstObject().map(|s| s.frame().size.height)
+}
+
+/// The pointer, in points down from the top of the first screen.
+fn pointer_at() -> Option<(f64, f64)> {
+    unsafe {
+        let e = CGEventCreate(std::ptr::null());
+        if e.is_null() {
+            return None;
+        }
+        let p = CGEventGetLocation(e);
+        CFRelease(e);
+        Some((p.x, p.y))
+    }
+}
+
+/// The tidy shortcut was pressed (main thread).
+pub fn tidy() {
+    with_main(|m| m.tidy());
+}
+
+/// Put back the files of the last tidy (main thread).
+pub fn put_back() {
+    let _ = std::thread::Builder::new().name("cat put back".into()).spawn(put_back_now);
+}
+
+/// Each tidied file, one per line: where it was, where it went, Finder's x and y.
+fn tidy_log() -> PathBuf {
+    crate::kit::fs::data_path("cat-tidy")
+}
+
+fn put_back_now() {
+    let Ok(text) = std::fs::read_to_string(tidy_log()) else { return };
+    let mut spots = Vec::new();
+    let mut back = 0;
+    for l in text.lines() {
+        let mut it = l.split('\t');
+        let (Some(from), Some(to)) = (it.next().map(PathBuf::from), it.next().map(PathBuf::from)) else { continue };
+        if !to.exists() || from.exists() || std::fs::rename(&to, &from).is_err() {
+            if log() {
+                eprintln!("[cat] could not put back {}", from.display());
+            }
+            continue;
+        }
+        back += 1;
+        let x: Option<f64> = it.next().and_then(|v| v.parse().ok());
+        let y: Option<f64> = it.next().and_then(|v| v.parse().ok());
+        if let (Some(x), Some(y)) = (x, y) {
+            spots.push((from, x, y));
+        }
+    }
+    let _ = std::fs::remove_file(tidy_log());
+    if log() {
+        eprintln!("[cat] put back {} file(s)", back);
+    }
+    // the box folder goes too once it is empty (remove_dir leaves a full one alone)
+    if let Some(dir) = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop").join(TIDY_FOLDER)) {
+        let _ = std::fs::remove_dir(dir);
+    }
+    if spots.is_empty() {
+        return;
+    }
+    // Finder needs a moment to see the files again before it can place them
+    std::thread::sleep(Duration::from_millis(600));
+    let mut script = String::from("tell application \"Finder\"\n");
+    for (path, x, y) in &spots {
+        let p = path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+        script.push_str(&format!("try\nset desktop position of (POSIX file \"{p}\" as alias) to {{{}, {}}}\nend try\n", x.round(), y.round()));
+    }
+    script.push_str("end tell");
+    if let Err(e) = crate::kit::macos::osascript(&script) {
+        if log() {
+            eprintln!("[cat] Finder could not place the files back: {e}");
+        }
+    }
+}
+
+/// A file is in use when it changed in the last minute or is still downloading.
+fn busy(path: &std::path::Path, meta: &std::fs::Metadata) -> bool {
+    let fresh = meta.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age < Duration::from_secs(60));
+    let partial = path.extension().is_some_and(|e| matches!(e.to_string_lossy().as_ref(), "download" | "crdownload" | "part" | "partial"));
+    fresh || partial
+}
+
+/// The files lying on the Desktop and, when Finder tells, where it shows
+/// them (points down from the top of the main screen). Folders, hidden
+/// files and files in use stay where they are.
+fn desktop_files() -> Vec<(PathBuf, Option<(f64, f64)>)> {
+    let Some(desktop) = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop")) else { return Vec::new() };
+    let script = r#"tell application "Finder"
+set out to ""
+repeat with f in (get every item of desktop)
+try
+try
+set p to desktop position of f
+on error
+set p to position of f
+end try
+set out to out & (name of f) & tab & ((item 1 of p) as text) & tab & ((item 2 of p) as text) & linefeed
+on error e
+set out to out & "!" & tab & e & linefeed
+end try
+end repeat
+return out
+end tell"#;
+    let out = crate::kit::macos::osascript(script).unwrap_or_else(|e| {
+        if log() {
+            eprintln!("[cat] Finder said no: {e}");
+        }
+        String::new()
+    });
+    if log() {
+        eprintln!("[cat] Finder: {out:?}");
+    }
+    // Finder's numbers may come with a decimal comma
+    let num = |s: &str| s.trim().replace(',', ".").parse::<f64>().ok();
+    let spots: Vec<(PathBuf, f64, f64)> = out
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split('\t');
+            let path = desktop.join(it.next()?.trim());
+            Some((path, num(it.next()?)?, num(it.next()?)?))
+        })
+        .collect();
+    // the folder itself is the truth about what lies there; Finder only adds where
+    let Ok(dir) = std::fs::read_dir(&desktop) else { return Vec::new() };
+    let mut files: Vec<(PathBuf, Option<(f64, f64)>)> = dir
+        .flatten()
+        .map(|e| e.path())
+        .filter(|path| {
+            let shown = path.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
+            shown && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file() && !busy(path, &m))
+        })
+        .map(|path| {
+            let spot = spots.iter().find(|(p, ..)| same_file(p, &path)).map(|(_, x, y)| (*x, *y));
+            (path, spot)
+        })
+        .collect();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+/// Finder may spell a path in another Unicode form than the folder does.
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    use std::os::unix::fs::MetadataExt;
+    matches!((std::fs::metadata(a), std::fs::metadata(b)), (Ok(x), Ok(y)) if x.ino() == y.ino() && x.dev() == y.dev())
+}
+
+/// Move `path` into the tidy folder beside it (a name already there gets a
+/// number), and note it so Put back can undo it.
+fn put_away(path: &std::path::Path, spot: Option<(f64, f64)>) {
+    let Some(dir) = path.parent().map(|p| p.join(TIDY_FOLDER)) else { return };
+    let Some(name) = path.file_name() else { return };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let mut to = dir.join(name);
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let mut k = 2;
+    while to.exists() && k < 1000 {
+        to = dir.join(format!("{stem} {k}{ext}"));
+        k += 1;
+    }
+    if let Err(e) = std::fs::rename(path, &to) {
+        if log() {
+            eprintln!("[cat] could not tidy {}: {e}", path.display());
+        }
+        return;
+    }
+    let (x, y) = spot.map(|(x, y)| (x.to_string(), y.to_string())).unwrap_or_default();
+    let line = format!("{}\t{}\t{x}\t{y}\n", path.display(), to.display());
+    use std::io::Write;
+    let _ = std::fs::OpenOptions::new().create(true).append(true).open(tidy_log()).and_then(|mut f| f.write_all(line.as_bytes()));
+}
+
 pub fn start(prefs: Prefs, status_item: *mut c_void) {
     static STARTED: AtomicBool = AtomicBool::new(false);
     if MainThreadMarker::new().is_none() || status_item.is_null() || STARTED.swap(true, Ordering::SeqCst) {
@@ -1003,12 +1368,14 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let Some(item) = (unsafe { Retained::retain(status_item as *mut AnyObject) }) else { return };
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
-    let mut main = Main { item, over: None, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
+    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(1);
+    let main = Main { item, over: None, desk: None, live: false, doing: None, rest_next: Rest::Away, asked: 0, quiet: Instant::now(), tidying: false, spots: Vec::new(), seed: seed | 1, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
     if !prefs.hiss {
         super::slap::tidy();
     }
-    main.feel(&prefs);
     MAIN.with(|m| *m.borrow_mut() = Some(main));
+    let first = prefs.clone();
+    with_main(move |m| m.feel(&first));
 
     // the charger and the battery: the first reading is the starting point
     unsafe {
@@ -1036,7 +1403,6 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     observe("com.apple.screenIsLocked", true, || send(Event::Locked(true)));
     observe("com.apple.screenIsUnlocked", true, || send(Event::Locked(false)));
 
-    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(1);
     let watch = prefs.watch;
     let _ = std::thread::Builder::new().name("cat".into()).spawn(move || run(rx, Engine::new(prefs, seed), watch));
 }
@@ -1056,9 +1422,13 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
     // the pointer last said
     let (mut next_look, mut next_place) = (0.0, 0.0);
     let mut seen = None;
+    // the pointer on the cat: (on it, since when), and what the main thread was told
+    let mut next_hover = 0.0;
+    let mut hover = (false, 0.0);
+    let mut hover_told = false;
     loop {
         let now = clock();
-        let frame = 1.0 / if cat.big() { BIG_FPS } else { ICON_FPS };
+        let frame = 1.0 / ICON_FPS;
         let due = (last_draw + frame - now).max(0.0);
         // a face that differs from the one on screen is drawn at the next frame
         let stale = cat.pose(now) != drawn || cat.big() != drawn_big;
@@ -1069,6 +1439,8 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
             other => other,
         };
         let wait = if watch { Some(wait.map_or(next_look - now, |w| w.min(next_look - now)).max(0.0)) } else { wait };
+        let hot = HOT.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+        let wait = if hot { Some(wait.map_or(next_hover - now, |w| w.min(next_hover - now)).max(0.0)) } else { wait };
         let news = match wait {
             None => match rx.recv() {
                 Ok(ev) => Some(ev),
@@ -1083,7 +1455,7 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
         let now = clock();
         let mut cmds = Vec::new();
         for ev in news.into_iter().chain(rx.try_iter()) {
-            if log() && !matches!(ev, Event::Pointer { .. } | Event::Hand) {
+            if log() && !matches!(ev, Event::Pointer { .. } | Event::Hand | Event::Nudge) {
                 eprintln!("[cat] {ev:?}");
             }
             if let Event::Prefs(p) = &ev {
@@ -1108,7 +1480,9 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
             }
         }
         cmds.extend(cat.tick(now));
-        let big_comes = cmds.contains(&Cmd::Big(true));
+        // a reaction began (each one starts with its sound): the desktop cat
+        // acts it out when it is to show
+        let began = cmds.iter().rev().find_map(|c| if let Cmd::Sound { kind, .. } = c { Some(*kind) } else { None });
         for cmd in cmds {
             if log() {
                 eprintln!("[cat] → {cmd:?}");
@@ -1117,19 +1491,40 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
                 Cmd::Sound { kind, n } => on_main(move |m| m.play(kind, n)),
                 Cmd::Hush => on_main(|m| m.hush()),
                 Cmd::Buzz(on) => on_main(move |m| m.buzz(on)),
-                // it comes with its first picture, below
                 Cmd::Big(true) => {}
-                Cmd::Big(false) => on_main(|m| m.set_big(false)),
+                Cmd::Big(false) => on_main(|m| m.desk_end()),
                 Cmd::Keep(p) => {
                     super::keep(p);
                 }
             }
         }
+        if let Some(kind) = began.filter(|_| cat.big()) {
+            on_main(move |m| m.react(kind));
+        }
+        // a pointer resting on a cat that lives on screen
+        if let Some(rect) = *HOT.lock().unwrap_or_else(|e| e.into_inner()) {
+            if now >= next_hover {
+                next_hover = now + HOVER_EVERY;
+                let on = pointer_at().is_some_and(|(x, y)| x >= rect.origin.x && x <= rect.origin.x + rect.size.width && y >= rect.origin.y && y <= rect.origin.y + rect.size.height);
+                if on != hover.0 {
+                    hover = (on, now);
+                }
+                let wait = if on { HOVER_IN } else { HOVER_OUT };
+                if hover.0 != hover_told && now - hover.1 >= wait {
+                    hover_told = hover.0;
+                    let on = hover.0;
+                    on_main(move |m| m.hover(on));
+                }
+            }
+        } else if hover_told {
+            hover_told = false;
+            hover = (false, now);
+        }
         let (pose, big) = (cat.pose(now), cat.big());
         let changed = pose != drawn || big != drawn_big;
-        if changed && (big_comes || now - last_draw >= frame - 0.002) {
+        if changed && now - last_draw >= frame - 0.002 {
             // a move too small to change a pixel is not sent
-            let icon = (pose != drawn || !big).then(|| face::icon(&pose, ICON_PX)).filter(|px| *px != shown);
+            let icon = (pose != drawn).then(|| face::icon(&pose, ICON_PX)).filter(|px| *px != shown);
             if let Some(px) = &icon {
                 shown.clone_from(px);
             }
@@ -1137,17 +1532,8 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
                 let at_rest = px == rest;
                 (px, at_rest)
             });
-            let picture = big.then(|| {
-                let scale = f32::from_bits(BIG_SCALE.load(Ordering::Relaxed)).clamp(1.0, 3.0);
-                (face::bezel_cat(&pose, scale), face::bezel_px(scale))
-            });
-            if big_comes || icon.is_some() || picture.is_some() {
-                on_main(move |m| {
-                    if big_comes {
-                        m.set_big(true);
-                    }
-                    m.show(Frame { icon, big: picture });
-                });
+            if icon.is_some() {
+                on_main(move |m| m.show(Frame { icon }));
             }
             drawn = pose;
             drawn_big = big;
