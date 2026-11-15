@@ -50,7 +50,7 @@ fn arc(pb: &mut PathBuilder, cx: f32, cy: f32, r: f32, a0: f32, a1: f32) {
 }
 
 /// The ⌘ as a centerline: four 3/4 loops joined by two bars each way.
-fn command() -> Option<tiny_skia::Path> {
+pub(crate) fn command() -> Option<tiny_skia::Path> {
     use std::f32::consts::PI;
     let (l, r, t, b, rad) = (347.5, 670.5, 433.5, 757.5, 87.5);
     let mut pb = PathBuilder::new();
@@ -91,7 +91,7 @@ pub fn glyph_rgba(px: u32) -> Vec<u8> {
 
 /// The keycap without its ears (the mark's outline, ears cut off along
 /// their base lines), so the ears can move on their own.
-fn body() -> Option<tiny_skia::Path> {
+pub(crate) fn body() -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
     pb.move_to(330.0, 200.0);
     pb.line_to(692.0, 200.0);
@@ -109,7 +109,7 @@ fn body() -> Option<tiny_skia::Path> {
 
 /// One ear, the same curves as [`outline`]. It reaches a little into the
 /// keycap below its base line, so no seam shows where the two meet.
-fn ear(right: bool) -> Option<tiny_skia::Path> {
+pub(crate) fn ear(right: bool) -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
     if right {
         pb.move_to(692.0, 200.0);

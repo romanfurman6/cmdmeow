@@ -8,6 +8,7 @@ pub mod ai;
 pub mod aicheck;
 pub mod brand;
 pub mod bundles;
+pub mod cat;
 pub mod charge;
 pub mod claude_code;
 pub mod crash_report;
