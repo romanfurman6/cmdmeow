@@ -109,7 +109,7 @@ Canvas: https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34
 | B1 | Kinds: Hero (44, lime, one per empty or first-visit screen) · Primary (lime, one per view or dialog) · Danger (red, destructive confirm only) · Secondary (ink 4% fill, 1 pt ink 14% edge) · Text / link (no fill) · Icon 30 square · Round 26 (sheet close, refresh) · AI chip 26. | ⏳ |
 | B2 | Push buttons have three heights: 44 hero, 32 (page header, footer, dialogs), 28 (inside cards and rows). | ⏳ conflict K4 |
 | B3 | Radius `R_BUTTON` 10 (capped at h/2). Chips h/2. Segmented `R_SMALL` 7 with a 6 thumb. | ✅ |
-| B4 | No glow under buttons. A darker base under the face gives the depth. | ⏳ |
+| B4 | Buttons look raised, the same way for every kind: a darker base under the face. Lime primary and hero buttons also keep their glow (lime 25%, offset 6, blur 18). | ✅ glow (Roman 2026-11-15) · ⏳ base per kind |
 | B5 | Press "key": the face sinks into a darker base and springs back. Lime and red: base 3, drop 2. Quiet kinds: base 2, drop 1. Text: drops 1, no base. | ✅ feel · ⏳ numbers |
 | B6 | Hover changes colour only (lime and red lighten 12%). Disabled: alpha .45 (.62 light, L6), no press, no sound. | ⏳ |
 | B7 | Controls: segmented 32 header / 28 card, switch 30×18, checkbox and radio 16, filter chips 26 through one shared helper. | ⏳ |
@@ -221,7 +221,6 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 |---|------|---|
 | K1 | Dim under dialogs in light mode: dialogs use black 45% in both themes; the loader uses ink 24% in light. | One `SCRIM()`: black 45% dark, ink 24% light. |
 | K2 | Row hover is `white(10)` on Cleanup start, `white(12)` on the group rail and sidebar, `white(13)` r8 inset on Keep Awake, a 4 pt inset pill in popovers. | One `ROW_HOVER` = `white(10)` (already in PR #211, the value Roman saw in hover A), edge to edge in lists and popovers (H2); inset r8 only in the sidebar and rail. |
-| K3 | Lime glow under primary buttons: the B3 tokens have it, the shadow rule and the key press drop it. | No glow (B4). |
 | K4 | Button heights: B2 says 44/32/28, but side buttons and toggle chips are 34, action tiles 40–44. | Side and toggle chips go to 32; action tiles are tiles, not push buttons. |
 | K5 | AI uses Monitor cyan, so AI marks look like Monitor data on Clean screens (C3). | Keep cyan as the AI colour (C15) under its own name, `AI()`. |
 | K6 | Esc closes the Uninstaller confirm but not Disk Map or Cleanup confirms. | Esc closes every dialog except while work runs. |
