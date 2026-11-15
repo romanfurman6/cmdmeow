@@ -117,6 +117,8 @@ pub struct Prefs {
     /// The eyes follow the pointer.
     pub watch: bool,
     pub show: Show,
+    /// The tidy shortcut carries the desktop's files into a folder.
+    pub tidy: bool,
     /// Reactions the big cat has shown already (their slugs).
     pub seen: Vec<String>,
 }
@@ -124,7 +126,7 @@ pub struct Prefs {
 /// The cat starts switched off: each reaction is turned on in Settings.
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { purr: false, hiss: false, meow: false, eat: false, greet: false, watch: false, show: Show::FirstTime, seen: Vec::new() }
+        Prefs { purr: false, hiss: false, meow: false, eat: false, greet: false, watch: false, show: Show::FirstTime, tidy: false, seen: Vec::new() }
     }
 }
 
@@ -137,7 +139,7 @@ impl Prefs {
     /// Something is switched on. With everything off the cat is not there:
     /// the menu bar icon is the plain mark and links do nothing.
     pub fn awake(&self) -> bool {
-        self.purr || self.hiss || self.meow || self.eat || self.greet || self.watch
+        self.purr || self.hiss || self.meow || self.eat || self.greet || self.watch || self.tidy
     }
 }
 
@@ -175,6 +177,24 @@ pub fn take_unsaved() -> bool {
 /// Make the cat do `kind` now, as if the Mac had felt it.
 pub fn simulate(kind: Kind) {
     send(engine::Event::Sim(kind));
+}
+
+/// The tidy shortcut, as Settings shows it, and as the key recorder writes it.
+pub const TIDY_KEYS: &str = "⌃⌥⌘T";
+pub fn tidy_shortcut() -> crate::kit::hotkeys::Shortcut {
+    crate::kit::hotkeys::Shortcut { cmd: true, shift: false, alt: true, ctrl: true, key: "T".into() }
+}
+
+/// The tidy shortcut was pressed: the cat carries the desktop's files
+/// into a folder (main thread).
+pub fn tidy() {
+    #[cfg(target_os = "macos")]
+    mac::tidy();
+}
+
+/// The tidy shortcut is wanted (the switch is on).
+pub fn tidy_on() -> bool {
+    PREFS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|p| p.tidy)
 }
 
 /// The app quits. Call on the way out.
