@@ -6,7 +6,9 @@
 //! - `face`: what the cat looks like in each mood, as plain drawing.
 //! - `engine`: which mood it is in and what it does next, as plain rules.
 //! - `mac`: the menu bar icon, the big cat, the sounds and what the Mac
-//!   feels (trackpad, power, wake, pointer).
+//!   feels (trackpad, power, wake, lid, pointer).
+//! - `slap`: which jolts of the body are slaps, and the sensor that feels
+//!   them.
 //!
 //! Nothing here draws with egui or asks it for frames: the cat has its own
 //! thread, which sleeps until something moves.
@@ -17,6 +19,7 @@ mod engine;
 pub mod face;
 #[cfg(target_os = "macos")]
 mod mac;
+mod slap;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};

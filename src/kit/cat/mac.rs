@@ -108,6 +108,8 @@ struct Main {
     buzzing: bool,
     /// The trackpads being listened to.
     pads: Vec<*mut c_void>,
+    /// Whether the body is felt for slaps.
+    slaps: bool,
 }
 
 /// The moving face, drawn over the menu bar button. Each new button image
@@ -407,6 +409,14 @@ impl Main {
                 self.pads = pads_start();
             } else {
                 pads_stop(std::mem::take(&mut self.pads));
+            }
+        }
+        if p.hiss != self.slaps {
+            self.slaps = p.hiss;
+            if p.hiss {
+                super::slap::start(|| LID_CLOSED.load(Ordering::SeqCst), || send(Event::Slap), log());
+            } else {
+                super::slap::stop();
             }
         }
     }
@@ -988,7 +998,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let Some(item) = (unsafe { Retained::retain(status_item as *mut AnyObject) }) else { return };
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
-    let mut main = Main { item, over: None, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new() };
+    let mut main = Main { item, over: None, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
     main.feel(&prefs);
     MAIN.with(|m| *m.borrow_mut() = Some(main));
 
@@ -1003,6 +1013,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     watch_lid();
     observe("NSWorkspaceDidWakeNotification", false, || {
         send(Event::Wake);
+        super::slap::woke();
         // a lid opened while the Mac slept
         if let Some(closed) = lid_closed() {
             lid_is(closed);
