@@ -210,7 +210,7 @@ pub fn click(kind: Click) {
     }
     let take = next_take();
     #[cfg(target_os = "macos")]
-    mac::play(&click_name(kind.voice(), take), true, || render_click(kind.voice(), take));
+    mac::play(&click_name(kind.voice(), take), true, move || render_click(kind.voice(), take));
     #[cfg(not(target_os = "macos"))]
     let _ = (kind, take);
 }
@@ -267,7 +267,7 @@ pub fn play(cue: Cue) {
         return;
     }
     #[cfg(target_os = "macos")]
-    mac::play(&format!("{}-v{VERSION}", cue.name()), false, || synth(cue));
+    mac::play(&format!("{}-v{VERSION}", cue.name()), false, move || synth(cue));
     #[cfg(not(target_os = "macos"))]
     let _ = cue;
 }
@@ -459,22 +459,23 @@ mod mac {
         IDS.get_or_init(Default::default)
     }
 
-    /// The system sound `name`, written from `render` on first use.
+    /// The system sound `name`, written from `render` on first use. The
+    /// lock is only held to look up and insert, never while rendering.
     pub fn load(name: &str, ui: bool, render: impl FnOnce() -> Vec<f32>) -> u32 {
-        let mut ids = ids().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(&id) = ids.get(name) {
+        if let Some(&id) = ids().lock().unwrap_or_else(|e| e.into_inner()).get(name) {
             return id;
         }
         let id = create(name, ui, render).unwrap_or(0);
-        ids.insert(name.to_string(), id);
-        id
+        *ids().lock().unwrap_or_else(|e| e.into_inner()).entry(name.to_string()).or_insert(id)
     }
 
     fn create(name: &str, ui: bool, render: impl FnOnce() -> Vec<f32>) -> Option<u32> {
         let path = crate::kit::fs::data_path("sounds").join(format!("{name}.wav"));
         if !path.exists() {
             std::fs::create_dir_all(path.parent()?).ok()?;
-            let tmp = path.with_extension("tmp");
+            // a temp name of its own, so two threads writing one sound don't mix
+            static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let tmp = path.with_extension(format!("tmp{}", N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
             std::fs::write(&tmp, super::wav(&render())).ok()?;
             std::fs::rename(&tmp, &path).ok()?;
         }
@@ -494,10 +495,20 @@ mod mac {
     }
 
     /// Play `name` (async, returns at once).
-    pub fn play(name: &str, ui: bool, render: impl FnOnce() -> Vec<f32>) {
-        let id = load(name, ui, render);
+    pub fn play(name: &str, ui: bool, render: impl FnOnce() -> Vec<f32> + Send + 'static) {
+        // a loaded sound plays at once; the UI thread never waits on the lock
+        // or renders: a sound not loaded yet is loaded and played off-thread
+        if let Some(id) = ids().try_lock().ok().and_then(|m| m.get(name).copied()) {
+            play_id(id);
+            return;
+        }
+        let name = name.to_string();
+        std::thread::spawn(move || play_id(load(&name, ui, render)));
+    }
+
+    fn play_id(id: u32) {
         if id != 0 {
-            // SAFETY: a sound id created above; the call doesn't block.
+            // SAFETY: a sound id from AudioServicesCreateSystemSoundID; the call doesn't block.
             unsafe { AudioServicesPlaySystemSound(id) };
         }
     }
