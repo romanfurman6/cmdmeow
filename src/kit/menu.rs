@@ -69,7 +69,7 @@ pub fn paint_row(p: &egui::Painter, r: Rect, label: &str, hover: f32, on: bool, 
 /// measured as the rows are added (last pass's widest, so all rows match).
 /// A menu is as wide as its widest item, never as wide as the window.
 fn width(ui: &Ui, own: f32) -> f32 {
-    let id = ui.id().with("kit-menu-w");
+    let id = ui.scope_id().with("kit-menu-w");
     let pass = ui.ctx().cumulative_pass_nr();
     let (mut at, mut cur, mut last) = ui.data(|d| d.get_temp::<(u64, f32, f32)>(id)).unwrap_or((pass, 0.0, 0.0));
     if at != pass {
