@@ -82,6 +82,18 @@ pub fn jitter(rtts: &[f64]) -> Option<f64> {
     Some(sum / (rtts.len() - 1) as f64)
 }
 
+/// Jitter from the steady round trips only: a reply far slower than the
+/// rest (over 3× the median) is a hiccup, not jitter, and one of them made
+/// a 40 ms line read "±1677". Needs 3 steady trips, else unknown.
+pub fn steady_jitter(rtts: &[f64]) -> Option<f64> {
+    let mid = median(rtts)?;
+    let steady: Vec<f64> = rtts.iter().copied().filter(|r| *r <= 3.0 * mid).collect();
+    if steady.len() < 3 {
+        return None;
+    }
+    jitter(&steady)
+}
+
 /// The server's own time in a `Server-Timing` header
 /// (`cfRequestDuration;dur=12.3`), in ms. It isn't network time, so it
 /// comes off the round trip.
@@ -98,6 +110,14 @@ pub fn parse_meta(json: &str) -> Option<ServerInfo> {
     let v: Value = serde_json::from_str(json).ok()?;
     let s = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
     let info = ServerInfo { isp: s("asOrganization"), city: s("city"), colo: s("colo") };
+    (!info.line().is_empty()).then_some(info)
+}
+
+/// Place from the `cf-meta-*` headers every test server reply carries, for
+/// when `/meta` won't answer. `get` reads a header by name.
+pub fn meta_from_headers(get: impl Fn(&str) -> Option<String>) -> Option<ServerInfo> {
+    let s = |k: &str| get(k).unwrap_or_default().trim().to_string();
+    let info = ServerInfo { isp: String::new(), city: s("cf-meta-city"), colo: s("cf-meta-colo") };
     (!info.line().is_empty()).then_some(info)
 }
 
@@ -246,8 +266,8 @@ struct Plan {
 
 fn plan(mode: SpeedMode) -> Plan {
     match mode {
-        // about 6 s: few pings, short phases, enough streams to fill the line fast
-        SpeedMode::Quick => Plan { pings: 3, phase: Duration::from_millis(2500), grace: Duration::from_millis(600), down: 6, up: 4 },
+        // about 6 s: a few pings (enough for a steady jitter), short phases, enough streams to fill the line fast
+        SpeedMode::Quick => Plan { pings: 6, phase: Duration::from_millis(2500), grace: Duration::from_millis(600), down: 6, up: 4 },
         SpeedMode::Full => Plan { pings: m::SPEED_TEST_PINGS, phase: m::SPEED_TEST_PHASE, grace: m::SPEED_TEST_GRACE, down: m::SPEED_TEST_STREAMS_DOWN, up: m::SPEED_TEST_STREAMS_UP },
     }
 }
@@ -337,7 +357,19 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         {
             let (agent, shared, cancel, ctx) = (agent.clone(), shared.clone(), cancel.clone(), ctx.clone());
             std::thread::spawn(move || {
-                let body = agent.get(m::SPEED_TEST_META_URL).config().timeout_global(Some(m::SPEED_TEST_META_TIMEOUT)).build().call().ok()?.into_body().read_to_string().ok()?;
+                // the endpoint answers the speed test page; a bare request gets 403
+                let body = agent
+                    .get(m::SPEED_TEST_META_URL)
+                    .header("Referer", "https://speed.cloudflare.com/")
+                    .header("Origin", "https://speed.cloudflare.com")
+                    .config()
+                    .timeout_global(Some(m::SPEED_TEST_META_TIMEOUT))
+                    .build()
+                    .call()
+                    .ok()?
+                    .into_body()
+                    .read_to_string()
+                    .ok()?;
                 let info = parse_meta(&body)?;
                 if write(&shared, &cancel, &|s| s.server = Some(info.clone())) {
                     ctx.request_repaint();
@@ -358,12 +390,24 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
             let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
             Some((total - server).max(0.1))
         };
-        if let Err(e) = agent.get(&ping_url).config().timeout_global(Some(m::SPEED_TEST_CONNECT_TIMEOUT)).build().call() {
-            finish(Some(format!("No internet connection ({e})")));
-            return;
+        match agent.get(&ping_url).config().timeout_global(Some(m::SPEED_TEST_CONNECT_TIMEOUT)).build().call() {
+            Err(e) => {
+                finish(Some(format!("No internet connection ({e})")));
+                return;
+            }
+            // the place from its headers, until (unless) /meta says more
+            Ok(r) => {
+                if let Some(info) = meta_from_headers(|k| r.headers().get(k).and_then(|h| h.to_str().ok()).map(str::to_string)) {
+                    set(&|s| {
+                        if s.server.is_none() {
+                            s.server = Some(info.clone());
+                        }
+                    });
+                }
+            }
         }
         let rtts = round_trips(pl.pings, &stopped, ping, |rtts, frac| {
-            let (lat, jit) = (median(rtts), jitter(rtts));
+            let (lat, jit) = (median(rtts), steady_jitter(rtts));
             set(&|s| {
                 s.latency_ms = lat;
                 s.jitter_ms = jit;
@@ -450,6 +494,30 @@ mod tests {
         assert_eq!(median(&[10.0, 20.0, 30.0, 40.0]), Some(25.0));
         assert_eq!(jitter(&[20.0]), None);
         assert_eq!(jitter(&[20.0, 24.0, 20.0, 21.0]), Some(3.0));
+    }
+
+    #[test]
+    fn one_slow_reply_is_not_jitter() {
+        // the M1 runs: a 40 ms line with one reply near the 2 s deadline
+        let rtts = [38.0, 41.0, 1700.0, 40.0, 39.0, 42.0];
+        let j = steady_jitter(&rtts).unwrap();
+        assert!(j < 5.0, "{j}");
+        // too few steady trips: unknown, not a guess
+        assert_eq!(steady_jitter(&[40.0, 1700.0, 41.0]), None);
+        assert_eq!(steady_jitter(&[]), None);
+        assert_eq!(steady_jitter(&[20.0, 24.0, 20.0, 21.0]), Some(3.0));
+    }
+
+    #[test]
+    fn place_from_headers() {
+        let h = |k: &str| match k {
+            "cf-meta-city" => Some("Madrid".to_string()),
+            "cf-meta-colo" => Some("MAD".to_string()),
+            _ => None,
+        };
+        assert_eq!(meta_from_headers(h).unwrap().line(), "Madrid");
+        assert_eq!(meta_from_headers(|k| (k == "cf-meta-colo").then(|| "MAD".to_string())).unwrap().line(), "MAD");
+        assert_eq!(meta_from_headers(|_| None), None);
     }
 
     #[test]
