@@ -102,6 +102,15 @@ pub fn AMBER() -> Color32 { pick(hex(0xF7B267), hex(0xA65A0E)) }
 /// State: problem, low battery.
 #[allow(non_snake_case)]
 pub fn RED() -> Color32 { pick(hex(0xFF9B7A), hex(0xC2391D)) }
+/// Fill of destructive buttons only; text on it is white. Not for text or
+/// marks: those use [`RED`].
+// callers land with the buttons / AI marks work
+#[allow(non_snake_case, dead_code)]
+pub fn DANGER() -> Color32 { pick(hex(0xF04438), hex(0xD92D20)) }
+/// AI marks (C15): the Monitor cyan.
+// callers land with the buttons / AI marks work
+#[allow(non_snake_case, dead_code)]
+pub fn AI() -> Color32 { tint::HEALTH() }
 /// Neutral marks: You, Other, an app with no icon (C9).
 #[allow(non_snake_case)]
 pub fn GRAY() -> Color32 { pick(hex(0x98A096), hex(0x6E766B)) }
@@ -123,6 +132,16 @@ pub mod series {
         const DARK: [u32; 3] = [0x6FD6E8, 0xB4EAF3, 0x4FA9BC];
         const LIGHT: [u32; 3] = [0x177A8E, 0x0B4652, 0x3A97AB];
         let i = i.min(2);
+        pick(hex(DARK[i]), hex(LIGHT[i]))
+    }
+    /// Utilities charts (Keep Awake): lavender, then a deeper (dark) /
+    /// deeper-ink (light) step.
+    // Keep Awake's chart uses it (PR #210)
+    #[allow(dead_code)]
+    pub fn util(i: usize) -> Color32 {
+        const DARK: [u32; 2] = [0xE8E1FF, 0xA99BF0];
+        const LIGHT: [u32; 2] = [0x6A5AC8, 0x3F3290];
+        let i = i.min(1);
         pick(hex(DARK[i]), hex(LIGHT[i]))
     }
     /// Clean charts: the junk ramp, lime stepping into green.
