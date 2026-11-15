@@ -932,7 +932,7 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     let active_text = ACCENT();
     if selected {
         // H3: lime at 16%, radius 8, text ACCENT
-        p.rect_filled(rect, 8.0, with_alpha(BLUE(), 0.16));
+        p.rect_filled(rect, 8.0, with_alpha(ACTION(), 0.16));
     } else if h > 0.0 {
         // H1: ROW_HOVER, inset radius 8 in the sidebar
         p.rect_filled(rect, 8.0, white((10.0 * h) as u8));
@@ -1948,7 +1948,7 @@ pub fn filter_chip(ui: &mut Ui, p: &Painter, at: Pos2, id: egui::Id, label: &str
     let r = Rect::from_min_size(at, Vec2::new(w, FILTER_CHIP_H));
     let resp = ui.interact(r, id, Sense::click());
     let rr = r.height() / 2.0;
-    p.rect_filled(r, rr, if on { with_alpha(BLUE(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
+    p.rect_filled(r, rr, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
     p.rect_stroke(r, rr, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
     let mut tx = r.left() + 11.0;
     if let Some(c) = dot {
