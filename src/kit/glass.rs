@@ -62,6 +62,14 @@ pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255,
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
+/// The hairline round a floating surface. With no shadow under it, light
+/// mode needs a firmer ink line to part a white popover from white cards.
+#[allow(non_snake_case)]
+pub fn POPOVER_EDGE() -> Color32 { if is_light() { white(52) } else { white(30) } }
+/// The dim under dialogs, sheets and the loader: black 45% in dark, ink
+/// 24% in light.
+#[allow(non_snake_case)]
+pub fn SCRIM() -> Color32 { pick(Color32::from_black_alpha(115), Color32::from_rgba_unmultiplied(14, 20, 5, 61)) }
 /// Window sidebar.
 #[allow(non_snake_case)]
 pub fn SIDEBAR() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128)) }
@@ -381,6 +389,23 @@ pub fn rounded_points(rect: Rect, r: f32) -> Vec<Pos2> {
         }
     }
     pts
+}
+
+/// The one shadow under everything that floats over the page (menus, tips,
+/// popovers, dialogs, toasts, floating bars): "Whisper", a tight key under a
+/// soft ambient, lighter in light mode. Draw it right before the surface;
+/// `alpha` fades it with the surface.
+pub fn float_shadow(p: &Painter, rect: Rect, radius: f32, alpha: f32) {
+    let (key, amb) = if is_light() { (0.06, 0.06) } else { (0.30, 0.20) };
+    let c = |x: f32| Color32::from_black_alpha((x * alpha.clamp(0.0, 1.0) * 255.0).round() as u8);
+    p.add(egui::epaint::Shadow { offset: [0, 1], blur: 2, spread: 0, color: c(key) }.as_shape(rect, radius));
+    p.add(egui::epaint::Shadow { offset: [0, 4], blur: 10, spread: 0, color: c(amb) }.as_shape(rect, radius));
+}
+
+/// [`float_shadow`] for egui's own menus and tooltips, which take one layer.
+pub fn float_shadow_egui() -> egui::epaint::Shadow {
+    let a = if is_light() { 0.08 } else { 0.32 };
+    egui::epaint::Shadow { offset: [0, 3], blur: 8, spread: 0, color: Color32::from_black_alpha((a * 255.0) as u8) }
 }
 
 /// The window surface: a radial glow from the top centre (moss in dark

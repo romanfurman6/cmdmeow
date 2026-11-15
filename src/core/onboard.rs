@@ -1188,8 +1188,6 @@ fn loop_clipboard(p: &egui::Painter, f: Rect, now: f32) {
 fn clip_card(p: &egui::Painter, c: Pos2, size: Vec2, ang: f32, kind: usize, al: f32) {
     let at = |x: f32, y: f32| c + turn(Vec2::new(x, y), ang);
     let outline: Vec<Pos2> = rounded_points(Rect::from_center_size(Pos2::ZERO, size), 7.0).into_iter().map(|q| at(q.x, q.y)).collect();
-    let shadow = outline.iter().map(|q| *q + Vec2::new(0.0, 3.0)).collect();
-    p.add(egui::Shape::convex_polygon(shadow, Color32::from_black_alpha((70.0 * al) as u8), Stroke::NONE));
     p.add(egui::Shape::convex_polygon(outline, with_alpha(POPOVER(), al), Stroke::new(1.0, with_alpha(tint::CAPTURE(), 0.45 * al))));
     let (l, t) = (-size.x / 2.0 + 7.0, -size.y / 2.0);
     let line = |x0: f32, x1: f32, y: f32, col: Color32| p.line_segment([at(x0, y), at(x1, y)], Stroke::new(3.0, with_alpha(col, al)));
@@ -1475,7 +1473,7 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let off = ctx.animate_value_with_time(off_id.with("anim"), target, 0.35);
     let panel = Rect::from_min_size(room.min, Vec2::new(room.width(), h));
     let panel = panel.translate(Vec2::new(0.0, (1.0 - a) * -10.0));
-    p.add(egui::epaint::Shadow { offset: [0, 14], blur: 36, spread: 0, color: Color32::from_black_alpha((70.0 * a) as u8) }.as_shape(panel, CornerRadius::same(12)));
+    crate::kit::glass::float_shadow(&p, panel, 12.0, a);
     p.rect_filled(panel, 12.0, BG().gamma_multiply(a));
     p.rect_stroke(panel, 12.0, Stroke::new(1.0, CARD_EDGE().gamma_multiply(a)), StrokeKind::Inside);
     if placed.is_empty() {
@@ -2398,9 +2396,9 @@ fn tool_hint(ui: &Ui, r: Rect, id: egui::Id, name: &str) {
     let above = r.top() - 6.0 - size.y;
     let y = if above >= screen.top() + sp::S { above + (1.0 - a) * 4.0 } else { r.bottom() + 6.0 - (1.0 - a) * 4.0 };
     let box_ = Rect::from_min_size(Pos2::new(x, y), size);
-    p.add(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha((90.0 * a) as u8) }.as_shape(box_, CornerRadius::same(8)));
+    crate::kit::glass::float_shadow(&p, box_, 8.0, a);
     p.rect_filled(box_, 8.0, POPOVER().gamma_multiply(a));
-    p.rect_stroke(box_, 8.0, Stroke::new(1.0, white(30).gamma_multiply(a)), StrokeKind::Inside);
+    p.rect_stroke(box_, 8.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE().gamma_multiply(a)), StrokeKind::Inside);
     let tl = box_.min + Vec2::new(sp::M, sp::S);
     let th = title.size().y;
     p.galley(tl, title, TEXT().gamma_multiply(a));

@@ -112,15 +112,14 @@ fn is_running(u: &mut Uninstaller, id: &str) -> bool {
 
 fn scrim(ui: &mut Ui, r: Rect, salt: &str) {
     let _ = ui.interact(r, ui.scope_id().with(salt), Sense::click());
-    ui.painter().rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, Color32::from_black_alpha(115));
+    ui.painter().rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, crate::kit::glass::SCRIM());
 }
 
 fn modal_card(p: &egui::Painter, m: Rect) {
-    let shadow = egui::epaint::Shadow { offset: [0, 20], blur: 60, spread: 0, color: Color32::from_black_alpha(128) };
-    p.add(shadow.as_shape(m, CornerRadius::same(14)));
     // opaque: nothing of the page behind may show through
+    crate::kit::glass::float_shadow(p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
-    p.rect_stroke(m, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
+    p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
 }
 
 /// Paths of apps among dropped (or hovering) files.
@@ -569,6 +568,10 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
 // ---------------------------------------------------------------- review sheet
 
 fn review(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
+    crate::kit::modal::layer(ui, "un-review", |ui| review_body(u, ui, r));
+}
+
+fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let ctx = ui.ctx().clone();
     scrim(ui, r, "un-review-scrim");
     let p = ui.painter().clone();
@@ -723,6 +726,12 @@ fn visible_items(t: &Target) -> Vec<&Item> {
 // ---------------------------------------------------------------- progress and result
 
 fn working(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
+    if u.st.lock_ok().working.is_some() {
+        crate::kit::modal::layer(ui, "un-working", |ui| working_body(u, ui, r));
+    }
+}
+
+fn working_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let Some(line) = u.st.lock_ok().working.clone() else { return };
     let ctx = ui.ctx().clone();
     scrim(ui, r, "un-working-scrim");
@@ -767,10 +776,9 @@ fn result_bar(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let w = 560.0f32.min(r.width() - 48.0);
     let bar = Rect::from_center_size(Pos2::new(r.center().x, r.bottom() - 46.0), Vec2::new(w, 48.0));
-    let shadow = egui::epaint::Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_black_alpha(110) };
-    p.add(shadow.as_shape(bar, CornerRadius::same(12)));
+    crate::kit::glass::float_shadow(&p, bar, 12.0, 1.0);
     p.rect_filled(bar, 12.0, POPOVER());
-    p.rect_stroke(bar, 12.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
+    p.rect_stroke(bar, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     let c = Pos2::new(bar.left() + 25.0, bar.center().y);
     let ok_col = if failed > 0 { AMBER() } else { TINT() };
     p.circle_filled(c, 11.0, ok_col);

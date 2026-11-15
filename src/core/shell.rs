@@ -957,8 +957,9 @@ impl eframe::App for App {
                 let p = ui.painter();
                 let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
                 let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), g.size() + Vec2::new(28.0, 16.0));
+                crate::kit::glass::float_shadow(p, r, r.height() / 2.0, 1.0);
                 p.rect_filled(r, r.height() / 2.0, POPOVER());
-                p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, CARD_EDGE()), egui::StrokeKind::Inside);
+                p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), egui::StrokeKind::Inside);
                 p.galley(r.center() - g.size() / 2.0, g, TEXT());
                 ctx.request_repaint();
             } else {
@@ -990,6 +991,7 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(2000));
         }
         self.screenshot_step(&ctx);
+        crate::kit::modal::guard_popups(&ctx);
         crate::kit::spin::flush(&ctx);
         crate::kit::spin::drop_unflushed();
         crate::kit::viewport::end_pass();
@@ -1327,6 +1329,10 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.all_styles_mut(|s| {
         s.visuals.panel_fill = Color32::TRANSPARENT;
         s.visuals.window_fill = glass::BG();
+        // menus and tips float with the one shared shadow
+        s.visuals.window_shadow = glass::float_shadow_egui();
+        s.visuals.popup_shadow = glass::float_shadow_egui();
+        s.visuals.window_stroke = egui::Stroke::new(1.0, glass::POPOVER_EDGE());
         // one scroll bar everywhere: slim, floating, in a gutter the content
         // leaves free, so even hovered it never sits on a row or button
         s.spacing.scroll.bar_width = glass::sp::SCROLL_BAR_W;

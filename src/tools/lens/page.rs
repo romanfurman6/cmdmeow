@@ -520,7 +520,7 @@ fn mapping(app: &mut App, ui: &mut Ui, r: Rect, root: &Path, rows: &[scan::LiveR
     let dt = ctx.input(|i| i.stable_dt).clamp(0.0, 0.1);
     let k = 1.0 - (-dt * 5.0).exp();
     let mut drawn = std::collections::HashMap::new();
-    let pointer = ctx.pointer_hover_pos();
+    let pointer = crate::kit::modal::pointer(ui);
     let mut hovered: Option<(&scan::LiveRow, Color32)> = None;
     let mut hovered_at: Option<Rect> = None;
     let bp = p.with_clip_rect(area.expand(4.0));
@@ -707,7 +707,7 @@ fn bubbles(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node, here: &str, free: 
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let now = ctx.input(|i| i.time);
-    let pointer = ctx.pointer_hover_pos();
+    let pointer = crate::kit::modal::pointer(ui);
     let resp = ui.interact(pa, ui.scope_id().with("map-area"), Sense::click());
     let mut out = MapOut { resp: resp.clone(), hover: None, go: None, up: false, other: false };
     let kids = &node.children;
@@ -839,8 +839,9 @@ fn bubbles(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node, here: &str, free: 
         if tr.bottom() > pa.bottom() {
             tr = tr.translate(Vec2::new(0.0, -78.0));
         }
+        crate::kit::glass::float_shadow(&p, tr, 10.0, 1.0);
         p.rect_filled(tr, 10.0, POPOVER());
-        p.rect_stroke(tr, 10.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
+        p.rect_stroke(tr, 10.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
         p.text(tr.min + Vec2::new(12.0, 9.0), Align2::LEFT_TOP, name, bold(13.0), TEXT());
         p.text(tr.min + Vec2::new(12.0, 28.0), Align2::LEFT_TOP, info, font(12.0), TEXT_DIM());
     }
@@ -968,7 +969,7 @@ fn rings(app: &mut App, ui: &mut Ui, pa: Rect, root: &Node, node: &Node, here: &
     }
 
     // what's under the pointer
-    let pointer = ctx.pointer_hover_pos().filter(|q| pa.contains(*q) && t >= 1.0);
+    let pointer = crate::kit::modal::pointer(ui).filter(|q| pa.contains(*q) && t >= 1.0);
     let mut hot: Option<usize> = None;
     let mut on_center = false;
     if let Some(q) = pointer {
@@ -1181,16 +1182,20 @@ fn pick(app: &mut App, (path, b): (PathBuf, u64)) {
 /// Everything in the folder, in a sheet over the map: what the map folds
 /// into "Other" can be picked or opened here.
 fn other_sheet(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<PathBuf> {
+    crate::kit::modal::layer(ui, "lens-other", |ui| other_sheet_body(app, ui, r, node))
+}
+
+fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<PathBuf> {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let scrim = ui.interact(r, ui.scope_id().with("other-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, Color32::from_black_alpha(115));
+    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, crate::kit::glass::SCRIM());
     let rows = node.children.len() + usize::from(node.other > 0);
     let h = (70.0 + rows as f32 * 34.0 + 16.0).min(r.height() - 80.0);
     let m = Rect::from_center_size(r.center(), Vec2::new(520.0, h));
-    p.rect_filled(m.translate(Vec2::new(0.0, 10.0)).expand(6.0), 18.0, Color32::from_black_alpha(70));
+    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
-    p.rect_stroke(m, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
+    p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     text_fit(&p, m.min + Vec2::new(22.0, 20.0), Align2::LEFT_TOP, &node.name, bold(15.0), TEXT(), m.width() - 90.0);
     p.text(m.min + Vec2::new(22.0, 44.0), Align2::LEFT_TOP, format!("{} · {} items", human_bytes(node.bytes), group_digits(node.items)), font(12.0), TEXT_DIM());
     let xr = Rect::from_center_size(Pos2::new(m.right() - 26.0, m.top() + 30.0), Vec2::splat(24.0));
@@ -1835,18 +1840,23 @@ struct MapOut {
 }
 
 
+/// The Move to Trash dialog, over everything (nothing under it reacts).
 fn review(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    crate::kit::modal::layer(ui, "lens-review", |ui| review_body(app, ui, r, cx));
+}
+
+fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     // swallow clicks behind the dialog
     let _ = ui.interact(r, ui.scope_id().with("review-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, Color32::from_black_alpha(115));
+    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, crate::kit::glass::SCRIM());
     let n = app.lens_selected.len();
     let rows = n.min(8);
     let h = 22.0 + 46.0 + 14.0 + rows as f32 * 34.0 + 8.0 + 18.0 + 30.0 + 22.0;
     let m = Rect::from_center_size(r.center(), Vec2::new(520.0, h));
-    p.rect_filled(m.translate(Vec2::new(0.0, 10.0)).expand(6.0), 18.0, Color32::from_black_alpha(70));
+    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
-    p.rect_stroke(m, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
+    p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     let total: u64 = app.lens_selected.iter().map(|x| x.1).sum();
     let title = format!("Move {} item{} ({}) to the Trash?", n, if n == 1 { "" } else { "s" }, human_bytes(total));
     text_fit(&p, m.min + Vec2::new(22.0, 22.0), Align2::LEFT_TOP, &title, bold(15.0), TEXT(), m.width() - 44.0);
@@ -1886,7 +1896,8 @@ fn review(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let ok = Rect::from_min_size(Pos2::new(m.right() - 22.0 - ow, by), Vec2::new(ow, 30.0));
     let cw = button_width(&p, "Cancel", BTN_SECONDARY);
     let cancel = Rect::from_min_size(Pos2::new(ok.left() - 8.0 - cw, by), Vec2::new(cw, 30.0));
-    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || app.lens_selected.is_empty() {
+    let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || esc || app.lens_selected.is_empty() {
         app.lens_review = false;
         app.lens_confirm = false;
     }

@@ -953,11 +953,15 @@ fn kept_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
 }
 
 fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
+    crate::kit::modal::layer(ui, "cleanup-confirm", |ui| confirm_body(app, ui, r));
+}
+
+fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     // block clicks to the page underneath
     let _ = ui.interact(r, ui.scope_id().with("confirm-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, Color32::from_black_alpha(115));
+    p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, crate::kit::glass::SCRIM());
     let (n, bytes, perm, trashed, rebuilt, emptied, tools) = {
         let g = app.clean.lock_ok();
         let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected).collect();
@@ -989,10 +993,9 @@ fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
     let bw = 440.0 - 44.0;
     let body_h = p.layout(body.clone(), font(13.0), TEXT_SOFT(), bw).size().y;
     let m = Rect::from_center_size(r.center(), Vec2::new(440.0, 22.0 + 22.0 + 14.0 + body_h + 18.0 + 30.0 + 22.0));
-    let shadow = egui::epaint::Shadow { offset: [0, 20], blur: 60, spread: 0, color: Color32::from_black_alpha(128) };
-    p.add(shadow.as_shape(m, CornerRadius::same(14)));
+    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
-    p.rect_stroke(m, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
+    p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     p.text(m.min + Vec2::new(22.0, 22.0), Align2::LEFT_TOP, format!("Clean {} items ({})?", n, human_bytes(bytes)), bold(15.0), TEXT());
     paragraph(&p, m.min + Vec2::new(22.0, 58.0), &body, font(13.0), TEXT_SOFT(), bw);
     let danger = app.delete_now || perm;
@@ -1001,7 +1004,7 @@ fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
     let ok = Rect::from_min_size(Pos2::new(m.right() - 22.0 - okw, m.bottom() - 22.0 - 30.0), Vec2::new(okw, 30.0));
     let cw = button_width(&p, "Cancel", BTN_SECONDARY);
     let cancel = Rect::from_min_size(Pos2::new(ok.left() - 8.0 - cw, ok.top()), Vec2::new(cw, 30.0));
-    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.clean_confirm = false;
     }
     if pill_button(ui, ok, ok_label, if danger { BTN_DANGER } else { BTN_PRIMARY }, true).clicked() {
