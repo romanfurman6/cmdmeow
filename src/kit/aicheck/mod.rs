@@ -191,6 +191,12 @@ impl Check {
         false
     }
 
+    /// Let the tool correct its tips as they show: an action the item
+    /// doesn't allow, say.
+    pub fn fix_recs(&self, f: impl Fn(&mut Rec)) {
+        self.inner.lock_ok().recs.iter_mut().for_each(f);
+    }
+
     pub fn phase(&self) -> Phase {
         self.inner.lock_ok().phase.clone()
     }

@@ -1137,7 +1137,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &f.path);
             let cb = Rect::from_center_size(Pos2::new(rr.left() + 14.0, rr.center().y), Vec2::splat(15.0));
-            if !scan::is_essential(&f.path) && checkbox(ui, cb, ui.scope_id().with(("file-cb", i)), on, true).clicked() {
+            if trashable(&f.path) && checkbox(ui, cb, ui.scope_id().with(("file-cb", i)), on, true).clicked() {
                 toggle = Some((f.path.clone(), f.bytes));
             }
             let lp = ui.painter();
@@ -1212,7 +1212,7 @@ fn other_sheet(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<PathB
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
             let cb = Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(15.0));
-            if !scan::is_essential(&k.path) && checkbox(ui, cb, ui.scope_id().with(("other-cb", i)), on, true).clicked() {
+            if trashable(&k.path) && checkbox(ui, cb, ui.scope_id().with(("other-cb", i)), on, true).clicked() {
                 toggle = Some((k.path.clone(), k.bytes));
             }
             let folder = is_folder(k);
@@ -1452,6 +1452,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         // once per map: removing a folder changes the bytes, not the map
         let scan = format!("{}:{}", root.path.display(), app.lens.maps.load(Ordering::SeqCst));
         app.ai.auto(&ctx, &scan, || map_ask(root));
+        // a tip may only offer what the map offers for that folder
+        app.ai.fix_recs(|r| {
+            if ai_action(&r.action, Path::new(&r.key)) == "reveal" && r.action != "reveal" {
+                r.action = "reveal".into();
+                r.label = "Show in Finder".into();
+            }
+        });
         match aicheck::ui::chip(&mut app.ai, ui, chip_at, ai_data) {
             Some(Event::Start) => {
                 let ask = map_ask(root);
@@ -1541,7 +1548,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
                     nav = Some(Nav::Up);
                 }
             } else if i.key_pressed(egui::Key::X) && !i.modifiers.command {
-                if let Some(k) = app.lens_cursor.and_then(|c| kids.get(c)).filter(|k| !scan::is_essential(&k.path)) {
+                if let Some(k) = app.lens_cursor.and_then(|c| kids.get(c)).filter(|k| trashable(&k.path)) {
                     toggle = Some((k.path.clone(), k.bytes));
                 }
             }
@@ -1552,7 +1559,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     for (i, k) in kids.iter().take(shown).enumerate() {
         let rr = Rect::from_min_size(Pos2::new(lr.left() + 6.0, y), Vec2::new(lr.width() - 12.0, ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("lens-row", i)), Sense::click());
-        let selectable = !scan::is_essential(&k.path);
+        let selectable = trashable(&k.path);
         let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
         // its share of the folder, as a faint fill behind the whole row
         let f = (k.bytes as f32 / shown_node.bytes.max(1) as f32).clamp(0.0, 1.0);
@@ -1791,7 +1798,7 @@ fn item_menu(ui: &mut Ui, path: &Path, drill: bool) -> Option<MenuAct> {
         out = Some(MenuAct::CopyPath);
     }
     ui.separator();
-    if ui.add_enabled(!scan::is_essential(path), egui::Button::new("Move to Trash…")).clicked() {
+    if ui.add_enabled(trashable(path), egui::Button::new("Move to Trash…")).clicked() {
         out = Some(MenuAct::Trash);
     }
     if out.is_some() {
@@ -2011,6 +2018,15 @@ fn big_folders(root: &Node) -> Vec<&Node> {
     out.sort_by_key(|n| std::cmp::Reverse(n.bytes));
     out.truncate(40);
     out
+}
+
+/// [`can_trash`], remembered per path: rows and menus ask every frame, and
+/// the answer looks at the disk.
+fn trashable(p: &Path) -> bool {
+    thread_local! {
+        static SEEN: std::cell::RefCell<std::collections::HashMap<PathBuf, bool>> = Default::default();
+    }
+    SEEN.with(|m| *m.borrow_mut().entry(p.to_path_buf()).or_insert_with(|| can_trash(p)))
 }
 
 /// Whether the map would offer "Move to Trash…" for `p`: never for
