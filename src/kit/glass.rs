@@ -53,6 +53,9 @@ pub fn BG() -> Color32 { pick(hex(0x0E1B0D), hex(0xE6F0DA)) }
 /// Card surface.
 #[allow(non_snake_case)]
 pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
+/// The one hover fill for rows (H1): lists, rails, popovers, start lists.
+#[allow(non_snake_case)]
+pub fn ROW_HOVER() -> Color32 { white(10) }
 /// Card edge.
 #[allow(non_snake_case)]
 pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 20), Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
@@ -637,7 +640,7 @@ pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint
     let c = Pos2::new(top.x, top.y + DISK_RING_D / 2.0);
     p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
     if total > 0 {
-        let used = (1.0 - free as f32 / total as f32).clamp(0.0, 1.0);
+        let used = disk_used(total, free);
         if used > 0.0 {
             let a0 = -std::f32::consts::FRAC_PI_2;
             let a1 = a0 + std::f32::consts::TAU * used.max(0.01);
@@ -655,11 +658,20 @@ pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint
     }
     // the name, with the disk glyph in front, centred as one
     let ny = top.y + DISK_RING_D + sp::M + 9.0;
-    let g = p.layout_no_wrap(name.to_owned(), ty::body(), TEXT_SOFT());
-    let w = 16.0 + 6.0 + g.size().x;
-    let x = c.x - w / 2.0;
+    // a volume or folder name people bring may be cut (R10), to the column
+    let room = DISK_RING_D + sp::XXL - 22.0;
+    let nw = p.layout_no_wrap(name.to_owned(), ty::body(), TEXT_SOFT()).size().x.min(room);
+    let x = c.x - (22.0 + nw) / 2.0;
     icon(p, Icon::Disk, Rect::from_center_size(Pos2::new(x + 8.0, ny), Vec2::splat(16.0)), TEXT_SOFT());
-    p.galley(Pos2::new(x + 22.0, ny - g.size().y / 2.0), g, TEXT_SOFT());
+    text_fit(p, Pos2::new(x + 22.0, ny), Align2::LEFT_CENTER, name, ty::body(), TEXT_SOFT(), room);
+}
+
+/// How full a disk is, 0..1 (0 when its size is unknown).
+pub fn disk_used(total: u64, free: u64) -> f32 {
+    if total == 0 {
+        return 0.0;
+    }
+    (1.0 - free.min(total) as f32 / total as f32).clamp(0.0, 1.0)
 }
 
 pub fn arc_points(center: Pos2, radius: f32, a0: f32, a1: f32, n: usize) -> Vec<Pos2> {
@@ -1835,6 +1847,16 @@ pub fn human_duration(secs: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disk_ring_fill_is_how_full_the_disk_is() {
+        assert_eq!(disk_used(0, 0), 0.0);
+        assert_eq!(disk_used(100, 100), 0.0);
+        assert_eq!(disk_used(100, 0), 1.0);
+        assert!((disk_used(2_000, 1_330) - 0.335).abs() < 1e-6);
+        // free reported above the size (APFS purgeable) never goes negative
+        assert_eq!(disk_used(100, 150), 0.0);
+    }
 
     #[test]
     fn decorative_beat_lands_on_a_fixed_clock() {

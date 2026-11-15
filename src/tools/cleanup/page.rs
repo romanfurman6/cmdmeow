@@ -80,7 +80,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     // left: the disk and Scan
     let lc = block.left() + LEFT_W / 2.0;
     let ly = block.top() + (block_h - left_h) / 2.0;
-    disk_ring(&p, Pos2::new(lc, ly), "Macintosh HD", total, free, BLUE());
+    disk_ring(&p, Pos2::new(lc, ly), "Macintosh HD", total, free, tint::CLEANUP());
     let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
     if scan_button(ui, br) {
         cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
@@ -100,11 +100,13 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         y += head_h;
     }
     let max = sizes.as_ref().and_then(|s| s.iter().copied().max()).unwrap_or(0).max(1) as f32;
+    // the name column fits the longest group name: app text is never cut (R10)
+    let name_w = Group::ALL.iter().map(|g| p.layout_no_wrap(g.title().to_string(), ty::body(), TEXT()).size().x).fold(96.0, f32::max);
     for (k, g) in Group::ALL.into_iter().enumerate() {
         let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("cleanup-group", k)), Sense::hover());
         if resp.hovered() {
-            p.rect_filled(rr.expand2(Vec2::new(sp::S, -1.0)), R_SMALL, white(10));
+            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, ROW_HOVER());
         }
         if k > 0 || sizes.is_some() {
             hairline(&p, rr.left_top(), rr.right_top());
@@ -115,10 +117,10 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         p.circle_filled(ic, 14.0, with_alpha(col, 0.14));
         group_icon(&p, g, Rect::from_center_size(ic, Vec2::splat(16.0)), col);
         let nx = x0 + 28.0 + sp::M;
-        text_fit(&p, Pos2::new(nx, cy), Align2::LEFT_CENTER, g.title(), ty::body(), TEXT(), 96.0);
+        p.text(Pos2::new(nx, cy), Align2::LEFT_CENTER, g.title(), ty::body(), TEXT());
         if let Some(s) = &sizes {
             let sz = p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, human_bytes(s[k]), ty::title(), TEXT());
-            let bar_r = Rect::from_min_max(Pos2::new(nx + 96.0 + sp::M, cy - 2.0), Pos2::new(sz.left().min(x1 - 72.0) - sp::M, cy + 2.0));
+            let bar_r = Rect::from_min_max(Pos2::new(nx + name_w + sp::M, cy - 2.0), Pos2::new(sz.left().min(x1 - 72.0) - sp::M, cy + 2.0));
             if bar_r.width() > 20.0 {
                 bar(&p, bar_r, s[k] as f32 / max, col);
             }
