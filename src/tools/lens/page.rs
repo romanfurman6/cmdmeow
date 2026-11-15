@@ -43,6 +43,7 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             if let Some((sub, done, all)) = found {
                 match results(app, ui, r, &sub, Some((done, all))) {
                     Act::Stop => shared.stop.store(true, Ordering::SeqCst),
+                    Act::Switch(to) => switch(app, ui.ctx(), to),
                     Act::Overview => {
                         app.lens_peek = false;
                         app.lens_path = app.lens_root.clone();
@@ -108,20 +109,25 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     };
     let root_path = root.path.clone();
     let act = results(app, ui, r, root, None);
+    // what `results` asks for runs only once the map's lock is let go:
+    // switching to the disk clears the map, and doing that under the lock
+    // froze the page for good
     drop(guard);
     auto_update(app, ui.ctx(), &root_path, now);
-    if act == Act::Stop {
-        shared.stop.store(true, Ordering::SeqCst);
-    } else if act == Act::Update {
-        app.lens_selected.clear();
-        if shared.running.load(Ordering::SeqCst) {
-            // an automatic update is already on it: show it, with Stop
-            shared.quiet.store(false, Ordering::SeqCst);
-        } else {
-            scan::update(shared.clone(), ui.ctx().clone(), false);
+    match act {
+        Act::Stop => shared.stop.store(true, Ordering::SeqCst),
+        Act::Update => {
+            app.lens_selected.clear();
+            if shared.running.load(Ordering::SeqCst) {
+                // an automatic update is already on it: show it, with Stop
+                shared.quiet.store(false, Ordering::SeqCst);
+            } else {
+                scan::update(shared.clone(), ui.ctx().clone(), false);
+            }
         }
-    } else if app.lens_review {
-        review(app, ui, r, cx);
+        Act::Switch(to) => switch(app, ui.ctx(), to),
+        _ if app.lens_review => review(app, ui, r, cx),
+        _ => {}
     }
 }
 
@@ -132,6 +138,8 @@ enum Act {
     Stop,
     /// Leave a finished folder for the live overview of the whole map.
     Overview,
+    /// Map something else, picked in the switcher (None: ask for a folder).
+    Switch(Option<PathBuf>),
 }
 
 fn home() -> PathBuf {
@@ -241,6 +249,17 @@ fn auto_update(app: &mut App, ctx: &egui::Context, root: &Path, now: f64) {
     let _ = root;
     // look again now and then: the watch only flags, it doesn't repaint
     ctx.request_repaint_after(std::time::Duration::from_secs(5));
+}
+
+/// Map what was picked in the switcher: the disk (its last map opens), a
+/// volume or folder, or None for the folder dialog. Never call it while
+/// holding `lens.result`: going back to the disk clears the map.
+fn switch(app: &mut App, ctx: &egui::Context, to: Option<PathBuf>) {
+    match to {
+        Some(path) if path == Path::new("/") => open_disk(app),
+        Some(path) => begin_at(app, ctx, path),
+        None => choose_folder(app, ctx),
+    }
 }
 
 /// Ask for a folder to map (the system folder dialog, off the UI thread).
@@ -1424,15 +1443,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         }
         pick_root = None;
     }
-    let picked = pick_root.is_some();
-    match pick_root {
-        Some(Some(path)) if path == Path::new("/") => open_disk(app),
-        Some(Some(path)) => begin_at(app, &ctx, path),
-        Some(None) => choose_folder(app, &ctx),
-        None => {}
-    }
-    if picked {
-        return Act::None;
+    // the caller switches, once it has let go of the map
+    if let Some(to) = pick_root {
+        return Act::Switch(to);
     }
 
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, hr.bottom() + 16.0), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - 16.0));
