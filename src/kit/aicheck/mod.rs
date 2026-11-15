@@ -232,6 +232,7 @@ impl Check {
             match res {
                 Ok((text, usage)) => {
                     log_usage(tool, agent, usage);
+                    log_answer(tool, &text, &ask);
                     match parse(&text, &ask) {
                         Some((h, recs)) => {
                             g.headline = h;
@@ -464,11 +465,12 @@ fn sizes(s: &str) -> Vec<f64> {
     out
 }
 
-/// Whether the size the agent quotes is on the item's line (give or take
-/// rounding). No size quoted, or none on the line: nothing to check.
+/// Whether the size the agent quotes is the item's own: the first size on
+/// its line (give or take rounding), not a part inside it. No size quoted,
+/// or none on the line: nothing to check.
 fn size_fits(value: &str, line: &str) -> bool {
     let (v, l) = (sizes(value), sizes(line));
-    l.is_empty() || v.iter().all(|x| l.iter().any(|y| (x - y).abs() <= y.max(*x) * 0.06))
+    l.first().is_none_or(|y| v.iter().all(|x| (x - y).abs() <= y.max(*x) * 0.06))
 }
 
 fn clip(s: &str, n: usize) -> String {
@@ -614,6 +616,34 @@ fn now() -> u64 {
 }
 
 /// Note what an agent call cost (AI Check and Cleanup's path check).
+/// The last answers, kept to see what a tip pointed at: each rec's key,
+/// action and value, the line of the item it names, and whether it was kept.
+/// `<data>/ai/check-answers.jsonl`, trimmed to the last 50.
+fn log_answer(tool: &str, text: &str, ask: &Ask) {
+    let kept: Vec<String> = parse(text, ask).map(|(_, r)| r.iter().map(skip_id).collect()).unwrap_or_default();
+    let raw: Option<Answer> = text.find('{').zip(text.rfind('}')).and_then(|(a, b)| serde_json::from_str(text.get(a..=b)?).ok());
+    let recs: Vec<serde_json::Value> = raw
+        .map(|a| a.recs)
+        .unwrap_or_default()
+        .iter()
+        .map(|r| {
+            let key = match &r.key {
+                serde_json::Value::String(s) => s.clone(),
+                k => k.to_string(),
+            };
+            let line = ask.items.iter().find(|i| i.key == key).map(|i| i.line.clone());
+            serde_json::json!({ "key": key, "action": r.action, "title": r.title, "value": r.value, "line": line, "kept": kept.contains(&format!("{}|{}", r.action, key)) })
+        })
+        .collect();
+    let entry = serde_json::json!({ "t": now(), "tool": tool, "recs": recs }).to_string();
+    let path = dir().join("check-answers.jsonl");
+    let mut lines: Vec<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().map(String::from).collect();
+    lines.push(entry);
+    let from = lines.len().saturating_sub(50);
+    let _ = std::fs::create_dir_all(dir());
+    let _ = std::fs::write(&path, lines[from..].join("\n") + "\n");
+}
+
 pub fn log_usage(tool: &str, agent: Agent, usage: Usage) {
     use std::io::Write;
     let e = Spent { t: now(), tool: tool.into(), agent: agent.name().to_lowercase(), usage };
@@ -724,6 +754,8 @@ mod tests {
         assert_eq!(keys, vec!["/u/cmdmeow-anim", "/u/pr209/cmdmeow"]);
         assert_eq!(sizes("64% CPU, 1,200 MB and 3 apps"), vec![1.2e9]);
         assert!(size_fits("", "5 GB") && size_fits("2 GB", "no sizes here"));
+        // a part inside the item is not the item
+        assert!(!size_fits("5.1 GB", "/u/pr209/cmdmeow · 5.68 GB · biggest inside: target 5.1 GB"));
     }
 
     #[test]

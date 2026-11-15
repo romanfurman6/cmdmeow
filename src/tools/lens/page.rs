@@ -1903,7 +1903,7 @@ fn review(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         let mut failed = 0;
         let mut freed = 0;
         for (path, b) in app.lens_selected.drain(..) {
-            if scan::is_essential(&path) || crate::kit::fs::is_protected(&path).is_some() && path.join(".git").exists() {
+            if !can_trash(&path) {
                 failed += 1;
                 continue;
             }
@@ -2016,7 +2016,7 @@ fn big_folders(root: &Node) -> Vec<&Node> {
 /// Whether the map would offer "Move to Trash…" for `p`: never for
 /// essential folders or a protected folder holding a git repo.
 fn can_trash(p: &Path) -> bool {
-    !(scan::is_essential(p) || crate::kit::fs::is_protected(p).is_some() && p.join(".git").exists())
+    !(scan::is_essential(p) || crate::kit::fs::in_runner(p) || crate::kit::fs::is_protected(p).is_some() && p.join(".git").exists())
 }
 
 /// The AI Check action to run: a Remove on a folder the map would never
