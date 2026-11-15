@@ -874,9 +874,10 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
         let r = r.translate(Vec2::new(0.0, -hov));
         let now = if app.demo { 2.0 } else { loop_clock(ui.ctx(), id.with("loop"), wall, resp.hovered()) };
-        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(ACTION(), 0.10), s);
+        // H4: the picked card stays neutral and gets the 1.5 lime ring
+        let fill = lerp_color(CARD(), white(30), hov * 0.15);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(ACTION(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        p.rect_stroke(r, 12.0, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
         // the goal's tools, as their chips; the check and name sit below,
         // so the space right of the chips is free for the goal's loop
         let inner = r.shrink(14.0);
@@ -1762,9 +1763,10 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let resp = ui.interact(r, ui.scope_id().with(("setup-ai-tile", r.top() as i32, m.id)), if found[k] { Sense::click() } else { Sense::hover() });
         let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k]);
         let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
-        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(ACTION(), 0.10), s);
+        // H4: the picked card stays neutral and gets the 1.5 lime ring
+        let fill = lerp_color(CARD(), white(30), hov * 0.15);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(ACTION(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        p.rect_stroke(r, 12.0, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
         let mr = Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0));
         agent_mark(&p, mr, m.id, !found[k]);
         p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });

@@ -966,19 +966,7 @@ pub fn segmented_font(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], se
     let mut out = None;
     for (i, l) in labels.iter().enumerate() {
         let r = Rect::from_min_size(Pos2::new(inner.left() + (w + gap) * i as f32, inner.top()), Vec2::new(w, inner.height()));
-        let k = key::press(ui, r, id.with(i), true, Some(Click::Segment));
-        let look = if i == selected {
-            key::Look {
-                fill: pick(Color32::from_white_alpha(36), Color32::WHITE),
-                fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
-                base: key::ink(0.14),
-                depth: 1.0,
-                ..key::Look::quiet(0.0, 0.0)
-            }
-        } else {
-            key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, 0.07) }
-        };
-        let face = key::paint(&p, r, &look.radius(6.0), &k);
+        let (k, face) = segment(ui, &p, r, id.with(i), i == selected, true);
         let col = if i == selected { TEXT() } else { lerp_color(TEXT_DIM(), TEXT(), k.hover) };
         text_fit(&p, face.center(), Align2::CENTER_CENTER, l, label_font.clone(), col, r.width() - 8.0);
         if k.resp.clicked() && i != selected {
@@ -986,6 +974,25 @@ pub fn segmented_font(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], se
         }
     }
     out
+}
+
+/// One segment of a segmented control: the raised thumb when `selected`,
+/// a quiet hover otherwise. Returns the key and its face, for the label.
+pub fn segment(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, selected: bool, enabled: bool) -> (key::Key, Rect) {
+    let k = key::press(ui, r, id, enabled, Some(Click::Segment));
+    let look = if selected {
+        key::Look {
+            fill: pick(Color32::from_white_alpha(36), Color32::WHITE),
+            fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
+            base: key::ink(0.14),
+            depth: 1.0,
+            ..key::Look::quiet(0.0, 0.0)
+        }
+    } else {
+        key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, 0.07) }
+    };
+    let face = key::paint(p, r, &look.radius(6.0), &k);
+    (k, face)
 }
 
 /// An on/off switch (30×18): lime when on. While held the knob widens
@@ -1121,6 +1128,11 @@ pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str)
     let u = p.text(Pos2::new(pos.x + w + 6.0, base), Align2::LEFT_BOTTOM, unit, bold(15.0), TEXT_SOFT());
     p.text(Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base), Align2::LEFT_BOTTOM, caption, font(13.0), TEXT_DIM());
     h
+}
+
+/// The selected row's fill (H3): lime at 16%, no edge. Its text goes ACCENT.
+pub fn selected_fill(p: &Painter, r: Rect, radius: f32) {
+    p.rect_filled(r, radius, with_alpha(ACTION(), 0.16));
 }
 
 /// A window sidebar row: tint chip (or dashed chip when `planned`), label and

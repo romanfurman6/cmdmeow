@@ -478,10 +478,9 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     let resp = ui.interact(r, ui.scope_id().with(("clip-row", e.id)), Sense::click());
                     let sel = c.selected == Some(e.id);
                     if sel {
-                        p.rect_filled(r, 7.0, with_alpha(ACTION(), 0.30));
-                        p.rect_stroke(r, 7.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.55)), StrokeKind::Inside);
+                        crate::kit::glass::selected_fill(&p, r, 7.0);
                     } else if resp.hovered() {
-                        p.rect_filled(r, 7.0, white(10));
+                        p.rect_filled(r, 7.0, white(ROW_HOVER));
                     }
                     let th = Rect::from_min_size(Pos2::new(r.left() + 10.0, r.center().y - 12.0), Vec2::splat(24.0));
                     entry_thumb(c, &p, th, &e, 6.0);
@@ -497,7 +496,7 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     let tx = th.right() + 10.0;
                     let f = if e.kind == Kind::Code { mono(12.0) } else { font(13.0) };
                     if marks.is_empty() {
-                        text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, title, f, TEXT(), right - tx);
+                        text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, title, f, if sel { ACCENT() } else { TEXT() }, right - tx);
                     } else {
                         marked_fit(&p, Pos2::new(tx, r.center().y), title, marks, f, right - tx);
                     }

@@ -365,10 +365,9 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
                 let resp = ui.interact(r, ui.scope_id().with(("un-row", &a.path)), Sense::click());
                 let sel = u.selected.as_ref() == Some(&a.path);
                 if sel {
-                    p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, with_alpha(ACTION(), 0.30));
-                    p.rect_stroke(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.55)), StrokeKind::Inside);
+                    crate::kit::glass::selected_fill(&p, r.shrink2(Vec2::new(4.0, 1.0)), 7.0);
                 } else if resp.hovered() {
-                    p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, white(8));
+                    p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, white(ROW_HOVER));
                 }
                 if resp.clicked() {
                     u.selected = Some(a.path.clone());
@@ -385,7 +384,7 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
                 }
                 let ir = Rect::from_center_size(Pos2::new(cb.right() + 10.0 + 13.0, r.center().y), Vec2::splat(26.0));
                 app_icon(u, &ctx, &p, ir, Some(&a.path), &a.name, &mut budget);
-                let tc = if dim { TEXT_FAINT() } else { TEXT() };
+                let tc = if dim { TEXT_FAINT() } else if sel { ACCENT() } else { TEXT() };
                 if a.locked.is_some() || a.sized {
                     let size = if a.locked.is_some() { "—".to_string() } else { human_bytes(total) };
                     p.text(Pos2::new(c_size, r.center().y), Align2::RIGHT_CENTER, size, font(13.0), tc);

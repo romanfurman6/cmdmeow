@@ -197,17 +197,17 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
                 let resp = ui.interact(rr, ui.scope_id().with(("gl", &it.title, &it.key)), Sense::click());
                 let sel = it.key.is_some() && it.key == app.gallery_pick;
                 if sel {
-                    p.rect_filled(rr, 7.0, ACTION());
+                    crate::kit::glass::selected_fill(&p, rr, 7.0);
                 } else if resp.hovered() {
-                    p.rect_filled(rr, 7.0, white(12));
+                    p.rect_filled(rr, 7.0, white(ROW_HOVER));
                 }
-                icon(&p, it.glyph, Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(14.0)), if sel { ON_ACTION } else { lift(it.color) });
+                icon(&p, it.glyph, Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(14.0)), if sel { ACCENT() } else { lift(it.color) });
                 let mut right = rr.right() - 8.0;
                 if it.added {
                     p.circle_filled(Pos2::new(right - 3.0, rr.center().y), 3.0, GREEN());
                     right -= 12.0;
                 }
-                text_fit(&p, Pos2::new(rr.left() + 32.0, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), if sel { ON_ACTION } else { TEXT() }, right - rr.left() - 36.0);
+                text_fit(&p, Pos2::new(rr.left() + 32.0, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), if sel { ACCENT() } else { TEXT() }, right - rr.left() - 36.0);
                 if resp.clicked() {
                     app.gallery_pick = it.key.clone();
                 }
@@ -376,7 +376,7 @@ fn variants(app: &mut App, ui: &mut Ui, r: Rect, key: &str) -> Option<Size> {
                 panel::draw_at(app, ui, owner, spec.id, *z, wr, None, &mut quiet);
                 let resp = ui.interact(wr, ui.scope_id().with(("var", key, z.label())), Sense::click_and_drag());
                 if here {
-                    p.rect_stroke(wr.expand(2.0), R_CARD + 2.0, Stroke::new(2.0, ACCENT()), StrokeKind::Outside);
+                    p.rect_stroke(wr.expand(2.0), R_CARD + 2.0, Stroke::new(1.5, ACCENT()), StrokeKind::Outside);
                 } else if resp.hovered() && !dragging {
                     p.rect_stroke(wr, R_CARD, Stroke::new(1.0, white(46)), StrokeKind::Inside);
                 }
@@ -475,7 +475,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
         if dragged.as_deref() == Some(key.as_str()) {
             p.rect_filled(base, R_CARD, with_alpha(BG(), 0.7));
         } else if selected {
-            p.rect_stroke(base.expand(2.0), R_CARD + 2.0, Stroke::new(2.0, ACCENT()), StrokeKind::Outside);
+            p.rect_stroke(base.expand(2.0), R_CARD + 2.0, Stroke::new(1.5, ACCENT()), StrokeKind::Outside);
         } else if resp.hovered() && app.drag.is_none() {
             p.rect_stroke(base, R_CARD, Stroke::new(1.0, white(46)), StrokeKind::Inside);
         }
@@ -666,9 +666,6 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         let resp = ui.interact(r, ui.scope_id().with(("ai-check-agent", k)), Sense::click());
         let hv = ui.ctx().animate_bool(resp.id, resp.hovered());
         glass_card(&p, r, R_CARD, hv, on);
-        if on {
-            p.rect_stroke(r, R_CARD, Stroke::new(1.0, with_alpha(ACTION(), 0.6)), StrokeKind::Inside);
-        }
         let m = Rect::from_center_size(Pos2::new(r.left() + 16.0 + 10.0, r.center().y), Vec2::splat(20.0));
         aicheck::ui::agent_mark(&p, m, a, None);
         let ready = demo || a.ready();
