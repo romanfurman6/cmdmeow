@@ -252,6 +252,32 @@ fn plan(mode: SpeedMode) -> Plan {
     }
 }
 
+/// `n` round trips with `ping`, each under `SPEED_TEST_PING_TIMEOUT`.
+/// A lost one counts for nothing, and the next ping first opens a fresh
+/// connection uncounted (with the longer connect deadline), so a handshake
+/// never reads as a round trip. `report` gets the trips so far and 0..1.
+fn round_trips(n: usize, stopped: &dyn Fn() -> bool, ping: impl Fn(Duration) -> Option<f64>, report: impl Fn(&[f64], f32)) -> Vec<f64> {
+    let mut rtts = Vec::new();
+    let mut lost = false;
+    for i in 0..n {
+        if stopped() {
+            break;
+        }
+        if lost {
+            let _ = ping(m::SPEED_TEST_CONNECT_TIMEOUT);
+        }
+        match ping(m::SPEED_TEST_PING_TIMEOUT) {
+            Some(ms) => {
+                rtts.push(ms);
+                lost = false;
+            }
+            None => lost = true,
+        }
+        report(&rtts, (i + 1) as f32 / n as f32);
+    }
+    rtts
+}
+
 /// Apply `f` to the speed test state, unless the run that owns `cancel` was
 /// stopped: Stop already shows it as stopped, and a new run may be under way.
 /// Stop sets the flag under the same lock, so nothing slips in after it.
@@ -298,50 +324,52 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
                 .build(),
         );
 
-        // who's measuring, on the side
-        std::thread::scope(|sc| {
-            let meta = sc.spawn(|| {
-                let body = agent.get(m::SPEED_TEST_META_URL).call().ok()?.into_body().read_to_string().ok()?;
-                parse_meta(&body)
+        // who's measuring, on the side: it lands whenever it comes and never
+        // holds the test up
+        {
+            let (agent, shared, cancel, ctx) = (agent.clone(), shared.clone(), cancel.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                let body = agent.get(m::SPEED_TEST_META_URL).config().timeout_global(Some(m::SPEED_TEST_META_TIMEOUT)).build().call().ok()?.into_body().read_to_string().ok()?;
+                let info = parse_meta(&body)?;
+                if write(&shared, &cancel, &|s| s.server = Some(info.clone())) {
+                    ctx.request_repaint();
+                }
+                Some(())
             });
+        }
 
-            // ping: the first call opens the connection; the rest are round
-            // trips without the server's own time
-            let ping_url = format!("{}?bytes=0", m::SPEED_TEST_DOWN_URL);
-            if let Err(e) = agent.get(&ping_url).call() {
-                finish(Some(format!("No internet connection ({e})")));
-                return;
-            }
-            let mut rtts = Vec::new();
-            for i in 0..pl.pings {
-                if stopped() {
-                    finish(None);
-                    return;
-                }
-                let t0 = Instant::now();
-                if let Ok(r) = agent.get(&ping_url).call() {
-                    let total = t0.elapsed().as_secs_f64() * 1000.0;
-                    let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
-                    rtts.push((total - server).max(0.1));
-                }
-                let frac = (i + 1) as f32 / pl.pings as f32;
-                let (lat, jit) = (median(&rtts), jitter(&rtts));
-                set(&|s| {
-                    s.latency_ms = lat;
-                    s.jitter_ms = jit;
-                    s.progress = 0.1 * frac;
-                });
-            }
-            if rtts.is_empty() {
-                finish(Some("No internet connection".into()));
-                return;
-            }
-            if let Ok(Some(info)) = meta.join() {
-                set(&|s| s.server = Some(info.clone()));
-            }
+        // ping: the first call opens the connection; the rest are round
+        // trips without the server's own time. Each has a short deadline: a
+        // reply stuck for seconds is a lost ping, not a round trip (it held
+        // the dial for most of a minute and read as jitter of 13 seconds).
+        let ping_url = format!("{}?bytes=0", m::SPEED_TEST_DOWN_URL);
+        let ping = |limit: Duration| {
+            let t0 = Instant::now();
+            let r = agent.get(&ping_url).config().timeout_global(Some(limit)).build().call().ok()?;
+            let total = t0.elapsed().as_secs_f64() * 1000.0;
+            let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
+            Some((total - server).max(0.1))
+        };
+        if let Err(e) = agent.get(&ping_url).config().timeout_global(Some(m::SPEED_TEST_CONNECT_TIMEOUT)).build().call() {
+            finish(Some(format!("No internet connection ({e})")));
+            return;
+        }
+        let rtts = round_trips(pl.pings, &stopped, ping, |rtts, frac| {
+            let (lat, jit) = (median(rtts), jitter(rtts));
+            set(&|s| {
+                s.latency_ms = lat;
+                s.jitter_ms = jit;
+                s.progress = 0.1 * frac;
+            });
         });
-        if stopped() || shared.lock_ok().speed.phase == SpeedPhase::Done {
-            finish(None);
+        if stopped() {
+            return;
+        }
+        if rtts.is_empty() {
+            finish(Some("No internet connection".into()));
+            return;
+        }
+        if stopped() {
             return;
         }
 
@@ -505,6 +533,35 @@ mod tests {
         // the download it had reached stays
         assert_eq!(s.down_mbps, Some(120.0));
         assert_eq!(s.live_mbps, 0.0);
+    }
+
+    #[test]
+    fn a_lost_ping_counts_for_nothing_and_reconnects_uncounted() {
+        use std::cell::RefCell;
+        // the 3rd ping is lost; the call after it opens a new connection
+        let calls = RefCell::new(Vec::new());
+        let ping = |limit: Duration| {
+            let k = calls.borrow().len();
+            calls.borrow_mut().push(limit);
+            match k {
+                2 => None,
+                3 => Some(900.0), // the reconnect: a handshake, not a trip
+                _ => Some(20.0 + k as f64),
+            }
+        };
+        let rtts = round_trips(4, &|| false, ping, |_, _| {});
+        assert_eq!(rtts, vec![20.0, 21.0, 24.0]);
+        let calls = calls.into_inner();
+        assert_eq!(calls.len(), 5);
+        assert_eq!(calls[3], m::SPEED_TEST_CONNECT_TIMEOUT);
+        assert!(calls.iter().enumerate().all(|(k, l)| k == 3 || *l == m::SPEED_TEST_PING_TIMEOUT));
+        assert!(jitter(&rtts).unwrap() < 5.0);
+    }
+
+    #[test]
+    fn round_trips_stop_when_stopped() {
+        let rtts = round_trips(10, &|| true, |_| Some(20.0), |_, _| {});
+        assert!(rtts.is_empty());
     }
 
     #[test]

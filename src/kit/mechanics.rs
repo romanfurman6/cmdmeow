@@ -102,6 +102,12 @@ pub const SPEED_TEST_CHUNK_DOWN: u64 = 25_000_000;
 pub const SPEED_TEST_CHUNK_UP: u64 = 4_000_000;
 /// Round trips for ping and jitter, after one that opens the connection.
 pub const SPEED_TEST_PINGS: usize = 10;
+/// The call that opens the connection may take a TLS handshake; a ping
+/// after it that takes longer than its deadline counts as lost.
+pub const SPEED_TEST_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+pub const SPEED_TEST_PING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+/// Provider and city are extras: past this, the test goes on without them.
+pub const SPEED_TEST_META_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Legend "Good for:" (labels from the Menu strings, Mbps estimated)
 pub const GOOD_FOR: [(&str, f64); 6] = [
     ("Messaging", 0.5),
