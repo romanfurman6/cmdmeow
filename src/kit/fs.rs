@@ -664,6 +664,9 @@ fn protected_literal(p: &Path, h: &Path) -> Option<&'static str> {
     if in_runner(p) {
         return Some("Part of a CI runner");
     }
+    if p.starts_with(h.join(".colima")) || p.starts_with(h.join(".lima")) {
+        return Some("Colima and Lima VMs are never removed");
+    }
     None
 }
 
@@ -671,6 +674,13 @@ fn protected_literal(p: &Path, h: &Path) -> Option<&'static str> {
 /// checkouts and tools are never removed, whatever they look like.
 pub fn in_runner(p: &Path) -> bool {
     p.ancestors().any(|a| a.join(".runner").is_file())
+}
+
+/// Never removed, by hand or by a suggestion, whatever it looks like: a CI
+/// runner and the Colima / Lima VMs (their disks back running machines).
+pub fn never_remove(p: &Path) -> bool {
+    let h = home();
+    in_runner(p) || p.starts_with(h.join(".colima")) || p.starts_with(h.join(".lima"))
 }
 
 /// Move to the Trash (so it can be put back). Never falls back to a permanent
@@ -697,6 +707,10 @@ mod tests {
         assert!(in_runner(&work) && in_runner(&base.join("runner-personal")));
         assert!(!in_runner(&base));
         assert_eq!(protected_literal(&work, Path::new("/nowhere")), Some("Part of a CI runner"));
+        let h = home();
+        assert!(never_remove(&h.join(".colima/_lima/colima/diffdisk")) && never_remove(&h.join(".colima")));
+        assert!(protected_literal(&h.join(".lima/default"), &h).is_some());
+        assert!(!never_remove(&h.join(".colimax")));
         std::fs::remove_dir_all(&base).unwrap();
     }
 
