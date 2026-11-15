@@ -282,21 +282,21 @@ pub fn osd(d: &mut Displays, ctx: &egui::Context) {
         mac::float(OSD_TITLE);
         let r = ui.max_rect().shrink(1.0);
         let p = ui.painter().clone();
-        let bg = Color32::from_rgba_unmultiplied(24, 24, 26, (242.0 * a) as u8);
+        let bg = hud::bg(a);
         p.rect_filled(r, r.height() / 2.0, bg);
-        p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, white((30.0 * a) as u8)), StrokeKind::Inside);
+        p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, hud::edge(a)), StrokeKind::Inside);
         let cy = r.center().y;
         let glyph = match (o.volume, o.muted) {
             (false, _) => Icon::Sun,
             (true, false) => Icon::Speaker,
             (true, true) => Icon::SpeakerOff,
         };
-        let fg = white((235.0 * a) as u8);
+        let fg = hud::strong((235.0 * a) as u8);
         icon(&p, glyph, Rect::from_center_size(Pos2::new(r.left() + 24.0, cy), Vec2::splat(18.0)), fg);
         let level = if o.muted { 0.0 } else { o.level };
         p.text(Pos2::new(r.right() - 18.0, cy), Align2::RIGHT_CENTER, pct(level), mono(12.0), fg);
         let bar = Rect::from_min_max(Pos2::new(r.left() + 46.0, cy - 3.0), Pos2::new(r.right() - 62.0, cy + 3.0));
-        p.rect_filled(bar, 3.0, white((50.0 * a) as u8));
+        p.rect_filled(bar, 3.0, hud::strong((50.0 * a) as u8));
         p.rect_filled(Rect::from_min_max(bar.min, Pos2::new(bar.left() + bar.width() * level.clamp(0.0, 1.0), bar.max.y)), 3.0, fg);
     });
 }

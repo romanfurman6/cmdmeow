@@ -379,7 +379,7 @@ fn step_dots(p: &egui::Painter, full: Rect, steps: usize, from: usize, step: usi
     let moving = from != step;
     for i in 0..steps {
         let lit = i < step || (i == step && (!moving || k >= 1.0)) || (i <= from && i <= step);
-        p.circle_filled(Pos2::new(x(i), y), D / 2.0, if lit { ACTION() } else { white(46) });
+        p.circle_filled(Pos2::new(x(i), y), D / 2.0, if lit { ACTION() } else { pick(white(46), white(72)) });
     }
     // the Welcome step has the big cat: back there, the small one hops
     // onto its dot and fades away
@@ -1413,9 +1413,13 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     // the menu bar, our icon lit
     let mb = Rect::from_min_size(area.min, Vec2::new(area.width(), 24.0));
     p.rect_filled(mb, 7.0, pick(Color32::from_black_alpha(100), Color32::from_white_alpha(170)).gamma_multiply(a));
+    if is_light() {
+        // white on sage needs an edge to read as a bar
+        p.rect_stroke(mb, 7.0, Stroke::new(1.0, CARD_EDGE().gamma_multiply(a)), StrokeKind::Inside);
+    }
     let cat = Rect::from_min_size(Pos2::new(mb.right() - 30.0, mb.top() + 3.0), Vec2::new(22.0, 18.0));
     p.rect_filled(cat, 5.0, with_alpha(ACTION(), 0.16 * a));
-    brand_glyph(&p, cat.center(), 14.0, ACTION().gamma_multiply(a));
+    brand_glyph(&p, cat.center(), 14.0, pick(ACTION(), ACCENT()).gamma_multiply(a));
     let mut sx = cat.left() - 12.0;
     for name in ["battery.75percent", "wifi"] {
         let r = Rect::from_min_size(Pos2::new(sx - 14.0, mb.center().y - 7.0), Vec2::splat(14.0));

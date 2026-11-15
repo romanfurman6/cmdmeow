@@ -8,6 +8,7 @@ use super::{plural, trust_key, Filter, Gone, Startup};
 use crate::core::tool::{Cx, Size};
 use crate::kit::aicheck::{self, ui::Event};
 use crate::kit::glass::*;
+use crate::kit::menu;
 use crate::kit::{macos, tile};
 use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Ui, UiBuilder, Vec2};
 use std::path::{Path, PathBuf};
@@ -408,11 +409,10 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     }
                     let sw = cols.sw;
                     let mr = icon_dots(ui, cols.more, ui.scope_id().with(("su-cron-more", &c.line)));
-                    egui::Popup::menu(&mr).show(|ui| {
-                        ui.set_min_width(220.0);
-                        ui.label(egui::RichText::new(&c.line).monospace().small());
-                        ui.separator();
-                        if ui.button("Copy command").clicked() {
+                    menu::popup(&mr).show(|ui| {
+                        menu::note(ui, &c.line, true);
+                        menu::separator(ui);
+                        if menu::item(ui, "Copy command").clicked() {
                             ui.ctx().copy_text(c.command.clone());
                         }
                     });
@@ -432,14 +432,13 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     let state = if x.state.contains("waiting") { Some("waiting") } else if !x.on { Some("off") } else if x.active { None } else { Some("idle") };
                     state_cell(&p, cols.state, r.center().y, state, x.on && x.active && state.is_none());
                     let mr = icon_dots(ui, cols.more, ui.scope_id().with(("su-ext-more", &x.bundle_id)));
-                    egui::Popup::menu(&mr).show(|ui| {
-                        ui.set_min_width(220.0);
-                        ui.label(egui::RichText::new(&x.state).small());
-                        ui.separator();
-                        if ui.button("Open in System Settings").clicked() {
+                    menu::popup(&mr).show(|ui| {
+                        menu::note(ui, &x.state, false);
+                        menu::separator(ui);
+                        if menu::item(ui, "Open in System Settings").clicked() {
                             super::items::open_settings();
                         }
-                        if ui.button("Copy bundle ID").clicked() {
+                        if menu::item(ui, "Copy bundle ID").clicked() {
                             ui.ctx().copy_text(x.bundle_id.clone());
                         }
                     });
@@ -459,13 +458,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                         state_cell(&p, cols.state, r.center().y, Some("off"), false);
                     }
                     let mr = icon_dots(ui, cols.more, ui.scope_id().with(("su-btm-more", &b.identifier)));
-                    egui::Popup::menu(&mr).show(|ui| {
-                        ui.set_min_width(220.0);
-                        if ui.button("Open in System Settings").clicked() {
+                    menu::popup(&mr).show(|ui| {
+                        if menu::item(ui, "Open in System Settings").clicked() {
                             super::items::open_settings();
                         }
                         if let Some(f) = b.program.as_ref().or(b.path.as_ref()) {
-                            if ui.button("Show in Finder").clicked() {
+                            if menu::item(ui, "Show in Finder").clicked() {
                                 macos::reveal(f);
                             }
                         }
@@ -600,46 +598,44 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     when_cell(&p, &cols, r.center().y, when_icon(j), &j.when.label(j.scope));
                     state_cell(&p, cols.state, r.center().y, if !j.on { Some("off") } else if j.pid.is_some() { None } else { Some("idle") }, j.on && j.pid.is_some());
                     let mr = icon_dots(ui, more, ui.scope_id().with(("su-more", &j.label, j.scope as u8)));
-                    egui::Popup::menu(&mr).show(|ui| {
-                        ui.set_min_width(260.0);
-                        ui.set_max_width(420.0);
+                    menu::popup(&mr).show(|ui| {
                         if let Some(sg) = &j.sig {
-                            ui.label(egui::RichText::new(sg.line()).small().strong());
+                            menu::note(ui, &sg.line(), false);
                         }
                         let cmd = j.command();
                         if !cmd.is_empty() {
-                            ui.add(egui::Label::new(egui::RichText::new(&cmd).monospace().small()).wrap());
+                            menu::note(ui, &cmd, true);
                         }
-                        ui.separator();
+                        menu::separator(ui);
                         if let Some(app) = uninstallable(&j.owner) {
                             let n = app.file_stem().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
-                            if ui.button(format!("Open {n} in Uninstaller")).clicked() {
+                            if menu::item(ui, &format!("Open {n} in Uninstaller")).clicked() {
                                 cx.open_page("uninstaller", &format!("app:{}", app.display()));
                             }
                         }
-                        if ui.button("Show file in Finder").clicked() {
+                        if menu::item(ui, "Show file in Finder").clicked() {
                             macos::reveal(&j.plist);
                         }
-                        if ui.button("Copy label").clicked() {
+                        if menu::item(ui, "Copy label").clicked() {
                             ui.ctx().copy_text(j.label.clone());
                         }
-                        if !cmd.is_empty() && ui.button("Copy command").clicked() {
+                        if !cmd.is_empty() && menu::item(ui, "Copy command").clicked() {
                             ui.ctx().copy_text(cmd.clone());
                         }
-                        if j.vt_file().is_some_and(|f| f.is_file()) && ui.button("Check on VirusTotal").on_hover_text("Opens virustotal.com with the file's hash; the file isn't uploaded").clicked() {
+                        if j.vt_file().is_some_and(|f| f.is_file()) && menu::item(ui, "Check on VirusTotal").on_hover_text("Opens virustotal.com with the file's hash; the file isn't uploaded").clicked() {
                             vt = Some(j.clone());
                         }
                         if trusted_now {
-                            if ui.button("Don't trust").clicked() {
+                            if menu::item(ui, "Don't trust").clicked() {
                                 trust = Some((j.clone(), false));
                             }
-                        } else if (!j.flags().is_empty() || j.why().is_some() || new_labels.contains(&j.label) || changed_labels.contains(&j.label)) && ui.button("Trust").clicked() {
+                        } else if (!j.flags().is_empty() || j.why().is_some() || new_labels.contains(&j.label) || changed_labels.contains(&j.label)) && menu::item(ui, "Trust").clicked() {
                             trust = Some((j.clone(), true));
                         }
                         // a bundled job's file is part of its app
                         if !j.bundled {
-                            ui.separator();
-                            if ui.add_enabled(busy.is_none(), egui::Button::new(egui::RichText::new("Move file to Trash…").color(RED()))).clicked() {
+                            menu::separator(ui);
+                            if menu::danger(ui, "Move file to Trash…", busy.is_none()).clicked() {
                                 trash = Some(j.clone());
                             }
                         }

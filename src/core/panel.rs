@@ -96,7 +96,8 @@ pub fn draw_at(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static st
             let mut child = ui.new_child(UiBuilder::new().max_rect(r).id_salt(salt));
             if lock.is_some() {
                 child.disable();
-                child.multiply_opacity(0.45);
+                // ink on a pale card fades further than white on a dark one
+                child.multiply_opacity(if crate::kit::glass::is_light() { 0.62 } else { 0.45 });
             }
             // screenshots only: CMB_DEMO_LOADING shows every tool that can load as loading
             let demo = {

@@ -907,7 +907,7 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
     hairline(&p, Pos2::new(list.left(), list.top() + sp::TABLE_HEAD_H), Pos2::new(list.right(), list.top() + sp::TABLE_HEAD_H));
     let rows_r = Rect::from_min_max(Pos2::new(list.left(), list.top() + sp::TABLE_HEAD_H + 1.0), Pos2::new(list.right(), list.bottom() - sp::S));
     // whole rows only: a row cut in half by the card edge looks broken
-    let rows_r = Rect::from_min_size(rows_r.min, Vec2::new(rows_r.width(), ((rows_r.height() / 40.0).floor() * 40.0).max(40.0).min(rows_r.height())));
+    let rows_r = Rect::from_min_size(rows_r.min, Vec2::new(rows_r.width(), ((rows_r.height() / sp::ROW2_H).floor() * sp::ROW2_H).max(sp::ROW2_H).min(rows_r.height())));
     if orphans.is_empty() {
         let msg = if busy { "Still looking…" } else { "Nothing left behind" };
         p.text(rows_r.center(), Align2::CENTER_CENTER, msg, font(13.0), TEXT_DIM());

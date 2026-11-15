@@ -7,6 +7,7 @@ use super::scan::{self, Node};
 use super::Lens as App;
 use crate::core::tool::Cx;
 use crate::kit::glass::*;
+use crate::kit::menu;
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -1049,11 +1050,23 @@ fn rings(app: &mut App, ui: &mut Ui, pa: Rect, root: &Node, node: &Node, here: &
         if arc < 54.0 || ring_w < 30.0 || s.kind == Kind::Other && s.path.is_none() && arc < 80.0 {
             continue;
         }
-        let at = c + Vec2::angled((s.a0 + s.a1) / 2.0) * rm;
-        let w = arc.min(ring_w * 1.7) * 0.85;
+        let mid = (s.a0 + s.a1) / 2.0;
+        let at = c + Vec2::angled(mid) * rm;
+        // the slice's room for flat text: across the ring where it runs
+        // sideways, along it where it runs up and down
+        let (cs, sn) = (mid.cos().abs(), mid.sin().abs());
+        let w = (ring_w * cs + arc * sn) * 0.8;
+        let h = (ring_w * sn + arc * cs) * 0.8;
+        let size = human_bytes(s.bytes);
+        let name_w = p.layout_no_wrap(s.name.clone(), bold(11.0), TEXT()).size().x;
+        let size_w = p.layout_no_wrap(size.clone(), font(11.0), TEXT()).size().x;
+        // a label shows whole or not at all (hover names every slice)
+        if name_w.max(size_w) > w || h < 30.0 {
+            continue;
+        }
         let ta = k.max(0.2);
-        text_fit(&p, at - Vec2::new(0.0, 1.0), Align2::CENTER_BOTTOM, &s.name, bold(11.0), with_alpha(TEXT(), ta), w);
-        text_fit(&p, at + Vec2::new(0.0, 1.0), Align2::CENTER_TOP, &human_bytes(s.bytes), font(11.0), with_alpha(TEXT_SOFT(), ta), w);
+        p.text(at - Vec2::new(0.0, 1.0), Align2::CENTER_BOTTOM, &s.name, bold(11.0), with_alpha(TEXT(), ta));
+        p.text(at + Vec2::new(0.0, 1.0), Align2::CENTER_TOP, size, font(11.0), with_alpha(TEXT_SOFT(), ta));
     }
     // the middle: the folder, or what's hovered
     let center_hot = on_center && can_up;
@@ -1159,7 +1172,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
             text_fit(lp, Pos2::new(rr.left() + 56.0, rr.top() + 28.0), Align2::LEFT_CENTER, &at, mono(11.0), TEXT_FAINT(), (rr.width() - 66.0) * 0.6);
             let bw = (rr.width() * 0.3) * (f.bytes as f32 / top as f32);
             lp.rect_filled(Rect::from_min_size(Pos2::new(rr.right() - 10.0 - bw, rr.top() + 26.0), Vec2::new(bw, 3.0)), 1.5, with_alpha(ACCENT(), 0.6));
-            rresp.context_menu(|ui| {
+            menu::context(&rresp).show(|ui| {
                 if let Some(a) = item_menu(ui, &f.path, false) {
                     app.lens_menu_act = Some((a, f.path.clone(), f.bytes));
                 }
@@ -1242,7 +1255,7 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
                     go = Some(k.path.clone());
                 }
             }
-            resp.context_menu(|ui| {
+            menu::context(&resp).show(|ui| {
                 if let Some(a) = item_menu(ui, &k.path, !k.children.is_empty()) {
                     app.lens_menu_act = Some((a, k.path.clone(), k.bytes));
                 }
@@ -1318,23 +1331,23 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let mut pick_root: Option<Option<PathBuf>> = None;
-    egui::Popup::menu(&lr_resp).show(|ui| {
+    menu::popup(&lr_resp).show(|ui| {
         for (name, path) in locations() {
-            if ui.button(name).clicked() {
+            if menu::item(ui, &name).clicked() {
                 pick_root = Some(Some(path));
             }
         }
         let recent: Vec<PathBuf> = app.lens_recent.iter().filter(|r| r.is_dir()).cloned().collect();
         if !recent.is_empty() {
-            ui.separator();
+            menu::separator(ui);
             for path in recent {
-                if ui.button(tilde(&path)).clicked() {
+                if menu::item(ui, &tilde(&path)).clicked() {
                     pick_root = Some(Some(path));
                 }
             }
         }
-        ui.separator();
-        if ui.button("Choose Folder…").clicked() {
+        menu::separator(ui);
+        if menu::item(ui, "Choose Folder…").clicked() {
             pick_root = Some(None);
         }
     });
@@ -1575,7 +1588,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let fw = rr.width() * f;
         if fw >= 3.0 {
             let fr = Rect::from_min_size(rr.min + Vec2::new(0.0, 2.0), Vec2::new(fw, rr.height() - 4.0));
-            lp.rect_filled(fr, fw.min(R_SMALL * 2.0) / 2.0, with_alpha(ACCENT(), 0.10));
+            lp.rect_filled(fr, fw.min(R_SMALL * 2.0) / 2.0, with_alpha(ACCENT(), if is_light() { 0.14 } else { 0.10 }));
         }
         let lit = !previewing && app.lens_hover.as_ref().is_some_and(|h| h.starts_with(&k.path));
         if resp.hovered() || lit || cursor == Some(i) {
@@ -1591,7 +1604,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
             hover_path = Some(k.path.clone());
             hover_item = Some((k.path.clone(), k.bytes));
         }
-        resp.context_menu(|ui| {
+        menu::context(&resp).show(|ui| {
             if let Some(a) = item_menu(ui, &k.path, !k.children.is_empty()) {
                 menu_act = Some((a, k.path.clone(), k.bytes));
             }
@@ -1677,7 +1690,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     }
     if let Some((mp, mb)) = app.lens_menu.clone() {
         let drill = scan::find(root, &mp).is_some_and(|n| !n.children.is_empty());
-        out.resp.context_menu(|ui| {
+        menu::context(&out.resp).show(|ui| {
             if let Some(a) = item_menu(ui, &mp, drill) {
                 menu_act = Some((a, mp.clone(), mb));
             }
@@ -1794,20 +1807,20 @@ pub(crate) enum MenuAct {
 /// The right-click menu of a file or folder on the map or in the list.
 fn item_menu(ui: &mut Ui, path: &Path, drill: bool) -> Option<MenuAct> {
     let mut out = None;
-    if drill && ui.button("Open").clicked() {
+    if drill && menu::item(ui, "Open").clicked() {
         out = Some(MenuAct::Open);
     }
-    if ui.button("Quick Look").clicked() {
+    if menu::item(ui, "Quick Look").clicked() {
         out = Some(MenuAct::QuickLook);
     }
-    if ui.button("Reveal in Finder").clicked() {
+    if menu::item(ui, "Reveal in Finder").clicked() {
         out = Some(MenuAct::Reveal);
     }
-    if ui.button("Copy Path").clicked() {
+    if menu::item(ui, "Copy Path").clicked() {
         out = Some(MenuAct::CopyPath);
     }
-    ui.separator();
-    if ui.add_enabled(trashable(path), egui::Button::new("Move to Trash…")).clicked() {
+    menu::separator(ui);
+    if menu::danger(ui, "Move to Trash…", trashable(path)).clicked() {
         out = Some(MenuAct::Trash);
     }
     if out.is_some() {

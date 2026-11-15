@@ -59,7 +59,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | L2 | Light `CARD_EDGE` ink 20→31 so white cards don't merge into the sage backdrop. |
 | L3 | Hairlines and dividers use `white(HAIRLINE*)` only; never hard-coded black or white alpha. |
 | L4 | Switch off track: light ink 56 (dark 41). Inactive pager dots: light ink 72 (dark 46). |
-| L5 | Surfaces that stay dark in both themes (dictation HUD pill) use fixed light content, never theme ink. |
+| L5 | Surfaces that stay dark in both themes (dictation pill, display OSD) use `glass::hud` and fixed light content, never theme ink. |
 | L6 | Disabled or locked: alpha .45 in dark, .62 in light. |
 | L7 | A popover over a card keeps a visible edge in light mode. |
 
@@ -133,6 +133,12 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | P4 | **Dim** under dialogs, sheets and the loader: one `SCRIM()` over the page area, black 45% dark, ink 24% light. A click on the dim closes a sheet. Esc closes every dialog and sheet, except while work runs (loader). Destructive confirms never close from a click on the dim. | ✅ |
 | P5 | Every removal that can take longer than 0.4 s shows the removal loader (`kit::loader::show`): card 340 wide, padding 24, mark 88, title (lead, verb + "…"), "x of y" (body dim), current path (mono 11 faint, cut in the middle), 28 buttons (Stop where safe; Done, Put back where undo exists). It appears after 0.4 s and stays at least 0.8 s. Scans and measuring keep `spinner()` and the bar. | ✅ |
 | P6 | The loader mark is one shape with the ⌘ cut out; Done turns ⌘ into ✓. | ✅ |
+| MN1 | **Menus** ("⋯" and right-click) come only from `kit::menu` (`popup`, `context`, `item`, `choice`, `sub`, `note`, `separator`, `danger`); never `ui.button` in a menu. Frame: radius 10, 1 pt edge, Whisper shadow (P1, P2), 4 above and below the rows. | ✅ (canvas https://claude.ai/artifact/4C5Z47zFtr7PiiQD8qPtyv) |
+| MN2 | Menu rows 28, body 13, text 12 in from the edge. A note (state, command) is caption 11 dim, wraps at 320, mono for commands. Hairline separators edge to edge with 4 above and below. | ✅ |
+| MN3 | Menu rows hover with `ROW_HOVER` edge to edge (H2); no press, no sound (B10). | ✅ |
+| MN4 | A picked choice is lime 16% with `ACCENT` text and a check (H3). Never the system blue. | ✅ |
+| MN5 | A submenu row shows a dim chevron; the submenu opens 4 to the right of its menu, never over its rows. | ✅ |
+| MN6 | A "⋯" menu opens 4 under its button, right edges lined up (above when there's no room), so it never covers the row it came from. Destructive rows use `DANGER` text (B6). | ✅ |
 
 ## 8. Hover, selection, focus
 
@@ -227,6 +233,8 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 ---
 
 ## Decisions log
+
+- 2026-11-15, Roman: menus MN1–MN6 approved (canvas https://claude.ai/artifact/4C5Z47zFtr7PiiQD8qPtyv).
 
 2026-11-15, Roman: K1 one `SCRIM()` (P4) · K2 one `ROW_HOVER` white(10) (H1) · K3 lime glow stays (B5) · K4 heights 44/32/28 (B2) · K5 `AI()` token (C15) · K6 Esc closes every dialog except while work runs (P4) · K7 Keep Awake chart in lavender steps (SP8).
 
