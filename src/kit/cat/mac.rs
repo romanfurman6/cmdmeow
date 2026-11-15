@@ -1,6 +1,6 @@
 //! The cat on a Mac: its face in the menu bar icon, the desktop cat at the
-//! bottom of the screen (`screen`),//! middle of the screen, its voice, and what the Mac feels (a hand on the
-//! trackpad, the charger, the lid, the pointer).
+//! bottom of the screen (`screen`), its voice, and what the Mac feels (a
+//! hand on the trackpad, the charger, the lid, the pointer).
 //!
 //! The cat's own thread decides and draws; everything that touches AppKit
 //! runs on the main thread. The thread sleeps until something moves, so a
