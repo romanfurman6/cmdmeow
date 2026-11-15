@@ -45,7 +45,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C9 | Neutral marks (You, Other, an app with no icon) use `GRAY`. No system greys. | ✅ |
 | C10 | One neutral letter tile (`letter_tile()`) for apps with no icon. | ✅ |
 | C11 | Links use `ACCENT`, hover included. No system blue. | ✅ |
-| C12 | Temperature: cyan under 68 °C, amber from 68, red from 90. Text under 68 stays plain. | ✅ |
+| C12 | Temperature: cyan under 68 °C, amber from 68, red from 90. Text under 68 °C is plain. | ✅ |
 | C13 | Exceptions only: capture/record HUD, the recording dot, traffic lights, third-party brand marks, user content. | ✅ |
 | C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ✅ |
 | C15 | AI (AI Check chip, reveal ring, agent marks) uses cyan `tint::HEALTH`. | ⏳ conflict K5 |
@@ -62,7 +62,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | L6 | Disabled or locked: alpha .45 in dark, .62 in light. |
 | L7 | A popover over a card keeps a visible edge in light mode. |
 
-Light and series values (✅ 2026-11-15): Clean #7DB519→#5B8A14, Monitor #1F8AA0→#177A8E, Amber/Create #C06A12→#A65A0E, Green #4B8625→#437A20, light junk ramp #5B8A14…#284F1E. Monitor series dark #6FD6E8 / #B4EAF3 / #4FA9BC, light #177A8E / #0B4652 / #3A97AB.
+Light and series values (✅ 2026-11-15): Clean #7DB519→#5B8A14, Monitor #1F8AA0→#177A8E, Amber/Create #C06A12→#A65A0E, Green #4B8625→#437A20, light junk ramp #5B8A14 #507E14 #467318 #3E6A1A #36601B #2F571C #284F1E, dark ramp last step #46824B→#4F8E4E. Monitor series dark #6FD6E8 / #B4EAF3 / #4FA9BC, light #177A8E / #0B4652 / #3A97AB.
 
 ## 3. Type ✅
 
