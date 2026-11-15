@@ -88,12 +88,6 @@ pub fn item(ui: &mut Ui, label: &str) -> Response {
     done(ui, r)
 }
 
-/// A row that may be off (dimmed, no hover, no click).
-pub fn item_enabled(ui: &mut Ui, label: &str, enabled: bool) -> Response {
-    let r = row(ui, label, false, false, enabled);
-    done(ui, r)
-}
-
 /// A destructive row (Move to Trash…): `DANGER` text (B6).
 pub fn danger(ui: &mut Ui, label: &str, enabled: bool) -> Response {
     ui.set_min_width(MIN_W);
