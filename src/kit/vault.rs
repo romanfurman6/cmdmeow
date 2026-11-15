@@ -22,9 +22,7 @@ pub struct Vault {
 
 impl Vault {
     pub fn from_key(key: &[u8; 32]) -> Vault {
-        Vault {
-            cipher: XChaCha20Poly1305::new(key.into()),
-        }
+        Vault { cipher: XChaCha20Poly1305::new(key.into()) }
     }
 
     /// A throwaway key: sample data and tests, never the Keychain.
@@ -36,10 +34,7 @@ impl Vault {
     pub fn seal(&self, plain: &[u8]) -> Vec<u8> {
         let mut nonce = [0u8; NONCE];
         fill(&mut nonce);
-        let body = self
-            .cipher
-            .encrypt(XNonce::from_slice(&nonce), plain)
-            .expect("in-memory encryption");
+        let body = self.cipher.encrypt(XNonce::from_slice(&nonce), plain).expect("in-memory encryption");
         let mut out = Vec::with_capacity(MAGIC.len() + NONCE + body.len());
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&nonce);
@@ -101,22 +96,13 @@ pub fn shared() -> Option<Arc<Vault>> {
 /// A JSON history sealed at `sealed`. Without a vault: the default (and
 /// nothing is read). A plain file from before encryption at `plain` is
 /// sealed in its place and removed.
-pub fn load_json<T: serde::de::DeserializeOwned + serde::Serialize + Default>(
-    v: Option<&Vault>,
-    sealed: &Path,
-    plain: &Path,
-) -> T {
+pub fn load_json<T: serde::de::DeserializeOwned + serde::Serialize + Default>(v: Option<&Vault>, sealed: &Path, plain: &Path) -> T {
     let Some(v) = v else { return T::default() };
     if let Some(t) = v.read(sealed).and_then(|b| serde_json::from_slice(&b).ok()) {
         let _ = std::fs::remove_file(plain);
         return t;
     }
-    let Some(t) = std::fs::read(plain)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<T>(&b).ok())
-    else {
-        return T::default();
-    };
+    let Some(t) = std::fs::read(plain).ok().and_then(|b| serde_json::from_slice::<T>(&b).ok()) else { return T::default() };
     if serde_json::to_vec(&t).is_ok_and(|b| v.write(sealed, &b)) {
         let _ = std::fs::remove_file(plain);
     }
@@ -135,11 +121,7 @@ mod keychain {
     use security_framework::passwords::{get_generic_password, set_generic_password};
 
     fn service() -> &'static str {
-        if crate::kit::fs::is_dev() {
-            "Cmd+Meow Dev history"
-        } else {
-            "Cmd+Meow history"
-        }
+        if crate::kit::fs::is_dev() { "Cmd+Meow Dev history" } else { "Cmd+Meow history" }
     }
     const ACCOUNT: &str = "key";
     /// errSecItemNotFound: no key yet, so make one.
@@ -147,9 +129,7 @@ mod keychain {
 
     pub fn key() -> Result<[u8; 32], String> {
         match get_generic_password(service(), ACCOUNT) {
-            Ok(b) => b
-                .try_into()
-                .map_err(|_| "the clipboard key in the Keychain is damaged".to_string()),
+            Ok(b) => b.try_into().map_err(|_| "the clipboard key in the Keychain is damaged".to_string()),
             Err(e) if e.code() == NOT_FOUND => {
                 let k = super::random_key();
                 set_generic_password(service(), ACCOUNT, &k).map_err(|e| e.to_string())?;
@@ -205,19 +185,10 @@ mod tests {
         assert!(load_json::<Vec<String>>(None, &sealed, &plain).is_empty());
         assert!(plain.exists() && !sealed.exists());
         let v = Vault::random();
-        assert_eq!(
-            load_json::<Vec<String>>(Some(&v), &sealed, &plain),
-            vec!["said this".to_string()]
-        );
+        assert_eq!(load_json::<Vec<String>>(Some(&v), &sealed, &plain), vec!["said this".to_string()]);
         assert!(!plain.exists());
-        assert!(!std::fs::read(&sealed)
-            .unwrap()
-            .windows(4)
-            .any(|w| w == b"said"));
-        assert_eq!(
-            load_json::<Vec<String>>(Some(&v), &sealed, &plain),
-            vec!["said this".to_string()]
-        );
+        assert!(!std::fs::read(&sealed).unwrap().windows(4).any(|w| w == b"said"));
+        assert_eq!(load_json::<Vec<String>>(Some(&v), &sealed, &plain), vec!["said this".to_string()]);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -230,10 +201,7 @@ mod tests {
         let v = Vault::random();
         let p = dir.join("a.bin");
         assert!(v.write(&p, b"x"));
-        assert_eq!(
-            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
         assert_eq!(v.read(&p).as_deref(), Some(&b"x"[..]));
         let _ = std::fs::remove_dir_all(dir);
     }

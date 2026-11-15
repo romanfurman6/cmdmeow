@@ -55,10 +55,7 @@ impl Group {
     }
     /// Groups drawn as blocks of cells in the heat map; the rest are rows.
     pub fn is_core(self) -> bool {
-        matches!(
-            self,
-            Group::PCores | Group::ECores | Group::Cpu | Group::Gpu
-        )
+        matches!(self, Group::PCores | Group::ECores | Group::Cpu | Group::Gpu)
     }
 }
 
@@ -82,12 +79,7 @@ pub fn group_of_hid(name: &str) -> Option<Group> {
         Group::Battery
     } else if n.starts_with("dram") || n.contains("mem") {
         Group::Memory
-    } else if n.starts_with("soc")
-        || n.starts_with("pmgr")
-        || n.contains("tdie")
-        || n.starts_with("ane")
-        || n.starts_with("isp")
-    {
+    } else if n.starts_with("soc") || n.starts_with("pmgr") || n.contains("tdie") || n.starts_with("ane") || n.starts_with("isp") {
         Group::Soc
     } else {
         Group::Other
@@ -164,14 +156,12 @@ impl Snapshot {
     }
 
     pub fn avg_rpm(&self) -> Option<f32> {
-        (!self.fans.is_empty())
-            .then(|| self.fans.iter().map(|f| f.rpm).sum::<f32>() / self.fans.len() as f32)
+        (!self.fans.is_empty()).then(|| self.fans.iter().map(|f| f.rpm).sum::<f32>() / self.fans.len() as f32)
     }
 
     /// Average fan speed as a fraction of the fans' maximum.
     pub fn avg_frac(&self) -> Option<f32> {
-        (!self.fans.is_empty())
-            .then(|| self.fans.iter().map(Fan::frac).sum::<f32>() / self.fans.len() as f32)
+        (!self.fans.is_empty()).then(|| self.fans.iter().map(Fan::frac).sum::<f32>() / self.fans.len() as f32)
     }
 
     /// Per-group summaries, in [`Group`] order. Battery and SSD readings are
@@ -183,12 +173,7 @@ impl Snapshot {
         for s in sorted {
             match out.last_mut() {
                 Some(g) if g.group == s.group => g.cells.push(s.celsius),
-                _ => out.push(GroupStat {
-                    group: s.group,
-                    max: 0.0,
-                    avg: 0.0,
-                    cells: vec![s.celsius],
-                }),
+                _ => out.push(GroupStat { group: s.group, max: 0.0, avg: 0.0, cells: vec![s.celsius] }),
             }
         }
         for g in &mut out {
@@ -200,18 +185,12 @@ impl Snapshot {
 
     /// The hottest group (by its hottest sensor) and that temperature.
     pub fn hottest(&self) -> Option<(Group, f32)> {
-        self.groups()
-            .into_iter()
-            .filter(|g| !matches!(g.group, Group::Battery | Group::Ssd | Group::Other))
-            .map(|g| (g.group, g.max))
-            .max_by(|a, b| a.1.total_cmp(&b.1))
+        self.groups().into_iter().filter(|g| !matches!(g.group, Group::Battery | Group::Ssd | Group::Other)).map(|g| (g.group, g.max)).max_by(|a, b| a.1.total_cmp(&b.1))
     }
 
     /// Add the current reading to the history.
     pub fn push_history(&mut self) {
-        let Some((_, hot)) = self.hottest() else {
-            return;
-        };
+        let Some((_, hot)) = self.hottest() else { return };
         self.history.push_back((self.avg_rpm().unwrap_or(0.0), hot));
         while self.history.len() > HISTORY {
             self.history.pop_front();
@@ -260,13 +239,7 @@ pub fn dedupe(sensors: Vec<Sensor>) -> Vec<Sensor> {
 // ---------------------------------------------------------------- colours
 
 /// Heat scale stops: (°C, colour).
-const HEAT: [(f32, [u8; 3]); 5] = [
-    (30.0, [0x2F, 0x6E, 0x9E]),
-    (50.0, [0x3F, 0xA7, 0xC4]),
-    (68.0, [0xE3, 0xC0, 0x4A]),
-    (82.0, [0xF0, 0x8A, 0x2C]),
-    (95.0, [0xE5, 0x48, 0x3B]),
-];
+const HEAT: [(f32, [u8; 3]); 5] = [(30.0, [0x2F, 0x6E, 0x9E]), (50.0, [0x3F, 0xA7, 0xC4]), (68.0, [0xE3, 0xC0, 0x4A]), (82.0, [0xF0, 0x8A, 0x2C]), (95.0, [0xE5, 0x48, 0x3B])];
 
 /// Fill colour for a temperature on the heat scale.
 pub fn heat(c: f32) -> Color32 {
@@ -316,44 +289,20 @@ pub fn rpm_text(rpm: f32) -> String {
 
 /// A MacBook Pro with two fans after a build (screenshots, `--view fan`).
 pub fn demo() -> Snapshot {
-    let s = |name: &str, group, c| Sensor {
-        name: name.into(),
-        group,
-        celsius: c,
-    };
+    let s = |name: &str, group, c| Sensor { name: name.into(), group, celsius: c };
     let mut sensors = Vec::new();
-    for (i, c) in [
-        66.0, 69.0, 71.0, 68.0, 64.0, 67.0, 62.0, 65.0, 63.0, 66.0, 61.0, 64.0,
-    ]
-    .iter()
-    .enumerate()
-    {
+    for (i, c) in [66.0, 69.0, 71.0, 68.0, 64.0, 67.0, 62.0, 65.0, 63.0, 66.0, 61.0, 64.0].iter().enumerate() {
         sensors.push(s(&format!("pACC MTR Temp Sensor{i}"), Group::PCores, *c));
     }
     for (i, c) in [49.0, 52.0, 51.0, 50.0].iter().enumerate() {
         sensors.push(s(&format!("eACC MTR Temp Sensor{i}"), Group::ECores, *c));
     }
-    for (i, c) in [58.0, 61.0, 63.0, 60.0, 57.0, 59.0, 62.0, 60.0, 56.0, 58.0]
-        .iter()
-        .enumerate()
-    {
+    for (i, c) in [58.0, 61.0, 63.0, 60.0, 57.0, 59.0, 62.0, 60.0, 56.0, 58.0].iter().enumerate() {
         sensors.push(s(&format!("GPU MTR Temp Sensor{i}"), Group::Gpu, *c));
     }
-    sensors.extend([
-        s("PMU tdie1", Group::Soc, 57.0),
-        s("PMU tdie2", Group::Soc, 55.0),
-        s("DRAM", Group::Memory, 58.0),
-        s("NAND CH0 temp", Group::Ssd, 41.0),
-        s("gas gauge battery", Group::Battery, 33.0),
-    ]);
-    let rpm = [
-        44.0, 42.0, 43.0, 41.0, 45.0, 52.0, 70.0, 88.0, 92.0, 86.0, 78.0, 70.0, 64.0, 60.0, 58.0,
-        57.0, 55.0, 56.0, 54.0, 53.0,
-    ];
-    let hot = [
-        58.0, 57.0, 58.0, 57.0, 60.0, 70.0, 82.0, 88.0, 88.0, 85.0, 80.0, 76.0, 73.0, 72.0, 71.0,
-        71.0, 70.0, 71.0, 71.0, 71.0,
-    ];
+    sensors.extend([s("PMU tdie1", Group::Soc, 57.0), s("PMU tdie2", Group::Soc, 55.0), s("DRAM", Group::Memory, 58.0), s("NAND CH0 temp", Group::Ssd, 41.0), s("gas gauge battery", Group::Battery, 33.0)]);
+    let rpm = [44.0, 42.0, 43.0, 41.0, 45.0, 52.0, 70.0, 88.0, 92.0, 86.0, 78.0, 70.0, 64.0, 60.0, 58.0, 57.0, 55.0, 56.0, 54.0, 53.0];
+    let hot = [58.0, 57.0, 58.0, 57.0, 60.0, 70.0, 82.0, 88.0, 88.0, 85.0, 80.0, 76.0, 73.0, 72.0, 71.0, 71.0, 70.0, 71.0, 71.0, 71.0];
     let mut history = VecDeque::new();
     for i in 0..HISTORY {
         let x = i as f32 / (HISTORY - 1) as f32 * (rpm.len() - 1) as f32;
@@ -364,18 +313,7 @@ pub fn demo() -> Snapshot {
     Snapshot {
         loaded: true,
         has_smc: true,
-        fans: vec![
-            Fan {
-                rpm: 2140.0,
-                min: 1200.0,
-                max: 5700.0,
-            },
-            Fan {
-                rpm: 2310.0,
-                min: 1200.0,
-                max: 6200.0,
-            },
-        ],
+        fans: vec![Fan { rpm: 2140.0, min: 1200.0, max: 5700.0 }, Fan { rpm: 2310.0, min: 1200.0, max: 6200.0 }],
         sensors,
         thermal: 0,
         chip: "Apple M3 Max".into(),
@@ -385,31 +323,12 @@ pub fn demo() -> Snapshot {
 
 /// A fanless MacBook Air, a little warm.
 pub fn demo_fanless() -> Snapshot {
-    let s = |name: &str, group, c| Sensor {
-        name: name.into(),
-        group,
-        celsius: c,
-    };
+    let s = |name: &str, group, c| Sensor { name: name.into(), group, celsius: c };
     let mut d = demo();
     d.fans.clear();
     d.chip = "Apple M3".into();
     d.thermal = 1;
-    d.sensors = vec![
-        s("p1", Group::PCores, 74.0),
-        s("p2", Group::PCores, 72.0),
-        s("p3", Group::PCores, 73.0),
-        s("p4", Group::PCores, 70.0),
-        s("e1", Group::ECores, 55.0),
-        s("e2", Group::ECores, 54.0),
-        s("e3", Group::ECores, 55.0),
-        s("e4", Group::ECores, 53.0),
-        s("g1", Group::Gpu, 66.0),
-        s("g2", Group::Gpu, 64.0),
-        s("g3", Group::Gpu, 65.0),
-        s("g4", Group::Gpu, 63.0),
-        s("n", Group::Ssd, 44.0),
-        s("b", Group::Battery, 36.0),
-    ];
+    d.sensors = vec![s("p1", Group::PCores, 74.0), s("p2", Group::PCores, 72.0), s("p3", Group::PCores, 73.0), s("p4", Group::PCores, 70.0), s("e1", Group::ECores, 55.0), s("e2", Group::ECores, 54.0), s("e3", Group::ECores, 55.0), s("e4", Group::ECores, 53.0), s("g1", Group::Gpu, 66.0), s("g2", Group::Gpu, 64.0), s("g3", Group::Gpu, 65.0), s("g4", Group::Gpu, 63.0), s("n", Group::Ssd, 44.0), s("b", Group::Battery, 36.0)];
     for h in d.history.iter_mut() {
         h.0 = 0.0;
     }
@@ -445,22 +364,9 @@ mod tests {
 
     #[test]
     fn merge_prefers_hid_and_drops_junk() {
-        let s = |g, c| Sensor {
-            name: format!("{g:?}{c}"),
-            group: g,
-            celsius: c,
-        };
-        let hid = vec![
-            s(Group::PCores, 70.0),
-            s(Group::Soc, 0.0),
-            s(Group::Soc, 55.0),
-        ];
-        let smc = vec![
-            s(Group::Cpu, 71.0),
-            s(Group::Gpu, 60.0),
-            s(Group::Soc, 99.0),
-            s(Group::Gpu, 300.0),
-        ];
+        let s = |g, c| Sensor { name: format!("{g:?}{c}"), group: g, celsius: c };
+        let hid = vec![s(Group::PCores, 70.0), s(Group::Soc, 0.0), s(Group::Soc, 55.0)];
+        let smc = vec![s(Group::Cpu, 71.0), s(Group::Gpu, 60.0), s(Group::Soc, 99.0), s(Group::Gpu, 300.0)];
         let m = merge(hid, smc);
         let groups: Vec<Group> = m.iter().map(|s| s.group).collect();
         assert_eq!(groups, vec![Group::PCores, Group::Soc, Group::Gpu]);
@@ -471,17 +377,8 @@ mod tests {
 
     #[test]
     fn same_name_hid_sensors_are_averaged() {
-        let s = |n: &str, c| Sensor {
-            name: n.into(),
-            group: Group::Soc,
-            celsius: c,
-        };
-        let d = dedupe(vec![
-            s("PMU tdie1", 74.0),
-            s("PMU tdie2", 72.0),
-            s("PMU tdie1", 76.0),
-            s("PMU tdie1", 0.0),
-        ]);
+        let s = |n: &str, c| Sensor { name: n.into(), group: Group::Soc, celsius: c };
+        let d = dedupe(vec![s("PMU tdie1", 74.0), s("PMU tdie2", 72.0), s("PMU tdie1", 76.0), s("PMU tdie1", 0.0)]);
         assert_eq!(d.len(), 2);
         assert_eq!(d[0].celsius, 75.0);
         assert_eq!(d[1].celsius, 72.0);

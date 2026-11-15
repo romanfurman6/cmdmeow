@@ -27,57 +27,19 @@ impl Heads {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Mark {
-    Arrow {
-        a: Pos2,
-        b: Pos2,
-        color: Rgba8,
-        width: f32,
-        heads: Heads,
-    },
-    Rect {
-        r: Rect,
-        color: Rgba8,
-        width: f32,
-    },
+    Arrow { a: Pos2, b: Pos2, color: Rgba8, width: f32, heads: Heads },
+    Rect { r: Rect, color: Rgba8, width: f32 },
     /// An ellipse outline inside `r`.
-    Ellipse {
-        r: Rect,
-        color: Rgba8,
-        width: f32,
-    },
+    Ellipse { r: Rect, color: Rgba8, width: f32 },
     /// A freehand line through `pts`.
-    Pen {
-        pts: Vec<Pos2>,
-        color: Rgba8,
-        width: f32,
-    },
+    Pen { pts: Vec<Pos2>, color: Rgba8, width: f32 },
     /// A label: text on a filled rounded box of `color`.
-    Text {
-        at: Pos2,
-        text: String,
-        color: Rgba8,
-        size: f32,
-    },
-    Highlight {
-        r: Rect,
-        color: Rgba8,
-    },
+    Text { at: Pos2, text: String, color: Rgba8, size: f32 },
+    Highlight { r: Rect, color: Rgba8 },
     /// `boxes` empty = the whole `r`; otherwise only these (the text OCR found).
-    Blur {
-        r: Rect,
-        style: BlurStyle,
-        boxes: Vec<Rect>,
-    },
-    Erase {
-        r: Rect,
-        boxes: Vec<Rect>,
-    },
-    Step {
-        at: Pos2,
-        n: u32,
-        color: Rgba8,
-        size: f32,
-    },
+    Blur { r: Rect, style: BlurStyle, boxes: Vec<Rect> },
+    Erase { r: Rect, boxes: Vec<Rect> },
+    Step { at: Pos2, n: u32, color: Rgba8, size: f32 },
 }
 
 impl Mark {
@@ -131,9 +93,7 @@ impl Mark {
             Mark::Pen { pts, width, .. } => match pts.len() {
                 0 => false,
                 1 => (p - pts[0]).length() <= width + slack,
-                _ => pts
-                    .windows(2)
-                    .any(|w| segment_distance(p, w[0], w[1]) <= width / 2.0 + slack),
+                _ => pts.windows(2).any(|w| segment_distance(p, w[0], w[1]) <= width / 2.0 + slack),
             },
             _ => self.bounds().expand(slack).contains(p),
         }
@@ -145,12 +105,8 @@ impl Mark {
     pub fn handles(&self) -> Vec<Pos2> {
         match self {
             Mark::Arrow { a, b, .. } => vec![*a, *b],
-            Mark::Rect { r, .. } | Mark::Ellipse { r, .. } | Mark::Highlight { r, .. } => {
-                box_handles(*r).to_vec()
-            }
-            Mark::Blur { r, boxes, .. } | Mark::Erase { r, boxes } if boxes.is_empty() => {
-                box_handles(*r).to_vec()
-            }
+            Mark::Rect { r, .. } | Mark::Ellipse { r, .. } | Mark::Highlight { r, .. } => box_handles(*r).to_vec(),
+            Mark::Blur { r, boxes, .. } | Mark::Erase { r, boxes } if boxes.is_empty() => box_handles(*r).to_vec(),
             _ => Vec::new(),
         }
     }
@@ -165,11 +121,7 @@ impl Mark {
                     *b = to;
                 }
             }
-            Mark::Rect { r, .. }
-            | Mark::Ellipse { r, .. }
-            | Mark::Highlight { r, .. }
-            | Mark::Blur { r, .. }
-            | Mark::Erase { r, .. } => *r = resize_box(*r, k, to),
+            Mark::Rect { r, .. } | Mark::Ellipse { r, .. } | Mark::Highlight { r, .. } | Mark::Blur { r, .. } | Mark::Erase { r, .. } => *r = resize_box(*r, k, to),
             _ => {}
         }
     }
@@ -180,9 +132,7 @@ impl Mark {
                 *a += d;
                 *b += d;
             }
-            Mark::Rect { r, .. } | Mark::Ellipse { r, .. } | Mark::Highlight { r, .. } => {
-                *r = r.translate(d)
-            }
+            Mark::Rect { r, .. } | Mark::Ellipse { r, .. } | Mark::Highlight { r, .. } => *r = r.translate(d),
             Mark::Pen { pts, .. } => {
                 for q in pts {
                     *q += d;
@@ -223,16 +173,7 @@ pub fn resize_box(r: Rect, k: usize, to: Pos2) -> Rect {
 /// Corners and edge midpoints, clockwise from the top left.
 pub fn box_handles(r: Rect) -> [Pos2; 8] {
     let c = r.center();
-    [
-        r.left_top(),
-        Pos2::new(c.x, r.top()),
-        r.right_top(),
-        Pos2::new(r.right(), c.y),
-        r.right_bottom(),
-        Pos2::new(c.x, r.bottom()),
-        r.left_bottom(),
-        Pos2::new(r.left(), c.y),
-    ]
+    [r.left_top(), Pos2::new(c.x, r.top()), r.right_top(), Pos2::new(r.right(), c.y), r.right_bottom(), Pos2::new(c.x, r.bottom()), r.left_bottom(), Pos2::new(r.left(), c.y)]
 }
 
 /// Everything the editor knows about one capture.
@@ -248,12 +189,7 @@ pub struct Doc {
 
 impl Default for Doc {
     fn default() -> Doc {
-        Doc {
-            marks: Vec::new(),
-            crop: None,
-            frame: None,
-            ppp: 1.0,
-        }
+        Doc { marks: Vec::new(), crop: None, frame: None, ppp: 1.0 }
     }
 }
 
@@ -316,13 +252,7 @@ pub struct Frame {
 
 impl Default for Frame {
     fn default() -> Frame {
-        Frame {
-            bg: 0,
-            pad: 1,
-            round: true,
-            shadow: true,
-            ratio: Ratio::Auto,
-        }
+        Frame { bg: 0, pad: 1, round: true, shadow: true, ratio: Ratio::Auto }
     }
 }
 
@@ -352,56 +282,24 @@ pub fn frame_geom(w: f32, h: f32, f: &Frame, ppp: f32) -> FrameGeom {
             oh = (ow / r).round();
         }
     }
-    let inner = Rect::from_min_size(
-        Pos2::new(((ow - w) / 2.0).round(), ((oh - h) / 2.0).round()),
-        Vec2::new(w, h),
-    );
-    let radius = if f.round {
-        (12.0 * ppp).min(w.min(h) / 4.0)
-    } else {
-        0.0
-    };
-    let shadow = f
-        .shadow
-        .then(|| ((24.0 * ppp).min(pad * 0.9), (8.0 * ppp).min(pad * 0.4)));
-    FrameGeom {
-        size: Vec2::new(ow, oh),
-        inner,
-        radius,
-        shadow,
-    }
+    let inner = Rect::from_min_size(Pos2::new(((ow - w) / 2.0).round(), ((oh - h) / 2.0).round()), Vec2::new(w, h));
+    let radius = if f.round { (12.0 * ppp).min(w.min(h) / 4.0) } else { 0.0 };
+    let shadow = f.shadow.then(|| ((24.0 * ppp).min(pad * 0.9), (8.0 * ppp).min(pad * 0.4)));
+    FrameGeom { size: Vec2::new(ow, oh), inner, radius, shadow }
 }
 
 /// `img` on its frame.
 pub fn framed(img: &RgbaImage, f: &Frame, ppp: f32) -> RgbaImage {
-    use tiny_skia::{
-        Color, FillRule, FilterQuality, GradientStop, LinearGradient, Paint, Pattern, Pixmap,
-        Point, SpreadMode, Transform,
-    };
+    use tiny_skia::{Color, FillRule, FilterQuality, GradientStop, LinearGradient, Paint, Pattern, Pixmap, Point, SpreadMode, Transform};
     let (w, h) = img.dimensions();
     let g = frame_geom(w as f32, h as f32, f, ppp);
     let (ow, oh) = (g.size.x as u32, g.size.y as u32);
-    let Some(mut pm) = Pixmap::new(ow, oh) else {
-        return img.clone();
-    };
+    let Some(mut pm) = Pixmap::new(ow, oh) else { return img.clone() };
     let t = Transform::identity();
     let (_, c0, c1) = BACKDROPS[f.bg.min(BACKDROPS.len() - 1)];
     let rgba = |c: Rgba8| Color::from_rgba8(c[0], c[1], c[2], c[3]);
-    if let Some(shader) = LinearGradient::new(
-        Point::from_xy(0.0, 0.0),
-        Point::from_xy(ow as f32, oh as f32),
-        vec![
-            GradientStop::new(0.0, rgba(c0)),
-            GradientStop::new(1.0, rgba(c1)),
-        ],
-        SpreadMode::Pad,
-        t,
-    ) {
-        let paint = Paint {
-            shader,
-            anti_alias: false,
-            ..Default::default()
-        };
+    if let Some(shader) = LinearGradient::new(Point::from_xy(0.0, 0.0), Point::from_xy(ow as f32, oh as f32), vec![GradientStop::new(0.0, rgba(c0)), GradientStop::new(1.0, rgba(c1))], SpreadMode::Pad, t) {
+        let paint = Paint { shader, anti_alias: false, ..Default::default() };
         if let Some(r) = tiny_skia::Rect::from_xywh(0.0, 0.0, ow as f32, oh as f32) {
             pm.fill_rect(r, &paint, t, None);
         }
@@ -412,18 +310,8 @@ pub fn framed(img: &RgbaImage, f: &Frame, ppp: f32) -> RgbaImage {
     }
     let src = to_pixmap(img);
     if let (Some(src), Some(path)) = (src, rounded(r, g.radius)) {
-        let shader = Pattern::new(
-            src.as_ref(),
-            SpreadMode::Pad,
-            FilterQuality::Nearest,
-            1.0,
-            Transform::from_translate(r.min.x, r.min.y),
-        );
-        let paint = Paint {
-            shader,
-            anti_alias: true,
-            ..Default::default()
-        };
+        let shader = Pattern::new(src.as_ref(), SpreadMode::Pad, FilterQuality::Nearest, 1.0, Transform::from_translate(r.min.x, r.min.y));
+        let paint = Paint { shader, anti_alias: true, ..Default::default() };
         pm.fill_path(&path, &paint, FillRule::Winding, t, None);
     }
     let mut out = RgbaImage::new(ow, oh);
@@ -437,36 +325,17 @@ pub fn soft_shadow(pm: &mut tiny_skia::Pixmap, r: Rect, radius: f32, blur: f32) 
     use tiny_skia::{FillRule, FilterQuality, Paint, Pixmap, PixmapPaint, Transform};
     let k = 4.0;
     let (ow, oh) = (pm.width(), pm.height());
-    let Some(mut sm) = Pixmap::new(
-        (ow as f32 / k).ceil() as u32 + 1,
-        (oh as f32 / k).ceil() as u32 + 1,
-    ) else {
-        return;
-    };
+    let Some(mut sm) = Pixmap::new((ow as f32 / k).ceil() as u32 + 1, (oh as f32 / k).ceil() as u32 + 1) else { return };
     let sr = Rect::from_min_size(Pos2::new(r.min.x / k, r.min.y / k), r.size() / k);
     if let Some(path) = rounded(sr, radius / k) {
         let mut paint = Paint::default();
         paint.set_color_rgba8(0, 0, 0, 120);
         paint.anti_alias = true;
-        sm.fill_path(
-            &path,
-            &paint,
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
+        sm.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
     }
     let (sw, sh) = (sm.width() as usize, sm.height() as usize);
-    blur_alpha(
-        sm.data_mut(),
-        sw,
-        sh,
-        (blur / k / 2.0).round().max(1.0) as usize,
-    );
-    let pp = PixmapPaint {
-        quality: FilterQuality::Bilinear,
-        ..Default::default()
-    };
+    blur_alpha(sm.data_mut(), sw, sh, (blur / k / 2.0).round().max(1.0) as usize);
+    let pp = PixmapPaint { quality: FilterQuality::Bilinear, ..Default::default() };
     pm.draw_pixmap(0, 0, sm.as_ref(), &pp, Transform::from_scale(k, k), None);
 }
 
@@ -505,11 +374,7 @@ fn blur_alpha(data: &mut [u8], w: usize, h: usize, radius: usize) {
 fn to_pixmap(img: &RgbaImage) -> Option<tiny_skia::Pixmap> {
     let mut pm = tiny_skia::Pixmap::new(img.width(), img.height())?;
     // straight → premultiplied
-    for (dst, src) in pm
-        .data_mut()
-        .chunks_exact_mut(4)
-        .zip(img.as_raw().chunks_exact(4))
-    {
+    for (dst, src) in pm.data_mut().chunks_exact_mut(4).zip(img.as_raw().chunks_exact(4)) {
         let a = src[3] as u32;
         dst[0] = (src[0] as u32 * a / 255) as u8;
         dst[1] = (src[1] as u32 * a / 255) as u8;
@@ -537,18 +402,7 @@ fn from_pixmap(pm: &tiny_skia::Pixmap, img: &mut RgbaImage) {
 impl Doc {
     /// The next number for the Steps tool.
     pub fn next_step(&self) -> u32 {
-        self.marks
-            .iter()
-            .filter_map(|m| {
-                if let Mark::Step { n, .. } = m {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .max()
-            .unwrap_or(0)
-            + 1
+        self.marks.iter().filter_map(|m| if let Mark::Step { n, .. } = m { Some(*n) } else { None }).max().unwrap_or(0) + 1
     }
 }
 
@@ -556,10 +410,7 @@ impl Doc {
 pub fn render(base: &RgbaImage, doc: &Doc) -> RgbaImage {
     let mut img = apply_effects(base, &doc.marks);
     draw_shapes(&mut img, &doc.marks);
-    let img = match doc
-        .crop
-        .and_then(|c| clamp_rect(c, img.width(), img.height()))
-    {
+    let img = match doc.crop.and_then(|c| clamp_rect(c, img.width(), img.height())) {
         Some((x, y, w, h)) => image::imageops::crop_imm(&img, x, y, w, h).to_image(),
         None => img,
     };
@@ -615,9 +466,7 @@ pub fn clamp_rect(r: Rect, w: u32, h: u32) -> Option<(u32, u32, u32, u32)> {
 }
 
 fn fill(img: &mut RgbaImage, r: Rect, c: Rgba8) {
-    let Some((x, y, w, h)) = clamp_rect(r, img.width(), img.height()) else {
-        return;
-    };
+    let Some((x, y, w, h)) = clamp_rect(r, img.width(), img.height()) else { return };
     for yy in y..y + h {
         for xx in x..x + w {
             img.put_pixel(xx, yy, Rgba(c));
@@ -627,9 +476,7 @@ fn fill(img: &mut RgbaImage, r: Rect, c: Rgba8) {
 
 /// Big square blocks, each the average of what it covers.
 fn pixelate(img: &mut RgbaImage, r: Rect) {
-    let Some((x, y, w, h)) = clamp_rect(r, img.width(), img.height()) else {
-        return;
-    };
+    let Some((x, y, w, h)) = clamp_rect(r, img.width(), img.height()) else { return };
     let block = (w.min(h) / 3).clamp(6, 24);
     let mut by = y;
     while by < y + h {
@@ -647,12 +494,7 @@ fn pixelate(img: &mut RgbaImage, r: Rect) {
                 }
             }
             let n = (bw * bh) as u64;
-            let avg = Rgba([
-                (sum[0] / n) as u8,
-                (sum[1] / n) as u8,
-                (sum[2] / n) as u8,
-                (sum[3] / n) as u8,
-            ]);
+            let avg = Rgba([(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8, (sum[3] / n) as u8]);
             for yy in by..by + bh {
                 for xx in bx..bx + bw {
                     img.put_pixel(xx, yy, avg);
@@ -666,9 +508,7 @@ fn pixelate(img: &mut RgbaImage, r: Rect) {
 
 /// Three box-blur passes inside the rect (close to a Gaussian).
 fn box_blur(img: &mut RgbaImage, r: Rect) {
-    let Some((x, y, w, h)) = clamp_rect(r, img.width(), img.height()) else {
-        return;
-    };
+    let Some((x, y, w, h)) = clamp_rect(r, img.width(), img.height()) else { return };
     let radius = (w.min(h) / 4).clamp(4, 16) as i64;
     let mut buf: Vec<[f32; 4]> = Vec::with_capacity((w * h) as usize);
     for yy in y..y + h {
@@ -682,13 +522,7 @@ fn box_blur(img: &mut RgbaImage, r: Rect) {
         // horizontal then vertical running averages, edges clamped
         for pass in 0..2 {
             let (outer, inner) = if pass == 0 { (h, w) } else { (w, h) };
-            let at = |o: i64, i: i64| {
-                if pass == 0 {
-                    (o * w + i) as usize
-                } else {
-                    (i * w + o) as usize
-                }
-            };
+            let at = |o: i64, i: i64| if pass == 0 { (o * w + i) as usize } else { (i * w + o) as usize };
             let mut line = vec![[0f32; 4]; inner as usize];
             for o in 0..outer {
                 for i in 0..inner {
@@ -711,11 +545,7 @@ fn box_blur(img: &mut RgbaImage, r: Rect) {
     for yy in 0..h {
         for xx in 0..w {
             let p = buf[(yy * w + xx) as usize];
-            img.put_pixel(
-                x + xx as u32,
-                y + yy as u32,
-                Rgba([p[0] as u8, p[1] as u8, p[2] as u8, p[3] as u8]),
-            );
+            img.put_pixel(x + xx as u32, y + yy as u32, Rgba([p[0] as u8, p[1] as u8, p[2] as u8, p[3] as u8]));
         }
     }
 }
@@ -807,32 +637,13 @@ fn draw_shapes(img: &mut RgbaImage, marks: &[Mark]) {
         p.anti_alias = true;
         p
     };
-    let stroke = |width: f32| Stroke {
-        width,
-        line_cap: LineCap::Round,
-        line_join: LineJoin::Round,
-        ..Default::default()
-    };
+    let stroke = |width: f32| Stroke { width, line_cap: LineCap::Round, line_join: LineJoin::Round, ..Default::default() };
     let t = Transform::identity();
     for m in marks {
         match m {
-            Mark::Arrow {
-                a,
-                b,
-                color,
-                width,
-                heads,
-            } => {
-                let end = if *heads == Heads::None {
-                    *b
-                } else {
-                    shaft_end(*a, *b, *width)
-                };
-                let start = if *heads == Heads::Both {
-                    shaft_end(*b, *a, *width)
-                } else {
-                    *a
-                };
+            Mark::Arrow { a, b, color, width, heads } => {
+                let end = if *heads == Heads::None { *b } else { shaft_end(*a, *b, *width) };
+                let start = if *heads == Heads::Both { shaft_end(*b, *a, *width) } else { *a };
                 let mut pb = PathBuilder::new();
                 pb.move_to(start.x, start.y);
                 pb.line_to(end.x, end.y);
@@ -864,10 +675,7 @@ fn draw_shapes(img: &mut RgbaImage, marks: &[Mark]) {
             }
             Mark::Ellipse { r, color, width } => {
                 let r = Rect::from_two_pos(r.min, r.max);
-                if let Some(path) =
-                    tiny_skia::Rect::from_xywh(r.min.x, r.min.y, r.width(), r.height())
-                        .and_then(PathBuilder::from_oval)
-                {
+                if let Some(path) = tiny_skia::Rect::from_xywh(r.min.x, r.min.y, r.width(), r.height()).and_then(PathBuilder::from_oval) {
                     pm.stroke_path(&path, &paint(*color), &stroke(*width), t, None);
                 }
             }
@@ -890,13 +698,7 @@ fn draw_shapes(img: &mut RgbaImage, marks: &[Mark]) {
             }
             Mark::Highlight { r, color } => {
                 if let Some(path) = rounded(*r, 2.0) {
-                    pm.fill_path(
-                        &path,
-                        &paint([color[0], color[1], color[2], 110]),
-                        FillRule::Winding,
-                        t,
-                        None,
-                    );
+                    pm.fill_path(&path, &paint([color[0], color[1], color[2], 110]), FillRule::Winding, t, None);
                 }
             }
             Mark::Step { at, n, color, size } => {
@@ -907,31 +709,14 @@ fn draw_shapes(img: &mut RgbaImage, marks: &[Mark]) {
                 }
                 let label = n.to_string();
                 let (tw, th) = measure(&label, size * 0.55);
-                glyphs(
-                    &mut pm,
-                    &label,
-                    Pos2::new(at.x - tw / 2.0, at.y - th / 2.0),
-                    size * 0.55,
-                    ink_on(*color),
-                );
+                glyphs(&mut pm, &label, Pos2::new(at.x - tw / 2.0, at.y - th / 2.0), size * 0.55, ink_on(*color));
             }
-            Mark::Text {
-                at,
-                text,
-                color,
-                size,
-            } => {
+            Mark::Text { at, text, color, size } => {
                 let s = label_size(text, *size);
                 if let Some(path) = rounded(Rect::from_min_size(*at, s), size * 0.3) {
                     pm.fill_path(&path, &paint(*color), FillRule::Winding, t, None);
                 }
-                glyphs(
-                    &mut pm,
-                    text,
-                    *at + Vec2::new(LABEL_PAD * size, LABEL_PAD * size / 2.0),
-                    *size,
-                    ink_on(*color),
-                );
+                glyphs(&mut pm, text, *at + Vec2::new(LABEL_PAD * size, LABEL_PAD * size / 2.0), *size, ink_on(*color));
             }
             Mark::Blur { .. } | Mark::Erase { .. } => {}
         }
@@ -1016,15 +801,7 @@ fn glyphs(pm: &mut tiny_skia::Pixmap, text: &str, pos: Pos2, size: f32, color: R
 
 /// Blend `text` into premultiplied 4-byte pixels (`w`×`h`, tight rows),
 /// top-left at `pos`. The color's first three bytes go in as they are.
-pub fn glyphs_into(
-    data: &mut [u8],
-    w: u32,
-    h: u32,
-    text: &str,
-    pos: Pos2,
-    size: f32,
-    color: Rgba8,
-) {
+pub fn glyphs_into(data: &mut [u8], w: u32, h: u32, text: &str, pos: Pos2, size: f32, color: Rgba8) {
     use ab_glyph::{point, Font, ScaleFont};
     let Some(font) = label_font() else { return };
     let sf = font.as_scaled(size);
@@ -1041,9 +818,7 @@ pub fn glyphs_into(
             let g = id.with_scale_and_position(size, point(x, y));
             x += sf.h_advance(id);
             prev = Some(id);
-            let Some(outline) = font.outline_glyph(g) else {
-                continue;
-            };
+            let Some(outline) = font.outline_glyph(g) else { continue };
             let bb = outline.px_bounds();
             outline.draw(|gx, gy, cov| {
                 let px = bb.min.x as i64 + gx as i64;
@@ -1071,8 +846,7 @@ pub fn hex(c: Rgba8) -> String {
 }
 
 pub fn pixel(img: &RgbaImage, x: i64, y: i64) -> Option<Rgba8> {
-    (x >= 0 && y >= 0 && (x as u32) < img.width() && (y as u32) < img.height())
-        .then(|| img.get_pixel(x as u32, y as u32).0)
+    (x >= 0 && y >= 0 && (x as u32) < img.width() && (y as u32) < img.height()).then(|| img.get_pixel(x as u32, y as u32).0)
 }
 
 fn close(a: Rgba8, b: Rgba8, tol: i32) -> bool {
@@ -1103,11 +877,7 @@ pub fn edge_span(img: &RgbaImage, x: i64, y: i64, tol: i32) -> Option<(i64, i64,
 
 fn segment_distance(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
-    let t = if ab.length_sq() > 0.0 {
-        ((p - a).dot(ab) / ab.length_sq()).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let t = if ab.length_sq() > 0.0 { ((p - a).dot(ab) / ab.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
     (p - (a + ab * t)).length()
 }
 
@@ -1122,27 +892,13 @@ mod tests {
     #[test]
     fn arrow_and_rect_paint_their_color() {
         let mut d = Doc::default();
-        d.marks.push(Mark::Arrow {
-            a: Pos2::new(10.0, 40.0),
-            b: Pos2::new(110.0, 40.0),
-            color: [255, 0, 0, 255],
-            width: 4.0,
-            heads: Heads::End,
-        });
-        d.marks.push(Mark::Rect {
-            r: Rect::from_min_max(Pos2::new(20.0, 5.0), Pos2::new(60.0, 25.0)),
-            color: [0, 0, 255, 255],
-            width: 4.0,
-        });
+        d.marks.push(Mark::Arrow { a: Pos2::new(10.0, 40.0), b: Pos2::new(110.0, 40.0), color: [255, 0, 0, 255], width: 4.0, heads: Heads::End });
+        d.marks.push(Mark::Rect { r: Rect::from_min_max(Pos2::new(20.0, 5.0), Pos2::new(60.0, 25.0)), color: [0, 0, 255, 255], width: 4.0 });
         let out = render(&canvas(), &d);
         assert_eq!(out.get_pixel(50, 40).0, [255, 0, 0, 255], "shaft");
         assert_eq!(out.get_pixel(108, 40).0[0], 255, "head reaches the tip");
         assert_eq!(out.get_pixel(40, 5).0, [0, 0, 255, 255], "rect edge");
-        assert_eq!(
-            out.get_pixel(40, 15).0,
-            [240, 240, 240, 255],
-            "rect inside stays"
-        );
+        assert_eq!(out.get_pixel(40, 15).0, [240, 240, 240, 255], "rect inside stays");
     }
 
     #[test]
@@ -1150,13 +906,7 @@ mod tests {
         // 6 px off the shaft, inside a head (heads are ~10 px wide each side)
         let red_near = |heads: Heads, x: u32| {
             let mut d = Doc::default();
-            d.marks.push(Mark::Arrow {
-                a: Pos2::new(10.0, 40.0),
-                b: Pos2::new(110.0, 40.0),
-                color: [255, 0, 0, 255],
-                width: 4.0,
-                heads,
-            });
+            d.marks.push(Mark::Arrow { a: Pos2::new(10.0, 40.0), b: Pos2::new(110.0, 40.0), color: [255, 0, 0, 255], width: 4.0, heads });
             render(&canvas(), &d).get_pixel(x, 46).0 == [255, 0, 0, 255]
         };
         assert!(red_near(Heads::End, 96) && !red_near(Heads::End, 24));
@@ -1176,34 +926,13 @@ mod tests {
         }
         let r = Rect::from_min_max(Pos2::new(30.0, 20.0), Pos2::new(90.0, 60.0));
         for style in [BlurStyle::Pixelate, BlurStyle::Blur] {
-            let out = apply_effects(
-                &base,
-                &[Mark::Blur {
-                    r,
-                    style,
-                    boxes: vec![],
-                }],
-            );
+            let out = apply_effects(&base, &[Mark::Blur { r, style, boxes: vec![] }]);
             let a = out.get_pixel(50, 30).0[0] as i32;
             let b = out.get_pixel(51, 30).0[0] as i32;
-            assert!(
-                (a - b).abs() < 40,
-                "{style:?}: checkerboard is smoothed inside ({a} vs {b})"
-            );
-            assert_eq!(
-                out.get_pixel(5, 5),
-                base.get_pixel(5, 5),
-                "{style:?}: outside untouched"
-            );
+            assert!((a - b).abs() < 40, "{style:?}: checkerboard is smoothed inside ({a} vs {b})");
+            assert_eq!(out.get_pixel(5, 5), base.get_pixel(5, 5), "{style:?}: outside untouched");
         }
-        let solid = apply_effects(
-            &base,
-            &[Mark::Blur {
-                r,
-                style: BlurStyle::Solid,
-                boxes: vec![],
-            }],
-        );
+        let solid = apply_effects(&base, &[Mark::Blur { r, style: BlurStyle::Solid, boxes: vec![] }]);
         assert_eq!(solid.get_pixel(60, 40).0, [28, 28, 31, 255]);
     }
 
@@ -1221,69 +950,31 @@ mod tests {
         let r = Rect::from_min_max(Pos2::new(5.0, 10.0), Pos2::new(40.0, 30.0));
         let out = apply_effects(&base, &[Mark::Erase { r, boxes: vec![] }]);
         assert_eq!(out.get_pixel(20, 20).0, [10, 120, 200, 255]);
-        assert_eq!(
-            out.get_pixel(60, 20).0,
-            [0, 0, 0, 255],
-            "outside the box stays"
-        );
+        assert_eq!(out.get_pixel(60, 20).0, [0, 0, 0, 255], "outside the box stays");
         // only-text: the second word's box, nothing else
         let word = Rect::from_min_max(Pos2::new(50.0, 15.0), Pos2::new(70.0, 25.0));
-        let out = apply_effects(
-            &base,
-            &[Mark::Erase {
-                r: Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 40.0)),
-                boxes: vec![word],
-            }],
-        );
+        let out = apply_effects(&base, &[Mark::Erase { r: Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 40.0)), boxes: vec![word] }]);
         assert_eq!(out.get_pixel(60, 20).0, [10, 120, 200, 255]);
-        assert_eq!(
-            out.get_pixel(20, 20).0,
-            [0, 0, 0, 255],
-            "first word wasn't in the boxes"
-        );
+        assert_eq!(out.get_pixel(20, 20).0, [0, 0, 0, 255], "first word wasn't in the boxes");
     }
 
     #[test]
     fn crop_happens_last_and_clamps() {
         let mut d = Doc::default();
-        d.crop = Some(Rect::from_min_max(
-            Pos2::new(100.0, 70.0),
-            Pos2::new(500.0, 500.0),
-        ));
+        d.crop = Some(Rect::from_min_max(Pos2::new(100.0, 70.0), Pos2::new(500.0, 500.0)));
         assert_eq!(render(&canvas(), &d).dimensions(), (20, 10));
-        d.crop = Some(Rect::from_min_max(
-            Pos2::new(200.0, 200.0),
-            Pos2::new(300.0, 300.0),
-        ));
-        assert_eq!(
-            render(&canvas(), &d).dimensions(),
-            (120, 80),
-            "empty crop is ignored"
-        );
+        d.crop = Some(Rect::from_min_max(Pos2::new(200.0, 200.0), Pos2::new(300.0, 300.0)));
+        assert_eq!(render(&canvas(), &d).dimensions(), (120, 80), "empty crop is ignored");
     }
 
     #[test]
     fn labels_and_steps_draw_a_filled_box() {
         let mut d = Doc::default();
-        d.marks.push(Mark::Text {
-            at: Pos2::new(5.0, 5.0),
-            text: "Hi".into(),
-            color: [255, 69, 58, 255],
-            size: 20.0,
-        });
-        d.marks.push(Mark::Step {
-            at: Pos2::new(90.0, 60.0),
-            n: d.next_step(),
-            color: [255, 69, 58, 255],
-            size: 26.0,
-        });
+        d.marks.push(Mark::Text { at: Pos2::new(5.0, 5.0), text: "Hi".into(), color: [255, 69, 58, 255], size: 20.0 });
+        d.marks.push(Mark::Step { at: Pos2::new(90.0, 60.0), n: d.next_step(), color: [255, 69, 58, 255], size: 26.0 });
         assert_eq!(d.next_step(), 2);
         let out = render(&canvas(), &d);
-        assert_eq!(
-            out.get_pixel(6, 7).0[1],
-            69,
-            "label box corner area is the label color"
-        );
+        assert_eq!(out.get_pixel(6, 7).0[1], 69, "label box corner area is the label color");
         assert_eq!(out.get_pixel(90, 50).0[1], 69, "step circle");
     }
 
@@ -1291,27 +982,11 @@ mod tests {
     fn ellipse_and_pen_paint_and_hit() {
         let mut d = Doc::default();
         let r = Rect::from_min_max(Pos2::new(10.0, 10.0), Pos2::new(110.0, 70.0));
-        d.marks.push(Mark::Ellipse {
-            r,
-            color: [255, 0, 0, 255],
-            width: 4.0,
-        });
-        d.marks.push(Mark::Pen {
-            pts: vec![
-                Pos2::new(5.0, 75.0),
-                Pos2::new(60.0, 76.0),
-                Pos2::new(115.0, 75.0),
-            ],
-            color: [0, 0, 255, 255],
-            width: 4.0,
-        });
+        d.marks.push(Mark::Ellipse { r, color: [255, 0, 0, 255], width: 4.0 });
+        d.marks.push(Mark::Pen { pts: vec![Pos2::new(5.0, 75.0), Pos2::new(60.0, 76.0), Pos2::new(115.0, 75.0)], color: [0, 0, 255, 255], width: 4.0 });
         let out = render(&canvas(), &d);
         assert_eq!(out.get_pixel(60, 10).0, [255, 0, 0, 255], "ellipse top");
-        assert_eq!(
-            out.get_pixel(60, 40).0,
-            [240, 240, 240, 255],
-            "ellipse inside stays"
-        );
+        assert_eq!(out.get_pixel(60, 40).0, [240, 240, 240, 255], "ellipse inside stays");
         assert_eq!(out.get_pixel(60, 75).0[2], 255, "pen line");
         assert!(d.marks[0].hit(Pos2::new(10.0, 40.0), 2.0));
         assert!(!d.marks[0].hit(Pos2::new(60.0, 40.0), 2.0), "hollow inside");
@@ -1321,88 +996,40 @@ mod tests {
 
     #[test]
     fn handles_resize_boxes_and_arrows() {
-        let mut m = Mark::Rect {
-            r: Rect::from_min_max(Pos2::new(10.0, 10.0), Pos2::new(50.0, 30.0)),
-            color: [0; 4],
-            width: 2.0,
-        };
+        let mut m = Mark::Rect { r: Rect::from_min_max(Pos2::new(10.0, 10.0), Pos2::new(50.0, 30.0)), color: [0; 4], width: 2.0 };
         assert_eq!(m.handles().len(), 8);
         m.drag_handle(4, Pos2::new(80.0, 60.0));
-        assert_eq!(
-            m.bounds(),
-            Rect::from_min_max(Pos2::new(10.0, 10.0), Pos2::new(80.0, 60.0)).expand(1.0)
-        );
+        assert_eq!(m.bounds(), Rect::from_min_max(Pos2::new(10.0, 10.0), Pos2::new(80.0, 60.0)).expand(1.0));
         // dragging past the opposite edge flips instead of going negative
         m.drag_handle(3, Pos2::new(0.0, 0.0));
         assert!(matches!(m, Mark::Rect { r, .. } if r.min.x == 0.0 && r.max.x == 10.0));
-        let mut a = Mark::Arrow {
-            a: Pos2::ZERO,
-            b: Pos2::new(10.0, 0.0),
-            color: [0; 4],
-            width: 2.0,
-            heads: Heads::End,
-        };
+        let mut a = Mark::Arrow { a: Pos2::ZERO, b: Pos2::new(10.0, 0.0), color: [0; 4], width: 2.0, heads: Heads::End };
         a.drag_handle(1, Pos2::new(5.0, 5.0));
         assert!(matches!(a, Mark::Arrow { b, .. } if b == Pos2::new(5.0, 5.0)));
-        let text_blur = Mark::Blur {
-            r: Rect::from_min_max(Pos2::ZERO, Pos2::new(9.0, 9.0)),
-            style: BlurStyle::Blur,
-            boxes: vec![Rect::ZERO],
-        };
-        assert!(
-            text_blur.handles().is_empty(),
-            "only-text covers can't be resized"
-        );
+        let text_blur = Mark::Blur { r: Rect::from_min_max(Pos2::ZERO, Pos2::new(9.0, 9.0)), style: BlurStyle::Blur, boxes: vec![Rect::ZERO] };
+        assert!(text_blur.handles().is_empty(), "only-text covers can't be resized");
     }
 
     #[test]
     fn frame_pads_rounds_and_keeps_the_picture() {
         let img = RgbaImage::from_pixel(200, 100, Rgba([255, 0, 0, 255]));
-        let f = Frame {
-            bg: 1,
-            pad: 1,
-            round: true,
-            shadow: true,
-            ratio: Ratio::Auto,
-        };
+        let f = Frame { bg: 1, pad: 1, round: true, shadow: true, ratio: Ratio::Auto };
         let out = framed(&img, &f, 1.0);
         let g = frame_geom(200.0, 100.0, &f, 1.0);
         assert_eq!(out.dimensions(), (g.size.x as u32, g.size.y as u32));
         assert_eq!(g.inner.min, Pos2::new(16.0, 16.0), "8% of the longer side");
         let c = g.inner.center();
-        assert_eq!(
-            out.get_pixel(c.x as u32, c.y as u32).0,
-            [255, 0, 0, 255],
-            "picture in the middle"
-        );
-        assert_ne!(
-            out.get_pixel(16, 16).0,
-            [255, 0, 0, 255],
-            "corner is rounded off"
-        );
-        assert_eq!(
-            out.get_pixel(0, 0).0,
-            BACKDROPS[1].1,
-            "backdrop starts at its first color"
-        );
+        assert_eq!(out.get_pixel(c.x as u32, c.y as u32).0, [255, 0, 0, 255], "picture in the middle");
+        assert_ne!(out.get_pixel(16, 16).0, [255, 0, 0, 255], "corner is rounded off");
+        assert_eq!(out.get_pixel(0, 0).0, BACKDROPS[1].1, "backdrop starts at its first color");
         // the shadow darkens the backdrop just under the picture
         let below = out.get_pixel(c.x as u32, g.inner.max.y as u32 + 4).0;
         let far = out.get_pixel(c.x as u32 + 1, out.height() - 1).0;
-        assert!(
-            (below[0] as i32) < far[0] as i32 + 30,
-            "shadow under the picture"
-        );
-        for (ratio, want) in [
-            (Ratio::Wide, 16.0 / 9.0),
-            (Ratio::Square, 1.0),
-            (Ratio::Classic, 4.0 / 3.0),
-        ] {
+        assert!((below[0] as i32) < far[0] as i32 + 30, "shadow under the picture");
+        for (ratio, want) in [(Ratio::Wide, 16.0 / 9.0), (Ratio::Square, 1.0), (Ratio::Classic, 4.0 / 3.0)] {
             let g = frame_geom(200.0, 100.0, &Frame { ratio, ..f }, 1.0);
             assert!((g.size.x / g.size.y - want).abs() < 0.02, "{ratio:?}");
-            assert!(
-                g.inner.min.x >= 16.0 && g.inner.min.y >= 16.0,
-                "{ratio:?} keeps the padding"
-            );
+            assert!(g.inner.min.x >= 16.0 && g.inner.min.y >= 16.0, "{ratio:?} keeps the padding");
         }
         let mut d = Doc::default();
         d.frame = Some(f);
@@ -1411,20 +1038,10 @@ mod tests {
 
     #[test]
     fn hit_tests() {
-        let a = Mark::Arrow {
-            a: Pos2::new(0.0, 0.0),
-            b: Pos2::new(100.0, 0.0),
-            color: [0; 4],
-            width: 4.0,
-            heads: Heads::End,
-        };
+        let a = Mark::Arrow { a: Pos2::new(0.0, 0.0), b: Pos2::new(100.0, 0.0), color: [0; 4], width: 4.0, heads: Heads::End };
         assert!(a.hit(Pos2::new(50.0, 3.0), 2.0));
         assert!(!a.hit(Pos2::new(50.0, 20.0), 2.0));
-        let r = Mark::Rect {
-            r: Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0)),
-            color: [0; 4],
-            width: 4.0,
-        };
+        let r = Mark::Rect { r: Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 100.0)), color: [0; 4], width: 4.0 };
         assert!(r.hit(Pos2::new(0.0, 50.0), 2.0));
         assert!(!r.hit(Pos2::new(50.0, 50.0), 2.0), "hollow inside");
     }
@@ -1440,22 +1057,12 @@ mod tests {
         assert_eq!(hex(pixel(&img, 30, 20).unwrap()), "#0B6BD8");
         assert_eq!(edge_span(&img, 30, 20, 8), Some((20, 59, 10, 29)));
         assert_eq!(pixel(&img, -1, 0), None);
-        assert_eq!(
-            surrounding_color(
-                &img,
-                Rect::from_min_max(Pos2::new(21.0, 11.0), Pos2::new(58.0, 28.0))
-            ),
-            [11, 107, 216, 255]
-        );
+        assert_eq!(surrounding_color(&img, Rect::from_min_max(Pos2::new(21.0, 11.0), Pos2::new(58.0, 28.0))), [11, 107, 216, 255]);
     }
 
     #[test]
     fn a_flat_ellipse_is_hit_near_its_outline() {
-        let m = Mark::Ellipse {
-            r: Rect::from_min_max(Pos2::ZERO, Pos2::new(200.0, 20.0)),
-            color: [0; 4],
-            width: 4.0,
-        };
+        let m = Mark::Ellipse { r: Rect::from_min_max(Pos2::ZERO, Pos2::new(200.0, 20.0)), color: [0; 4], width: 4.0 };
         // under 3 px from the outline, far along the ray from the center
         assert!(m.hit(Pos2::new(170.0, 3.0), 6.0));
         assert!(!m.hit(Pos2::new(100.0, 10.0), 6.0));

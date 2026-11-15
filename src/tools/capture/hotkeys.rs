@@ -11,11 +11,7 @@ mod tests {
     #[test]
     fn shortcuts_map_to_distinct_hotkeys() {
         let s = super::super::settings::Settings::default();
-        let mut ids: Vec<u32> = s
-            .bound()
-            .iter()
-            .map(|(_, k)| to_hotkey(k).expect("default maps").id())
-            .collect();
+        let mut ids: Vec<u32> = s.bound().iter().map(|(_, k)| to_hotkey(k).expect("default maps").id()).collect();
         let n = ids.len();
         ids.sort();
         ids.dedup();

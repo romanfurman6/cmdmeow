@@ -11,10 +11,7 @@
 
 use crate::tools::capture::render::{self, Frame, Rgba8};
 use serde::{Deserialize, Serialize};
-use tiny_skia::{
-    BlendMode, FillRule, FilterQuality, Paint, PathBuilder, Pattern, Pixmap, PixmapPaint,
-    SpreadMode, Transform,
-};
+use tiny_skia::{BlendMode, FillRule, FilterQuality, Paint, PathBuilder, Pattern, Pixmap, PixmapPaint, SpreadMode, Transform};
 
 /// How a video is saved. A framed video keeps it in its project.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -46,12 +43,7 @@ fn even(v: f32) -> u32 {
 pub fn layout(src: (u32, u32), frame: Option<&Frame>) -> Layout {
     let (w, h) = (src.0 as f32, src.1 as f32);
     let Some(f) = frame else {
-        return Layout {
-            out: (even(w), even(h)),
-            screen: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h)),
-            radius: 0.0,
-            shadow: None,
-        };
+        return Layout { out: (even(w), even(h)), screen: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h)), radius: 0.0, shadow: None };
     };
     let ppp = (w.max(h) / 1440.0).max(1.0);
     let g = render::frame_geom(w, h, f, ppp);
@@ -61,16 +53,8 @@ pub fn layout(src: (u32, u32), frame: Option<&Frame>) -> Layout {
     let sy = out.1 as f32 / g.size.y;
     // whole pixels: the picture's straight edges stay crisp
     let px = |x: f32, y: f32| egui::pos2(x.round(), y.round());
-    let screen = egui::Rect::from_min_max(
-        px(g.inner.min.x * sx, g.inner.min.y * sy),
-        px(g.inner.max.x * sx, g.inner.max.y * sy),
-    );
-    Layout {
-        out,
-        screen,
-        radius: g.radius * k,
-        shadow: g.shadow.map(|(b, d)| (b * k, d * k)),
-    }
+    let screen = egui::Rect::from_min_max(px(g.inner.min.x * sx, g.inner.min.y * sy), px(g.inner.max.x * sx, g.inner.max.y * sy));
+    Layout { out, screen, radius: g.radius * k, shadow: g.shadow.map(|(b, d)| (b * k, d * k)) }
 }
 
 /// The backdrop's colors at its top-left and bottom-right corners.
@@ -102,43 +86,17 @@ pub fn chrome(f: &Frame, lay: &Layout) -> Option<Chrome> {
     let grad = tiny_skia::LinearGradient::new(
         tiny_skia::Point::from_xy(0.0, 0.0),
         tiny_skia::Point::from_xy(ow as f32, oh as f32),
-        vec![
-            tiny_skia::GradientStop::new(0.0, bgra(c0)),
-            tiny_skia::GradientStop::new(1.0, bgra(c1)),
-        ],
+        vec![tiny_skia::GradientStop::new(0.0, bgra(c0)), tiny_skia::GradientStop::new(1.0, bgra(c1))],
         SpreadMode::Pad,
         Transform::identity(),
     )?;
-    under.fill_rect(
-        tiny_skia::Rect::from_xywh(0.0, 0.0, ow as f32, oh as f32)?,
-        &Paint {
-            shader: grad,
-            ..Default::default()
-        },
-        Transform::identity(),
-        None,
-    );
+    under.fill_rect(tiny_skia::Rect::from_xywh(0.0, 0.0, ow as f32, oh as f32)?, &Paint { shader: grad, ..Default::default() }, Transform::identity(), None);
     if let Some((blur, dy)) = lay.shadow {
-        render::soft_shadow(
-            &mut under,
-            lay.screen.translate(egui::vec2(0.0, dy)),
-            lay.radius,
-            blur,
-        );
+        render::soft_shadow(&mut under, lay.screen.translate(egui::vec2(0.0, dy)), lay.radius, blur);
     }
     let mut over = under.clone();
-    let hole = Paint {
-        anti_alias: true,
-        blend_mode: BlendMode::Clear,
-        ..Default::default()
-    };
-    over.fill_path(
-        &rounded(lay.screen, lay.radius)?,
-        &hole,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
+    let hole = Paint { anti_alias: true, blend_mode: BlendMode::Clear, ..Default::default() };
+    over.fill_path(&rounded(lay.screen, lay.radius)?, &hole, FillRule::Winding, Transform::identity(), None);
     Some(Chrome { under, over })
 }
 
@@ -149,41 +107,17 @@ pub fn compose_cpu(ch: &Chrome, lay: &Layout, screen: &[u8], size: (u32, u32)) -
     let mut out = ch.under.clone();
     let src = tiny_skia::PixmapRef::from_bytes(screen, size.0, size.1)?;
     let s = lay.screen;
-    let tf = Transform::from_row(
-        s.width() / size.0 as f32,
-        0.0,
-        0.0,
-        s.height() / size.1 as f32,
-        s.left(),
-        s.top(),
-    );
-    let paint = Paint {
-        shader: Pattern::new(src, SpreadMode::Pad, FilterQuality::Bilinear, 1.0, tf),
-        anti_alias: true,
-        ..Default::default()
-    };
-    out.fill_rect(
-        tiny_skia::Rect::from_xywh(s.left(), s.top(), s.width(), s.height())?,
-        &paint,
-        Transform::identity(),
-        None,
-    );
-    out.draw_pixmap(
-        0,
-        0,
-        ch.over.as_ref(),
-        &PixmapPaint::default(),
-        Transform::identity(),
-        None,
-    );
+    let tf = Transform::from_row(s.width() / size.0 as f32, 0.0, 0.0, s.height() / size.1 as f32, s.left(), s.top());
+    let paint = Paint { shader: Pattern::new(src, SpreadMode::Pad, FilterQuality::Bilinear, 1.0, tf), anti_alias: true, ..Default::default() };
+    out.fill_rect(tiny_skia::Rect::from_xywh(s.left(), s.top(), s.width(), s.height())?, &paint, Transform::identity(), None);
+    out.draw_pixmap(0, 0, ch.over.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
     Some(out)
 }
 
 fn rounded(r: egui::Rect, radius: f32) -> Option<tiny_skia::Path> {
     let k = radius.min(r.width() / 2.0).min(r.height() / 2.0).max(0.0);
     if k <= 0.0 {
-        return tiny_skia::Rect::from_xywh(r.left(), r.top(), r.width(), r.height())
-            .map(PathBuilder::from_rect);
+        return tiny_skia::Rect::from_xywh(r.left(), r.top(), r.width(), r.height()).map(PathBuilder::from_rect);
     }
     let (x0, y0, x1, y1) = (r.left(), r.top(), r.right(), r.bottom());
     let c = k * 0.4477; // circle-ish corners with cubics
@@ -209,38 +143,18 @@ mod tests {
     fn layouts_keep_the_size_and_fit_the_frame() {
         let plain = layout((1920, 1080), None);
         assert_eq!(plain.out, (1920, 1080));
-        let f = Frame {
-            ratio: render::Ratio::Square,
-            ..Frame::default()
-        };
+        let f = Frame { ratio: render::Ratio::Square, ..Frame::default() };
         let l = layout((1920, 1080), Some(&f));
         assert_eq!(l.out, (1920, 1920));
         assert!(l.screen.left() > 0.0 && l.screen.right() < 1920.0);
-        assert!(
-            (l.screen.width() / l.screen.height() - 16.0 / 9.0).abs() < 0.01,
-            "the picture keeps its shape"
-        );
-        assert!(
-            [
-                l.screen.min.x,
-                l.screen.min.y,
-                l.screen.max.x,
-                l.screen.max.y
-            ]
-            .iter()
-            .all(|v| v.fract() == 0.0),
-            "on whole pixels"
-        );
+        assert!((l.screen.width() / l.screen.height() - 16.0 / 9.0).abs() < 0.01, "the picture keeps its shape");
+        assert!([l.screen.min.x, l.screen.min.y, l.screen.max.x, l.screen.max.y].iter().all(|v| v.fract() == 0.0), "on whole pixels");
         let odd = layout((1001, 667), None);
         assert_eq!((odd.out.0 % 2, odd.out.1 % 2), (0, 0));
     }
 
     fn solid(w: u32, h: u32, c: [u8; 4]) -> Vec<u8> {
-        c.iter()
-            .copied()
-            .cycle()
-            .take((w * h * 4) as usize)
-            .collect()
+        c.iter().copied().cycle().take((w * h * 4) as usize).collect()
     }
 
     fn px(pm: &Pixmap, x: f32, y: f32) -> [u8; 4] {
@@ -261,16 +175,8 @@ mod tests {
         assert_eq!(px(&ch.over, 0.0, 0.0), px(&ch.under, 0.0, 0.0));
         // a hole in the middle, the backdrop in the round corner
         assert_eq!(px(&ch.over, s.center().x, s.center().y)[3], 0);
-        assert_eq!(
-            px(&ch.over, s.left() + 1.0, s.top() + 1.0)[3],
-            255,
-            "the corner is cut round"
-        );
-        assert_eq!(
-            px(&ch.under, s.center().x, s.center().y)[3],
-            255,
-            "under is solid"
-        );
+        assert_eq!(px(&ch.over, s.left() + 1.0, s.top() + 1.0)[3], 255, "the corner is cut round");
+        assert_eq!(px(&ch.under, s.center().x, s.center().y)[3], 255, "under is solid");
     }
 
     #[test]
@@ -281,16 +187,8 @@ mod tests {
         let screen = solid(200, 100, [10, 20, 30, 255]);
         let out = compose_cpu(&ch, &lay, &screen, (200, 100)).unwrap();
         let mid = lay.screen.center();
-        assert_eq!(
-            px(&out, mid.x, mid.y),
-            [10, 20, 30, 255],
-            "the picture inside"
-        );
-        assert_eq!(
-            px(&out, 0.0, 0.0),
-            px(&ch.under, 0.0, 0.0),
-            "the backdrop around"
-        );
+        assert_eq!(px(&out, mid.x, mid.y), [10, 20, 30, 255], "the picture inside");
+        assert_eq!(px(&out, 0.0, 0.0), px(&ch.under, 0.0, 0.0), "the backdrop around");
         // no dark seam where the picture meets the backdrop
         let edge = px(&out, lay.screen.center().x, lay.screen.top() - 0.5);
         assert!(edge[3] == 255, "opaque at the edge");
@@ -298,11 +196,7 @@ mod tests {
 
     #[test]
     fn square_corners_need_no_cut() {
-        let f = Frame {
-            round: false,
-            shadow: false,
-            ..Frame::default()
-        };
+        let f = Frame { round: false, shadow: false, ..Frame::default() };
         let lay = layout((200, 100), Some(&f));
         assert_eq!(lay.radius, 0.0);
         assert!(lay.shadow.is_none());

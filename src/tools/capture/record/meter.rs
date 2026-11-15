@@ -34,11 +34,7 @@ mod imp {
     use objc2::rc::Retained;
     use objc2::runtime::ProtocolObject;
     use objc2::{define_class, msg_send, AnyThread};
-    use objc2_av_foundation::{
-        AVCaptureAudioDataOutput, AVCaptureAudioDataOutputSampleBufferDelegate,
-        AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput,
-        AVCaptureSession, AVMediaTypeAudio,
-    };
+    use objc2_av_foundation::{AVCaptureAudioDataOutput, AVCaptureAudioDataOutputSampleBufferDelegate, AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession, AVMediaTypeAudio};
     use objc2_core_media::CMSampleBuffer;
     use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 
@@ -52,13 +48,7 @@ mod imp {
 
         unsafe impl AVCaptureAudioDataOutputSampleBufferDelegate for Sink {
             #[unsafe(method(captureOutput:didOutputSampleBuffer:fromConnection:))]
-            fn did_output(
-                &self,
-                _output: &AVCaptureOutput,
-                _sample: &CMSampleBuffer,
-                _connection: &AVCaptureConnection,
-            ) {
-            }
+            fn did_output(&self, _output: &AVCaptureOutput, _sample: &CMSampleBuffer, _connection: &AVCaptureConnection) {}
         }
     );
 
@@ -83,9 +73,7 @@ mod imp {
         pub fn open(device: Option<&str>) -> Option<MicMeter> {
             unsafe {
                 let media = AVMediaTypeAudio?;
-                let dev = device
-                    .and_then(|id| AVCaptureDevice::deviceWithUniqueID(&NSString::from_str(id)))
-                    .or_else(|| AVCaptureDevice::defaultDeviceWithMediaType(media))?;
+                let dev = device.and_then(|id| AVCaptureDevice::deviceWithUniqueID(&NSString::from_str(id))).or_else(|| AVCaptureDevice::defaultDeviceWithMediaType(media))?;
                 let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev).ok()?;
                 let session = AVCaptureSession::new();
                 let output = AVCaptureAudioDataOutput::new();
@@ -96,21 +84,14 @@ mod imp {
                 session.addOutput(&output);
                 let sink = Sink::new();
                 let queue = DispatchQueue::new("cmdmeow.mic-meter", None);
-                output.setSampleBufferDelegate_queue(
-                    Some(ProtocolObject::from_ref(&*sink)),
-                    Some(&queue),
-                );
+                output.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(&*sink)), Some(&queue));
                 // starting takes a moment; not on the UI thread
                 let s = SendBox(session.clone());
                 std::thread::spawn(move || {
                     let s = s;
                     s.0.startRunning();
                 });
-                Some(MicMeter {
-                    session,
-                    output,
-                    _sink: sink,
-                })
+                Some(MicMeter { session, output, _sink: sink })
             }
         }
 

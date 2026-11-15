@@ -23,10 +23,7 @@ fn prev_script(dir: &Path) -> PathBuf {
 }
 
 fn claude_settings() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".claude")
-        .join("settings.json")
+    dirs::home_dir().unwrap_or_default().join(".claude").join("settings.json")
 }
 
 /// The hook is set in Claude Code's settings.
@@ -35,16 +32,11 @@ pub fn installed() -> bool {
 }
 
 fn is_ours(status_line: &Value, dir: &Path) -> bool {
-    status_line["command"]
-        .as_str()
-        .is_some_and(|c| c.contains("statusline.sh") && c.contains(&*dir.to_string_lossy()))
+    status_line["command"].as_str().is_some_and(|c| c.contains("statusline.sh") && c.contains(&*dir.to_string_lossy()))
 }
 
 fn read_json(p: &Path) -> Value {
-    std::fs::read(p)
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or(Value::Null)
+    std::fs::read(p).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null)
 }
 
 /// Take the hook out and put the previous status line back.
@@ -57,15 +49,8 @@ fn remove_at(settings: &Path, dir: &Path) -> Result<(), String> {
     if !v.is_object() || !is_ours(&v["statusLine"], dir) {
         return Ok(());
     }
-    match std::fs::read_to_string(prev_script(dir))
-        .ok()
-        .and_then(|s| {
-            s.strip_prefix("#!/bin/sh\n")
-                .map(|c| c.trim_end().to_string())
-        }) {
-        Some(cmd) if !cmd.is_empty() => {
-            v["statusLine"] = json!({ "type": "command", "command": cmd })
-        }
+    match std::fs::read_to_string(prev_script(dir)).ok().and_then(|s| s.strip_prefix("#!/bin/sh\n").map(|c| c.trim_end().to_string())) {
+        Some(cmd) if !cmd.is_empty() => v["statusLine"] = json!({ "type": "command", "command": cmd }),
         _ => {
             if let Some(o) = v.as_object_mut() {
                 o.remove("statusLine");
@@ -95,11 +80,7 @@ pub fn cleanup() {
         }
     }
     let d = dir();
-    for f in [
-        "statusline.sh",
-        "claude-status.json",
-        "claude-status.json.tmp",
-    ] {
+    for f in ["statusline.sh", "claude-status.json", "claude-status.json.tmp"] {
         let _ = std::fs::remove_file(d.join(f));
     }
 }
@@ -115,11 +96,7 @@ mod tests {
         std::fs::create_dir_all(&hook).unwrap();
         let f = d.join("settings.json");
         let ours = format!("\"{}\"", script(&hook).display());
-        std::fs::write(
-            &f,
-            json!({"model":"opus","statusLine":{"type":"command","command":ours}}).to_string(),
-        )
-        .unwrap();
+        std::fs::write(&f, json!({"model":"opus","statusLine":{"type":"command","command":ours}}).to_string()).unwrap();
         std::fs::write(prev_script(&hook), "#!/bin/sh\n~/bin/my-line\n").unwrap();
         assert!(is_ours(&read_json(&f)["statusLine"], &hook));
         remove_at(&f, &hook).unwrap();
@@ -128,11 +105,7 @@ mod tests {
         assert_eq!(v["model"], "opus");
         assert!(!prev_script(&hook).exists());
         // no old line: the key goes
-        std::fs::write(
-            &f,
-            json!({"statusLine":{"type":"command","command":ours}}).to_string(),
-        )
-        .unwrap();
+        std::fs::write(&f, json!({"statusLine":{"type":"command","command":ours}}).to_string()).unwrap();
         remove_at(&f, &hook).unwrap();
         assert!(read_json(&f).get("statusLine").is_none());
         // someone else's status line is left alone

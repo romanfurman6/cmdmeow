@@ -27,17 +27,10 @@ pub struct Removed {
 
 impl Entry {
     pub fn now() -> Entry {
-        Entry {
-            when: chrono::Utc::now().timestamp(),
-            ..Default::default()
-        }
+        Entry { when: chrono::Utc::now().timestamp(), ..Default::default() }
     }
     pub fn bytes(&self, how: How) -> u64 {
-        self.items
-            .iter()
-            .filter(|i| i.how == how)
-            .map(|i| i.bytes)
-            .sum()
+        self.items.iter().filter(|i| i.how == how).map(|i| i.bytes).sum()
     }
 }
 
@@ -63,25 +56,12 @@ mod tests {
 
     #[test]
     fn keeps_the_last_cleans() {
-        let f = std::env::temp_dir().join(format!(
-            "cmdmeow-journal-{}/journal.json",
-            std::process::id()
-        ));
+        let f = std::env::temp_dir().join(format!("cmdmeow-journal-{}/journal.json", std::process::id()));
         for i in 0..(KEEP + 5) {
             let mut e = Entry::now();
             e.when = i as i64;
-            e.items.push(Removed {
-                title: "x".into(),
-                path: "/x".into(),
-                bytes: 10,
-                how: How::Trash,
-            });
-            e.items.push(Removed {
-                title: "y".into(),
-                path: "/y".into(),
-                bytes: 5,
-                how: How::Deleted,
-            });
+            e.items.push(Removed { title: "x".into(), path: "/x".into(), bytes: 10, how: How::Trash });
+            e.items.push(Removed { title: "y".into(), path: "/y".into(), bytes: 5, how: How::Deleted });
             save_to(&f, e);
         }
         let v: Vec<Entry> = crate::kit::fs::load_json(&f);
@@ -90,10 +70,7 @@ mod tests {
         assert_eq!(v[0].bytes(How::Trash), 10);
         assert_eq!(v[0].bytes(How::Deleted), 5);
         let text = std::fs::read_to_string(&f).unwrap();
-        assert!(
-            text.contains("\"trash\""),
-            "how is stored as a word: {text}"
-        );
+        assert!(text.contains("\"trash\""), "how is stored as a word: {text}");
         std::fs::remove_dir_all(f.parent().unwrap()).unwrap();
     }
 }

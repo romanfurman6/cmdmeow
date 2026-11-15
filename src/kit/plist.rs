@@ -64,14 +64,8 @@ pub fn read(path: &Path) -> Option<Value> {
 
 #[cfg(target_os = "macos")]
 fn to_xml(path: &Path) -> Option<String> {
-    let out = std::process::Command::new("/usr/bin/plutil")
-        .args(["-convert", "xml1", "-o", "-"])
-        .arg(path)
-        .output()
-        .ok()?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+    let out = std::process::Command::new("/usr/bin/plutil").args(["-convert", "xml1", "-o", "-"]).arg(path).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -117,12 +111,7 @@ impl Parser<'_> {
             let tag = &rest[1..gt];
             self.i += gt + 1;
             let closed = tag.ends_with('/');
-            let name = tag
-                .trim_end_matches('/')
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let name = tag.trim_end_matches('/').split_whitespace().next().unwrap_or("").to_string();
             return Some((name, closed));
         }
     }
@@ -212,11 +201,7 @@ fn unescape(s: &str) -> String {
     if !s.contains('&') {
         return s.to_string();
     }
-    s.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
+    s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
 }
 
 #[cfg(test)]
@@ -262,14 +247,7 @@ mod tests {
         assert_eq!(v.get_str("Empty"), Some(""));
         assert_eq!(v.get("Blob"), Some(&Value::Other));
         let list = v.get("Nested").and_then(|n| n.get("List")).unwrap();
-        assert_eq!(
-            list,
-            &Value::Array(vec![
-                Value::Str("a".into()),
-                Value::Num("3".into()),
-                Value::Dict(BTreeMap::new())
-            ])
-        );
+        assert_eq!(list, &Value::Array(vec![Value::Str("a".into()), Value::Num("3".into()), Value::Dict(BTreeMap::new())]));
         assert!(v.strings().contains(&"a"));
     }
 
@@ -277,10 +255,7 @@ mod tests {
     fn launchd_job() {
         let v = parse("<plist><dict><key>Label</key><string>com.x.agent</string><key>ProgramArguments</key><array><string>/Applications/X.app/Contents/MacOS/agent</string><string>--run</string></array></dict></plist>").unwrap();
         assert_eq!(v.get_str("Label"), Some("com.x.agent"));
-        assert!(v
-            .strings()
-            .iter()
-            .any(|s| s.starts_with("/Applications/X.app/")));
+        assert!(v.strings().iter().any(|s| s.starts_with("/Applications/X.app/")));
     }
 
     #[test]

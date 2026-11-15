@@ -38,10 +38,7 @@ pub struct Shot {
 impl Shot {
     pub fn time(&self) -> chrono::DateTime<chrono::Local> {
         use chrono::TimeZone;
-        chrono::Local
-            .timestamp_millis_opt(self.id as i64)
-            .single()
-            .unwrap_or_else(chrono::Local::now)
+        chrono::Local.timestamp_millis_opt(self.id as i64).single().unwrap_or_else(chrono::Local::now)
     }
 }
 
@@ -54,19 +51,9 @@ pub struct Store {
 
 impl Store {
     pub fn open(dir: PathBuf) -> Store {
-        let shots = std::fs::read_to_string(dir.join("index.json"))
-            .ok()
-            .and_then(|s| serde_json::from_str::<Vec<Shot>>(&s).ok())
-            .unwrap_or_default();
-        let shots = shots
-            .into_iter()
-            .filter(|s| dir.join(format!("{}.png", s.id)).exists())
-            .collect();
-        Store {
-            dir,
-            shots,
-            disk: Default::default(),
-        }
+        let shots = std::fs::read_to_string(dir.join("index.json")).ok().and_then(|s| serde_json::from_str::<Vec<Shot>>(&s).ok()).unwrap_or_default();
+        let shots = shots.into_iter().filter(|s| dir.join(format!("{}.png", s.id)).exists()).collect();
+        Store { dir, shots, disk: Default::default() }
     }
 
     /// A capture's PNG file as it is (no decoding).
@@ -88,31 +75,14 @@ impl Store {
     }
 
     /// [`Store::add`] for a picture already encoded as PNG (`size` in pixels).
-    pub fn add_png(
-        &mut self,
-        png: &[u8],
-        size: (u32, u32),
-        kind: Kind,
-        keep: usize,
-    ) -> Result<u64, String> {
+    pub fn add_png(&mut self, png: &[u8], size: (u32, u32), kind: Kind, keep: usize) -> Result<u64, String> {
         let _ = std::fs::create_dir_all(&self.dir);
         let mut id = chrono::Local::now().timestamp_millis().max(0) as u64;
         while self.shots.iter().any(|s| s.id == id) {
             id += 1;
         }
         std::fs::write(self.path(id), png).map_err(|e| e.to_string())?;
-        self.shots.insert(
-            0,
-            Shot {
-                id,
-                kind,
-                w: size.0,
-                h: size.1,
-                saved: None,
-                pinned: false,
-                secs: None,
-            },
-        );
+        self.shots.insert(0, Shot { id, kind, w: size.0, h: size.1, saved: None, pinned: false, secs: None });
         self.trim(keep);
         self.write_index();
         Ok(id)
@@ -167,9 +137,7 @@ impl Store {
 
     /// The history entry of the video at `path`, if there is one.
     pub fn video_entry(&self, path: &Path) -> Option<&Shot> {
-        self.shots
-            .iter()
-            .find(|s| s.kind == Kind::Recording && s.saved.as_deref() == Some(path))
+        self.shots.iter().find(|s| s.kind == Kind::Recording && s.saved.as_deref() == Some(path))
     }
 
     pub fn set_pinned(&mut self, id: u64, pinned: bool) {
@@ -186,24 +154,13 @@ impl Store {
     /// Size of the history files. The page shows it every frame, so it is
     /// measured again only when the list of captures changed.
     pub fn bytes_on_disk(&self) -> u64 {
-        let key = (
-            self.shots.len(),
-            self.shots
-                .iter()
-                .map(|s| s.id)
-                .fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b)),
-        );
+        let key = (self.shots.len(), self.shots.iter().map(|s| s.id).fold(0u64, |a, b| a.wrapping_mul(31).wrapping_add(b)));
         if let Some((k, b)) = self.disk.get() {
             if k == key {
                 return b;
             }
         }
-        let b = self
-            .shots
-            .iter()
-            .filter_map(|s| std::fs::metadata(self.path(s.id)).ok())
-            .map(|m| m.len())
-            .sum();
+        let b = self.shots.iter().filter_map(|s| std::fs::metadata(self.path(s.id)).ok()).map(|m| m.len()).sum();
         self.disk.set(Some((key, b)));
         b
     }
@@ -218,11 +175,7 @@ impl Store {
 }
 
 /// Write the user's copy into their folder. A name that's taken gets " 2", " 3"…
-pub fn save_copy(
-    img: &RgbaImage,
-    settings: &Settings,
-    t: chrono::DateTime<chrono::Local>,
-) -> Result<PathBuf, String> {
+pub fn save_copy(img: &RgbaImage, settings: &Settings, t: chrono::DateTime<chrono::Local>) -> Result<PathBuf, String> {
     let path = copy_path(settings, t)?;
     write_image(img, &path, settings.format)?;
     Ok(path)
@@ -231,20 +184,13 @@ pub fn save_copy(
 /// [`save_copy`] for a picture already encoded as PNG: a PNG copy is those
 /// bytes as they are; `img` (decoded from `png` when missing) is only
 /// needed for JPG.
-pub fn save_copy_png(
-    png: &[u8],
-    img: Option<&RgbaImage>,
-    settings: &Settings,
-    t: chrono::DateTime<chrono::Local>,
-) -> Result<PathBuf, String> {
+pub fn save_copy_png(png: &[u8], img: Option<&RgbaImage>, settings: &Settings, t: chrono::DateTime<chrono::Local>) -> Result<PathBuf, String> {
     let path = copy_path(settings, t)?;
     match (settings.format, img) {
         (Format::Png, _) => std::fs::write(&path, png).map_err(|e| e.to_string())?,
         (Format::Jpg, Some(img)) => write_image(img, &path, Format::Jpg)?,
         (Format::Jpg, None) => {
-            let img = image::load_from_memory(png)
-                .map_err(|e| e.to_string())?
-                .to_rgba8();
+            let img = image::load_from_memory(png).map_err(|e| e.to_string())?.to_rgba8();
             write_image(&img, &path, Format::Jpg)?
         }
     }
@@ -259,9 +205,7 @@ fn copy_path(settings: &Settings, t: chrono::DateTime<chrono::Local>) -> Result<
     let mut n = 2;
     while path.exists() {
         let stem = name.trim_end_matches(&format!(".{}", settings.format.ext()));
-        path = settings
-            .folder
-            .join(format!("{stem} {n}.{}", settings.format.ext()));
+        path = settings.folder.join(format!("{stem} {n}.{}", settings.format.ext()));
         n += 1;
     }
     Ok(path)
@@ -278,8 +222,7 @@ pub fn write_image(img: &RgbaImage, path: &Path, format: Format) -> Result<(), S
                 let mix = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
                 image::Rgb([mix(p[0]), mix(p[1]), mix(p[2])])
             });
-            rgb.save_with_format(path, image::ImageFormat::Jpeg)
-                .map_err(|e| e.to_string())
+            rgb.save_with_format(path, image::ImageFormat::Jpeg).map_err(|e| e.to_string())
         }
     }
 }
@@ -292,12 +235,7 @@ pub fn png_bytes(img: &RgbaImage) -> Vec<u8> {
     use image::ImageEncoder;
     let mut out = Vec::new();
     let enc = PngEncoder::new_with_quality(&mut out, CompressionType::Fast, FilterType::Adaptive);
-    let _ = enc.write_image(
-        img.as_raw(),
-        img.width(),
-        img.height(),
-        image::ExtendedColorType::Rgba8,
-    );
+    let _ = enc.write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::Rgba8);
     out
 }
 
@@ -323,18 +261,7 @@ mod tests {
         }
         assert_eq!(st.shots.len(), 4, "3 newest plus the pinned one");
         assert!(st.get(first).is_some());
-        assert_eq!(
-            std::fs::read_dir(&dir)
-                .unwrap()
-                .filter(|e| e
-                    .as_ref()
-                    .unwrap()
-                    .path()
-                    .extension()
-                    .is_some_and(|x| x == "png"))
-                .count(),
-            4
-        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().filter(|e| e.as_ref().unwrap().path().extension().is_some_and(|x| x == "png")).count(), 4);
         // survives a reload
         crate::kit::fs::flush_writes();
         let again = Store::open(dir.clone());

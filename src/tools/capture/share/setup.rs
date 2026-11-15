@@ -30,12 +30,7 @@ pub fn chat_url(a: Agent) -> String {
 
 /// What the chat starts with. The secret key never goes to the chat.
 pub fn prompt() -> String {
-    let origins = ORIGINS
-        .iter()
-        .take(2)
-        .map(|o| format!("\"{o}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let origins = ORIGINS.iter().take(2).map(|o| format!("\"{o}\"")).collect::<Vec<_>>().join(", ");
     format!(
         "Help me set up Cloudflare R2 so the Mac app Cmd+Meow can upload my screenshots and screen recordings and give me share links. \
 Walk me through it one step at a time in the Cloudflare dashboard and wait for me after each step.
@@ -68,10 +63,7 @@ mod tests {
         assert_eq!(label(Agent::Claude), "Ask Claude to set up");
         assert_eq!(label(Agent::Codex), "Ask ChatGPT to set up");
         let u = chat_url(Agent::Codex);
-        assert!(
-            u.starts_with("https://chatgpt.com/?q=Help%20me%20set%20up%20Cloudflare%20R2"),
-            "{u}"
-        );
+        assert!(u.starts_with("https://chatgpt.com/?q=Help%20me%20set%20up%20Cloudflare%20R2"), "{u}");
         assert!(chat_url(Agent::Claude).starts_with("https://claude.ai/new?q="));
         // one query value: nothing in it may end it early
         let q = &u["https://chatgpt.com/?q=".len()..];

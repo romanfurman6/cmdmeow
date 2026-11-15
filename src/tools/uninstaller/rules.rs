@@ -17,56 +17,15 @@ pub struct Rule {
 }
 
 pub const RULES: &[Rule] = &[
-    Rule {
-        id: "com.google.Chrome",
-        include: &[
-            "~/Library/Application Support/Google/Chrome",
-            "~/Library/Caches/Google/Chrome",
-        ],
-        exclude: &[],
-    },
-    Rule {
-        id: "com.google.Chrome.canary",
-        include: &[
-            "~/Library/Application Support/Google/Chrome Canary",
-            "~/Library/Caches/Google/Chrome Canary",
-        ],
-        exclude: &[],
-    },
-    Rule {
-        id: "com.brave.Browser",
-        include: &[
-            "~/Library/Application Support/BraveSoftware/Brave-Browser",
-            "~/Library/Caches/BraveSoftware/Brave-Browser",
-        ],
-        exclude: &[],
-    },
-    Rule {
-        id: "com.microsoft.VSCode",
-        include: &["~/Library/Application Support/Code", "~/.vscode"],
-        exclude: &[],
-    },
-    Rule {
-        id: "com.todesktop.230313mzl4w4u92",
-        include: &["~/.cursor"],
-        exclude: &[],
-    },
-    Rule {
-        id: "com.docker.docker",
-        include: &["~/.docker"],
-        exclude: &[],
-    },
-    Rule {
-        id: "com.github.GitHubClient",
-        include: &["~/Library/Application Support/GitHub Desktop"],
-        exclude: &[],
-    },
+    Rule { id: "com.google.Chrome", include: &["~/Library/Application Support/Google/Chrome", "~/Library/Caches/Google/Chrome"], exclude: &[] },
+    Rule { id: "com.google.Chrome.canary", include: &["~/Library/Application Support/Google/Chrome Canary", "~/Library/Caches/Google/Chrome Canary"], exclude: &[] },
+    Rule { id: "com.brave.Browser", include: &["~/Library/Application Support/BraveSoftware/Brave-Browser", "~/Library/Caches/BraveSoftware/Brave-Browser"], exclude: &[] },
+    Rule { id: "com.microsoft.VSCode", include: &["~/Library/Application Support/Code", "~/.vscode"], exclude: &[] },
+    Rule { id: "com.todesktop.230313mzl4w4u92", include: &["~/.cursor"], exclude: &[] },
+    Rule { id: "com.docker.docker", include: &["~/.docker"], exclude: &[] },
+    Rule { id: "com.github.GitHubClient", include: &["~/Library/Application Support/GitHub Desktop"], exclude: &[] },
     // Steam's folder holds every installed game: never take it with the client
-    Rule {
-        id: "com.valvesoftware.steam",
-        include: &[],
-        exclude: &["Steam"],
-    },
+    Rule { id: "com.valvesoftware.steam", include: &[], exclude: &["Steam"] },
 ];
 
 /// Apply the rules of `table` that fit `app` to `items`.
@@ -76,30 +35,14 @@ pub fn apply(table: &[Rule], app: &Owner, items: &mut Vec<Item>, roots: &Roots) 
         return;
     }
     for r in table.iter().filter(|r| under_id(&id, &r.id.to_lowercase())) {
-        items.retain(|it| {
-            it.kind == Kind::App
-                || !it.path.file_name().is_some_and(|n| {
-                    r.exclude
-                        .iter()
-                        .any(|x| n.to_string_lossy().eq_ignore_ascii_case(x))
-                })
-        });
+        items.retain(|it| it.kind == Kind::App || !it.path.file_name().is_some_and(|n| r.exclude.iter().any(|x| n.to_string_lossy().eq_ignore_ascii_case(x))));
         for inc in r.include {
             let p = expand(inc, roots);
-            if p.symlink_metadata().is_err()
-                || is_protected(&p).is_some()
-                || items.iter().any(|i| i.path == p)
-            {
+            if p.symlink_metadata().is_err() || is_protected(&p).is_some() || items.iter().any(|i| i.path == p) {
                 continue;
             }
             let admin = !p.starts_with(roots.home()) && super::remove::needs_root(&p);
-            items.push(Item {
-                path: p.clone(),
-                kind: kind_of(&p, roots),
-                bytes: 0,
-                admin,
-                selected: true,
-            });
+            items.push(Item { path: p.clone(), kind: kind_of(&p, roots), bytes: 0, admin, selected: true });
         }
     }
     tidy(items);
@@ -116,8 +59,8 @@ pub fn expand(p: &str, roots: &Roots) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::super::leftovers::tests::Fake;
     use super::*;
+    use super::super::leftovers::tests::Fake;
 
     #[test]
     fn includes_and_excludes() {
@@ -126,62 +69,25 @@ mod tests {
         f.file("home/.docker/config.json", "{}");
         f.lib("Application Support/Steam/steamapps/x");
         let table = [
-            Rule {
-                id: "com.google.Chrome",
-                include: &[
-                    "~/Library/Application Support/Google/Chrome",
-                    "~/Library/Caches/Google/Chrome",
-                ],
-                exclude: &[],
-            },
-            Rule {
-                id: "com.docker",
-                include: &["~/.docker"],
-                exclude: &[],
-            },
-            Rule {
-                id: "com.valvesoftware.steam",
-                include: &[],
-                exclude: &["Steam"],
-            },
+            Rule { id: "com.google.Chrome", include: &["~/Library/Application Support/Google/Chrome", "~/Library/Caches/Google/Chrome"], exclude: &[] },
+            Rule { id: "com.docker", include: &["~/.docker"], exclude: &[] },
+            Rule { id: "com.valvesoftware.steam", include: &[], exclude: &["Steam"] },
         ];
-        let chrome = Owner {
-            id: "com.google.Chrome".into(),
-            name: "Google Chrome".into(),
-            ..Default::default()
-        };
+        let chrome = Owner { id: "com.google.Chrome".into(), name: "Google Chrome".into(), ..Default::default() };
         let mut items = Vec::new();
         apply(&table, &chrome, &mut items, &f.roots);
         assert_eq!(items.len(), 1, "{items:?}");
         assert_eq!(items[0].kind, Kind::Support);
-        let docker = Owner {
-            id: "com.docker.docker".into(),
-            ..Default::default()
-        };
+        let docker = Owner { id: "com.docker.docker".into(), ..Default::default() };
         let mut items = Vec::new();
         apply(&table, &docker, &mut items, &f.roots);
-        assert_eq!(
-            items.iter().map(|i| i.path.clone()).collect::<Vec<_>>(),
-            vec![f.roots.home().join(".docker")]
-        );
-        let steam = Owner {
-            id: "com.valvesoftware.steam".into(),
-            ..Default::default()
-        };
-        let mut items = vec![Item {
-            path: f.roots.user_library.join("Application Support/Steam"),
-            kind: Kind::Support,
-            bytes: 0,
-            admin: false,
-            selected: true,
-        }];
+        assert_eq!(items.iter().map(|i| i.path.clone()).collect::<Vec<_>>(), vec![f.roots.home().join(".docker")]);
+        let steam = Owner { id: "com.valvesoftware.steam".into(), ..Default::default() };
+        let mut items = vec![Item { path: f.roots.user_library.join("Application Support/Steam"), kind: Kind::Support, bytes: 0, admin: false, selected: true }];
         apply(&table, &steam, &mut items, &f.roots);
         assert!(items.is_empty());
         // nothing for an app no rule names
-        let other = Owner {
-            id: "com.googlex.Chrome".into(),
-            ..Default::default()
-        };
+        let other = Owner { id: "com.googlex.Chrome".into(), ..Default::default() };
         let mut items = Vec::new();
         apply(&table, &other, &mut items, &f.roots);
         assert!(items.is_empty());

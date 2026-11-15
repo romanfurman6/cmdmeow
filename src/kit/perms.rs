@@ -26,11 +26,7 @@ pub enum Perm {
     Bluetooth,
     Notifications,
     /// A tool's own setup step, e.g. Fan Control's privileged helper.
-    Own {
-        id: &'static str,
-        name: &'static str,
-        icon: Icon,
-    },
+    Own { id: &'static str, name: &'static str, icon: Icon },
 }
 
 /// One thing a tool needs. `optional`: the tool works without it, only a
@@ -43,16 +39,10 @@ pub struct Need {
 
 impl Need {
     pub const fn must(perm: Perm) -> Need {
-        Need {
-            perm,
-            optional: false,
-        }
+        Need { perm, optional: false }
     }
     pub const fn may(perm: Perm) -> Need {
-        Need {
-            perm,
-            optional: true,
-        }
+        Need { perm, optional: true }
     }
 }
 
@@ -67,16 +57,7 @@ pub enum Status {
 
 impl Perm {
     /// Every system permission, in the order setup lists them.
-    pub const SYSTEM: [Perm; 8] = [
-        Perm::Screen,
-        Perm::Accessibility,
-        Perm::FullDisk,
-        Perm::SystemEvents,
-        Perm::Microphone,
-        Perm::Camera,
-        Perm::Bluetooth,
-        Perm::Notifications,
-    ];
+    pub const SYSTEM: [Perm; 8] = [Perm::Screen, Perm::Accessibility, Perm::FullDisk, Perm::SystemEvents, Perm::Microphone, Perm::Camera, Perm::Bluetooth, Perm::Notifications];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -148,14 +129,7 @@ impl Perm {
     /// macOS answers it with a question over the app (Allow / Don't Allow)
     /// and never needs System Settings, unless it was refused before.
     pub fn answered_in_place(self) -> bool {
-        matches!(
-            self,
-            Perm::SystemEvents
-                | Perm::Microphone
-                | Perm::Camera
-                | Perm::Bluetooth
-                | Perm::Notifications
-        )
+        matches!(self, Perm::SystemEvents | Perm::Microphone | Perm::Camera | Perm::Bluetooth | Perm::Notifications)
     }
 
     /// A macOS question shown over the app was just answered (set by its
@@ -188,9 +162,7 @@ impl Perm {
 /// Open System Settings on the permission's pane.
 pub fn open_settings(p: Perm) {
     let url = match p {
-        Perm::Notifications => {
-            "x-apple.systempreferences:com.apple.Notifications-Settings.extension".to_string()
-        }
+        Perm::Notifications => "x-apple.systempreferences:com.apple.Notifications-Settings.extension".to_string(),
         _ => match p.pane() {
             Some(pane) => format!("x-apple.systempreferences:com.apple.preference.security?{pane}"),
             None => return,
@@ -203,26 +175,19 @@ pub fn open_settings(p: Perm) {
 /// (Full Disk Access has no macOS question; the app is added by hand).
 pub fn reveal_app() {
     if let Some(app) = app_bundle() {
-        let _ = std::process::Command::new("open")
-            .arg("-R")
-            .arg(app)
-            .spawn();
+        let _ = std::process::Command::new("open").arg("-R").arg(app).spawn();
     }
 }
 
 /// The .app this binary runs from, if any.
 pub fn app_bundle() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    exe.ancestors()
-        .find(|p| p.extension().is_some_and(|e| e == "app"))
-        .map(|p| p.to_path_buf())
+    exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(|p| p.to_path_buf())
 }
 
 /// The name the app has in System Settings lists ("CmdMeow Dev").
 pub fn app_name() -> String {
-    app_bundle()
-        .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "CmdMeow".into())
+    app_bundle().and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned())).unwrap_or_else(|| "CmdMeow".into())
 }
 
 /// Screen Recording as macOS reported it when the app started. macOS only
@@ -266,13 +231,8 @@ pub fn launched_to_panel() -> bool {
 
 fn relaunch_with(extra: &str) {
     if let Some(app) = app_bundle() {
-        let cmd = format!(
-            "sleep 1; /usr/bin/open -n {} --args {RELAUNCHED} {extra}",
-            sh_quote(&app.to_string_lossy())
-        );
-        let _ = std::process::Command::new("/bin/sh")
-            .args(["-c", &cmd])
-            .spawn();
+        let cmd = format!("sleep 1; /usr/bin/open -n {} --args {RELAUNCHED} {extra}", sh_quote(&app.to_string_lossy()));
+        let _ = std::process::Command::new("/bin/sh").args(["-c", &cmd]).spawn();
     }
 }
 
@@ -310,19 +270,9 @@ mod imp {
 
     #[link(name = "CoreServices", kind = "framework")]
     unsafe extern "C" {
-        fn AECreateDesc(
-            type_code: u32,
-            data: *const c_void,
-            size: isize,
-            result: *mut AEDesc,
-        ) -> i16;
+        fn AECreateDesc(type_code: u32, data: *const c_void, size: isize, result: *mut AEDesc) -> i16;
         fn AEDisposeDesc(desc: *mut AEDesc) -> i16;
-        fn AEDeterminePermissionToAutomateTarget(
-            target: *const AEDesc,
-            class: u32,
-            id: u32,
-            ask: u8,
-        ) -> i32;
+        fn AEDeterminePermissionToAutomateTarget(target: *const AEDesc, class: u32, id: u32, ask: u8) -> i32;
     }
 
     const fn four(s: &[u8; 4]) -> u32 {
@@ -344,48 +294,23 @@ mod imp {
         if raw.is_null() {
             return false;
         }
-        let list: Retained<NSArray<NSDictionary<NSString, AnyObject>>> =
-            unsafe { Retained::from_raw(raw.cast()) }.expect("window list");
+        let list: Retained<NSArray<NSDictionary<NSString, AnyObject>>> = unsafe { Retained::from_raw(raw.cast()) }.expect("window list");
         let me = std::process::id() as i32;
-        let (k_pid, k_name, k_owner, k_layer) = (
-            NSString::from_str("kCGWindowOwnerPID"),
-            NSString::from_str("kCGWindowName"),
-            NSString::from_str("kCGWindowOwnerName"),
-            NSString::from_str("kCGWindowLayer"),
-        );
+        let (k_pid, k_name, k_owner, k_layer) = (NSString::from_str("kCGWindowOwnerPID"), NSString::from_str("kCGWindowName"), NSString::from_str("kCGWindowOwnerName"), NSString::from_str("kCGWindowLayer"));
         list.iter().any(|w| {
-            let pid = w
-                .objectForKey(&k_pid)
-                .and_then(|n| n.downcast::<NSNumber>().ok())
-                .map(|n| n.intValue())
-                .unwrap_or(me);
-            let owner = w
-                .objectForKey(&k_owner)
-                .and_then(|n| n.downcast::<NSString>().ok())
-                .map(|s| s.to_string())
-                .unwrap_or_default();
+            let pid = w.objectForKey(&k_pid).and_then(|n| n.downcast::<NSNumber>().ok()).map(|n| n.intValue()).unwrap_or(me);
+            let owner = w.objectForKey(&k_owner).and_then(|n| n.downcast::<NSString>().ok()).map(|s| s.to_string()).unwrap_or_default();
             // ordinary app windows only: menu bar items and system overlays
             // (other layers) can carry a name without Screen Recording
-            let layer = w
-                .objectForKey(&k_layer)
-                .and_then(|n| n.downcast::<NSNumber>().ok())
-                .map(|n| n.intValue())
-                .unwrap_or(-1);
-            pid != me
-                && layer == 0
-                && owner != "Window Server"
-                && owner != "Dock"
-                && w.objectForKey(&k_name).is_some()
+            let layer = w.objectForKey(&k_layer).and_then(|n| n.downcast::<NSNumber>().ok()).map(|n| n.intValue()).unwrap_or(-1);
+            pid != me && layer == 0 && owner != "Window Server" && owner != "Dock" && w.objectForKey(&k_name).is_some()
         })
     }
 
     /// Reading the TCC database itself is only allowed with Full Disk Access.
     fn full_disk() -> bool {
-        let Some(home) = dirs::home_dir() else {
-            return false;
-        };
-        std::fs::File::open(home.join("Library/Application Support/com.apple.TCC/TCC.db")).is_ok()
-            || std::fs::read_dir(home.join("Library/Safari")).is_ok()
+        let Some(home) = dirs::home_dir() else { return false };
+        std::fs::File::open(home.join("Library/Application Support/com.apple.TCC/TCC.db")).is_ok() || std::fs::read_dir(home.join("Library/Safari")).is_ok()
     }
 
     // System Events access as last read: 0 unknown, 1 not asked, 2 denied,
@@ -426,9 +351,7 @@ mod imp {
         if SE_STARTED.swap(true, Ordering::AcqRel) {
             return SE.load(Ordering::Relaxed).max(1);
         }
-        let _ = std::process::Command::new("open")
-            .args(["-g", "-j", "-b", "com.apple.systemevents"])
-            .status();
+        let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
         for _ in 0..10 {
             std::thread::sleep(std::time::Duration::from_millis(200));
             let r = system_events(false);
@@ -474,49 +397,26 @@ mod imp {
     }
 
     fn now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
     }
 
     /// 0 allowed, -1743 refused, -1744 would ask, -600 System Events isn't running.
     fn system_events(ask: bool) -> i32 {
         let id = b"com.apple.systemevents";
-        let mut desc = AEDesc {
-            descriptor_type: 0,
-            data_handle: std::ptr::null_mut(),
-        };
+        let mut desc = AEDesc { descriptor_type: 0, data_handle: std::ptr::null_mut() };
         unsafe {
-            if AECreateDesc(
-                four(b"bund"),
-                id.as_ptr().cast(),
-                id.len() as isize,
-                &mut desc,
-            ) != 0
-            {
+            if AECreateDesc(four(b"bund"), id.as_ptr().cast(), id.len() as isize, &mut desc) != 0 {
                 return -1;
             }
-            let r = AEDeterminePermissionToAutomateTarget(
-                &desc,
-                four(b"****"),
-                four(b"****"),
-                ask as u8,
-            );
+            let r = AEDeterminePermissionToAutomateTarget(&desc, four(b"****"), four(b"****"), ask as u8);
             AEDisposeDesc(&mut desc);
             r
         }
     }
 
     fn media(p: Perm) -> Status {
-        use objc2_av_foundation::{
-            AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio, AVMediaTypeVideo,
-        };
-        let t = if p == Perm::Microphone {
-            unsafe { AVMediaTypeAudio }
-        } else {
-            unsafe { AVMediaTypeVideo }
-        };
+        use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio, AVMediaTypeVideo};
+        let t = if p == Perm::Microphone { unsafe { AVMediaTypeAudio } } else { unsafe { AVMediaTypeVideo } };
         let Some(t) = t else { return Status::NotAsked };
         match unsafe { AVCaptureDevice::authorizationStatusForMediaType(t) } {
             AVAuthorizationStatus::Authorized => Status::Allowed,
@@ -531,17 +431,13 @@ mod imp {
     static NOTIF_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn bundled() -> bool {
-        objc2_foundation::NSBundle::mainBundle()
-            .bundleIdentifier()
-            .is_some()
+        objc2_foundation::NSBundle::mainBundle().bundleIdentifier().is_some()
     }
 
     /// The bundle explains Bluetooth use (asking without it gets the app killed).
     fn bluetooth_text() -> bool {
         let key = NSString::from_str("NSBluetoothAlwaysUsageDescription");
-        let v: Option<Retained<AnyObject>> = unsafe {
-            objc2::msg_send![&*objc2_foundation::NSBundle::mainBundle(), objectForInfoDictionaryKey: &*key]
-        };
+        let v: Option<Retained<AnyObject>> = unsafe { objc2::msg_send![&*objc2_foundation::NSBundle::mainBundle(), objectForInfoDictionaryKey: &*key] };
         v.is_some()
     }
 
@@ -562,16 +458,9 @@ mod imp {
         if !bundled() {
             return Status::Allowed; // falls back to AppleScript, which needs nothing
         }
-        use objc2_user_notifications::{
-            UNAuthorizationStatus, UNNotificationSettings, UNUserNotificationCenter,
-        };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-        if now.saturating_sub(NOTIF_AT.load(Ordering::Relaxed)) < 1000
-            && NOTIF.load(Ordering::Relaxed) != 0
-        {
+        use objc2_user_notifications::{UNAuthorizationStatus, UNNotificationSettings, UNUserNotificationCenter};
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        if now.saturating_sub(NOTIF_AT.load(Ordering::Relaxed)) < 1000 && NOTIF.load(Ordering::Relaxed) != 0 {
             return cached();
         }
         NOTIF_AT.store(now, Ordering::Relaxed);
@@ -636,11 +525,7 @@ mod imp {
             Perm::Accessibility => {
                 let key = NSString::from_str("AXTrustedCheckOptionPrompt");
                 let yes = NSNumber::new_bool(true);
-                let opts: Retained<NSDictionary<NSString, AnyObject>> =
-                    NSDictionary::from_retained_objects(
-                        &[&*key],
-                        &[Retained::into_super(Retained::into_super(yes)).into()],
-                    );
+                let opts: Retained<NSDictionary<NSString, AnyObject>> = NSDictionary::from_retained_objects(&[&*key], &[Retained::into_super(Retained::into_super(yes)).into()]);
                 unsafe { AXIsProcessTrustedWithOptions(Retained::as_ptr(&opts).cast()) };
             }
             Perm::FullDisk => {
@@ -650,9 +535,7 @@ mod imp {
             Perm::SystemEvents => {
                 std::thread::spawn(|| {
                     // the question needs System Events running
-                    let _ = std::process::Command::new("open")
-                        .args(["-g", "-j", "-b", "com.apple.systemevents"])
-                        .status();
+                    let _ = std::process::Command::new("open").args(["-g", "-j", "-b", "com.apple.systemevents"]).status();
                     std::thread::sleep(std::time::Duration::from_millis(600));
                     // a "Don't Allow" just shows on the row (its button then
                     // opens Settings); opening Settings here took over the screen
@@ -666,16 +549,10 @@ mod imp {
             }
             Perm::Microphone | Perm::Camera => {
                 use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio, AVMediaTypeVideo};
-                let t = if p == Perm::Microphone {
-                    unsafe { AVMediaTypeAudio }
-                } else {
-                    unsafe { AVMediaTypeVideo }
-                };
+                let t = if p == Perm::Microphone { unsafe { AVMediaTypeAudio } } else { unsafe { AVMediaTypeVideo } };
                 if let Some(t) = t {
                     let done = block2::RcBlock::new(|_ok: objc2::runtime::Bool| super::answered());
-                    unsafe {
-                        AVCaptureDevice::requestAccessForMediaType_completionHandler(t, &done)
-                    };
+                    unsafe { AVCaptureDevice::requestAccessForMediaType_completionHandler(t, &done) };
                 }
             }
             Perm::Bluetooth => {
@@ -698,15 +575,8 @@ mod imp {
                 }
                 use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
                 let center = UNUserNotificationCenter::currentNotificationCenter();
-                let done = block2::RcBlock::new(
-                    |_granted: objc2::runtime::Bool, _err: *mut objc2_foundation::NSError| {
-                        super::answered()
-                    },
-                );
-                center.requestAuthorizationWithOptions_completionHandler(
-                    UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
-                    &done,
-                );
+                let done = block2::RcBlock::new(|_granted: objc2::runtime::Bool, _err: *mut objc2_foundation::NSError| super::answered());
+                center.requestAuthorizationWithOptions_completionHandler(UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound, &done);
             }
             Perm::Own { .. } => {}
         }

@@ -72,39 +72,18 @@ fn usage<'a>(channels: impl Iterator<Item = &'a Sample>, freqs: &[f32]) -> Usage
         if total <= 0 {
             continue;
         }
-        let active: Vec<i64> = c
-            .states
-            .iter()
-            .filter(|s| !idle_state(&s.0))
-            .map(|s| s.1.max(0))
-            .collect();
+        let active: Vec<i64> = c.states.iter().filter(|s| !idle_state(&s.0)).map(|s| s.1.max(0)).collect();
         let on: i64 = active.iter().sum();
         busy_sum += on as f64 / total as f64;
         n += 1;
         if on > 0 && !freqs.is_empty() {
             // more states than known clocks: the extra ones count at the top clock
-            let mhz: f64 = active
-                .iter()
-                .enumerate()
-                .map(|(i, t)| *t as f64 * freqs[i.min(freqs.len() - 1)] as f64)
-                .sum::<f64>()
-                / on as f64;
+            let mhz: f64 = active.iter().enumerate().map(|(i, t)| *t as f64 * freqs[i.min(freqs.len() - 1)] as f64).sum::<f64>() / on as f64;
             mhz_sum += mhz;
             n_mhz += 1;
         }
     }
-    Usage {
-        busy: if n > 0 {
-            (busy_sum / n as f64) as f32
-        } else {
-            0.0
-        },
-        mhz: if n_mhz > 0 {
-            (mhz_sum / n_mhz as f64) as f32
-        } else {
-            0.0
-        },
-    }
+    Usage { busy: if n > 0 { (busy_sum / n as f64) as f32 } else { 0.0 }, mhz: if n_mhz > 0 { (mhz_sum / n_mhz as f64) as f32 } else { 0.0 } }
 }
 
 /// Turn one interval's samples into watts and usage.
@@ -125,18 +104,10 @@ pub fn summarize(samples: &[Sample], secs: f64, f: &Freqs) -> Reading {
             r.ane_w += w;
         }
     }
-    let cores = |prefix: &'static str| {
-        samples.iter().filter(move |s| {
-            s.group == "CPU Stats"
-                && s.subgroup == "CPU Core Performance States"
-                && s.channel.starts_with(prefix)
-        })
-    };
+    let cores = |prefix: &'static str| samples.iter().filter(move |s| s.group == "CPU Stats" && s.subgroup == "CPU Core Performance States" && s.channel.starts_with(prefix));
     r.ecpu = usage(cores("ECPU"), &f.ecpu);
     r.pcpu = usage(cores("PCPU"), &f.pcpu);
-    let gpu = samples.iter().filter(|s| {
-        s.group == "GPU Stats" && s.subgroup == "GPU Performance States" && s.channel == "GPUPH"
-    });
+    let gpu = samples.iter().filter(|s| s.group == "GPU Stats" && s.subgroup == "GPU Performance States" && s.channel == "GPUPH");
     r.gpu = usage(gpu, &f.gpu);
     r
 }
@@ -145,15 +116,9 @@ pub fn summarize(samples: &[Sample], secs: f64, f: &Freqs) -> Reading {
 /// u32 (clock, voltage). Older chips give Hz, M4 and later kHz; zero
 /// entries are padding.
 pub fn parse_freqs(b: &[u8]) -> Vec<f32> {
-    let raw: Vec<u32> = b
-        .chunks_exact(8)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .filter(|v| *v > 0)
-        .collect();
+    let raw: Vec<u32> = b.chunks_exact(8).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).filter(|v| *v > 0).collect();
     let hz = raw.iter().any(|v| *v >= 100_000_000);
-    raw.into_iter()
-        .map(|v| if hz { v as f32 / 1e6 } else { v as f32 / 1e3 })
-        .collect()
+    raw.into_iter().map(|v| if hz { v as f32 / 1e6 } else { v as f32 / 1e3 }).collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -171,13 +136,7 @@ mod mac {
     extern "C" {
         fn IOReportCopyChannelsInGroup(group: Cf, subgroup: Cf, a: u64, b: u64, c: u64) -> Cf;
         fn IOReportMergeChannels(a: Cf, b: Cf, nil: Cf);
-        fn IOReportCreateSubscription(
-            a: Cf,
-            desired: Cf,
-            subbed: *mut Cf,
-            channel_id: u64,
-            b: Cf,
-        ) -> Cf;
+        fn IOReportCreateSubscription(a: Cf, desired: Cf, subbed: *mut Cf, channel_id: u64, b: Cf) -> Cf;
         fn IOReportCreateSamples(sub: Cf, subbed: Cf, nil: Cf) -> Cf;
         fn IOReportCreateSamplesDelta(prev: Cf, cur: Cf, nil: Cf) -> Cf;
         fn IOReportChannelGetGroup(item: Cf) -> Cf;
@@ -193,11 +152,7 @@ mod mac {
     #[link(name = "IOKit", kind = "framework")]
     extern "C" {
         fn IOServiceMatching(name: *const c_char) -> *mut c_void;
-        fn IOServiceGetMatchingServices(
-            main_port: u32,
-            matching: *mut c_void,
-            iter: *mut u32,
-        ) -> i32;
+        fn IOServiceGetMatchingServices(main_port: u32, matching: *mut c_void, iter: *mut u32) -> i32;
         fn IOIteratorNext(iter: u32) -> u32;
         fn IOObjectRelease(obj: u32) -> i32;
         fn IORegistryEntryGetName(entry: u32, name: *mut c_char) -> i32;
@@ -236,9 +191,7 @@ mod mac {
         if unsafe { CFStringGetCString(cf, buf.as_mut_ptr(), buf.len() as isize, UTF8) } == 0 {
             return String::new();
         }
-        unsafe { CStr::from_ptr(buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned()
+        unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
     }
 
     /// The clock tables from `pmgr`.
@@ -256,8 +209,7 @@ mod mac {
                     break;
                 }
                 let mut buf = [0 as c_char; 128];
-                let is_pmgr = IORegistryEntryGetName(e, buf.as_mut_ptr()) == 0
-                    && CStr::from_ptr(buf.as_ptr()).to_bytes() == b"pmgr";
+                let is_pmgr = IORegistryEntryGetName(e, buf.as_mut_ptr()) == 0 && CStr::from_ptr(buf.as_ptr()).to_bytes() == b"pmgr";
                 if is_pmgr {
                     let prop = |key: &str| {
                         let k = cfstr(key);
@@ -269,11 +221,7 @@ mod mac {
                         let out = if CFGetTypeID(d) == CFDataGetTypeID() {
                             let n = CFDataGetLength(d).max(0) as usize;
                             let p = CFDataGetBytePtr(d);
-                            if p.is_null() {
-                                Vec::new()
-                            } else {
-                                parse_freqs(std::slice::from_raw_parts(p, n))
-                            }
+                            if p.is_null() { Vec::new() } else { parse_freqs(std::slice::from_raw_parts(p, n)) }
                         } else {
                             Vec::new()
                         };
@@ -310,11 +258,7 @@ mod mac {
     impl Sampler {
         pub fn open() -> Option<Sampler> {
             unsafe {
-                let groups = [
-                    ("Energy Model", None),
-                    ("CPU Stats", Some("CPU Core Performance States")),
-                    ("GPU Stats", Some("GPU Performance States")),
-                ];
+                let groups = [("Energy Model", None), ("CPU Stats", Some("CPU Core Performance States")), ("GPU Stats", Some("GPU Performance States"))];
                 let mut merged: Cf = std::ptr::null();
                 for (g, sg) in groups {
                     let gs = cfstr(g);
@@ -337,23 +281,13 @@ mod mac {
                 if merged.is_null() {
                     return None;
                 }
-                let chans = CFDictionaryCreateMutableCopy(
-                    std::ptr::null(),
-                    CFDictionaryGetCount(merged),
-                    merged,
-                );
+                let chans = CFDictionaryCreateMutableCopy(std::ptr::null(), CFDictionaryGetCount(merged), merged);
                 CFRelease(merged);
                 if chans.is_null() {
                     return None;
                 }
                 let mut subbed: Cf = std::ptr::null();
-                let sub = IOReportCreateSubscription(
-                    std::ptr::null(),
-                    chans,
-                    &mut subbed,
-                    0,
-                    std::ptr::null(),
-                );
+                let sub = IOReportCreateSubscription(std::ptr::null(), chans, &mut subbed, 0, std::ptr::null());
                 if sub.is_null() || subbed.is_null() {
                     CFRelease(chans);
                     return None;
@@ -365,13 +299,7 @@ mod mac {
                     CFRelease(sub);
                     return None;
                 }
-                Some(Sampler {
-                    sub,
-                    chans: subbed,
-                    prev,
-                    at: Instant::now(),
-                    freqs: freqs(),
-                })
+                Some(Sampler { sub, chans: subbed, prev, at: Instant::now(), freqs: freqs() })
             }
         }
 
@@ -401,20 +329,12 @@ mod mac {
                             continue;
                         }
                         let group = text(IOReportChannelGetGroup(item));
-                        let mut s = Sample {
-                            subgroup: text(IOReportChannelGetSubGroup(item)),
-                            channel: text(IOReportChannelGetChannelName(item)),
-                            unit: text(IOReportChannelGetUnitLabel(item)),
-                            ..Default::default()
-                        };
+                        let mut s = Sample { subgroup: text(IOReportChannelGetSubGroup(item)), channel: text(IOReportChannelGetChannelName(item)), unit: text(IOReportChannelGetUnitLabel(item)), ..Default::default() };
                         if group == "Energy Model" {
                             s.value = IOReportSimpleGetIntegerValue(item, 0);
                         } else {
                             for k in 0..IOReportStateGetCount(item) {
-                                s.states.push((
-                                    text(IOReportStateGetNameForIndex(item, k)),
-                                    IOReportStateGetResidency(item, k),
-                                ));
+                                s.states.push((text(IOReportStateGetNameForIndex(item, k)), IOReportStateGetResidency(item, k)));
                             }
                         }
                         s.group = group;
@@ -443,34 +363,16 @@ mod tests {
     use super::*;
 
     fn energy(name: &str, unit: &str, v: i64) -> Sample {
-        Sample {
-            group: "Energy Model".into(),
-            channel: name.into(),
-            unit: unit.into(),
-            value: v,
-            ..Default::default()
-        }
+        Sample { group: "Energy Model".into(), channel: name.into(), unit: unit.into(), value: v, ..Default::default() }
     }
 
     fn core(name: &str, states: &[(&str, i64)]) -> Sample {
-        Sample {
-            group: "CPU Stats".into(),
-            subgroup: "CPU Core Performance States".into(),
-            channel: name.into(),
-            states: states.iter().map(|(n, t)| (n.to_string(), *t)).collect(),
-            ..Default::default()
-        }
+        Sample { group: "CPU Stats".into(), subgroup: "CPU Core Performance States".into(), channel: name.into(), states: states.iter().map(|(n, t)| (n.to_string(), *t)).collect(), ..Default::default() }
     }
 
     #[test]
     fn energy_becomes_watts() {
-        let s = [
-            energy("CPU Energy", "mJ", 4000),
-            energy("GPU Energy", "nJ", 1_000_000_000),
-            energy("ANE0", "mJ", 200),
-            energy("DRAM", "mJ", 999),
-            energy("odd", "kWh", 5),
-        ];
+        let s = [energy("CPU Energy", "mJ", 4000), energy("GPU Energy", "nJ", 1_000_000_000), energy("ANE0", "mJ", 200), energy("DRAM", "mJ", 999), energy("odd", "kWh", 5)];
         let r = summarize(&s, 2.0, &Freqs::default());
         assert_eq!(r.cpu_w, 2.0);
         assert_eq!(r.gpu_w, 0.5);
@@ -480,11 +382,7 @@ mod tests {
 
     #[test]
     fn cluster_usage_and_clock() {
-        let f = Freqs {
-            ecpu: vec![600.0, 1000.0],
-            pcpu: vec![1000.0, 3000.0],
-            gpu: vec![],
-        };
+        let f = Freqs { ecpu: vec![600.0, 1000.0], pcpu: vec![1000.0, 3000.0], gpu: vec![] };
         let s = [
             // half busy: 1/4 at 600, 1/4 at 1000 -> 800 MHz
             core("ECPU000", &[("IDLE", 50), ("V0P5", 25), ("V1P4", 25)]),
@@ -504,17 +402,8 @@ mod tests {
 
     #[test]
     fn gpu_states() {
-        let f = Freqs {
-            gpu: vec![400.0, 1400.0],
-            ..Default::default()
-        };
-        let g = Sample {
-            group: "GPU Stats".into(),
-            subgroup: "GPU Performance States".into(),
-            channel: "GPUPH".into(),
-            states: vec![("OFF".into(), 80), ("P1".into(), 10), ("P2".into(), 10)],
-            ..Default::default()
-        };
+        let f = Freqs { gpu: vec![400.0, 1400.0], ..Default::default() };
+        let g = Sample { group: "GPU Stats".into(), subgroup: "GPU Performance States".into(), channel: "GPUPH".into(), states: vec![("OFF".into(), 80), ("P1".into(), 10), ("P2".into(), 10)], ..Default::default() };
         let r = summarize(&[g], 1.0, &f);
         assert!((r.gpu.busy - 0.2).abs() < 1e-6);
         assert_eq!(r.gpu.mhz, 900.0);
@@ -522,19 +411,9 @@ mod tests {
 
     #[test]
     fn freq_tables_in_hz_or_khz() {
-        let pairs = |v: &[u32]| {
-            v.iter()
-                .flat_map(|f| [f.to_le_bytes(), 800_000u32.to_le_bytes()].concat())
-                .collect::<Vec<u8>>()
-        };
-        assert_eq!(
-            parse_freqs(&pairs(&[0, 600_000_000, 2_064_000_000])),
-            vec![600.0, 2064.0]
-        );
-        assert_eq!(
-            parse_freqs(&pairs(&[1_260_000, 4_512_000])),
-            vec![1260.0, 4512.0]
-        );
+        let pairs = |v: &[u32]| v.iter().flat_map(|f| [f.to_le_bytes(), 800_000u32.to_le_bytes()].concat()).collect::<Vec<u8>>();
+        assert_eq!(parse_freqs(&pairs(&[0, 600_000_000, 2_064_000_000])), vec![600.0, 2064.0]);
+        assert_eq!(parse_freqs(&pairs(&[1_260_000, 4_512_000])), vec![1260.0, 4512.0]);
         assert_eq!(parse_freqs(&[1, 2, 3]), Vec::<f32>::new());
     }
 }

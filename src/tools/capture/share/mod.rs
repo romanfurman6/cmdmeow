@@ -58,39 +58,18 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings {
-            auto: false,
-            copy_link: true,
-            endpoint: String::new(),
-            region: String::new(),
-            bucket: String::new(),
-            access_key: String::new(),
-            public_url: String::new(),
-            folder: VIDEO_FOLDER.into(),
-            link: LinkKind::Public,
-            secret_saved: false,
-        }
+        Settings { auto: false, copy_link: true, endpoint: String::new(), region: String::new(), bucket: String::new(), access_key: String::new(), public_url: String::new(), folder: VIDEO_FOLDER.into(), link: LinkKind::Public, secret_saved: false }
     }
 }
 
 impl Settings {
     /// Fresh settings for screenshots.
     pub fn shots() -> Settings {
-        Settings {
-            folder: SHOT_FOLDER.into(),
-            ..Settings::default()
-        }
+        Settings { folder: SHOT_FOLDER.into(), ..Settings::default() }
     }
     /// The bucket, with the secret kept under `account`.
     pub fn bucket(&self, account: &str) -> s3::Bucket {
-        s3::Bucket::new(
-            &self.endpoint,
-            &self.region,
-            &self.bucket,
-            &self.access_key,
-            &secret::get(account).unwrap_or_default(),
-        )
-        .public_at(&self.public_url)
+        s3::Bucket::new(&self.endpoint, &self.region, &self.bucket, &self.access_key, &secret::get(account).unwrap_or_default()).public_at(&self.public_url)
     }
     /// The storage is Cloudflare R2 (by its endpoint).
     pub fn is_r2(&self) -> bool {
@@ -109,11 +88,7 @@ impl Settings {
     /// Filled in, with a secret saved, from our own settings only: no
     /// Keychain call, so it's safe anywhere (the sidebar, every launch).
     pub fn set_up(&self, _account: &str) -> bool {
-        !self.endpoint.trim().is_empty()
-            && !self.bucket.trim().is_empty()
-            && !self.access_key.trim().is_empty()
-            && self.secret_saved
-            && self.links_ready()
+        !self.endpoint.trim().is_empty() && !self.bucket.trim().is_empty() && !self.access_key.trim().is_empty() && self.secret_saved && self.links_ready()
     }
 }
 
@@ -129,20 +104,12 @@ pub mod secret {
     /// Is a secret saved under `account`? Asks the Keychain for the item's
     /// attributes only, never its data, so macOS doesn't ask for a password.
     pub fn exists(account: &str) -> bool {
-        if let Some(Some(v)) = CACHE
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .and_then(|m| m.get(account))
-        {
+        if let Some(Some(v)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(account)) {
             return !v.is_empty();
         }
         static SEEN: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
         let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
-        *seen
-            .get_or_insert_with(HashMap::new)
-            .entry(account.to_string())
-            .or_insert_with(|| keychain::exists(account))
+        *seen.get_or_insert_with(HashMap::new).entry(account.to_string()).or_insert_with(|| keychain::exists(account))
     }
 
     /// Read the key now, from the Keychain itself, on a thread: if macOS
@@ -152,44 +119,26 @@ pub mod secret {
         let account = account.to_string();
         std::thread::spawn(move || {
             let v = keychain::get(&account);
-            CACHE
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .get_or_insert_with(HashMap::new)
-                .insert(account, v);
+            CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(account, v);
         });
     }
 
     pub fn get(account: &str) -> Option<String> {
         let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-        c.get_or_insert_with(HashMap::new)
-            .entry(account.to_string())
-            .or_insert_with(|| keychain::get(account))
-            .clone()
+        c.get_or_insert_with(HashMap::new).entry(account.to_string()).or_insert_with(|| keychain::get(account)).clone()
     }
 
     /// Save it (empty removes it).
     pub fn set(account: &str, v: &str) -> Result<(), String> {
         keychain::set(account, v)?;
-        CACHE
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_or_insert_with(HashMap::new)
-            .insert(
-                account.to_string(),
-                Some(v.to_string()).filter(|s| !s.is_empty()),
-            );
+        CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(account.to_string(), Some(v.to_string()).filter(|s| !s.is_empty()));
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
     mod keychain {
         fn service() -> &'static str {
-            if crate::kit::fs::is_dev() {
-                "Cmd+Meow Dev sharing"
-            } else {
-                "Cmd+Meow sharing"
-            }
+            if crate::kit::fs::is_dev() { "Cmd+Meow Dev sharing" } else { "Cmd+Meow sharing" }
         }
         /// Where the key lived under the app's first name; moved over on first read.
         const OLD_SERVICE: &str = "CleanMeBro sharing";
@@ -197,10 +146,7 @@ pub mod secret {
         const OLD_ACCOUNT: &str = "secret-key";
 
         fn read(service: &str, account: &str) -> Option<String> {
-            security_framework::passwords::get_generic_password(service, account)
-                .ok()
-                .and_then(|b| String::from_utf8(b).ok())
-                .filter(|s| !s.is_empty())
+            security_framework::passwords::get_generic_password(service, account).ok().and_then(|b| String::from_utf8(b).ok()).filter(|s| !s.is_empty())
         }
         pub fn get(account: &str) -> Option<String> {
             read(service(), account).or_else(|| {
@@ -209,10 +155,7 @@ pub mod secret {
                 }
                 let v = read(OLD_SERVICE, OLD_ACCOUNT)?;
                 if set(account, &v).is_ok() {
-                    let _ = security_framework::passwords::delete_generic_password(
-                        OLD_SERVICE,
-                        OLD_ACCOUNT,
-                    );
+                    let _ = security_framework::passwords::delete_generic_password(OLD_SERVICE, OLD_ACCOUNT);
                 }
                 Some(v)
             })
@@ -220,25 +163,16 @@ pub mod secret {
         pub fn exists(account: &str) -> bool {
             use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
             let found = |service: &str| {
-                ItemSearchOptions::new()
-                    .class(ItemClass::generic_password())
-                    .service(service)
-                    .account(account)
-                    .load_attributes(true)
-                    .limit(Limit::Max(1))
-                    .search()
-                    .is_ok_and(|r| !r.is_empty())
+                ItemSearchOptions::new().class(ItemClass::generic_password()).service(service).account(account).load_attributes(true).limit(Limit::Max(1)).search().is_ok_and(|r| !r.is_empty())
             };
-            found(service())
-                || (!crate::kit::fs::is_dev() && account == OLD_ACCOUNT && found(OLD_SERVICE))
+            found(service()) || (!crate::kit::fs::is_dev() && account == OLD_ACCOUNT && found(OLD_SERVICE))
         }
         pub fn set(account: &str, v: &str) -> Result<(), String> {
             if v.is_empty() {
                 let _ = security_framework::passwords::delete_generic_password(service(), account);
                 return Ok(());
             }
-            security_framework::passwords::set_generic_password(service(), account, v.as_bytes())
-                .map_err(|e| e.to_string())
+            security_framework::passwords::set_generic_password(service(), account, v.as_bytes()).map_err(|e| e.to_string())
         }
     }
 
@@ -269,18 +203,7 @@ pub struct Shared {
 
 /// Everything shared, newest first: the local file and where it went.
 pub fn all() -> Vec<(PathBuf, Shared)> {
-    let mut v: Vec<(PathBuf, Shared)> = load_store()
-        .into_iter()
-        .map(|(p, s)| {
-            (
-                PathBuf::from(p),
-                Shared {
-                    link: on_page(&s.link),
-                    ..s
-                },
-            )
-        })
-        .collect();
+    let mut v: Vec<(PathBuf, Shared)> = load_store().into_iter().map(|(p, s)| (PathBuf::from(p), Shared { link: on_page(&s.link), ..s })).collect();
     v.sort_by(|a, b| b.1.at.cmp(&a.1.at).then_with(|| b.0.cmp(&a.0)));
     v
 }
@@ -303,9 +226,7 @@ fn load_store() -> HashMap<String, Shared> {
 
 /// The last link of `path`, if it was shared.
 pub fn link_for(path: &Path) -> Option<String> {
-    load_store()
-        .get(&path.display().to_string())
-        .map(|s| on_page(&s.link))
+    load_store().get(&path.display().to_string()).map(|s| on_page(&s.link))
 }
 
 fn remember(path: &Path, s: Shared) {
@@ -320,11 +241,7 @@ pub fn is_image(path: &Path) -> bool {
 }
 
 fn content_type(path: &Path) -> &'static str {
-    match path
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .as_deref()
-    {
+    match path.extension().map(|e| e.to_string_lossy().to_lowercase()).as_deref() {
         Some("mp4") | Some("m4v") => "video/mp4",
         Some("mov") => "video/quicktime",
         Some("png") => "image/png",
@@ -338,23 +255,13 @@ fn content_type(path: &Path) -> &'static str {
 fn new_key(folder: &str, path: &Path) -> String {
     let mut b = [0u8; 16];
     if getrandom::fill(&mut b).is_err() {
-        let t = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         b = t.to_le_bytes();
     }
     let id: String = b.iter().map(|x| format!("{x:02x}")).collect();
-    let ext = path
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
-        .unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy().to_lowercase())).unwrap_or_default();
     let folder = folder.trim().trim_start_matches('/');
-    let folder = if folder.is_empty() || folder.ends_with('/') {
-        folder.to_string()
-    } else {
-        format!("{folder}/")
-    };
+    let folder = if folder.is_empty() || folder.ends_with('/') { folder.to_string() } else { format!("{folder}/") };
     format!("{folder}{id}{ext}")
 }
 
@@ -363,11 +270,7 @@ pub const PAGE: &str = "https://cmdmeow.com";
 /// Where the site lived before: links made then are moved to `PAGE`.
 const OLD_PAGES: [&str; 1] = ["https://cmdmeow.furman.cat"];
 /// Sites allowed to read the bucket (CORS), so Edit works on all of them.
-pub const ORIGINS: [&str; 3] = [
-    PAGE,
-    "https://www.cmdmeow.com",
-    "https://cmdmeow.furman.cat",
-];
+pub const ORIGINS: [&str; 3] = [PAGE, "https://www.cmdmeow.com", "https://cmdmeow.furman.cat"];
 
 /// `link` on today's share page (links saved before the move point at the old one).
 fn on_page(link: &str) -> String {
@@ -384,9 +287,7 @@ pub fn page_link(file_url: &str, title: &str) -> String {
     let enc = |s: &str| -> String {
         s.bytes()
             .map(|c| match c {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    (c as char).to_string()
-                }
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (c as char).to_string(),
                 _ => format!("%{c:02X}"),
             })
             .collect()
@@ -400,17 +301,13 @@ pub fn page_link(file_url: &str, title: &str) -> String {
 
 /// The title shown on the share page: the file's name without extension.
 fn title_of(path: &Path) -> String {
-    path.file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// `allow_page` off the UI thread: for links copied again, so buckets set
 /// up before a site move get the new origins too.
 pub fn allow_page_later(b: s3::Bucket) {
-    let _ = std::thread::Builder::new()
-        .name("share-cors".into())
-        .spawn(move || allow_page(&b));
+    let _ = std::thread::Builder::new().name("share-cors".into()).spawn(move || allow_page(&b));
 }
 
 /// Once per bucket and run: let the share page read the bucket (CORS), so
@@ -424,11 +321,7 @@ fn allow_page(b: &s3::Bucket) {
         _ => return,
     }
     match s3::ensure_cors(b, &ORIGINS) {
-        Ok(changed) => eprintln!(
-            "[share] CORS for {} on {id}: {}",
-            ORIGINS.join(", "),
-            if changed { "added" } else { "already there" }
-        ),
+        Ok(changed) => eprintln!("[share] CORS for {} on {id}: {}", ORIGINS.join(", "), if changed { "added" } else { "already there" }),
         Err(e) => {
             eprintln!("[share] {e}");
             // Try again next time.
@@ -453,60 +346,30 @@ pub struct Uploads {
 
 impl Uploads {
     /// Upload `path` (again: the same name, so a link to it keeps working).
-    pub fn start(
-        &mut self,
-        s: &Settings,
-        account: &str,
-        path: PathBuf,
-        ctx: &egui::Context,
-    ) -> Result<(), String> {
+    pub fn start(&mut self, s: &Settings, account: &str, path: PathBuf, ctx: &egui::Context) -> Result<(), String> {
         let b = s.bucket(account);
         if !b.ready() {
-            return Err(if is_image(&path) {
-                "Set up sharing in Screenshot settings first".into()
-            } else {
-                "Set up sharing in Video settings first".into()
-            });
+            return Err(if is_image(&path) { "Set up sharing in Screenshot settings first".into() } else { "Set up sharing in Video settings first".into() });
         }
         if s.link == LinkKind::Public && !b.public_ready() {
             return Err("Add the bucket's Public URL on the Sharing page".into());
         }
         self.stop(&path);
-        let key = load_store()
-            .get(&path.display().to_string())
-            .map(|x| x.key.clone())
-            .unwrap_or_else(|| new_key(&s.folder, &path));
+        let key = load_store().get(&path.display().to_string()).map(|x| x.key.clone()).unwrap_or_else(|| new_key(&s.folder, &path));
         let progress = Arc::new(s3::Progress::default());
         let (tx, rx) = channel();
         let (p2, ctx2, path2, link) = (progress.clone(), ctx.clone(), path.clone(), s.link);
         std::thread::Builder::new()
             .name("share-upload".into())
             .spawn(move || {
-                let r = s3::put_file(
-                    &b,
-                    &key,
-                    &path2,
-                    content_type(&path2),
-                    link == LinkKind::Public,
-                    &p2,
-                )
-                .map(|()| {
+                let r = s3::put_file(&b, &key, &path2, content_type(&path2), link == LinkKind::Public, &p2).map(|()| {
                     allow_page(&b);
                     let file = match link {
                         LinkKind::Public => b.url(&key),
-                        LinkKind::Week => {
-                            s3::presign_get(&b, &key, 7 * 24 * 3600, chrono::Utc::now())
-                        }
+                        LinkKind::Week => s3::presign_get(&b, &key, 7 * 24 * 3600, chrono::Utc::now()),
                     };
                     let url = page_link(&file, &title_of(&path2));
-                    remember(
-                        &path2,
-                        Shared {
-                            key,
-                            link: url.clone(),
-                            at: chrono::Utc::now().timestamp(),
-                        },
-                    );
+                    remember(&path2, Shared { key, link: url.clone(), at: chrono::Utc::now().timestamp() });
                     url
                 });
                 let _ = tx.send(r);
@@ -519,10 +382,7 @@ impl Uploads {
 
     /// How far the upload of `path` is (0..1), while it runs.
     pub fn progress(&self, path: &Path) -> Option<f32> {
-        self.jobs
-            .iter()
-            .find(|j| j.path == path)
-            .map(|j| j.progress.fraction())
+        self.jobs.iter().find(|j| j.path == path).map(|j| j.progress.fraction())
     }
 
     pub fn busy(&self) -> bool {
@@ -563,13 +423,7 @@ mod tests {
 
     #[test]
     fn r2_public_links_need_the_public_url() {
-        let mut s = Settings {
-            endpoint: "abc.r2.cloudflarestorage.com".into(),
-            bucket: "b".into(),
-            access_key: "k".into(),
-            secret_saved: true,
-            ..Settings::default()
-        };
+        let mut s = Settings { endpoint: "abc.r2.cloudflarestorage.com".into(), bucket: "b".into(), access_key: "k".into(), secret_saved: true, ..Settings::default() };
         assert!(s.is_r2() && !s.links_ready() && !s.set_up(VIDEO_ACCOUNT));
         s.link = LinkKind::Week;
         assert!(s.links_ready() && s.set_up(VIDEO_ACCOUNT));
@@ -577,30 +431,15 @@ mod tests {
         s.public_url = "pub-1.r2.dev".into();
         assert!(s.set_up(VIDEO_ACCOUNT));
         // other storages make files public themselves
-        let h = Settings {
-            endpoint: "fsn1.your-objectstorage.com".into(),
-            ..s.clone()
-        };
-        assert!(
-            !h.is_r2()
-                && Settings {
-                    public_url: String::new(),
-                    ..h
-                }
-                .links_ready()
-        );
+        let h = Settings { endpoint: "fsn1.your-objectstorage.com".into(), ..s.clone() };
+        assert!(!h.is_r2() && Settings { public_url: String::new(), ..h }.links_ready());
     }
 
     #[test]
     fn keys_are_random_and_keep_the_extension() {
         let a = new_key("recordings", Path::new("/x/Recording 1.MP4"));
         let b = new_key("/recordings/", Path::new("/x/Recording 1.mp4"));
-        assert!(
-            a.starts_with("recordings/")
-                && a.ends_with(".mp4")
-                && a.len() == "recordings/".len() + 32 + 4,
-            "{a}"
-        );
+        assert!(a.starts_with("recordings/") && a.ends_with(".mp4") && a.len() == "recordings/".len() + 32 + 4, "{a}");
         assert_ne!(a, b);
         assert!(new_key("", Path::new("a.png")).ends_with(".png"));
         assert_eq!(content_type(Path::new("a.mp4")), "video/mp4");
@@ -608,33 +447,18 @@ mod tests {
 
     #[test]
     fn links_open_the_share_page() {
-        let l = page_link(
-            "https://clips.fsn1.your-objectstorage.com/recordings/ab12.mp4",
-            "Recording 1",
-        );
+        let l = page_link("https://clips.fsn1.your-objectstorage.com/recordings/ab12.mp4", "Recording 1");
         assert_eq!(l, "https://cmdmeow.com/view/?u=https%3A%2F%2Fclips.fsn1.your-objectstorage.com%2Frecordings%2Fab12.mp4&t=Recording%201");
         // presigned links keep their query intact inside u=
         let p = page_link("https://b.x/k.mp4?X-Amz-Signature=a&X-Amz-Date=b", "");
-        assert!(
-            p.ends_with("u=https%3A%2F%2Fb.x%2Fk.mp4%3FX-Amz-Signature%3Da%26X-Amz-Date%3Db"),
-            "{p}"
-        );
-        assert_eq!(
-            title_of(Path::new("/x/Shot 2026-11-12 at 10.00.png")),
-            "Shot 2026-11-12 at 10.00"
-        );
+        assert!(p.ends_with("u=https%3A%2F%2Fb.x%2Fk.mp4%3FX-Amz-Signature%3Da%26X-Amz-Date%3Db"), "{p}");
+        assert_eq!(title_of(Path::new("/x/Shot 2026-11-12 at 10.00.png")), "Shot 2026-11-12 at 10.00");
     }
 
     #[test]
     fn old_site_links_move_to_the_new_site() {
-        assert_eq!(
-            on_page("https://cmdmeow.furman.cat/view/?u=x&t=y"),
-            "https://cmdmeow.com/view/?u=x&t=y"
-        );
-        assert_eq!(
-            on_page("https://cmdmeow.com/view/?u=x"),
-            "https://cmdmeow.com/view/?u=x"
-        );
+        assert_eq!(on_page("https://cmdmeow.furman.cat/view/?u=x&t=y"), "https://cmdmeow.com/view/?u=x&t=y");
+        assert_eq!(on_page("https://cmdmeow.com/view/?u=x"), "https://cmdmeow.com/view/?u=x");
         assert!(ORIGINS.contains(&PAGE));
     }
 }

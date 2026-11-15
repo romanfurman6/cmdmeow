@@ -35,23 +35,9 @@ mod tests {
 
     #[test]
     fn halves_share_a_row_and_full_starts_a_new_one() {
-        let (r, h) = flow(
-            &[
-                (4, 70.0),
-                (2, 104.0),
-                (2, 90.0),
-                (2, 130.0),
-                (2, 112.0),
-                (4, 50.0),
-            ],
-            412.0,
-            12.0,
-        );
+        let (r, h) = flow(&[(4, 70.0), (2, 104.0), (2, 90.0), (2, 130.0), (2, 112.0), (4, 50.0)], 412.0, 12.0);
         assert_eq!(r.len(), 6);
-        assert_eq!(
-            r[0],
-            Rect::from_min_size(Pos2::ZERO, Vec2::new(412.0, 70.0))
-        );
+        assert_eq!(r[0], Rect::from_min_size(Pos2::ZERO, Vec2::new(412.0, 70.0)));
         // two halves side by side
         assert_eq!(r[1].min, Pos2::new(0.0, 82.0));
         assert_eq!(r[1].width(), 200.0);
@@ -65,11 +51,7 @@ mod tests {
 
     #[test]
     fn quarters_and_overflow() {
-        let (r, h) = flow(
-            &[(1, 40.0), (1, 40.0), (1, 40.0), (1, 40.0), (1, 40.0)],
-            100.0,
-            0.0,
-        );
+        let (r, h) = flow(&[(1, 40.0), (1, 40.0), (1, 40.0), (1, 40.0), (1, 40.0)], 100.0, 0.0);
         assert_eq!(r[3].min, Pos2::new(75.0, 0.0));
         assert_eq!(r[4].min, Pos2::new(0.0, 40.0));
         assert_eq!(h, 80.0);

@@ -42,10 +42,7 @@ mod imp {
     use super::Track;
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
-    use objc2_av_foundation::{
-        AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVAssetWriter, AVAssetWriterInput,
-        AVFileTypeAppleM4A, AVMediaTypeAudio, AVURLAsset,
-    };
+    use objc2_av_foundation::{AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVAssetWriter, AVAssetWriterInput, AVFileTypeAppleM4A, AVMediaTypeAudio, AVURLAsset};
     use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSURL};
     use std::ffi::c_void;
     use std::path::Path;
@@ -80,48 +77,11 @@ mod imp {
     unsafe extern "C" {
         fn CMSampleBufferGetDataBuffer(sb: *const c_void) -> *const c_void;
         fn CMBlockBufferGetDataLength(b: *const c_void) -> usize;
-        fn CMBlockBufferCopyDataBytes(
-            b: *const c_void,
-            offset: usize,
-            len: usize,
-            dest: *mut c_void,
-        ) -> i32;
-        fn CMAudioFormatDescriptionCreate(
-            alloc: *const c_void,
-            asbd: *const Asbd,
-            layout_size: usize,
-            layout: *const c_void,
-            cookie_size: usize,
-            cookie: *const c_void,
-            extensions: *const c_void,
-            out: *mut *mut c_void,
-        ) -> i32;
-        fn CMBlockBufferCreateWithMemoryBlock(
-            alloc: *const c_void,
-            memory: *mut c_void,
-            len: usize,
-            block_alloc: *const c_void,
-            custom: *const c_void,
-            offset: usize,
-            data_len: usize,
-            flags: u32,
-            out: *mut *mut c_void,
-        ) -> i32;
-        fn CMBlockBufferReplaceDataBytes(
-            src: *const c_void,
-            dest: *mut c_void,
-            offset: usize,
-            len: usize,
-        ) -> i32;
-        fn CMAudioSampleBufferCreateReadyWithPacketDescriptions(
-            alloc: *const c_void,
-            data: *mut c_void,
-            format: *const c_void,
-            samples: isize,
-            pts: RawTime,
-            packets: *const c_void,
-            out: *mut *mut c_void,
-        ) -> i32;
+        fn CMBlockBufferCopyDataBytes(b: *const c_void, offset: usize, len: usize, dest: *mut c_void) -> i32;
+        fn CMAudioFormatDescriptionCreate(alloc: *const c_void, asbd: *const Asbd, layout_size: usize, layout: *const c_void, cookie_size: usize, cookie: *const c_void, extensions: *const c_void, out: *mut *mut c_void) -> i32;
+        fn CMBlockBufferCreateWithMemoryBlock(alloc: *const c_void, memory: *mut c_void, len: usize, block_alloc: *const c_void, custom: *const c_void, offset: usize, data_len: usize, flags: u32, out: *mut *mut c_void) -> i32;
+        fn CMBlockBufferReplaceDataBytes(src: *const c_void, dest: *mut c_void, offset: usize, len: usize) -> i32;
+        fn CMAudioSampleBufferCreateReadyWithPacketDescriptions(alloc: *const c_void, data: *mut c_void, format: *const c_void, samples: isize, pts: RawTime, packets: *const c_void, out: *mut *mut c_void) -> i32;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -130,8 +90,7 @@ mod imp {
     }
 
     fn dict(pairs: &[(&str, &AnyObject)]) -> Retained<NSDictionary<NSString, AnyObject>> {
-        let keys: Vec<Retained<NSString>> =
-            pairs.iter().map(|(k, _)| NSString::from_str(k)).collect();
+        let keys: Vec<Retained<NSString>> = pairs.iter().map(|(k, _)| NSString::from_str(k)).collect();
         let key_refs: Vec<&NSString> = keys.iter().map(|k| &**k).collect();
         let vals: Vec<&AnyObject> = pairs.iter().map(|(_, v)| *v).collect();
         NSDictionary::from_slices(&key_refs, &vals)
@@ -147,9 +106,7 @@ mod imp {
     fn audio_list(path: &Path) -> (Retained<AVURLAsset>, Vec<Retained<AVAssetTrack>>) {
         unsafe {
             let a = AVURLAsset::URLAssetWithURL_options(&url(path), None);
-            let Some(m) = AVMediaTypeAudio else {
-                return (a, Vec::new());
-            };
+            let Some(m) = AVMediaTypeAudio else { return (a, Vec::new()) };
             let list: Retained<NSArray<AVAssetTrack>> = a.tracksWithMediaType(m);
             let tracks = list.iter().collect();
             (a, tracks)
@@ -163,40 +120,19 @@ mod imp {
 
     /// `which` track as float samples at `rate`, `channels` interleaved.
     /// Slow for long files: call it off the UI thread.
-    pub fn read_audio(
-        path: &Path,
-        which: Track,
-        rate: u32,
-        channels: u32,
-    ) -> Result<Vec<f32>, String> {
+    pub fn read_audio(path: &Path, which: Track, rate: u32, channels: u32) -> Result<Vec<f32>, String> {
         let n = audio_list(path).1.len();
-        read_nth(
-            path,
-            which.index(n).ok_or("This video has no sound")?,
-            rate,
-            channels,
-        )
+        read_nth(path, which.index(n).ok_or("This video has no sound")?, rate, channels)
     }
 
     /// The `index`th audio track as float samples (see [`read_audio`]).
-    pub fn read_nth(
-        path: &Path,
-        index: usize,
-        rate: u32,
-        channels: u32,
-    ) -> Result<Vec<f32>, String> {
+    pub fn read_nth(path: &Path, index: usize, rate: u32, channels: u32) -> Result<Vec<f32>, String> {
         let (asset, tracks) = audio_list(path);
         let track = tracks.get(index).ok_or("This video has no sound")?;
         unsafe {
-            let reader = AVAssetReader::assetReaderWithAsset_error(&asset)
-                .map_err(|e| e.localizedDescription().to_string())?;
+            let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| e.localizedDescription().to_string())?;
             let n = |v: f64| NSNumber::new_f64(v);
-            let (fmt, sr, ch, bits) = (
-                NSNumber::new_u32(LPCM),
-                n(rate as f64),
-                n(channels as f64),
-                n(32.0),
-            );
+            let (fmt, sr, ch, bits) = (NSNumber::new_u32(LPCM), n(rate as f64), n(channels as f64), n(32.0));
             let (yes, no) = (NSNumber::new_bool(true), NSNumber::new_bool(false));
             let settings = dict(&[
                 ("AVFormatIDKey", &fmt),
@@ -207,19 +143,13 @@ mod imp {
                 ("AVLinearPCMIsNonInterleaved", &no),
                 ("AVLinearPCMIsBigEndianKey", &no),
             ]);
-            let out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(
-                track,
-                Some(&settings),
-            );
+            let out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(track, Some(&settings));
             if !reader.canAddOutput(&out) {
                 return Err("The sound can't be read".into());
             }
             reader.addOutput(&out);
             if !reader.startReading() {
-                return Err(reader
-                    .error()
-                    .map(|e| e.localizedDescription().to_string())
-                    .unwrap_or_else(|| "The sound can't be read".into()));
+                return Err(reader.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound can't be read".into()));
             }
             let mut samples = Vec::new();
             while let Some(sb) = out.copyNextSampleBuffer() {
@@ -229,15 +159,8 @@ mod imp {
                 }
                 let len = CMBlockBufferGetDataLength(data);
                 let mut bytes = vec![0u8; len];
-                if len > 0
-                    && CMBlockBufferCopyDataBytes(data, 0, len, bytes.as_mut_ptr() as *mut c_void)
-                        == 0
-                {
-                    samples.extend(
-                        bytes
-                            .chunks_exact(4)
-                            .map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]])),
-                    );
+                if len > 0 && CMBlockBufferCopyDataBytes(data, 0, len, bytes.as_mut_ptr() as *mut c_void) == 0 {
+                    samples.extend(bytes.chunks_exact(4).map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]])));
                 }
             }
             Ok(samples)
@@ -251,22 +174,13 @@ mod imp {
         let _ = std::fs::remove_file(dest);
         unsafe {
             let ft = AVFileTypeAppleM4A.ok_or("m4a isn't available")?;
-            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url(dest), ft)
-                .map_err(|e| e.localizedDescription().to_string())?;
+            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url(dest), ft).map_err(|e| e.localizedDescription().to_string())?;
             let n = |v: f64| NSNumber::new_f64(v);
             let (fmt, sr, ch, br) = (NSNumber::new_u32(AAC), n(RATE), n(2.0), n(160_000.0));
-            let aset = dict(&[
-                ("AVFormatIDKey", &fmt),
-                ("AVSampleRateKey", &sr),
-                ("AVNumberOfChannelsKey", &ch),
-                ("AVEncoderBitRateKey", &br),
-            ]);
+            let aset = dict(&[("AVFormatIDKey", &fmt), ("AVSampleRateKey", &sr), ("AVNumberOfChannelsKey", &ch), ("AVEncoderBitRateKey", &br)]);
             let mut inputs = Vec::new();
             for k in 0..tracks.len() {
-                let a = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(
-                    AVMediaTypeAudio.ok_or("no audio")?,
-                    Some(&aset),
-                );
+                let a = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(AVMediaTypeAudio.ok_or("no audio")?, Some(&aset));
                 a.setExpectsMediaDataInRealTime(false);
                 a.setMarksOutputTrackAsEnabled(k == 0);
                 if !writer.canAddInput(&a) {
@@ -276,40 +190,12 @@ mod imp {
                 inputs.push(a);
             }
             if !writer.startWriting() {
-                return Err(writer
-                    .error()
-                    .map(|e| e.localizedDescription().to_string())
-                    .unwrap_or_else(|| "The sound can't be written".into()));
+                return Err(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound can't be written".into()));
             }
-            writer.startSessionAtSourceTime(objc2_core_media::CMTime {
-                value: 0,
-                timescale: 48_000,
-                flags: objc2_core_media::CMTimeFlags::Valid,
-                epoch: 0,
-            });
-            let asbd = Asbd {
-                sample_rate: RATE,
-                format_id: LPCM,
-                format_flags: 1 | (1 << 3),
-                bytes_per_packet: 8,
-                frames_per_packet: 1,
-                bytes_per_frame: 8,
-                channels_per_frame: 2,
-                bits_per_channel: 32,
-                reserved: 0,
-            };
+            writer.startSessionAtSourceTime(objc2_core_media::CMTime { value: 0, timescale: 48_000, flags: objc2_core_media::CMTimeFlags::Valid, epoch: 0 });
+            let asbd = Asbd { sample_rate: RATE, format_id: LPCM, format_flags: 1 | (1 << 3), bytes_per_packet: 8, frames_per_packet: 1, bytes_per_frame: 8, channels_per_frame: 2, bits_per_channel: 32, reserved: 0 };
             let mut desc = std::ptr::null_mut();
-            if CMAudioFormatDescriptionCreate(
-                std::ptr::null(),
-                &asbd,
-                0,
-                std::ptr::null(),
-                0,
-                std::ptr::null(),
-                std::ptr::null(),
-                &mut desc,
-            ) != 0
-            {
+            if CMAudioFormatDescriptionCreate(std::ptr::null(), &asbd, 0, std::ptr::null(), 0, std::ptr::null(), std::ptr::null(), &mut desc) != 0 {
                 return Err("The sound format isn't available".into());
             }
             // a second at a time, taking turns so the file stays interleaved
@@ -335,53 +221,23 @@ mod imp {
                     }
                     let len = std::mem::size_of_val(part);
                     let mut block = std::ptr::null_mut();
-                    if CMBlockBufferCreateWithMemoryBlock(
-                        std::ptr::null(),
-                        std::ptr::null_mut(),
-                        len,
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        0,
-                        len,
-                        1,
-                        &mut block,
-                    ) != 0
-                    {
+                    if CMBlockBufferCreateWithMemoryBlock(std::ptr::null(), std::ptr::null_mut(), len, std::ptr::null(), std::ptr::null(), 0, len, 1, &mut block) != 0 {
                         failed = Some("Out of memory".into());
                         break 'outer;
                     }
                     CMBlockBufferReplaceDataBytes(part.as_ptr() as *const c_void, block, 0, len);
-                    let pts = RawTime {
-                        value: (at / 2) as i64,
-                        timescale: 48_000,
-                        flags: 1,
-                        epoch: 0,
-                    };
+                    let pts = RawTime { value: (at / 2) as i64, timescale: 48_000, flags: 1, epoch: 0 };
                     let mut sb = std::ptr::null_mut();
-                    let ok = CMAudioSampleBufferCreateReadyWithPacketDescriptions(
-                        std::ptr::null(),
-                        block,
-                        desc,
-                        (part.len() / 2) as isize,
-                        pts,
-                        std::ptr::null(),
-                        &mut sb,
-                    ) == 0;
+                    let ok = CMAudioSampleBufferCreateReadyWithPacketDescriptions(std::ptr::null(), block, desc, (part.len() / 2) as isize, pts, std::ptr::null(), &mut sb) == 0;
                     CFRelease(block);
                     if !ok || sb.is_null() {
                         failed = Some("The sound couldn't be packed".into());
                         break 'outer;
                     }
-                    let appended =
-                        input.appendSampleBuffer(&*(sb as *const objc2_core_media::CMSampleBuffer));
+                    let appended = input.appendSampleBuffer(&*(sb as *const objc2_core_media::CMSampleBuffer));
                     CFRelease(sb);
                     if !appended {
-                        failed = Some(
-                            writer
-                                .error()
-                                .map(|e| e.localizedDescription().to_string())
-                                .unwrap_or_else(|| "The sound couldn't be written".into()),
-                        );
+                        failed = Some(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound couldn't be written".into()));
                         break 'outer;
                     }
                 }
@@ -405,10 +261,7 @@ mod imp {
             if writer.status() == objc2_av_foundation::AVAssetWriterStatus::Completed {
                 Ok(())
             } else {
-                Err(writer
-                    .error()
-                    .map(|e| e.localizedDescription().to_string())
-                    .unwrap_or_else(|| "The sound couldn't be finished".into()))
+                Err(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound couldn't be finished".into()))
             }
         }
     }
@@ -426,21 +279,11 @@ mod other {
         0
     }
 
-    pub fn read_audio(
-        _path: &Path,
-        _which: Track,
-        _rate: u32,
-        _channels: u32,
-    ) -> Result<Vec<f32>, String> {
+    pub fn read_audio(_path: &Path, _which: Track, _rate: u32, _channels: u32) -> Result<Vec<f32>, String> {
         Err("Reading sound needs macOS".into())
     }
 
-    pub fn read_nth(
-        _path: &Path,
-        _index: usize,
-        _rate: u32,
-        _channels: u32,
-    ) -> Result<Vec<f32>, String> {
+    pub fn read_nth(_path: &Path, _index: usize, _rate: u32, _channels: u32) -> Result<Vec<f32>, String> {
         Err("Reading sound needs macOS".into())
     }
 

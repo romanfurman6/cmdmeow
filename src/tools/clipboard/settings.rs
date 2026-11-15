@@ -60,19 +60,11 @@ impl Default for Settings {
 
 impl Settings {
     pub fn limits(&self) -> Limits {
-        Limits {
-            keep: self.keep,
-            max_days: self.max_days,
-            dedupe: self.dedupe,
-        }
+        Limits { keep: self.keep, max_days: self.max_days, dedupe: self.dedupe }
     }
 
     pub fn ignores(&self, bundle: &str) -> bool {
-        !bundle.is_empty()
-            && self
-                .ignore
-                .iter()
-                .any(|i| i.bundle.eq_ignore_ascii_case(bundle))
+        !bundle.is_empty() && self.ignore.iter().any(|i| i.bundle.eq_ignore_ascii_case(bundle))
     }
 
     /// Never record from the password managers on this Mac (`installed` is
@@ -83,12 +75,7 @@ impl Settings {
         let mut changed = false;
         let has = |b: &str| installed.iter().any(|f| f.bundle.eq_ignore_ascii_case(b));
         if self.defaults_v < 1 {
-            self.ignore.retain(|i| {
-                has(&i.bundle)
-                    || !secret_apps::OLD_DEFAULTS
-                        .iter()
-                        .any(|d| d.eq_ignore_ascii_case(&i.bundle))
-            });
+            self.ignore.retain(|i| has(&i.bundle) || !secret_apps::OLD_DEFAULTS.iter().any(|d| d.eq_ignore_ascii_case(&i.bundle)));
             self.defaults_v = 1;
             changed = true;
         }
@@ -99,10 +86,7 @@ impl Settings {
             }
             self.seeded.push(key);
             if !self.ignores(&f.bundle) {
-                self.ignore.push(Ignored {
-                    bundle: f.bundle,
-                    name: f.name,
-                });
+                self.ignore.push(Ignored { bundle: f.bundle, name: f.name });
             }
             changed = true;
         }
@@ -142,44 +126,24 @@ mod tests {
         assert!(!s.record_concealed, "passwords stay out unless turned on");
         assert!(!s.record_secrets, "tokens stay out unless turned on");
         assert!(s.record_remote);
-        assert!(
-            s.ignore.is_empty(),
-            "nothing listed until the Mac is scanned"
-        );
+        assert!(s.ignore.is_empty(), "nothing listed until the Mac is scanned");
         assert!(!s.ignores(""));
     }
 
     fn app(bundle: &str, name: &str) -> Found {
-        Found {
-            bundle: bundle.into(),
-            name: name.into(),
-            path: format!("/Applications/{name}.app").into(),
-        }
+        Found { bundle: bundle.into(), name: name.into(), path: format!("/Applications/{name}.app").into() }
     }
 
     fn ig(bundle: &str, name: &str) -> Ignored {
-        Ignored {
-            bundle: bundle.into(),
-            name: name.into(),
-        }
+        Ignored { bundle: bundle.into(), name: name.into() }
     }
 
     #[test]
     fn adds_only_installed_managers() {
         let mut s = Settings::default();
-        let mac = [
-            app("com.apple.Safari", "Safari"),
-            app("com.1password.1password", "1Password"),
-            app("com.apple.keychainaccess", "Keychain Access"),
-        ];
+        let mac = [app("com.apple.Safari", "Safari"), app("com.1password.1password", "1Password"), app("com.apple.keychainaccess", "Keychain Access")];
         assert!(s.adopt_installed(&mac));
-        assert_eq!(
-            s.ignore,
-            [
-                ig("com.1password.1password", "1Password"),
-                ig("com.apple.keychainaccess", "Keychain Access")
-            ]
-        );
+        assert_eq!(s.ignore, [ig("com.1password.1password", "1Password"), ig("com.apple.keychainaccess", "Keychain Access")]);
         assert!(s.ignores("com.1Password.1password"));
         assert!(!s.ignores("com.bitwarden.desktop"));
         assert!(!s.adopt_installed(&mac), "second run changes nothing");
@@ -190,10 +154,7 @@ mod tests {
         let mut s = Settings::default();
         s.adopt_installed(&[app("com.1password.1password", "1Password")]);
         s.ignore.clear();
-        let mac = [
-            app("com.1password.1password", "1Password"),
-            app("org.keepassxc.keepassxc", "KeePassXC"),
-        ];
+        let mac = [app("com.1password.1password", "1Password"), app("org.keepassxc.keepassxc", "KeePassXC")];
         assert!(s.adopt_installed(&mac));
         assert_eq!(s.ignore, [ig("org.keepassxc.keepassxc", "KeePassXC")]);
     }
@@ -212,11 +173,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        let mac = [
-            app("com.apple.Passwords", "Passwords"),
-            app("com.apple.keychainaccess", "Keychain Access"),
-            app("com.tinyspeck.slackmacgap", "Slack"),
-        ];
+        let mac = [app("com.apple.Passwords", "Passwords"), app("com.apple.keychainaccess", "Keychain Access"), app("com.tinyspeck.slackmacgap", "Slack")];
         assert!(s.adopt_installed(&mac));
         let left: Vec<&str> = s.ignore.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(left, ["Keychain Access", "Passwords", "Slack"]);
@@ -231,11 +188,7 @@ mod tests {
     fn old_file_without_new_fields_loads() {
         let dir = std::env::temp_dir().join(format!("cmb-clip-old-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("settings.json"),
-            r#"{"keep":200,"ignore":[{"bundle":"com.bitwarden.desktop","name":"Bitwarden"}]}"#,
-        )
-        .unwrap();
+        std::fs::write(dir.join("settings.json"), r#"{"keep":200,"ignore":[{"bundle":"com.bitwarden.desktop","name":"Bitwarden"}]}"#).unwrap();
         let mut s = load(&dir);
         assert_eq!(s.defaults_v, 0);
         assert!(s.adopt_installed(&[]));
@@ -246,12 +199,7 @@ mod tests {
     #[test]
     fn saves_and_loads() {
         let dir = std::env::temp_dir().join(format!("cmb-clip-settings-{}", std::process::id()));
-        let s = Settings {
-            keep: 5,
-            max_days: 3,
-            dedupe: false,
-            ..Default::default()
-        };
+        let s = Settings { keep: 5, max_days: 3, dedupe: false, ..Default::default() };
         save(&dir, &s);
         let back = load(&dir);
         assert_eq!(back.keep, KEEP_MIN);

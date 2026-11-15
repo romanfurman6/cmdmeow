@@ -16,9 +16,9 @@
 //! switches charging off just before sleep ([`sleep_watch`]) and decides
 //! again on wake: no climbing past the limit overnight.
 
+pub use crate::kit::helper::*;
 #[cfg(target_os = "macos")]
 use crate::kit::charge::{self, Policy, Status};
-pub use crate::kit::helper::*;
 #[cfg(target_os = "macos")]
 use std::io::{BufRead, BufReader, Write};
 #[cfg(target_os = "macos")]
@@ -66,10 +66,7 @@ pub fn serve(uid: u32) -> ! {
     if charger.is_some() {
         sleep_watch::start();
     }
-    let mut policy: Option<Policy> = std::fs::read_to_string(CHARGE_FILE)
-        .ok()
-        .and_then(|t| serde_json::from_str::<Policy>(&t).ok())
-        .map(Policy::sanitize);
+    let mut policy: Option<Policy> = std::fs::read_to_string(CHARGE_FILE).ok().and_then(|t| serde_json::from_str::<Policy>(&t).ok()).map(Policy::sanitize);
     let mut cstate = charge::State::default();
     // charging was switched off by this helper and must come back on
     let mut touched = false;
@@ -111,16 +108,8 @@ pub fn serve(uid: u32) -> ! {
         // calls: no SMC reads, no wakeups. Under a lease it ticks once a
         // second to watch temperatures and the lease.
         let idle = !manual && targets.iter().all(Option::is_none);
-        let wait = if idle {
-            IDLE_WAIT_MS
-        } else {
-            1000u64.saturating_sub(last_tick.elapsed().as_millis() as u64) as i32
-        };
-        let mut pfd = libc::pollfd {
-            fd: listener.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
+        let wait = if idle { IDLE_WAIT_MS } else { 1000u64.saturating_sub(last_tick.elapsed().as_millis() as u64) as i32 };
+        let mut pfd = libc::pollfd { fd: listener.as_raw_fd(), events: libc::POLLIN, revents: 0 };
         unsafe { libc::poll(&mut pfd, 1, wait) };
         let mut changed = false;
         while let Ok((stream, _)) = listener.accept() {
@@ -163,17 +152,8 @@ pub fn serve(uid: u32) -> ! {
                 apply(&mut ctl, &targets, hot, &mut manual);
             }
             let note = if hot { "hot" } else { "" }.to_string();
-            let charge = Status {
-                supported: charger.is_some(),
-                policy,
-                state: cstate,
-            };
-            let reply = Reply {
-                version: VERSION,
-                manual,
-                note,
-                charge,
-            };
+            let charge = Status { supported: charger.is_some(), policy, state: cstate };
+            let reply = Reply { version: VERSION, manual, note, charge };
             if let Ok(mut s) = serde_json::to_string(&reply) {
                 s.push('\n');
                 let _ = (&stream).write_all(s.as_bytes());
@@ -193,13 +173,8 @@ pub fn serve(uid: u32) -> ! {
         if !(idle && !changed) && last_tick.elapsed() >= Duration::from_secs(1) {
             last_tick = Instant::now();
             let r = probe.read();
-            let snap = Snapshot {
-                sensors: merge(r.hid, r.smc_temps),
-                ..Default::default()
-            };
-            hot = snap
-                .hottest()
-                .is_some_and(|(_, c)| c >= super::control::TRIP_C);
+            let snap = Snapshot { sensors: merge(r.hid, r.smc_temps), ..Default::default() };
+            hot = snap.hottest().is_some_and(|(_, c)| c >= super::control::TRIP_C);
             if SystemTime::now() > lease {
                 targets.clear();
             }
@@ -209,17 +184,10 @@ pub fn serve(uid: u32) -> ! {
 
     /// Read the battery and switch charging to what the policy says. It is
     /// written again whenever the SMC disagrees (macOS may reset it).
-    fn tick_charge(
-        charger: Option<&Charger>,
-        policy: Option<Policy>,
-        st: &mut charge::State,
-        touched: &mut bool,
-    ) {
+    fn tick_charge(charger: Option<&Charger>, policy: Option<Policy>, st: &mut charge::State, touched: &mut bool) {
         let Some(c) = charger else { return };
         let p = policy.unwrap_or_default();
-        let Some(b) = charge::read_battery() else {
-            return;
-        };
+        let Some(b) = charge::read_battery() else { return };
         let off = charge::decide(&p, b, st);
         if c.inhibited() != Some(off) {
             c.set(off);
@@ -268,12 +236,7 @@ mod sleep_watch {
 
     #[link(name = "IOKit", kind = "framework")]
     extern "C" {
-        fn IORegisterForSystemPower(
-            refcon: *mut c_void,
-            port: *mut *mut c_void,
-            cb: Callback,
-            notifier: *mut u32,
-        ) -> u32;
+        fn IORegisterForSystemPower(refcon: *mut c_void, port: *mut *mut c_void, cb: Callback, notifier: *mut u32) -> u32;
         fn IONotificationPortGetRunLoopSource(port: *mut c_void) -> *const c_void;
         fn IOAllowPowerChange(kernel_port: u32, id: isize) -> i32;
     }
@@ -304,30 +267,22 @@ mod sleep_watch {
     }
 
     pub fn start() {
-        let _ = std::thread::Builder::new()
-            .name("sleep-watch".into())
-            .spawn(|| {
-                let Some(charger) = Charger::open() else {
+        let _ = std::thread::Builder::new().name("sleep-watch".into()).spawn(|| {
+            let Some(charger) = Charger::open() else { return };
+            // lives as long as the helper
+            let refcon = Box::into_raw(Box::new(charger)) as *mut c_void;
+            unsafe {
+                let mut port: *mut c_void = std::ptr::null_mut();
+                let mut notifier = 0u32;
+                let root = IORegisterForSystemPower(refcon, &mut port, on_power, &mut notifier);
+                if root == 0 || port.is_null() {
                     return;
-                };
-                // lives as long as the helper
-                let refcon = Box::into_raw(Box::new(charger)) as *mut c_void;
-                unsafe {
-                    let mut port: *mut c_void = std::ptr::null_mut();
-                    let mut notifier = 0u32;
-                    let root = IORegisterForSystemPower(refcon, &mut port, on_power, &mut notifier);
-                    if root == 0 || port.is_null() {
-                        return;
-                    }
-                    ROOT_PORT.store(root, Ordering::SeqCst);
-                    CFRunLoopAddSource(
-                        CFRunLoopGetCurrent(),
-                        IONotificationPortGetRunLoopSource(port),
-                        kCFRunLoopDefaultMode,
-                    );
-                    CFRunLoopRun();
                 }
-            });
+                ROOT_PORT.store(root, Ordering::SeqCst);
+                CFRunLoopAddSource(CFRunLoopGetCurrent(), IONotificationPortGetRunLoopSource(port), kCFRunLoopDefaultMode);
+                CFRunLoopRun();
+            }
+        });
     }
 }
 
@@ -336,3 +291,4 @@ pub fn serve(_uid: u32) -> ! {
     eprintln!("The fan helper runs on macOS only.");
     std::process::exit(1);
 }
+

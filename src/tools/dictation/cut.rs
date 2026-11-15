@@ -72,8 +72,7 @@ fn speech(levels: &[f32]) -> Vec<bool> {
 pub fn trim(pcm: &[f32], rate: u32) -> Range<usize> {
     let fl = frame_len(rate);
     let sp = speech(&frames(pcm, rate));
-    let (Some(first), Some(last)) = (sp.iter().position(|s| *s), sp.iter().rposition(|s| *s))
-    else {
+    let (Some(first), Some(last)) = (sp.iter().position(|s| *s), sp.iter().rposition(|s| *s)) else {
         return 0..pcm.len();
     };
     let ms = |m: usize| rate as usize * m / 1000;
@@ -98,9 +97,7 @@ pub fn split(pcm: &[f32], rate: u32) -> Vec<Range<usize>> {
     while pcm.len() - start > secs(PIECE_MAX_SECS) {
         let lo = (start + secs(PIECE_MIN_SECS)) / fl;
         let hi = ((start + secs(PIECE_MAX_SECS)).min(pcm.len() - secs(REST_MIN_SECS))) / fl;
-        let cut_frame = longest_pause(&sp[lo..hi])
-            .map(|r| lo + (r.start + r.end) / 2)
-            .unwrap_or_else(|| lo + quietest(&levels[lo..hi]));
+        let cut_frame = longest_pause(&sp[lo..hi]).map(|r| lo + (r.start + r.end) / 2).unwrap_or_else(|| lo + quietest(&levels[lo..hi]));
         let cut = (cut_frame * fl).clamp(start + 1, pcm.len());
         out.push(start..cut);
         start = cut;
@@ -130,12 +127,7 @@ fn longest_pause(sp: &[bool]) -> Option<Range<usize>> {
 }
 
 fn quietest(levels: &[f32]) -> usize {
-    levels
-        .iter()
-        .enumerate()
-        .min_by(|a, b| a.1.total_cmp(b.1))
-        .map(|(k, _)| k)
-        .unwrap_or(0)
+    levels.iter().enumerate().min_by(|a, b| a.1.total_cmp(b.1)).map(|(k, _)| k).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -153,11 +145,7 @@ mod tests {
                 n = n.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
                 let noise = (n >> 16) as f32 / 65_536.0 - 0.5;
                 let t = out.len() as f32 / RATE as f32;
-                out.push(if *loud {
-                    0.2 * (t * 220.0 * std::f32::consts::TAU).sin()
-                } else {
-                    noise * 0.004
-                });
+                out.push(if *loud { 0.2 * (t * 220.0 * std::f32::consts::TAU).sin() } else { noise * 0.004 });
             }
         }
         out
@@ -171,11 +159,7 @@ mod tests {
     fn quiet_ends_are_trimmed_with_a_margin() {
         let pcm = take(&[(1.5, false), (2.0, true), (2.0, false)]);
         let r = trim(&pcm, RATE);
-        assert!(
-            (secs(r.start) - 1.25).abs() < 0.03,
-            "start {}",
-            secs(r.start)
-        );
+        assert!((secs(r.start) - 1.25).abs() < 0.03, "start {}", secs(r.start));
         assert!((secs(r.end) - 3.85).abs() < 0.03, "end {}", secs(r.end));
     }
 
@@ -205,15 +189,7 @@ mod tests {
     #[test]
     fn long_takes_are_cut_in_their_pauses() {
         // speech with a pause at 12 s (too early), 22 s and 27 s (longer)
-        let pcm = take(&[
-            (12.0, true),
-            (0.4, false),
-            (9.6, true),
-            (0.3, false),
-            (4.7, true),
-            (0.8, false),
-            (22.2, true),
-        ]);
+        let pcm = take(&[(12.0, true), (0.4, false), (9.6, true), (0.3, false), (4.7, true), (0.8, false), (22.2, true)]);
         let parts = split(&pcm, RATE);
         assert_eq!(parts.len(), 2);
         let cut = secs(parts[0].end);
@@ -233,10 +209,7 @@ mod tests {
         }
         for p in &parts {
             let s = secs(p.len());
-            assert!(
-                (REST_MIN_SECS as f32..=PIECE_MAX_SECS as f32 + 0.1).contains(&s),
-                "piece {s}"
-            );
+            assert!((REST_MIN_SECS as f32..=PIECE_MAX_SECS as f32 + 0.1).contains(&s), "piece {s}");
         }
     }
 

@@ -5,12 +5,9 @@
 //! events carry the tokens of each turn and the plan's rate limits as of
 //! that turn.
 
-use super::{
-    find, recent_jsonl, Billing, Limit, LocalTokens, LogCache, ParseCtx, Provider, Shared,
-    UsageEntry, UsageInfo,
-};
-use crate::kit::claude_code as cc;
 use crate::kit::sync::LockExt;
+use super::{find, recent_jsonl, Billing, Limit, LocalTokens, LogCache, ParseCtx, Provider, Shared, UsageEntry, UsageInfo};
+use crate::kit::claude_code as cc;
 use chrono::{DateTime, Local, TimeZone};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -24,23 +21,16 @@ pub struct Codex {
 
 /// Where Codex keeps its data (`$CODEX_HOME`, else `~/.codex`).
 pub fn home() -> PathBuf {
-    std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"))
+    std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"))
 }
 
 /// The `codex` command, if it's installed somewhere usual.
 pub fn bin() -> Option<PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
-    let mut dirs_: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
+    let mut dirs_: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
     dirs_.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
     dirs_.extend([".local/bin", ".npm-global/bin", ".bun/bin", ".volta/bin"].map(|d| home.join(d)));
-    dirs_
-        .into_iter()
-        .map(|d| d.join("codex"))
-        .find(|p| p.is_file())
+    dirs_.into_iter().map(|d| d.join("codex")).find(|p| p.is_file())
 }
 
 impl Provider for Codex {
@@ -58,18 +48,8 @@ impl Provider for Codex {
         let auth = std::fs::read(home.join("auth.json")).unwrap_or_default();
         let billing = billing(&auth);
         // the account's own limits first: fresh, not only as of the last request
-        let live = if installed && billing == Billing::Subscription {
-            super::account::codex_usage(&auth)
-                .map_err(|e| eprintln!("[ai] codex usage: {e:?}"))
-                .ok()
-        } else {
-            None
-        };
-        let latest = if installed && live.is_none() {
-            latest_limits(&home.join("sessions"))
-        } else {
-            None
-        };
+        let live = if installed && billing == Billing::Subscription { super::account::codex_usage(&auth).map_err(|e| eprintln!("[ai] codex usage: {e:?}")).ok() } else { None };
+        let latest = if installed && live.is_none() { latest_limits(&home.join("sessions")) } else { None };
         let mut g = s.lock_ok();
         g.installed = installed;
         g.logged_in = logged_in;
@@ -102,18 +82,12 @@ impl Provider for Codex {
                 }
                 g.limits = l.limits;
                 g.fetched = Some(l.at);
-                g.note =
-                    "Codex reports its limits with each request, so these are as of your last one."
-                        .into();
+                g.note = "Codex reports its limits with each request, so these are as of your last one.".into();
             }
             None => {
                 g.limits.clear();
                 g.fetched = Some(Local::now());
-                g.error = Some(if logged_in {
-                    "Codex shows your limits here after your next request.".into()
-                } else {
-                    "Sign in to Codex to see your limits: run codex in Terminal.".into()
-                });
+                g.error = Some(if logged_in { "Codex shows your limits here after your next request.".into() } else { "Sign in to Codex to see your limits: run codex in Terminal.".into() });
             }
         }
     }
@@ -144,19 +118,13 @@ fn latest_limits(sessions: &Path) -> Option<Latest> {
     let mut files = recent_jsonl(sessions, 3);
     files.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
     // newest first; an old log may still hold limits when the newest has none yet
-    files
-        .iter()
-        .rev()
-        .take(5)
-        .find_map(|p| limits_in(&tail(p, 1 << 20)))
+    files.iter().rev().take(5).find_map(|p| limits_in(&tail(p, 1 << 20)))
 }
 
 /// The last `max` bytes of a file, from the first whole line.
 fn tail(p: &Path, max: u64) -> Vec<u8> {
     use std::io::{Read, Seek, SeekFrom};
-    let Ok(mut f) = std::fs::File::open(p) else {
-        return Vec::new();
-    };
+    let Ok(mut f) = std::fs::File::open(p) else { return Vec::new() };
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
     let start = len.saturating_sub(max);
     if f.seek(SeekFrom::Start(start)).is_err() {
@@ -165,11 +133,7 @@ fn tail(p: &Path, max: u64) -> Vec<u8> {
     let mut buf = Vec::new();
     let _ = f.read_to_end(&mut buf);
     if start > 0 {
-        let cut = buf
-            .iter()
-            .position(|&b| b == b'\n')
-            .map(|i| i + 1)
-            .unwrap_or(buf.len());
+        let cut = buf.iter().position(|&b| b == b'\n').map(|i| i + 1).unwrap_or(buf.len());
         buf.drain(..cut);
     }
     buf
@@ -177,26 +141,13 @@ fn tail(p: &Path, max: u64) -> Vec<u8> {
 
 /// The last `rate_limits` snapshot in a log.
 fn limits_in(log: &[u8]) -> Option<Latest> {
-    log.split(|&b| b == b'\n')
-        .rev()
-        .filter(|l| find(l, b"\"rate_limits\":{").is_some())
-        .find_map(|line| {
-            let v: Value = serde_json::from_slice(line).ok()?;
-            let rl = &v["payload"]["rate_limits"];
-            let at = v["timestamp"]
-                .as_str()
-                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())?
-                .with_timezone(&Local);
-            let limits: Vec<Limit> = [&rl["primary"], &rl["secondary"]]
-                .into_iter()
-                .filter_map(|w| window(w, at))
-                .collect();
-            (!limits.is_empty()).then(|| Latest {
-                plan: rl["plan_type"].as_str().unwrap_or("").to_string(),
-                limits,
-                at,
-            })
-        })
+    log.split(|&b| b == b'\n').rev().filter(|l| find(l, b"\"rate_limits\":{").is_some()).find_map(|line| {
+        let v: Value = serde_json::from_slice(line).ok()?;
+        let rl = &v["payload"]["rate_limits"];
+        let at = v["timestamp"].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok())?.with_timezone(&Local);
+        let limits: Vec<Limit> = [&rl["primary"], &rl["secondary"]].into_iter().filter_map(|w| window(w, at)).collect();
+        (!limits.is_empty()).then(|| Latest { plan: rl["plan_type"].as_str().unwrap_or("").to_string(), limits, at })
+    })
 }
 
 /// One limit window, named the way the UI expects ("…session…", "…week…").
@@ -205,33 +156,13 @@ fn window(w: &Value, at: DateTime<Local>) -> Option<Limit> {
     let minutes = w["window_minutes"].as_i64().unwrap_or(0);
     let label = window_label(minutes);
     // newer logs say when it resets, older ones how long until then
-    let resets = w["resets_at"]
-        .as_i64()
-        .or_else(|| w["resets_in_seconds"].as_i64().map(|s| at.timestamp() + s));
+    let resets = w["resets_at"].as_i64().or_else(|| w["resets_in_seconds"].as_i64().map(|s| at.timestamp() + s));
     let now = Local::now().timestamp();
     match resets {
         // the window rolled over since that request: nothing used in it yet
-        Some(r) if r <= now => Some(Limit {
-            label,
-            pct: 0.0,
-            resets: String::new(),
-            resets_at: None,
-            window_secs: minutes * 60,
-        }),
-        Some(r) => Some(Limit {
-            label,
-            pct,
-            resets: reset_text(r),
-            resets_at: Some(r),
-            window_secs: minutes * 60,
-        }),
-        None => Some(Limit {
-            label,
-            pct,
-            resets: String::new(),
-            resets_at: None,
-            window_secs: minutes * 60,
-        }),
+        Some(r) if r <= now => Some(Limit { label, pct: 0.0, resets: String::new(), resets_at: None, window_secs: minutes * 60 }),
+        Some(r) => Some(Limit { label, pct, resets: reset_text(r), resets_at: Some(r), window_secs: minutes * 60 }),
+        None => Some(Limit { label, pct, resets: String::new(), resets_at: None, window_secs: minutes * 60 }),
     }
 }
 
@@ -248,14 +179,8 @@ pub fn window_label(minutes: i64) -> String {
 
 /// "9:10pm" today, "Nov 8 at 5pm" on another day, like Claude's `/usage`.
 pub fn reset_text(ts: i64) -> String {
-    let Some(t) = Local.timestamp_opt(ts, 0).single() else {
-        return String::new();
-    };
-    let time = if t.format("%M").to_string() == "00" {
-        t.format("%-I%P").to_string()
-    } else {
-        t.format("%-I:%M%P").to_string()
-    };
+    let Some(t) = Local.timestamp_opt(ts, 0).single() else { return String::new() };
+    let time = if t.format("%M").to_string() == "00" { t.format("%-I%P").to_string() } else { t.format("%-I:%M%P").to_string() };
     if t.date_naive() == Local::now().date_naive() {
         time
     } else {
@@ -301,41 +226,18 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
     if !ctx.ids.insert(total.to_le_bytes().to_vec()) {
         return None;
     }
-    let ts = v["timestamp"]
-        .as_str()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())?
-        .timestamp();
+    let ts = v["timestamp"].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok())?.timestamp();
     let last = &info["last_token_usage"];
     let g = |k: &str| last[k].as_i64().unwrap_or(0).max(0) as u64;
     let cached = g("cached_input_tokens").min(g("input_tokens"));
-    Some(UsageEntry {
-        ts,
-        input: g("input_tokens") - cached,
-        output: g("output_tokens"),
-        cache_read: cached,
-        model: ctx.model,
-        project: ctx.project,
-        ..Default::default()
-    })
+    Some(UsageEntry { ts, input: g("input_tokens") - cached, output: g("output_tokens"), cache_read: cached, model: ctx.model, project: ctx.project, ..Default::default() })
 }
 
 pub fn demo_info() -> UsageInfo {
     let now = Local::now();
     let limits = vec![
-        Limit {
-            label: "Current session".into(),
-            pct: 71.0,
-            resets: reset_text(now.timestamp() + 3600 + 600),
-            resets_at: Some(now.timestamp() + 3600 + 600),
-            window_secs: 5 * 3600,
-        },
-        Limit {
-            label: "Current week (all models)".into(),
-            pct: 34.0,
-            resets: reset_text(now.timestamp() + 4 * 86_400),
-            resets_at: Some(now.timestamp() + 4 * 86_400),
-            window_secs: 7 * 86_400,
-        },
+        Limit { label: "Current session".into(), pct: 71.0, resets: reset_text(now.timestamp() + 3600 + 600), resets_at: Some(now.timestamp() + 3600 + 600), window_secs: 5 * 3600 },
+        Limit { label: "Current week (all models)".into(), pct: 34.0, resets: reset_text(now.timestamp() + 4 * 86_400), resets_at: Some(now.timestamp() + 4 * 86_400), window_secs: 7 * 86_400 },
     ];
     UsageInfo {
         provider: NAME,
@@ -346,14 +248,7 @@ pub fn demo_info() -> UsageInfo {
         fetched: Some(now),
         local: {
             let home = dirs::home_dir().unwrap_or_default();
-            super::demo_local(
-                &[("gpt-5.1-codex", 4), ("gpt-5-mini", 1)],
-                &[
-                    &home.join("Projects/cmdmeow").display().to_string(),
-                    &home.join("work/api-gateway").display().to_string(),
-                ],
-                1.6,
-            )
+            super::demo_local(&[("gpt-5.1-codex", 4), ("gpt-5-mini", 1)], &[&home.join("Projects/cmdmeow").display().to_string(), &home.join("work/api-gateway").display().to_string()], 1.6)
         },
         billing: Billing::Subscription,
         source: "API",
@@ -398,12 +293,8 @@ mod tests {
     fn limits_from_last_snapshot() {
         let future = Local::now().timestamp() + 3600;
         let past = Local::now().timestamp() - 60;
-        let rl = |p: f64| {
-            format!("{{\"primary\":{{\"used_percent\":{p},\"window_minutes\":300,\"resets_at\":{future}}},\"secondary\":{{\"used_percent\":30.0,\"window_minutes\":10080,\"resets_at\":{past}}},\"plan_type\":\"pro\"}}")
-        };
-        let log = token_line("2026-11-10T10:00:01Z", 1, 1, 0, 1, &rl(10.0))
-            + &token_line("2026-11-10T10:05:00Z", 2, 1, 0, 1, &rl(25.0))
-            + &token_line("2026-11-10T10:06:00Z", 3, 1, 0, 1, "null");
+        let rl = |p: f64| format!("{{\"primary\":{{\"used_percent\":{p},\"window_minutes\":300,\"resets_at\":{future}}},\"secondary\":{{\"used_percent\":30.0,\"window_minutes\":10080,\"resets_at\":{past}}},\"plan_type\":\"pro\"}}");
+        let log = token_line("2026-11-10T10:00:01Z", 1, 1, 0, 1, &rl(10.0)) + &token_line("2026-11-10T10:05:00Z", 2, 1, 0, 1, &rl(25.0)) + &token_line("2026-11-10T10:06:00Z", 3, 1, 0, 1, "null");
         let l = limits_in(log.as_bytes()).unwrap();
         assert_eq!(l.plan, "pro");
         assert_eq!(l.limits.len(), 2);
@@ -424,11 +315,7 @@ mod tests {
     #[test]
     fn model_from_turn_context() {
         let mut ctx = ParseCtx::default();
-        assert!(usage_entry(
-            b"{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/w\",\"model\":\"gpt-5.1-codex\"}}",
-            &mut ctx
-        )
-        .is_none());
+        assert!(usage_entry(b"{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"/w\",\"model\":\"gpt-5.1-codex\"}}", &mut ctx).is_none());
         let line = token_line("2026-11-10T10:00:01Z", 7, 1_000_000, 0, 1_000_000, "null");
         let e = usage_entry(line.as_bytes(), &mut ctx).unwrap();
         assert_eq!(super::super::name(e.model), "gpt-5.1-codex");
@@ -437,24 +324,15 @@ mod tests {
 
     #[test]
     fn chatgpt_or_api_key() {
-        assert_eq!(
-            billing(b"{\"auth_mode\":\"chatgpt\",\"tokens\":{}}"),
-            Billing::Subscription
-        );
-        assert_eq!(
-            billing(b"{\"OPENAI_API_KEY\":null,\"tokens\":{\"id_token\":\"x\"}}"),
-            Billing::Subscription
-        );
+        assert_eq!(billing(b"{\"auth_mode\":\"chatgpt\",\"tokens\":{}}"), Billing::Subscription);
+        assert_eq!(billing(b"{\"OPENAI_API_KEY\":null,\"tokens\":{\"id_token\":\"x\"}}"), Billing::Subscription);
         assert_eq!(billing(b"{\"OPENAI_API_KEY\":\"sk-x\"}"), Billing::Api);
         assert_eq!(billing(b""), Billing::Unknown);
     }
 
     #[test]
     fn old_logs_say_seconds_until_reset() {
-        let w: Value = serde_json::from_str(
-            "{\"used_percent\":5.5,\"window_minutes\":299,\"resets_in_seconds\":600}",
-        )
-        .unwrap();
+        let w: Value = serde_json::from_str("{\"used_percent\":5.5,\"window_minutes\":299,\"resets_in_seconds\":600}").unwrap();
         let l = window(&w, Local::now()).unwrap();
         assert_eq!(l.pct, 5.5);
         assert!(!l.resets.is_empty());

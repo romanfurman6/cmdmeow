@@ -36,10 +36,7 @@ pub fn route(host: &'static str, f: impl Fn(&str) -> bool + Send + 'static) {
     for a in &early {
         answer(host, a, &f);
     }
-    ROUTES
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push((host, Box::new(f)));
+    ROUTES.lock().unwrap_or_else(|e| e.into_inner()).push((host, Box::new(f)));
 }
 
 /// Hand a link to its tool.
@@ -69,11 +66,7 @@ pub struct Inbox<C> {
 }
 
 impl<C: Send + 'static> Inbox<C> {
-    pub fn new(
-        host: &'static str,
-        ctx: Option<egui::Context>,
-        read: fn(&str) -> Option<C>,
-    ) -> Self {
+    pub fn new(host: &'static str, ctx: Option<egui::Context>, read: fn(&str) -> Option<C>) -> Self {
         let queue = std::sync::Arc::new(Mutex::new(Vec::new()));
         let q = queue.clone();
         route(host, move |action| {
@@ -197,19 +190,16 @@ mod mac {
     }
 
     pub fn install() {
-        let made: Retained<UrlHandler> =
-            unsafe { msg_send![super(UrlHandler::alloc().set_ivars(())), init] };
+        let made: Retained<UrlHandler> = unsafe { msg_send![super(UrlHandler::alloc().set_ivars(())), init] };
         HANDLER.store(Retained::into_raw(made), Ordering::Release);
         let Some(h) = handler() else { return };
         unsafe {
-            let mgr: Retained<AnyObject> =
-                msg_send![class!(NSAppleEventManager), sharedAppleEventManager];
+            let mgr: Retained<AnyObject> = msg_send![class!(NSAppleEventManager), sharedAppleEventManager];
             let _: () = msg_send![&*mgr, setEventHandler: h, andSelector: sel!(handleGetURL:withReply:), forEventClass: GURL, andEventID: GURL];
             // delivered even while the app is in the background
             const DELIVER_IMMEDIATELY: usize = 4;
             let name = NSString::from_str(&super::reopen_note());
-            let center: Retained<AnyObject> =
-                msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
+            let center: Retained<AnyObject> = msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
             let _: () = msg_send![&*center, addObserver: h, selector: sel!(handleReopenNote:), name: &*name, object: Option::<&AnyObject>::None, suspensionBehavior: DELIVER_IMMEDIATELY];
         }
         set_reopen();
@@ -219,8 +209,7 @@ mod mac {
     pub fn set_reopen() {
         let Some(h) = handler() else { return };
         unsafe {
-            let mgr: Retained<AnyObject> =
-                msg_send![class!(NSAppleEventManager), sharedAppleEventManager];
+            let mgr: Retained<AnyObject> = msg_send![class!(NSAppleEventManager), sharedAppleEventManager];
             let _: () = msg_send![&*mgr, setEventHandler: h, andSelector: sel!(handleReopen:withReply:), forEventClass: CORE, andEventID: REOPEN];
         }
     }
@@ -228,23 +217,17 @@ mod mac {
     pub fn hand_over() -> bool {
         use objc2_app_kit::NSRunningApplication;
         use objc2_foundation::NSBundle;
-        let Some(id) = NSBundle::mainBundle().bundleIdentifier() else {
-            return false;
-        };
+        let Some(id) = NSBundle::mainBundle().bundleIdentifier() else { return false };
         let me = std::process::id() as i32;
         let running = NSRunningApplication::runningApplicationsWithBundleIdentifier(&id);
         // two copies starting together each see the other: only the later
         // one (higher pid) hands over, so one always stays
-        if !running
-            .iter()
-            .any(|a| (0..me).contains(&a.processIdentifier()))
-        {
+        if !running.iter().any(|a| (0..me).contains(&a.processIdentifier())) {
             return false;
         }
         let name = NSString::from_str(&super::reopen_note());
         unsafe {
-            let center: Retained<AnyObject> =
-                msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
+            let center: Retained<AnyObject> = msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
             let _: () = msg_send![&*center, postNotificationName: &*name, object: Option::<&AnyObject>::None, userInfo: Option::<&AnyObject>::None, deliverImmediately: true];
         }
         eprintln!("[url] already running: asked it to show its window");
@@ -266,14 +249,8 @@ mod tests {
 
     #[test]
     fn parses_host_and_action() {
-        assert_eq!(
-            parse("cmdmeow://awake/on"),
-            Some(("awake".into(), "on".into()))
-        );
-        assert_eq!(
-            parse("cmdmeow-dev://Awake/Toggle/?x=1#y"),
-            Some(("awake".into(), "toggle".into()))
-        );
+        assert_eq!(parse("cmdmeow://awake/on"), Some(("awake".into(), "on".into())));
+        assert_eq!(parse("cmdmeow-dev://Awake/Toggle/?x=1#y"), Some(("awake".into(), "toggle".into())));
         assert_eq!(parse("cmdmeow://awake"), Some(("awake".into(), "".into())));
         assert_eq!(parse("cmdmeow://"), None);
         assert_eq!(parse("awake/on"), None);
@@ -293,11 +270,7 @@ mod tests {
         assert_eq!(hits.load(Ordering::SeqCst), 1);
         open("cmdmeow://test-early/on");
         assert_eq!(hits.load(Ordering::SeqCst), 2);
-        assert!(PENDING
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(h, _)| h == "other-host"));
+        assert!(PENDING.lock().unwrap().iter().any(|(h, _)| h == "other-host"));
     }
 
     #[test]

@@ -22,25 +22,7 @@ const CHUNK: usize = 50;
 
 fn is_db(name: &str) -> bool {
     let n = name.to_lowercase();
-    [
-        ".db",
-        ".sqlite",
-        ".sqlite3",
-        ".db-wal",
-        ".db-shm",
-        ".sqlite-wal",
-        ".sqlite-shm",
-        ".sqlite3-wal",
-        ".sqlite3-shm",
-        ".realm",
-        ".ldb",
-    ]
-    .iter()
-    .any(|e| n.ends_with(e))
-        || n.ends_with("-wal")
-        || n.ends_with("-shm")
-        || n == "lock"
-        || n == "singletonlock"
+    [".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".sqlite-wal", ".sqlite-shm", ".sqlite3-wal", ".sqlite3-shm", ".realm", ".ldb"].iter().any(|e| n.ends_with(e)) || n.ends_with("-wal") || n.ends_with("-shm") || n == "lock" || n == "singletonlock"
 }
 
 /// Database-like files below `dir` (or `dir` itself if it is one). `None` if
@@ -55,9 +37,7 @@ pub fn db_files(dir: &Path) -> Option<Vec<PathBuf>> {
         return Some(out);
     }
     fn walk(p: &Path, depth: usize, out: &mut Vec<PathBuf>) -> bool {
-        let Ok(rd) = std::fs::read_dir(p) else {
-            return true;
-        };
+        let Ok(rd) = std::fs::read_dir(p) else { return true };
         for e in rd.flatten() {
             let Ok(ft) = e.file_type() else { continue };
             let path = e.path();
@@ -94,9 +74,7 @@ pub fn probe(files: &[PathBuf]) -> Probe {
     if files.is_empty() {
         return Probe::Idle;
     }
-    let Some(lsof) = super::run::find_tool(&["/usr/sbin/lsof", "/usr/bin/lsof"]) else {
-        return Probe::Unknown;
-    };
+    let Some(lsof) = super::run::find_tool(&["/usr/sbin/lsof", "/usr/bin/lsof"]) else { return Probe::Unknown };
     for chunk in files.chunks(CHUNK) {
         let mut cmd = std::process::Command::new(&lsof);
         cmd.args(["-w", "-t", "--"]).args(chunk);
@@ -119,10 +97,7 @@ impl OpenFiles {
     /// `None` if lsof couldn't give a list.
     pub fn snapshot() -> Option<OpenFiles> {
         let lsof = super::run::find_tool(&["/usr/sbin/lsof", "/usr/bin/lsof"])?;
-        let o = super::run::output(
-            std::process::Command::new(lsof).args(["-w", "-n", "-P", "-F", "n"]),
-            Duration::from_secs(20),
-        )?;
+        let o = super::run::output(std::process::Command::new(lsof).args(["-w", "-n", "-P", "-F", "n"]), Duration::from_secs(20))?;
         let list = parse_names(&o.stdout);
         (!list.is_empty()).then(|| OpenFiles::from(list))
     }
@@ -138,10 +113,7 @@ impl OpenFiles {
             let i = self.0.partition_point(|p| p.as_path() < q);
             self.0.get(i).is_some_and(|p| p.starts_with(q))
         };
-        inside(path)
-            || path
-                .canonicalize()
-                .is_ok_and(|real| real != path && inside(&real))
+        inside(path) || path.canonicalize().is_ok_and(|real| real != path && inside(&real))
     }
 }
 
@@ -160,13 +132,9 @@ pub fn parse_names(out: &[u8]) -> Vec<PathBuf> {
 /// snapshot when there is one, else probes the folder's databases.
 pub fn blocked(path: &Path, open: Option<&OpenFiles>) -> Option<&'static str> {
     if let Some(o) = open {
-        return o
-            .holds(path)
-            .then_some("a running app has files in it open");
+        return o.holds(path).then_some("a running app has files in it open");
     }
-    let Some(files) = db_files(path) else {
-        return Some("too many files to check; quit its app and scan again");
-    };
+    let Some(files) = db_files(path) else { return Some("too many files to check; quit its app and scan again") };
     match probe(&files) {
         Probe::Idle => None,
         Probe::Busy => Some("a running app has it open"),
@@ -180,16 +148,7 @@ mod tests {
 
     #[test]
     fn database_names() {
-        for n in [
-            "Cache.db",
-            "data.sqlite",
-            "x.sqlite3",
-            "Cache.db-wal",
-            "Cache.db-shm",
-            "store-wal",
-            "LOCK",
-            "000003.ldb",
-        ] {
+        for n in ["Cache.db", "data.sqlite", "x.sqlite3", "Cache.db-wal", "Cache.db-shm", "store-wal", "LOCK", "000003.ldb"] {
             assert!(is_db(n), "{n}");
         }
         for n in ["image.png", "index.html", "dbx", "notes.txt"] {

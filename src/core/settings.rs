@@ -42,36 +42,19 @@ impl WidgetPrefs {
     /// yet (a newly installed tool) at their defaults. Widgets of tools that
     /// are gone are dropped.
     pub fn resolve(&self, available: &[Avail]) -> Vec<Entry> {
-        let size = |k: &str, default: Size| {
-            self.sizes
-                .get(k)
-                .and_then(|s| Size::parse(s))
-                .unwrap_or(default)
-        };
+        let size = |k: &str, default: Size| self.sizes.get(k).and_then(|s| Size::parse(s)).unwrap_or(default);
         let mut out: Vec<Entry> = Vec::with_capacity(available.len());
         for k in &self.order {
             if let Some((_, _, d)) = available.iter().find(|(a, _, _)| a == k) {
                 if !out.iter().any(|e| &e.key == k) {
-                    out.push(Entry {
-                        key: k.clone(),
-                        on: !self.hidden.contains(k),
-                        size: size(k, *d),
-                    });
+                    out.push(Entry { key: k.clone(), on: !self.hidden.contains(k), size: size(k, *d) });
                 }
             }
         }
         for (k, default_on, d) in available {
             if !out.iter().any(|e| &e.key == k) {
-                let on = if self.hidden.contains(k) {
-                    false
-                } else {
-                    *default_on
-                };
-                out.push(Entry {
-                    key: k.clone(),
-                    on,
-                    size: size(k, *d),
-                });
+                let on = if self.hidden.contains(k) { false } else { *default_on };
+                out.push(Entry { key: k.clone(), on, size: size(k, *d) });
             }
         }
         out
@@ -82,15 +65,8 @@ impl WidgetPrefs {
     pub fn from_entries(entries: &[Entry]) -> Self {
         WidgetPrefs {
             order: entries.iter().map(|e| e.key.clone()).collect(),
-            hidden: entries
-                .iter()
-                .filter(|e| !e.on)
-                .map(|e| e.key.clone())
-                .collect(),
-            sizes: entries
-                .iter()
-                .map(|e| (e.key.clone(), e.size.label().to_string()))
-                .collect(),
+            hidden: entries.iter().filter(|e| !e.on).map(|e| e.key.clone()).collect(),
+            sizes: entries.iter().map(|e| (e.key.clone(), e.size.label().to_string())).collect(),
         }
     }
 }
@@ -98,14 +74,10 @@ impl WidgetPrefs {
 /// Show the widget `key` and move it just before `before` (or to the end).
 /// Unknown keys are ignored.
 pub fn place_entry(entries: &mut Vec<Entry>, key: &str, before: Option<&str>) {
-    let Some(i) = entries.iter().position(|e| e.key == key) else {
-        return;
-    };
+    let Some(i) = entries.iter().position(|e| e.key == key) else { return };
     let mut e = entries.remove(i);
     e.on = true;
-    let at = before
-        .and_then(|b| entries.iter().position(|x| x.key == b))
-        .unwrap_or(entries.len());
+    let at = before.and_then(|b| entries.iter().position(|x| x.key == b)).unwrap_or(entries.len());
     entries.insert(at, e);
 }
 
@@ -133,17 +105,11 @@ mod tests {
     use super::*;
 
     fn avail(v: &[(&str, bool)]) -> Vec<Avail> {
-        v.iter()
-            .map(|(k, d)| (k.to_string(), *d, Size::S12))
-            .collect()
+        v.iter().map(|(k, d)| (k.to_string(), *d, Size::S12)).collect()
     }
 
     fn entry(key: &str, on: bool) -> Entry {
-        Entry {
-            key: key.into(),
-            on,
-            size: Size::S12,
-        }
+        Entry { key: key.into(), on, size: Size::S12 }
     }
 
     #[test]
@@ -154,11 +120,7 @@ mod tests {
 
     #[test]
     fn saved_order_wins_new_widgets_append_and_gone_ones_drop() {
-        let prefs = WidgetPrefs {
-            order: vec!["b/y".into(), "gone/z".into(), "a/x".into()],
-            hidden: vec!["a/x".into()],
-            sizes: Default::default(),
-        };
+        let prefs = WidgetPrefs { order: vec!["b/y".into(), "gone/z".into(), "a/x".into()], hidden: vec!["a/x".into()], sizes: Default::default() };
         let e = prefs.resolve(&avail(&[("a/x", true), ("b/y", true), ("c/new", true)]));
         let keys: Vec<&str> = e.iter().map(|e| e.key.as_str()).collect();
         assert_eq!(keys, vec!["b/y", "a/x", "c/new"]);
@@ -169,18 +131,14 @@ mod tests {
 
     #[test]
     fn round_trip_and_reorder() {
-        let mut e =
-            WidgetPrefs::default().resolve(&avail(&[("a/x", true), ("b/y", true), ("c/z", true)]));
+        let mut e = WidgetPrefs::default().resolve(&avail(&[("a/x", true), ("b/y", true), ("c/z", true)]));
         hide_entry(&mut e, "b/y");
         place_entry(&mut e, "c/z", Some("b/y"));
         place_entry(&mut e, "nope", None); // unknown: no change
         let prefs = WidgetPrefs::from_entries(&e);
         assert_eq!(prefs.order, vec!["a/x", "c/z", "b/y"]);
         assert_eq!(prefs.hidden, vec!["b/y"]);
-        assert_eq!(
-            prefs.resolve(&avail(&[("a/x", true), ("b/y", true), ("c/z", true)])),
-            e
-        );
+        assert_eq!(prefs.resolve(&avail(&[("a/x", true), ("b/y", true), ("c/z", true)])), e);
         let json = serde_json::to_string(&prefs).unwrap();
         assert_eq!(serde_json::from_str::<WidgetPrefs>(&json).unwrap(), prefs);
     }
@@ -198,15 +156,13 @@ mod tests {
         // prefs saved before sizes existed; a bad size falls back to the default
         let old: WidgetPrefs = serde_json::from_str(r#"{"order":["a/x"],"hidden":[]}"#).unwrap();
         assert_eq!(old.resolve(&avail(&[("a/x", true)]))[0].size, Size::S12);
-        let bad: WidgetPrefs =
-            serde_json::from_str(r#"{"order":[],"hidden":[],"sizes":{"a/x":"9:9"}}"#).unwrap();
+        let bad: WidgetPrefs = serde_json::from_str(r#"{"order":[],"hidden":[],"sizes":{"a/x":"9:9"}}"#).unwrap();
         assert_eq!(bad.resolve(&avail(&[("a/x", true)]))[0].size, Size::S12);
     }
 
     #[test]
     fn place_shows_and_moves() {
-        let mut e =
-            WidgetPrefs::default().resolve(&avail(&[("a/x", true), ("b/y", false), ("c/z", true)]));
+        let mut e = WidgetPrefs::default().resolve(&avail(&[("a/x", true), ("b/y", false), ("c/z", true)]));
         place_entry(&mut e, "b/y", Some("a/x"));
         let keys: Vec<&str> = e.iter().map(|e| e.key.as_str()).collect();
         assert_eq!(keys, vec!["b/y", "a/x", "c/z"]);

@@ -21,17 +21,8 @@ pub struct ServerInfo {
 impl ServerInfo {
     /// "Provider · City", whichever parts are known.
     pub fn line(&self) -> String {
-        let place = if self.city.is_empty() {
-            &self.colo
-        } else {
-            &self.city
-        };
-        [self.isp.as_str(), place.as_str()]
-            .iter()
-            .filter(|s| !s.is_empty())
-            .copied()
-            .collect::<Vec<_>>()
-            .join(" · ")
+        let place = if self.city.is_empty() { &self.colo } else { &self.city };
+        [self.isp.as_str(), place.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ")
     }
 }
 
@@ -54,10 +45,7 @@ pub struct Meter {
 
 impl Meter {
     pub fn new(grace: Duration) -> Self {
-        Meter {
-            grace: grace.as_secs_f64(),
-            at_grace: None,
-        }
+        Meter { grace: grace.as_secs_f64(), at_grace: None }
     }
 
     /// Feed the elapsed seconds and the bytes moved so far; returns Mbps.
@@ -81,11 +69,7 @@ pub fn median(v: &[f64]) -> Option<f64> {
     let mut s = v.to_vec();
     s.sort_by(|a, b| a.total_cmp(b));
     let n = s.len();
-    Some(if n % 2 == 1 {
-        s[n / 2]
-    } else {
-        (s[n / 2 - 1] + s[n / 2]) / 2.0
-    })
+    Some(if n % 2 == 1 { s[n / 2] } else { (s[n / 2 - 1] + s[n / 2]) / 2.0 })
 }
 
 /// Mean change between one round trip and the next.
@@ -104,11 +88,7 @@ pub fn server_ms(header: &str) -> Option<f64> {
     header
         .split(',')
         .flat_map(|entry| entry.split(';'))
-        .find_map(|part| {
-            part.trim()
-                .strip_prefix("dur=")
-                .and_then(|v| v.trim().parse::<f64>().ok())
-        })
+        .find_map(|part| part.trim().strip_prefix("dur=").and_then(|v| v.trim().parse::<f64>().ok()))
         .filter(|v| v.is_finite() && *v >= 0.0)
 }
 
@@ -116,11 +96,7 @@ pub fn server_ms(header: &str) -> Option<f64> {
 pub fn parse_meta(json: &str) -> Option<ServerInfo> {
     let v: Value = serde_json::from_str(json).ok()?;
     let s = |k: &str| v[k].as_str().unwrap_or("").trim().to_string();
-    let info = ServerInfo {
-        isp: s("asOrganization"),
-        city: s("city"),
-        colo: s("colo"),
-    };
+    let info = ServerInfo { isp: s("asOrganization"), city: s("city"), colo: s("colo") };
     (!info.line().is_empty()).then_some(info)
 }
 
@@ -134,14 +110,7 @@ fn phase_frac(elapsed: Duration, total: Duration) -> f32 {
 /// Run `streams` workers until `length` passes or the test is stopped,
 /// sampling the bytes they move. `report` gets (live Mbps, 0..1).
 /// Returns the measured Mbps, or None when nothing came through.
-fn transfer<W>(
-    streams: usize,
-    length: Duration,
-    grace: Duration,
-    stopped: &(dyn Fn() -> bool + Sync),
-    report: &dyn Fn(f64, f32),
-    worker: W,
-) -> Option<f64>
+fn transfer<W>(streams: usize, length: Duration, grace: Duration, stopped: &(dyn Fn() -> bool + Sync), report: &dyn Fn(f64, f32), worker: W) -> Option<f64>
 where
     W: Fn(&AtomicU64, &(dyn Fn() -> bool + Sync)) + Sync,
 {
@@ -209,11 +178,7 @@ fn download_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &(dyn Fn() -> b
 fn upload_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &(dyn Fn() -> bool + Sync)) {
     let len = m::SPEED_TEST_CHUNK_UP;
     while !done() {
-        let mut body = Zeros {
-            left: len,
-            bytes,
-            done,
-        };
+        let mut body = Zeros { left: len, bytes, done };
         let sent = agent
             .post(m::SPEED_TEST_UP_URL)
             .header("Content-Type", "application/octet-stream")
@@ -260,20 +225,8 @@ struct Plan {
 fn plan(mode: SpeedMode) -> Plan {
     match mode {
         // about 6 s: few pings, short phases, enough streams to fill the line fast
-        SpeedMode::Quick => Plan {
-            pings: 3,
-            phase: Duration::from_millis(2500),
-            grace: Duration::from_millis(600),
-            down: 6,
-            up: 4,
-        },
-        SpeedMode::Full => Plan {
-            pings: m::SPEED_TEST_PINGS,
-            phase: m::SPEED_TEST_PHASE,
-            grace: m::SPEED_TEST_GRACE,
-            down: m::SPEED_TEST_STREAMS_DOWN,
-            up: m::SPEED_TEST_STREAMS_UP,
-        },
+        SpeedMode::Quick => Plan { pings: 3, phase: Duration::from_millis(2500), grace: Duration::from_millis(600), down: 6, up: 4 },
+        SpeedMode::Full => Plan { pings: m::SPEED_TEST_PINGS, phase: m::SPEED_TEST_PHASE, grace: m::SPEED_TEST_GRACE, down: m::SPEED_TEST_STREAMS_DOWN, up: m::SPEED_TEST_STREAMS_UP },
     }
 }
 
@@ -284,12 +237,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         if s.speed.running {
             return;
         }
-        s.speed = SpeedTest {
-            mode,
-            running: true,
-            phase: SpeedPhase::Ping,
-            ..Default::default()
-        };
+        s.speed = SpeedTest { mode, running: true, phase: SpeedPhase::Ping, ..Default::default() };
     }
     let cancel = shared.lock_ok().speed.cancel.clone();
     std::thread::spawn(move || {
@@ -321,13 +269,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         // who's measuring, on the side
         std::thread::scope(|sc| {
             let meta = sc.spawn(|| {
-                let body = agent
-                    .get(m::SPEED_TEST_META_URL)
-                    .call()
-                    .ok()?
-                    .into_body()
-                    .read_to_string()
-                    .ok()?;
+                let body = agent.get(m::SPEED_TEST_META_URL).call().ok()?.into_body().read_to_string().ok()?;
                 parse_meta(&body)
             });
 
@@ -347,12 +289,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
                 let t0 = Instant::now();
                 if let Ok(r) = agent.get(&ping_url).call() {
                     let total = t0.elapsed().as_secs_f64() * 1000.0;
-                    let server = r
-                        .headers()
-                        .get("server-timing")
-                        .and_then(|h| h.to_str().ok())
-                        .and_then(server_ms)
-                        .unwrap_or(0.0);
+                    let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
                     rtts.push((total - server).max(0.1));
                 }
                 let frac = (i + 1) as f32 / pl.pings as f32;
@@ -379,21 +316,12 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         // download
         set(&|s| s.phase = SpeedPhase::Download);
         let report = |base: f32, share: f32| {
-            move |live: f64, frac: f32| {
-                set(&|s| {
-                    s.live_mbps = live;
-                    s.progress = base + share * frac;
-                })
-            }
+            move |live: f64, frac: f32| set(&|s| {
+                s.live_mbps = live;
+                s.progress = base + share * frac;
+            })
         };
-        let down = transfer(
-            pl.down,
-            pl.phase,
-            pl.grace,
-            &stopped,
-            &report(0.1, 0.5),
-            |b, d| download_stream(&agent, b, d),
-        );
+        let down = transfer(pl.down, pl.phase, pl.grace, &stopped, &report(0.1, 0.5), |b, d| download_stream(&agent, b, d));
         if stopped() {
             set(&|s| s.down_mbps = down);
             finish(None);
@@ -411,25 +339,14 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         });
 
         // upload
-        let up = transfer(
-            pl.up,
-            pl.phase,
-            pl.grace,
-            &stopped,
-            &report(0.6, 0.4),
-            |b, d| upload_stream(&agent, b, d),
-        );
+        let up = transfer(pl.up, pl.phase, pl.grace, &stopped, &report(0.6, 0.4), |b, d| upload_stream(&agent, b, d));
         set(&|s| {
             if !stopped() {
                 s.up_mbps = up;
             }
             s.progress = 1.0;
         });
-        finish(if up.is_none() {
-            Some("Upload test failed".into())
-        } else {
-            None
-        });
+        finish(if up.is_none() { Some("Upload test failed".into()) } else { None });
     });
 }
 
@@ -475,10 +392,7 @@ mod tests {
     #[test]
     fn server_timing() {
         assert_eq!(server_ms("cfRequestDuration;dur=12.5"), Some(12.5));
-        assert_eq!(
-            server_ms("cdn-cache; desc=MISS, cfRequestDuration;dur=3"),
-            Some(3.0)
-        );
+        assert_eq!(server_ms("cdn-cache; desc=MISS, cfRequestDuration;dur=3"), Some(3.0));
         assert_eq!(server_ms("cfL4;desc=\"?proto=TCP\""), None);
         assert_eq!(server_ms(""), None);
     }
@@ -497,47 +411,27 @@ mod tests {
     #[test]
     fn phase_fraction_is_bounded() {
         assert_eq!(phase_frac(Duration::ZERO, Duration::from_secs(8)), 0.0);
-        assert_eq!(
-            phase_frac(Duration::from_secs(4), Duration::from_secs(8)),
-            0.5
-        );
-        assert_eq!(
-            phase_frac(Duration::from_secs(9), Duration::from_secs(8)),
-            1.0
-        );
+        assert_eq!(phase_frac(Duration::from_secs(4), Duration::from_secs(8)), 0.5);
+        assert_eq!(phase_frac(Duration::from_secs(9), Duration::from_secs(8)), 1.0);
     }
 
     #[test]
     fn transfer_counts_bytes_and_stops_on_time() {
         // workers that move 1 MB every 10 ms until told to stop
         let t0 = Instant::now();
-        let r = transfer(
-            3,
-            Duration::from_millis(400),
-            Duration::ZERO,
-            &|| false,
-            &|_, _| {},
-            |b, done| {
-                while !done() {
-                    b.fetch_add(1_000_000, Ordering::Relaxed);
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-            },
-        );
+        let r = transfer(3, Duration::from_millis(400), Duration::ZERO, &|| false, &|_, _| {}, |b, done| {
+            while !done() {
+                b.fetch_add(1_000_000, Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
         assert!(t0.elapsed() < Duration::from_secs(2));
         assert!(r.unwrap() > 0.0);
     }
 
     #[test]
     fn transfer_with_nothing_through_is_none() {
-        let r = transfer(
-            2,
-            Duration::from_millis(200),
-            Duration::ZERO,
-            &|| false,
-            &|_, _| {},
-            |_, _| {},
-        );
+        let r = transfer(2, Duration::from_millis(200), Duration::ZERO, &|| false, &|_, _| {}, |_, _| {});
         assert_eq!(r, None);
     }
 }

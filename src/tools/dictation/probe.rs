@@ -17,11 +17,7 @@ use std::time::{Duration, Instant};
 pub fn probe(a: &[String]) -> Result<(), String> {
     let input = a.first().ok_or("say a WAV file or mic:SECS")?;
     let has = |f: &str| a.iter().any(|v| v == f);
-    let engine = if has("--whisper") {
-        Engine::Whisper
-    } else {
-        Engine::Parakeet
-    };
+    let engine = if has("--whisper") { Engine::Whisper } else { Engine::Parakeet };
     let lang = match a.iter().position(|v| v == "--lang") {
         Some(k) => match a.get(k + 1) {
             Some(l) if !l.starts_with("--") => Some(l.as_str()),
@@ -31,32 +27,19 @@ pub fn probe(a: &[String]) -> Result<(), String> {
     };
     if !engine.ready() {
         if !has("--download") {
-            return Err(format!(
-                "{} isn't downloaded; add --download",
-                engine.name()
-            ));
+            return Err(format!("{} isn't downloaded; add --download", engine.name()));
         }
         let t = Instant::now();
         let p = Progress::default();
         match engine {
             Engine::Parakeet => crate::kit::parakeet::download(&p, &AtomicBool::new(false))?,
-            Engine::Whisper => {
-                crate::kit::whisper::download(crate::kit::whisper::Model::Accurate, &p)?
-            }
+            Engine::Whisper => crate::kit::whisper::download(crate::kit::whisper::Model::Accurate, &p)?,
         }
-        eprintln!(
-            "[dictation] downloaded {} in {:?}",
-            engine.name(),
-            t.elapsed()
-        );
+        eprintln!("[dictation] downloaded {} in {:?}", engine.name(), t.elapsed());
     }
     let pcm = match input.strip_prefix("mic:") {
         Some(secs) => {
-            let secs = secs
-                .parse::<f32>()
-                .ok()
-                .and_then(|s| Duration::try_from_secs_f32(s).ok())
-                .ok_or("mic:SECS needs a number of seconds")?;
+            let secs = secs.parse::<f32>().ok().and_then(|s| Duration::try_from_secs_f32(s).ok()).ok_or("mic:SECS needs a number of seconds")?;
             let mic = Mic::start()?;
             eprintln!("[dictation] listening {secs:?}");
             std::thread::sleep(secs);
@@ -72,21 +55,14 @@ pub fn probe(a: &[String]) -> Result<(), String> {
     let silent = audio::silent(&pcm, MODEL_RATE);
     eprintln!("[dictation] {secs:.2} s of voice, peak {peak:.3}, silent {silent}");
     if silent {
-        return Err(
-            "Nothing heard (silent input; for the mic, check the Microphone permission)".into(),
-        );
+        return Err("Nothing heard (silent input; for the mic, check the Microphone permission)".into());
     }
     let t = Instant::now();
     let m = super::Loaded::load(engine)?;
     eprintln!("[dictation] loaded {} in {:?}", engine.name(), t.elapsed());
     let t = Instant::now();
     let keep = super::cut::trim(&pcm, MODEL_RATE);
-    eprintln!(
-        "[dictation] kept {:.2}–{:.2} s, {} piece(s)",
-        keep.start as f32 / MODEL_RATE as f32,
-        keep.end as f32 / MODEL_RATE as f32,
-        super::cut::split(&pcm[keep.clone()], MODEL_RATE).len()
-    );
+    eprintln!("[dictation] kept {:.2}–{:.2} s, {} piece(s)", keep.start as f32 / MODEL_RATE as f32, keep.end as f32 / MODEL_RATE as f32, super::cut::split(&pcm[keep.clone()], MODEL_RATE).len());
     let text = m.run(&pcm[keep], lang, None)?;
     eprintln!("[dictation] ran in {:?}", t.elapsed());
     if text.is_empty() {
@@ -128,12 +104,7 @@ pub fn read_wav(b: &[u8]) -> Result<Vec<f32>, String> {
                 if format == 0xFFFE && len >= 40 {
                     format = u16_at(k + 32);
                 }
-                fmt = Some((
-                    format,
-                    u16_at(k + 10) as usize,
-                    u32_at(k + 12),
-                    u16_at(k + 22),
-                ))
+                fmt = Some((format, u16_at(k + 10) as usize, u32_at(k + 12), u16_at(k + 22)))
             }
             b"data" => data = Some(body),
             _ => {}
@@ -146,29 +117,12 @@ pub fn read_wav(b: &[u8]) -> Result<Vec<f32>, String> {
     }
     let data = &b[data.ok_or("WAV without samples")?];
     let samples: Vec<f32> = match (format, bits) {
-        (1, 16) => data
-            .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
-            .collect(),
-        (1, 32) => data
-            .chunks_exact(4)
-            .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f32 / 2_147_483_648.0)
-            .collect(),
-        (3, 32) => data
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect(),
-        _ => {
-            return Err(format!(
-                "WAV format {format} at {bits} bits isn't read; use 16-bit PCM"
-            ))
-        }
+        (1, 16) => data.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect(),
+        (1, 32) => data.chunks_exact(4).map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f32 / 2_147_483_648.0).collect(),
+        (3, 32) => data.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
+        _ => return Err(format!("WAV format {format} at {bits} bits isn't read; use 16-bit PCM")),
     };
-    Ok(audio::resample(
-        &audio::to_mono(&samples, channels, false),
-        rate as f64,
-        MODEL_RATE,
-    ))
+    Ok(audio::resample(&audio::to_mono(&samples, channels, false), rate as f64, MODEL_RATE))
 }
 
 #[cfg(test)]
@@ -202,9 +156,7 @@ mod tests {
             b.extend_from_slice(&bits.to_le_bytes());
             b.extend_from_slice(&0u32.to_le_bytes());
             // KSDATAFORMAT_SUBTYPE_PCM
-            b.extend_from_slice(&[
-                1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
-            ]);
+            b.extend_from_slice(&[1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71]);
         }
         b.extend_from_slice(b"data");
         b.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -225,16 +177,10 @@ mod tests {
 
     #[test]
     fn reads_extensible_pcm_and_rejects_bad_headers() {
-        let d16: Vec<u8> = [16384i16; 160]
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+        let d16: Vec<u8> = [16384i16; 160].iter().flat_map(|s| s.to_le_bytes()).collect();
         let pcm = read_wav(&build(0xFFFE, 16_000, 1, 16, &d16)).unwrap();
         assert!((pcm[5] - 0.5).abs() < 1e-3);
-        let d32: Vec<u8> = [1i32 << 30; 160]
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+        let d32: Vec<u8> = [1i32 << 30; 160].iter().flat_map(|s| s.to_le_bytes()).collect();
         let pcm = read_wav(&build(0xFFFE, 16_000, 1, 32, &d32)).unwrap();
         assert!((pcm[5] - 0.5).abs() < 1e-3, "{}", pcm[5]);
         assert!(read_wav(&build(1, 0, 1, 16, &d16)).is_err());

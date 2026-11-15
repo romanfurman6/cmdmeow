@@ -21,17 +21,7 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Command; 9] = [
-        Command::Area,
-        Command::Window,
-        Command::Screen,
-        Command::Delayed,
-        Command::Text,
-        Command::Color,
-        Command::Ruler,
-        Command::History,
-        Command::Record,
-    ];
+    pub const ALL: [Command; 9] = [Command::Area, Command::Window, Command::Screen, Command::Delayed, Command::Text, Command::Color, Command::Ruler, Command::History, Command::Record];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -78,13 +68,7 @@ impl Command {
             Command::Record => "0",
             Command::Delayed | Command::History => return None,
         };
-        Some(Shortcut {
-            cmd: true,
-            shift: true,
-            alt: false,
-            ctrl: false,
-            key: key.into(),
-        })
+        Some(Shortcut { cmd: true, shift: true, alt: false, ctrl: false, key: key.into() })
     }
 }
 
@@ -238,10 +222,7 @@ impl Default for RecSettings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            shortcuts: Command::ALL
-                .iter()
-                .map(|&c| (c, c.default_shortcut()))
-                .collect(),
+            shortcuts: Command::ALL.iter().map(|&c| (c, c.default_shortcut())).collect(),
             after: After::Preview,
             copy: true,
             save: true,
@@ -264,10 +245,7 @@ impl Default for Settings {
 
 impl Settings {
     pub fn shortcut(&self, c: Command) -> Option<&Shortcut> {
-        self.shortcuts
-            .iter()
-            .find(|(k, _)| *k == c)
-            .and_then(|(_, s)| s.as_ref())
+        self.shortcuts.iter().find(|(k, _)| *k == c).and_then(|(_, s)| s.as_ref())
     }
 
     /// Set (or clear) a command's shortcut. Another command holding the same
@@ -288,19 +266,12 @@ impl Settings {
 
     /// Commands that have a shortcut, for registering.
     pub fn bound(&self) -> Vec<(Command, Shortcut)> {
-        Command::ALL
-            .iter()
-            .filter_map(|&c| self.shortcut(c).map(|s| (c, s.clone())))
-            .collect()
+        Command::ALL.iter().filter_map(|&c| self.shortcut(c).map(|s| (c, s.clone()))).collect()
     }
 
     /// File name for a capture taken at `t`: "Capture 2026-11-08 at 17.41.12.png".
     pub fn file_name(&self, t: chrono::DateTime<chrono::Local>) -> String {
-        format!(
-            "Capture {}.{}",
-            t.format("%Y-%m-%d at %H.%M.%S"),
-            self.format.ext()
-        )
+        format!("Capture {}.{}", t.format("%Y-%m-%d at %H.%M.%S"), self.format.ext())
     }
 
     /// File name for a recording that started at `t`: "Recording 2026-11-09 at 17.26.12.mp4".
@@ -322,9 +293,7 @@ impl Settings {
             if !self.shortcuts.iter().any(|(k, _)| *k == c) {
                 // a command added in an update gets its default keys unless
                 // the user already gave them to something else
-                let free = c
-                    .default_shortcut()
-                    .filter(|d| !self.shortcuts.iter().any(|(_, s)| s.as_ref() == Some(d)));
+                let free = c.default_shortcut().filter(|d| !self.shortcuts.iter().any(|(_, s)| s.as_ref() == Some(d)));
                 self.shortcuts.push((c, free));
             }
         }
@@ -354,24 +323,14 @@ mod tests {
     use crate::kit::hotkeys::key_code;
 
     fn sc(key: &str) -> Shortcut {
-        Shortcut {
-            cmd: true,
-            shift: true,
-            alt: false,
-            ctrl: false,
-            key: key.into(),
-        }
+        Shortcut { cmd: true, shift: true, alt: false, ctrl: false, key: key.into() }
     }
 
     #[test]
     fn defaults_avoid_macos_screenshot_keys() {
         let s = Settings::default();
         for (c, k) in s.bound() {
-            assert!(
-                k.conflict().is_none(),
-                "{c:?} default {} conflicts",
-                k.display()
-            );
+            assert!(k.conflict().is_none(), "{c:?} default {} conflicts", k.display());
         }
         assert_eq!(s.shortcut(Command::Area).unwrap().display(), "⇧⌘2");
         assert!(s.shortcut(Command::History).is_none());
@@ -401,16 +360,8 @@ mod tests {
     fn recorder_needs_a_modifier() {
         let none = egui::Modifiers::NONE;
         assert!(Shortcut::from_press(egui::Key::A, none).is_none());
-        let cmd_shift = egui::Modifiers {
-            mac_cmd: true,
-            command: true,
-            shift: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            Shortcut::from_press(egui::Key::Num2, cmd_shift),
-            Some(sc("2"))
-        );
+        let cmd_shift = egui::Modifiers { mac_cmd: true, command: true, shift: true, ..Default::default() };
+        assert_eq!(Shortcut::from_press(egui::Key::Num2, cmd_shift), Some(sc("2")));
         assert!(Shortcut::from_press(egui::Key::Escape, cmd_shift).is_none());
     }
 
@@ -432,27 +383,16 @@ mod tests {
     #[test]
     fn file_names() {
         use chrono::TimeZone;
-        let t = chrono::Local
-            .with_ymd_and_hms(2026, 11, 8, 17, 41, 12)
-            .unwrap();
-        assert_eq!(
-            Settings::default().file_name(t),
-            "Capture 2026-11-08 at 17.41.12.png"
-        );
-        assert_eq!(
-            Settings::recording_name(t),
-            "Recording 2026-11-08 at 17.41.12.mp4"
-        );
+        let t = chrono::Local.with_ymd_and_hms(2026, 11, 8, 17, 41, 12).unwrap();
+        assert_eq!(Settings::default().file_name(t), "Capture 2026-11-08 at 17.41.12.png");
+        assert_eq!(Settings::recording_name(t), "Recording 2026-11-08 at 17.41.12.mp4");
     }
 
     #[test]
     fn a_command_added_later_gets_its_default_keys_when_free() {
         let mut s = Settings::default();
         s.shortcuts.retain(|(c, _)| *c != Command::Record);
-        assert_eq!(
-            s.clone().sanitize().shortcut(Command::Record),
-            Some(&sc("0"))
-        );
+        assert_eq!(s.clone().sanitize().shortcut(Command::Record), Some(&sc("0")));
         // keys already taken by something else stay there
         s.shortcuts.retain(|(c, _)| *c != Command::Ruler);
         s.shortcuts.push((Command::Ruler, Some(sc("0"))));

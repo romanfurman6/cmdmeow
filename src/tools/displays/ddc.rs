@@ -98,19 +98,12 @@ pub fn parse_reply(code: u8, b: &[u8]) -> Result<Reading, BadReply> {
     if max == 0 {
         return Err(BadReply::Unsupported);
     }
-    Ok(Reading {
-        current: current.min(max),
-        max,
-    })
+    Ok(Reading { current: current.min(max), max })
 }
 
 /// 0…1 → the monitor's scale.
 pub fn to_raw(level: f32, max: u16) -> u16 {
-    let l = if level.is_finite() {
-        level.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let l = if level.is_finite() { level.clamp(0.0, 1.0) } else { 0.0 };
     (l * max as f32).round() as u16
 }
 
@@ -133,10 +126,7 @@ pub enum RegEntry {
     /// A `DCPAVServiceProxy`. `external`: its Location is "External" (the
     /// built-in panel has one too). `mcdp`: it sits behind the MCDP29xx
     /// HDMI bridge.
-    Proxy {
-        external: bool,
-        mcdp: bool,
-    },
+    Proxy { external: bool, mcdp: bool },
 }
 
 /// For each framebuffer, the first external proxy after it (before the next
@@ -147,10 +137,7 @@ pub fn link_proxies(entries: &[RegEntry]) -> Vec<(u64, usize, u8)> {
     for (i, e) in entries.iter().enumerate() {
         match *e {
             RegEntry::Framebuffer(id) => fb = Some(id),
-            RegEntry::Proxy {
-                external: true,
-                mcdp,
-            } => {
+            RegEntry::Proxy { external: true, mcdp } => {
                 if let Some(id) = fb.take() {
                     out.push((id, i, if mcdp { CHIP_MCDP } else { CHIP }));
                 }
@@ -177,10 +164,7 @@ mod tests {
     #[test]
     fn requests_match_the_spec() {
         // known-good bytes: brightness get, and brightness set to 50
-        assert_eq!(
-            get_request(0x10),
-            [0x82, 0x01, 0x10, 0x6E ^ 0x51 ^ 0x82 ^ 0x01 ^ 0x10]
-        );
+        assert_eq!(get_request(0x10), [0x82, 0x01, 0x10, 0x6E ^ 0x51 ^ 0x82 ^ 0x01 ^ 0x10]);
         assert_eq!(get_request(0x10)[3], 0xAC);
         let s = set_request(0x10, 50);
         assert_eq!(&s[..5], &[0x84, 0x03, 0x10, 0x00, 0x32]);
@@ -193,13 +177,7 @@ mod tests {
     #[test]
     fn reads_a_good_reply() {
         let r = parse_reply(0x10, &reply(0x10, 0, 100, 42)).unwrap();
-        assert_eq!(
-            r,
-            Reading {
-                current: 42,
-                max: 100
-            }
-        );
+        assert_eq!(r, Reading { current: 42, max: 100 });
         assert!((to_level(r) - 0.42).abs() < 1e-6);
         // a longer buffer (we may read 12) is fine
         let mut b = reply(0x62, 0, 100, 7);
@@ -215,18 +193,9 @@ mod tests {
         let mut b = reply(0x10, 0, 100, 42);
         b[9] ^= 1;
         assert_eq!(parse_reply(0x10, &b), Err(BadReply::Checksum));
-        assert_eq!(
-            parse_reply(0x62, &reply(0x10, 0, 100, 42)),
-            Err(BadReply::Other)
-        );
-        assert_eq!(
-            parse_reply(0x62, &reply(0x62, 1, 100, 0)),
-            Err(BadReply::Unsupported)
-        );
-        assert_eq!(
-            parse_reply(0x62, &reply(0x62, 0, 0, 0)),
-            Err(BadReply::Unsupported)
-        );
+        assert_eq!(parse_reply(0x62, &reply(0x10, 0, 100, 42)), Err(BadReply::Other));
+        assert_eq!(parse_reply(0x62, &reply(0x62, 1, 100, 0)), Err(BadReply::Unsupported));
+        assert_eq!(parse_reply(0x62, &reply(0x62, 0, 0, 0)), Err(BadReply::Unsupported));
     }
 
     #[test]
@@ -242,9 +211,7 @@ mod tests {
                 let l = i as f32 / 20.0;
                 let raw = to_raw(l, max);
                 assert!(raw <= max);
-                assert!(
-                    (to_level(Reading { current: raw, max }) - l).abs() <= 0.5 / max as f32 + 1e-6
-                );
+                assert!((to_level(Reading { current: raw, max }) - l).abs() <= 0.5 / max as f32 + 1e-6);
             }
         }
         assert_eq!(to_raw(-1.0, 100), 0);
@@ -259,35 +226,19 @@ mod tests {
         let e = [
             // built-in panel: its proxy is internal, so no link
             Framebuffer(1),
-            Proxy {
-                external: false,
-                mcdp: false,
-            },
+            Proxy { external: false, mcdp: false },
             // a monitor on USB-C: the first external proxy wins
             Framebuffer(2),
-            Proxy {
-                external: true,
-                mcdp: false,
-            },
-            Proxy {
-                external: true,
-                mcdp: false,
-            },
+            Proxy { external: true, mcdp: false },
+            Proxy { external: true, mcdp: false },
             // a framebuffer with nothing plugged in
             Framebuffer(3),
             // HDMI through the bridge chip
             Framebuffer(4),
-            Proxy {
-                external: true,
-                mcdp: true,
-            },
+            Proxy { external: true, mcdp: true },
         ];
         assert_eq!(link_proxies(&e), vec![(2, 3, CHIP), (4, 7, CHIP_MCDP)]);
         // a proxy before any framebuffer belongs to nobody
-        assert!(link_proxies(&[Proxy {
-            external: true,
-            mcdp: false
-        }])
-        .is_empty());
+        assert!(link_proxies(&[Proxy { external: true, mcdp: false }]).is_empty());
     }
 }

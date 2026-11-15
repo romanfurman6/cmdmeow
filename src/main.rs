@@ -39,9 +39,7 @@ fn main() -> eframe::Result {
         // the fan helper and its test switches
         let a: Vec<String> = std::env::args().collect();
         match a.get(1).map(String::as_str) {
-            Some("--fan-helper") => {
-                tools::fan::helper::serve(a.get(2).and_then(|u| u.parse().ok()).unwrap_or(0))
-            }
+            Some("--fan-helper") => tools::fan::helper::serve(a.get(2).and_then(|u| u.parse().ok()).unwrap_or(0)),
             Some("--fan-install") => {
                 println!("{:?}", tools::fan::helper::install());
                 return Ok(());
@@ -55,9 +53,7 @@ fn main() -> eframe::Result {
                 let req = match a.get(2).map(String::as_str) {
                     None | Some("auto") => Request::Auto,
                     Some("hello") => Request::Hello,
-                    Some(v) => Request::Set {
-                        rpm: v.split(',').map(|x| x.parse().ok()).collect(),
-                    },
+                    Some(v) => Request::Set { rpm: v.split(',').map(|x| x.parse().ok()).collect() },
                 };
                 println!("{:?}", ask(&req));
                 return Ok(());
@@ -69,11 +65,7 @@ fn main() -> eframe::Result {
         let a: Vec<String> = std::env::args().collect();
         if a.get(1).map(String::as_str) == Some("--rec-probe") {
             let secs = a.get(2).and_then(|v| v.parse().ok()).unwrap_or(5.0);
-            tools::capture::record::probe(
-                secs,
-                !a.iter().any(|v| v == "--no-sys"),
-                !a.iter().any(|v| v == "--no-mic"),
-            );
+            tools::capture::record::probe(secs, !a.iter().any(|v| v == "--no-sys"), !a.iter().any(|v| v == "--no-mic"));
             return Ok(());
         }
         if a.get(1).map(String::as_str) == Some("--dictation-probe") {
@@ -85,10 +77,7 @@ fn main() -> eframe::Result {
         }
         if a.get(1).map(String::as_str) == Some("--video-probe") {
             if let Some(f) = a.get(2) {
-                tools::capture::video::probe(
-                    std::path::Path::new(f),
-                    a.iter().any(|v| v == "--download"),
-                );
+                tools::capture::video::probe(std::path::Path::new(f), a.iter().any(|v| v == "--download"));
             }
             return Ok(());
         }
@@ -119,20 +108,13 @@ fn main() -> eframe::Result {
     // the shell sizes the window for the chosen view on its first frame
     let viewport = egui::ViewportBuilder::default()
         .with_title("Cmd+Meow")
-        .with_app_id(if kit::fs::is_dev() {
-            "com.romanfurman6.cmdmeow.dev"
-        } else {
-            "com.romanfurman6.cmdmeow"
-        })
+        .with_app_id(if kit::fs::is_dev() { "com.romanfurman6.cmdmeow.dev" } else { "com.romanfurman6.cmdmeow" })
         .with_inner_size([kit::mechanics::PANEL_WIDTH, kit::mechanics::PANEL_HEIGHT])
         .with_transparent(true)
         .with_decorations(false)
         .with_resizable(false)
         .with_has_shadow(true);
-    let options = eframe::NativeOptions {
-        viewport,
-        ..Default::default()
-    };
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     // the panel shows on a click, not by itself at launch (the shell hides
     // it on its first pass; this keeps it from flashing up before that)
     if opts.screenshot.is_none() && !kit::perms::launched_to_panel() {
@@ -140,9 +122,5 @@ fn main() -> eframe::Result {
     }
     // before the run loop, so the link that launched the app is caught
     kit::url_scheme::install();
-    eframe::run_native(
-        "Cmd+Meow",
-        options,
-        Box::new(move |cc| Ok(Box::new(core::shell::App::new(cc, opts)))),
-    )
+    eframe::run_native("Cmd+Meow", options, Box::new(move |cc| Ok(Box::new(core::shell::App::new(cc, opts)))))
 }

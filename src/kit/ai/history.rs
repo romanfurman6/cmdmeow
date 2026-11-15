@@ -51,11 +51,7 @@ impl History {
                 None => true,
             };
             if due {
-                self.samples.push(Sample {
-                    ts: now,
-                    label: l.label.clone(),
-                    pct: l.pct,
-                });
+                self.samples.push(Sample { ts: now, label: l.label.clone(), pct: l.pct });
                 added = true;
             }
         }
@@ -66,44 +62,24 @@ impl History {
 
     /// The samples of `l` in its current window, as (unix time, percent).
     pub fn window(&self, l: &Limit) -> Vec<(i64, f32)> {
-        let Some(end) = l.resets_at else {
-            return Vec::new();
-        };
+        let Some(end) = l.resets_at else { return Vec::new() };
         let start = end - l.window_secs;
-        self.samples
-            .iter()
-            .filter(|s| s.label == l.label && s.ts >= start && s.ts <= end)
-            .map(|s| (s.ts, s.pct))
-            .collect()
+        self.samples.iter().filter(|s| s.label == l.label && s.ts >= start && s.ts <= end).map(|s| (s.ts, s.pct)).collect()
     }
 
     /// Fill days the logs no longer cover from what was saved, and save
     /// what the logs say now. A day keeps the larger of the two counts.
     pub fn merge_days(&mut self, local: &mut LocalTokens, today: NaiveDate) {
         let key = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
-        let mut by_date: HashMap<String, SavedDay> =
-            self.days.drain(..).map(|d| (d.date.clone(), d)).collect();
+        let mut by_date: HashMap<String, SavedDay> = self.days.drain(..).map(|d| (d.date.clone(), d)).collect();
         for d in local.days.iter_mut() {
             match by_date.get(&key(d.date)) {
                 Some(s) if s.tokens > d.tokens => {
-                    *d = Day {
-                        date: d.date,
-                        tokens: s.tokens,
-                        usd: s.usd,
-                        requests: s.requests,
-                    };
+                    *d = Day { date: d.date, tokens: s.tokens, usd: s.usd, requests: s.requests };
                 }
                 _ => {
                     if d.tokens > 0 {
-                        by_date.insert(
-                            key(d.date),
-                            SavedDay {
-                                date: key(d.date),
-                                tokens: d.tokens,
-                                usd: d.usd,
-                                requests: d.requests,
-                            },
-                        );
+                        by_date.insert(key(d.date), SavedDay { date: key(d.date), tokens: d.tokens, usd: d.usd, requests: d.requests });
                     }
                 }
             }
@@ -114,30 +90,18 @@ impl History {
         self.days.sort_by(|a, b| a.date.cmp(&b.date));
         // the totals follow the days
         let n = local.days.len();
-        let tail = |k: usize| {
-            local.days[n.saturating_sub(k)..]
-                .iter()
-                .map(|d| d.usd)
-                .sum::<f64>()
-        };
+        let tail = |k: usize| local.days[n.saturating_sub(k)..].iter().map(|d| d.usd).sum::<f64>();
         if n > 0 {
             local.usd_7d = local.usd_7d.max(tail(7));
             local.usd_30d = local.usd_30d.max(tail(30));
-            local.usd_month = local
-                .usd_month
-                .max(local.month().iter().map(|d| d.usd).sum());
-            local.daily = local.days[n.saturating_sub(7)..]
-                .iter()
-                .map(|d| d.tokens)
-                .collect();
+            local.usd_month = local.usd_month.max(local.month().iter().map(|d| d.usd).sum());
+            local.daily = local.days[n.saturating_sub(7)..].iter().map(|d| d.tokens).collect();
         }
     }
 }
 
 fn path(provider: &str) -> PathBuf {
-    crate::kit::fs::data_path("ai")
-        .join("history")
-        .join(format!("{provider}.json"))
+    crate::kit::fs::data_path("ai").join("history").join(format!("{provider}.json"))
 }
 
 static CACHE: Mutex<Option<HashMap<String, History>>> = Mutex::new(None);
@@ -147,9 +111,7 @@ static CACHE: Mutex<Option<HashMap<String, History>>> = Mutex::new(None);
 pub fn with<R>(provider: &str, f: impl FnOnce(&mut History) -> (R, bool)) -> R {
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let map = g.get_or_insert_with(HashMap::new);
-    let h = map
-        .entry(provider.to_string())
-        .or_insert_with(|| crate::kit::fs::load_json(&path(provider)));
+    let h = map.entry(provider.to_string()).or_insert_with(|| crate::kit::fs::load_json(&path(provider)));
     let (r, changed) = f(h);
     if changed {
         crate::kit::fs::save_json_later(&path(provider), &*h, false);
@@ -162,13 +124,7 @@ mod tests {
     use super::*;
 
     fn lim(label: &str, pct: f32, end: i64) -> Limit {
-        Limit {
-            label: label.into(),
-            pct,
-            resets_at: Some(end),
-            window_secs: 1000,
-            ..Default::default()
-        }
+        Limit { label: label.into(), pct, resets_at: Some(end), window_secs: 1000, ..Default::default() }
     }
 
     #[test]
@@ -192,32 +148,11 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
         let d = |n: u64| today - chrono::Days::new(n);
         let mut h = History::default();
-        let mut local = LocalTokens {
-            days: (0..3)
-                .rev()
-                .map(|n| Day {
-                    date: d(n),
-                    tokens: 10 * (n + 1),
-                    usd: 1.0,
-                    requests: 1,
-                })
-                .collect(),
-            ..Default::default()
-        };
+        let mut local = LocalTokens { days: (0..3).rev().map(|n| Day { date: d(n), tokens: 10 * (n + 1), usd: 1.0, requests: 1 }).collect(), ..Default::default() };
         h.merge_days(&mut local, today);
         assert_eq!(h.days.len(), 3);
         // the logs of two days ago were deleted since
-        let mut later = LocalTokens {
-            days: (0..3)
-                .rev()
-                .map(|n| Day {
-                    date: d(n),
-                    tokens: if n == 2 { 0 } else { 10 * (n + 1) },
-                    ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        };
+        let mut later = LocalTokens { days: (0..3).rev().map(|n| Day { date: d(n), tokens: if n == 2 { 0 } else { 10 * (n + 1) }, ..Default::default() }).collect(), ..Default::default() };
         h.merge_days(&mut later, today);
         assert_eq!(later.days[0].tokens, 30);
         assert_eq!(later.days[0].usd, 1.0);

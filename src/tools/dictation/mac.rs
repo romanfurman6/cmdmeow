@@ -42,14 +42,9 @@ pub fn spot(target: &Target) -> Spot {
     let (caret, frame) = imp::spot(target.pid);
     // a caret outside its own field is made up (Chromium does this): drop
     // it, even when the field is too tall to sit above
-    let frame = frame.filter(|f| {
-        f.is_finite() && !(f.min.x.abs() < 1.0 && f.min.y.abs() < 1.0) && f.width() >= 40.0
-    });
+    let frame = frame.filter(|f| f.is_finite() && !(f.min.x.abs() < 1.0 && f.min.y.abs() < 1.0) && f.width() >= 40.0);
     let caret = caret.filter(|c| frame.is_none_or(|f| f.expand(24.0).intersects(*c)));
-    Spot {
-        caret,
-        field: frame.filter(|f| field_like(*f)),
-    }
+    Spot { caret, field: frame.filter(|f| field_like(*f)) }
 }
 
 /// A frame that reads as a text field to sit above: not a whole document
@@ -104,10 +99,7 @@ impl Pasted {
     }
 
     pub fn last_read(&self) -> Option<Instant> {
-        self.receipt
-            .lock()
-            .ok()
-            .and_then(|r| r.read.map(|(t, _)| t))
+        self.receipt.lock().ok().and_then(|r| r.read.map(|(t, _)| t))
     }
 }
 
@@ -136,9 +128,7 @@ pub fn restore_due(pressed: Instant, last_read: Option<Instant>, now: Instant) -
     }
 }
 
-pub use imp::{
-    accessibility, activate, float, front_app, mouse, paste, paste_tracked, restore, screen_at,
-};
+pub use imp::{accessibility, activate, float, front_app, mouse, paste, paste_tracked, restore, screen_at};
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -147,11 +137,7 @@ mod imp {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, ProtocolObject};
     use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker};
-    use objc2_app_kit::{
-        NSApplication, NSApplicationActivationOptions, NSEvent, NSPasteboard, NSPasteboardItem,
-        NSPasteboardTypeString, NSPasteboardWriting, NSRunningApplication, NSScreen,
-        NSWindowCollectionBehavior, NSWorkspace,
-    };
+    use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSEvent, NSPasteboard, NSPasteboardItem, NSPasteboardTypeString, NSPasteboardWriting, NSRunningApplication, NSScreen, NSWindowCollectionBehavior, NSWorkspace};
     use objc2_foundation::{NSArray, NSData, NSObject, NSObjectProtocol, NSString};
     use std::ffi::c_void;
     use std::sync::{Arc, Mutex};
@@ -191,14 +177,8 @@ mod imp {
     unsafe extern "C" {
         fn AXIsProcessTrusted() -> bool;
         fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
-        fn AXUIElementCopyAttributeValue(e: CFTypeRef, attr: CFTypeRef, out: *mut CFTypeRef)
-            -> i32;
-        fn AXUIElementCopyParameterizedAttributeValue(
-            e: CFTypeRef,
-            attr: CFTypeRef,
-            param: CFTypeRef,
-            out: *mut CFTypeRef,
-        ) -> i32;
+        fn AXUIElementCopyAttributeValue(e: CFTypeRef, attr: CFTypeRef, out: *mut CFTypeRef) -> i32;
+        fn AXUIElementCopyParameterizedAttributeValue(e: CFTypeRef, attr: CFTypeRef, param: CFTypeRef, out: *mut CFTypeRef) -> i32;
         fn AXUIElementSetAttributeValue(e: CFTypeRef, attr: CFTypeRef, value: CFTypeRef) -> i32;
         fn AXUIElementSetMessagingTimeout(e: CFTypeRef, secs: f32) -> i32;
         fn AXValueCreate(kind: u32, value: *const c_void) -> CFTypeRef;
@@ -236,22 +216,14 @@ mod imp {
     fn attr(e: CFTypeRef, name: &str) -> Option<Cf> {
         let key = NSString::from_str(name);
         let mut out: CFTypeRef = std::ptr::null();
-        let err =
-            unsafe { AXUIElementCopyAttributeValue(e, Retained::as_ptr(&key).cast(), &mut out) };
+        let err = unsafe { AXUIElementCopyAttributeValue(e, Retained::as_ptr(&key).cast(), &mut out) };
         (err == 0 && !out.is_null()).then_some(Cf(out))
     }
 
     fn param_attr(e: CFTypeRef, name: &str, param: CFTypeRef) -> Option<Cf> {
         let key = NSString::from_str(name);
         let mut out: CFTypeRef = std::ptr::null();
-        let err = unsafe {
-            AXUIElementCopyParameterizedAttributeValue(
-                e,
-                Retained::as_ptr(&key).cast(),
-                param,
-                &mut out,
-            )
-        };
+        let err = unsafe { AXUIElementCopyParameterizedAttributeValue(e, Retained::as_ptr(&key).cast(), param, &mut out) };
         (err == 0 && !out.is_null()).then_some(Cf(out))
     }
 
@@ -261,14 +233,10 @@ mod imp {
     }
 
     fn rect_for(elem: CFTypeRef, r: CfRange) -> Option<Rect> {
-        let range =
-            Cf(unsafe { AXValueCreate(AX_VALUE_RANGE, &r as *const CfRange as *const c_void) });
+        let range = Cf(unsafe { AXValueCreate(AX_VALUE_RANGE, &r as *const CfRange as *const c_void) });
         let v = param_attr(elem, "AXBoundsForRange", range.0)?;
         let b: CgRect = value(&v, AX_VALUE_RECT)?;
-        Some(Rect::from_min_size(
-            Pos2::new(b.x as f32, b.y as f32),
-            Vec2::new(b.w as f32, b.h as f32),
-        ))
+        Some(Rect::from_min_size(Pos2::new(b.x as f32, b.y as f32), Vec2::new(b.w as f32, b.h as f32)))
     }
 
     pub fn accessibility() -> bool {
@@ -288,44 +256,24 @@ mod imp {
             let key = NSString::from_str("AXManualAccessibility");
             AXUIElementSetAttributeValue(app.0, Retained::as_ptr(&key).cast(), kCFBooleanTrue);
         }
-        let Some(focused) = attr(app.0, "AXFocusedUIElement") else {
-            return (None, None);
-        };
+        let Some(focused) = attr(app.0, "AXFocusedUIElement") else { return (None, None) };
         (caret_in(&focused), frame(&focused))
     }
 
     fn frame(e: &Cf) -> Option<Rect> {
         let pos: CgPoint = attr(e.0, "AXPosition").and_then(|v| value(&v, AX_VALUE_POINT))?;
         let size: CgPoint = attr(e.0, "AXSize").and_then(|v| value(&v, AX_VALUE_SIZE))?;
-        Some(Rect::from_min_size(
-            Pos2::new(pos.x as f32, pos.y as f32),
-            Vec2::new(size.x as f32, size.y as f32),
-        ))
+        Some(Rect::from_min_size(Pos2::new(pos.x as f32, pos.y as f32), Vec2::new(size.x as f32, size.y as f32)))
     }
 
     fn caret_in(focused: &Cf) -> Option<Rect> {
-        let sel = attr(focused.0, "AXSelectedTextRange")
-            .and_then(|v| value::<CfRange>(&v, AX_VALUE_RANGE))?;
-        let tries = [
-            sel,
-            CfRange {
-                location: sel.location,
-                length: 1,
-            },
-            CfRange {
-                location: (sel.location - 1).max(0),
-                length: 1,
-            },
-        ];
+        let sel = attr(focused.0, "AXSelectedTextRange").and_then(|v| value::<CfRange>(&v, AX_VALUE_RANGE))?;
+        let tries = [sel, CfRange { location: sel.location, length: 1 }, CfRange { location: (sel.location - 1).max(0), length: 1 }];
         for (k, r) in tries.iter().enumerate() {
             if let Some(b) = rect_for(focused.0, *r) {
                 if plausible_caret(b) {
                     // the character before the caret: its right edge
-                    return Some(if k == 2 && sel.location > 0 {
-                        Rect::from_min_max(Pos2::new(b.right(), b.top()), b.max)
-                    } else {
-                        b
-                    });
+                    return Some(if k == 2 && sel.location > 0 { Rect::from_min_max(Pos2::new(b.right(), b.top()), b.max) } else { b });
                 }
             }
         }
@@ -352,8 +300,7 @@ mod imp {
         if r.length <= 0 {
             return Some(String::new());
         }
-        let range =
-            Cf(unsafe { AXValueCreate(AX_VALUE_RANGE, &r as *const CfRange as *const c_void) });
+        let range = Cf(unsafe { AXValueCreate(AX_VALUE_RANGE, &r as *const CfRange as *const c_void) });
         string(&param_attr(elem, "AXStringForRange", range.0)?)
     }
 
@@ -364,52 +311,20 @@ mod imp {
         let app = Cf(unsafe { AXUIElementCreateApplication(pid) });
         unsafe { AXUIElementSetMessagingTimeout(app.0, 0.25) };
         let focused = attr(app.0, "AXFocusedUIElement")?;
-        if attr(focused.0, "AXSubrole")
-            .and_then(|v| string(&v))
-            .as_deref()
-            == Some("AXSecureTextField")
-        {
+        if attr(focused.0, "AXSubrole").and_then(|v| string(&v)).as_deref() == Some("AXSecureTextField") {
             return None;
         }
-        let sel: CfRange =
-            attr(focused.0, "AXSelectedTextRange").and_then(|v| value(&v, AX_VALUE_RANGE))?;
+        let sel: CfRange = attr(focused.0, "AXSelectedTextRange").and_then(|v| value(&v, AX_VALUE_RANGE))?;
         if sel.location < 0 || sel.length < 0 {
             return None;
         }
         // a few words each side is all the fitting needs
         let from = (sel.location - 64).max(0);
-        let before = text_in(
-            focused.0,
-            CfRange {
-                location: from,
-                length: sel.location - from,
-            },
-        )?;
+        let before = text_in(focused.0, CfRange { location: from, length: sel.location - from })?;
         let start = sel.location + sel.length;
         let after = match attr(focused.0, "AXNumberOfCharacters").and_then(|v| number(&v)) {
-            Some(total) => text_in(
-                focused.0,
-                CfRange {
-                    location: start,
-                    length: (total - start).clamp(0, 16),
-                },
-            ),
-            None => text_in(
-                focused.0,
-                CfRange {
-                    location: start,
-                    length: 16,
-                },
-            )
-            .or_else(|| {
-                text_in(
-                    focused.0,
-                    CfRange {
-                        location: start,
-                        length: 1,
-                    },
-                )
-            }),
+            Some(total) => text_in(focused.0, CfRange { location: start, length: (total - start).clamp(0, 16) }),
+            None => text_in(focused.0, CfRange { location: start, length: 16 }).or_else(|| text_in(focused.0, CfRange { location: start, length: 1 })),
         }
         .unwrap_or_default();
         Some(Around { before, after })
@@ -417,13 +332,7 @@ mod imp {
 
     pub fn front_app() -> Option<Target> {
         let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
-        Some(Target {
-            pid: app.processIdentifier(),
-            name: app
-                .localizedName()
-                .map(|n| n.to_string())
-                .unwrap_or_default(),
-        })
+        Some(Target { pid: app.processIdentifier(), name: app.localizedName().map(|n| n.to_string()).unwrap_or_default() })
     }
 
     /// Bring `t` to the front again (in case clicking our pill or panel
@@ -435,17 +344,13 @@ mod imp {
         if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(t.pid) {
             if !app.isActive() {
                 #[allow(deprecated)]
-                let _ = app
-                    .activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+                let _ = app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
             }
         }
     }
 
     fn main_height(mtm: MainThreadMarker) -> f64 {
-        NSScreen::screens(mtm)
-            .firstObject()
-            .map(|s| s.frame().size.height)
-            .unwrap_or(0.0)
+        NSScreen::screens(mtm).firstObject().map(|s| s.frame().size.height).unwrap_or(0.0)
     }
 
     pub fn mouse() -> Option<Pos2> {
@@ -462,28 +367,17 @@ mod imp {
         let rects: Vec<(Rect, Rect)> = NSScreen::screens(mtm)
             .iter()
             .map(|s| {
-                let flip = |f: objc2_foundation::NSRect| {
-                    Rect::from_min_size(
-                        Pos2::new(f.origin.x as f32, (top - f.origin.y - f.size.height) as f32),
-                        Vec2::new(f.size.width as f32, f.size.height as f32),
-                    )
-                };
+                let flip = |f: objc2_foundation::NSRect| Rect::from_min_size(Pos2::new(f.origin.x as f32, (top - f.origin.y - f.size.height) as f32), Vec2::new(f.size.width as f32, f.size.height as f32));
                 (flip(s.frame()), flip(s.visibleFrame()))
             })
             .collect();
-        rects
-            .iter()
-            .find(|(f, _)| f.contains(p))
-            .or(rects.first())
-            .map(|(_, v)| *v)
+        rects.iter().find(|(f, _)| f.contains(p)).or(rects.first()).map(|(_, v)| *v)
     }
 
     /// Keep our window `title` above other apps' windows, on every Space
     /// and over full-screen apps, and never key (typing stays where it was).
     pub fn float(title: &str) {
-        let Some(mtm) = MainThreadMarker::new() else {
-            return;
-        };
+        let Some(mtm) = MainThreadMarker::new() else { return };
         for w in NSApplication::sharedApplication(mtm).windows().iter() {
             if w.title().to_string() != title {
                 continue;
@@ -492,10 +386,7 @@ mod imp {
             if w.level() != 25 {
                 w.setLevel(25);
             }
-            let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
-                | NSWindowCollectionBehavior::FullScreenAuxiliary
-                | NSWindowCollectionBehavior::Stationary
-                | NSWindowCollectionBehavior::IgnoresCycle;
+            let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle;
             if w.collectionBehavior() != behavior {
                 w.setCollectionBehavior(behavior);
             }
@@ -564,15 +455,7 @@ mod imp {
         let pb = NSPasteboard::generalPasteboard();
         let saved = save(&pb);
         let receipt = Arc::new(Mutex::new(Receipt::default()));
-        let owner: Retained<Owner> = unsafe {
-            msg_send![
-                super(Owner::alloc().set_ivars(OwnerState {
-                    text: text.to_string(),
-                    receipt: receipt.clone()
-                })),
-                init
-            ]
-        };
+        let owner: Retained<Owner> = unsafe { msg_send![super(Owner::alloc().set_ivars(OwnerState { text: text.to_string(), receipt: receipt.clone() })), init] };
         let transient = NSString::from_str("org.nspasteboard.TransientType");
         let types = NSArray::from_slice(&[unsafe { NSPasteboardTypeString }, &*transient]);
         let o: &AnyObject = &owner;
@@ -584,12 +467,7 @@ mod imp {
             r.count = pb.changeCount();
         }
         press_cmd_v();
-        Some(Pasted {
-            saved,
-            pressed: Instant::now(),
-            receipt,
-            _owner: Some(Box::new(owner)),
-        })
+        Some(Pasted { saved, pressed: Instant::now(), receipt, _owner: Some(Box::new(owner)) })
     }
 
     fn press_cmd_v() {
@@ -703,49 +581,23 @@ pub fn pill_pos(spot: Spot, mouse: Option<Pos2>, screen: Option<Rect>, size: egu
     let want = match (spot.field, spot.caret, mouse) {
         (Some(f), _, _) => {
             let above = f.top() - GAP - size.y;
-            let y = if above >= top {
-                above
-            } else if f.bottom() + GAP + size.y <= bottom {
-                f.bottom() + GAP
-            } else {
-                above
-            };
+            let y = if above >= top { above } else if f.bottom() + GAP + size.y <= bottom { f.bottom() + GAP } else { above };
             Pos2::new(f.left(), y)
         }
         (None, Some(c), _) => {
             let below = c.bottom() + GAP;
-            Pos2::new(
-                c.left() - 14.0,
-                if below + size.y > bottom {
-                    c.top() - GAP - size.y
-                } else {
-                    below
-                },
-            )
+            Pos2::new(c.left() - 14.0, if below + size.y > bottom { c.top() - GAP - size.y } else { below })
         }
         (None, None, Some(m)) => {
             let below = m.y + 22.0;
-            Pos2::new(
-                m.x - size.x / 2.0,
-                if below + size.y > bottom {
-                    bottom - size.y
-                } else {
-                    below
-                },
-            )
+            Pos2::new(m.x - size.x / 2.0, if below + size.y > bottom { bottom - size.y } else { below })
         }
         (None, None, None) => Pos2::new(600.0, 400.0),
     };
     let Some(s) = screen else { return want };
     Pos2::new(
-        want.x.clamp(
-            s.left() + 4.0,
-            (s.right() - 4.0 - size.x).max(s.left() + 4.0),
-        ),
-        want.y.clamp(
-            s.top() + 4.0,
-            (s.bottom() - 4.0 - size.y).max(s.top() + 4.0),
-        ),
+        want.x.clamp(s.left() + 4.0, (s.right() - 4.0 - size.x).max(s.left() + 4.0)),
+        want.y.clamp(s.top() + 4.0, (s.bottom() - 4.0 - size.y).max(s.top() + 4.0)),
     )
 }
 
@@ -756,22 +608,10 @@ mod tests {
 
     #[test]
     fn carets_that_cant_be_real_are_refused() {
-        assert!(plausible_caret(Rect::from_min_size(
-            Pos2::new(300.0, 200.0),
-            Vec2::new(1.0, 17.0)
-        )));
-        assert!(!plausible_caret(Rect::from_min_size(
-            Pos2::ZERO,
-            Vec2::new(1.0, 17.0)
-        )));
-        assert!(!plausible_caret(Rect::from_min_size(
-            Pos2::new(300.0, 200.0),
-            Vec2::new(0.0, 0.0)
-        )));
-        assert!(!plausible_caret(Rect::from_min_size(
-            Pos2::new(300.0, 200.0),
-            Vec2::new(900.0, 700.0)
-        )));
+        assert!(plausible_caret(Rect::from_min_size(Pos2::new(300.0, 200.0), Vec2::new(1.0, 17.0))));
+        assert!(!plausible_caret(Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 17.0))));
+        assert!(!plausible_caret(Rect::from_min_size(Pos2::new(300.0, 200.0), Vec2::new(0.0, 0.0))));
+        assert!(!plausible_caret(Rect::from_min_size(Pos2::new(300.0, 200.0), Vec2::new(900.0, 700.0))));
     }
 
     #[test]
@@ -792,101 +632,38 @@ mod tests {
 
     #[test]
     fn the_pill_sits_above_the_field_at_its_left_edge() {
-        let screen = Some(Rect::from_min_size(
-            Pos2::new(0.0, 25.0),
-            Vec2::new(1440.0, 850.0),
-        ));
+        let screen = Some(Rect::from_min_size(Pos2::new(0.0, 25.0), Vec2::new(1440.0, 850.0)));
         let size = Vec2::new(140.0, 36.0);
         let field = Rect::from_min_size(Pos2::new(400.0, 600.0), Vec2::new(700.0, 80.0));
         let caret = Rect::from_min_size(Pos2::new(900.0, 650.0), Vec2::new(1.0, 18.0));
-        let spot = Spot {
-            caret: Some(caret),
-            field: Some(field),
-        };
-        assert_eq!(
-            pill_pos(spot, None, screen, size),
-            Pos2::new(400.0, 600.0 - 6.0 - 36.0)
-        );
+        let spot = Spot { caret: Some(caret), field: Some(field) };
+        assert_eq!(pill_pos(spot, None, screen, size), Pos2::new(400.0, 600.0 - 6.0 - 36.0));
         // a field at the top of the screen: under it instead
-        let high = Spot {
-            caret: None,
-            field: Some(Rect::from_min_size(
-                Pos2::new(400.0, 40.0),
-                Vec2::new(300.0, 24.0),
-            )),
-        };
-        assert_eq!(
-            pill_pos(high, None, screen, size),
-            Pos2::new(400.0, 40.0 + 24.0 + 6.0)
-        );
+        let high = Spot { caret: None, field: Some(Rect::from_min_size(Pos2::new(400.0, 40.0), Vec2::new(300.0, 24.0))) };
+        assert_eq!(pill_pos(high, None, screen, size), Pos2::new(400.0, 40.0 + 24.0 + 6.0));
         // at the right edge: pulled in
-        let right = Spot {
-            caret: None,
-            field: Some(Rect::from_min_size(
-                Pos2::new(1400.0, 300.0),
-                Vec2::new(40.0, 24.0),
-            )),
-        };
+        let right = Spot { caret: None, field: Some(Rect::from_min_size(Pos2::new(1400.0, 300.0), Vec2::new(40.0, 24.0))) };
         assert_eq!(pill_pos(right, None, screen, size).x, 1440.0 - 4.0 - 140.0);
     }
 
     #[test]
     fn without_a_field_the_pill_follows_the_caret_then_the_mouse() {
-        let screen = Some(Rect::from_min_size(
-            Pos2::new(0.0, 25.0),
-            Vec2::new(1440.0, 850.0),
-        ));
+        let screen = Some(Rect::from_min_size(Pos2::new(0.0, 25.0), Vec2::new(1440.0, 850.0)));
         let size = Vec2::new(140.0, 36.0);
-        let caret = Some(Rect::from_min_size(
-            Pos2::new(500.0, 300.0),
-            Vec2::new(1.0, 18.0),
-        ));
-        assert_eq!(
-            pill_pos(Spot { caret, field: None }, None, screen, size),
-            Pos2::new(486.0, 324.0)
-        );
+        let caret = Some(Rect::from_min_size(Pos2::new(500.0, 300.0), Vec2::new(1.0, 18.0)));
+        assert_eq!(pill_pos(Spot { caret, field: None }, None, screen, size), Pos2::new(486.0, 324.0));
         // at the bottom: above the caret
-        let low = Some(Rect::from_min_size(
-            Pos2::new(500.0, 850.0),
-            Vec2::new(1.0, 18.0),
-        ));
-        assert_eq!(
-            pill_pos(
-                Spot {
-                    caret: low,
-                    field: None
-                },
-                None,
-                screen,
-                size
-            )
-            .y,
-            850.0 - 6.0 - 36.0
-        );
+        let low = Some(Rect::from_min_size(Pos2::new(500.0, 850.0), Vec2::new(1.0, 18.0)));
+        assert_eq!(pill_pos(Spot { caret: low, field: None }, None, screen, size).y, 850.0 - 6.0 - 36.0);
         // nothing: under the mouse
-        assert_eq!(
-            pill_pos(Spot::default(), Some(Pos2::new(700.0, 400.0)), screen, size),
-            Pos2::new(630.0, 422.0)
-        );
+        assert_eq!(pill_pos(Spot::default(), Some(Pos2::new(700.0, 400.0)), screen, size), Pos2::new(630.0, 422.0));
     }
 
     #[test]
     fn documents_and_web_pages_are_not_fields() {
-        assert!(field_like(Rect::from_min_size(
-            Pos2::new(400.0, 600.0),
-            Vec2::new(700.0, 80.0)
-        )));
-        assert!(!field_like(Rect::from_min_size(
-            Pos2::new(0.0, 25.0),
-            Vec2::new(1440.0, 800.0)
-        )));
-        assert!(!field_like(Rect::from_min_size(
-            Pos2::ZERO,
-            Vec2::new(300.0, 24.0)
-        )));
-        assert!(!field_like(Rect::from_min_size(
-            Pos2::new(10.0, 10.0),
-            Vec2::new(10.0, 24.0)
-        )));
+        assert!(field_like(Rect::from_min_size(Pos2::new(400.0, 600.0), Vec2::new(700.0, 80.0))));
+        assert!(!field_like(Rect::from_min_size(Pos2::new(0.0, 25.0), Vec2::new(1440.0, 800.0))));
+        assert!(!field_like(Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 24.0))));
+        assert!(!field_like(Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(10.0, 24.0))));
     }
 }

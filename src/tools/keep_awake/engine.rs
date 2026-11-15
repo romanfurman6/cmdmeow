@@ -32,13 +32,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings {
-            agent: true,
-            manual_screen: true,
-            agent_screen: false,
-            grace_min: 5,
-            shortcut: None,
-        }
+        Settings { agent: true, manual_screen: true, agent_screen: false, grace_min: 5, shortcut: None }
     }
 }
 
@@ -59,9 +53,7 @@ pub enum State {
     /// The main agent is working.
     Agent,
     /// The agent went quiet; sleep is allowed again in `left` seconds.
-    WindDown {
-        left: i64,
-    },
+    WindDown { left: i64 },
 }
 
 impl State {
@@ -115,33 +107,13 @@ pub struct Engine {
 impl Engine {
     pub fn new(dir: Option<PathBuf>) -> Self {
         let (settings, log, manual_since) = match &dir {
-            Some(d) => (
-                load_settings(d),
-                load_log(d, today_start(now()) - 6 * 86_400),
-                load_switch(d),
-            ),
+            Some(d) => (load_settings(d), load_log(d, today_start(now()) - 6 * 86_400), load_switch(d)),
             None => (Settings::default(), Vec::new(), None),
         };
         // the switch stays on across a quit, an update or a restart
         // without a data folder (tests, demos) it watches Claude
-        let agent = if dir.is_some() {
-            Source::main()
-        } else {
-            Some(Source::Claude)
-        };
-        Engine {
-            settings,
-            manual_since,
-            agent,
-            sessions: Vec::new(),
-            awake_since: None,
-            log,
-            open: None,
-            agent_last: None,
-            enabled: true,
-            power: Power::default(),
-            dir,
-        }
+        let agent = if dir.is_some() { Source::main() } else { Some(Source::Claude) };
+        Engine { settings, manual_since, agent, sessions: Vec::new(), awake_since: None, log, open: None, agent_last: None, enabled: true, power: Power::default(), dir }
     }
 
     /// The trigger is on and there's an agent to watch.
@@ -187,11 +159,7 @@ impl Engine {
         match self.agent_last {
             Some(t) => {
                 let left = t + self.settings.grace_min as i64 * 60 - now;
-                if left > 0 {
-                    State::WindDown { left }
-                } else {
-                    State::Off
-                }
+                if left > 0 { State::WindDown { left } } else { State::Off }
             }
             None => State::Off,
         }
@@ -220,25 +188,13 @@ impl Engine {
             State::Agent | State::WindDown { .. } => self.settings.agent_screen,
         };
         let reason = self.reason(st, now);
-        self.power.apply(
-            Want {
-                system: st.awake(),
-                display,
-            },
-            &reason,
-        );
+        self.power.apply(Want { system: st.awake(), display }, &reason);
         match (st.awake(), self.awake_since) {
             (true, None) => self.awake_since = Some(now),
             (false, Some(_)) => self.awake_since = None,
             _ => {}
         }
-        let kind = st.awake().then(|| {
-            if st == State::Manual {
-                None
-            } else {
-                self.agent
-            }
-        });
+        let kind = st.awake().then(|| if st == State::Manual { None } else { self.agent });
         if self.open.map(|o| o.1) != kind {
             self.close_span(now);
             self.open = kind.map(|k| (now, k));
@@ -258,11 +214,7 @@ impl Engine {
                     }
                 }
                 let who = self.agent_name();
-                if names.is_empty() {
-                    who.into()
-                } else {
-                    format!("{who}: {}", names.join(", "))
-                }
+                if names.is_empty() { who.into() } else { format!("{who}: {}", names.join(", ")) }
             }
             State::WindDown { .. } => format!("{} just finished", self.agent_name()),
         }
@@ -270,17 +222,9 @@ impl Engine {
 
     pub fn set_manual(&mut self, on: bool, now: i64) {
         if on != self.manual_since.is_some() {
-            crate::kit::sound::play(if on {
-                crate::kit::sound::Cue::Awake
-            } else {
-                crate::kit::sound::Cue::Asleep
-            });
+            crate::kit::sound::play(if on { crate::kit::sound::Cue::Awake } else { crate::kit::sound::Cue::Asleep });
         }
-        self.set_switch(if on {
-            Some(self.manual_since.unwrap_or(now))
-        } else {
-            None
-        });
+        self.set_switch(if on { Some(self.manual_since.unwrap_or(now)) } else { None });
         self.step(now);
     }
 
@@ -316,12 +260,7 @@ impl Engine {
         let day = today_start(now);
         let mut v: Vec<Span> = self.log.iter().filter(|s| s.end > day).copied().collect();
         if let Some((start, by)) = self.open {
-            v.push(Span {
-                start,
-                end: now,
-                agent: by.is_some(),
-                by,
-            });
+            v.push(Span { start, end: now, agent: by.is_some(), by });
         }
         for s in &mut v {
             s.start = s.start.max(day);
@@ -334,29 +273,16 @@ impl Engine {
         let today = today_start(now);
         let mut spans = self.log.clone();
         if let Some((start, by)) = self.open {
-            spans.push(Span {
-                start,
-                end: now,
-                agent: by.is_some(),
-                by,
-            });
+            spans.push(Span { start, end: now, agent: by.is_some(), by });
         }
         (0..7)
             .map(|k| {
                 let d0 = today_start(today - (6 - k) * 86_400 + 3600);
-                let d1 = if k == 6 {
-                    now
-                } else {
-                    today_start(d0 + 86_400 + 3600)
-                };
+                let d1 = if k == 6 { now } else { today_start(d0 + 86_400 + 3600) };
                 let (mut c, mut h) = (0, 0);
                 for s in &spans {
                     let len = (s.end.min(d1) - s.start.max(d0)).max(0);
-                    if s.agent {
-                        c += len
-                    } else {
-                        h += len
-                    }
+                    if s.agent { c += len } else { h += len }
                 }
                 (d0, c, h)
             })
@@ -368,28 +294,18 @@ impl Engine {
         let since = today_start(now) - 6 * 86_400;
         let mut spans: Vec<Span> = self.log.iter().filter(|s| s.end > since).copied().collect();
         spans.extend(self.today(now));
-        Source::ALL
-            .into_iter()
-            .filter(|a| spans.iter().any(|s| s.who() == Some(*a)))
-            .collect()
+        Source::ALL.into_iter().filter(|a| spans.iter().any(|s| s.who() == Some(*a))).collect()
     }
 
     fn close_span(&mut self, now: i64) {
-        let Some((start, by)) = self.open.take() else {
-            return;
-        };
+        let Some((start, by)) = self.open.take() else { return };
         if now - start < 30 {
             return;
         }
         // a week is kept, for the page's last 7 days
         let day = today_start(now) - 6 * 86_400;
         self.log.retain(|s| s.end > day);
-        self.log.push(Span {
-            start,
-            end: now,
-            agent: by.is_some(),
-            by,
-        });
+        self.log.push(Span { start, end: now, agent: by.is_some(), by });
         if let Some(d) = &self.dir {
             save_json(d, "today.json", &self.log);
         }
@@ -403,26 +319,14 @@ impl Drop for Engine {
 }
 
 pub fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 /// Seconds per agent in `spans`, in a fixed order, agents with none left out.
 pub fn agent_time(spans: &[Span]) -> Vec<(Source, i64)> {
     Source::ALL
         .into_iter()
-        .map(|a| {
-            (
-                a,
-                spans
-                    .iter()
-                    .filter(|s| s.who() == Some(a))
-                    .map(|s| s.end - s.start)
-                    .sum::<i64>(),
-            )
-        })
+        .map(|a| (a, spans.iter().filter(|s| s.who() == Some(a)).map(|s| s.end - s.start).sum::<i64>()))
         .filter(|(_, t)| *t > 0)
         .collect()
 }
@@ -468,11 +372,7 @@ mod tests {
     use super::*;
 
     fn session(t: i64) -> Session {
-        Session {
-            project: "cmdmeow".into(),
-            last_write: t,
-            tool_running: false,
-        }
+        Session { project: "cmdmeow".into(), last_write: t, tool_running: false }
     }
 
     #[test]
@@ -483,13 +383,7 @@ mod tests {
         assert_eq!(e.held(), Want::default());
         e.set_manual(true, 1000);
         assert_eq!(e.state(1000), State::Manual);
-        assert_eq!(
-            e.held(),
-            Want {
-                system: true,
-                display: true
-            }
-        );
+        assert_eq!(e.held(), Want { system: true, display: true });
         e.set_manual(false, 1100);
         assert_eq!(e.held(), Want::default());
     }
@@ -500,21 +394,10 @@ mod tests {
         e.sessions = vec![session(1000)];
         e.step(1010);
         assert_eq!(e.state(1010), State::Agent);
-        assert_eq!(
-            e.held(),
-            Want {
-                system: true,
-                display: false
-            }
-        );
+        assert_eq!(e.held(), Want { system: true, display: false });
         // quiet: working until 1000 + 120, then 5 min of grace
         e.step(1200);
-        assert_eq!(
-            e.state(1200),
-            State::WindDown {
-                left: 1120 + 300 - 1200
-            }
-        );
+        assert_eq!(e.state(1200), State::WindDown { left: 1120 + 300 - 1200 });
         assert!(e.held().system);
         e.step(1500);
         assert_eq!(e.state(1500), State::Off);
@@ -545,13 +428,7 @@ mod tests {
         let mut e = Engine::new(None);
         e.sessions = vec![session(1000)];
         e.change(1001, |s| s.agent_screen = true);
-        assert_eq!(
-            e.held(),
-            Want {
-                system: true,
-                display: true
-            }
-        );
+        assert_eq!(e.held(), Want { system: true, display: true });
     }
 
     #[test]
@@ -603,15 +480,7 @@ mod tests {
         e.set_manual(true, 1000);
         assert_eq!(e.power.name(), "Cmd+Meow Keep Awake (by hand)");
         e.set_manual(false, 1001);
-        e.sessions = vec![
-            session(1002),
-            Session {
-                project: "api".into(),
-                last_write: 1002,
-                tool_running: false,
-            },
-            session(1002),
-        ];
+        e.sessions = vec![session(1002), Session { project: "api".into(), last_write: 1002, tool_running: false }, session(1002)];
         e.step(1003);
         assert_eq!(e.power.name(), "Cmd+Meow Keep Awake (Claude: cmdmeow, api)");
         e.step(1200);
@@ -660,18 +529,13 @@ mod tests {
         assert_eq!(e.state(quiet), State::WindDown { left: 299 });
         let spans = e.today(t + 200);
         let times = agent_time(&spans);
-        assert_eq!(
-            times,
-            vec![(Source::Claude, 60), (Source::Codex, 100)],
-            "{spans:?}"
-        );
+        assert_eq!(times, vec![(Source::Claude, 60), (Source::Codex, 100)], "{spans:?}");
         assert_eq!(e.week_agents(t + 200), vec![Source::Claude, Source::Codex]);
     }
 
     #[test]
     fn old_settings_files_still_read() {
-        let s: Settings =
-            serde_json::from_str(r#"{"claude": false, "claude_screen": true}"#).unwrap();
+        let s: Settings = serde_json::from_str(r#"{"claude": false, "claude_screen": true}"#).unwrap();
         assert!(!s.agent && s.agent_screen);
         let back = serde_json::to_string(&s).unwrap();
         assert!(back.contains("\"claude\":false"), "{back}");

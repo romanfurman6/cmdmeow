@@ -8,12 +8,7 @@ use std::time::{Duration, Instant};
 /// Run `cmd` and collect its output, or `None` if it can't start or takes
 /// longer than `limit` (it is killed then).
 pub fn output(cmd: &mut Command, limit: Duration) -> Option<Output> {
-    let mut child = cmd
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
     // read both pipes on their own threads so a chatty tool can't fill a pipe and stall
     let mut so = child.stdout.take()?;
     let mut se = child.stderr.take()?;
@@ -39,20 +34,13 @@ pub fn output(cmd: &mut Command, limit: Duration) -> Option<Output> {
             }
         }
     };
-    Some(Output {
-        status,
-        stdout: out_t.join().unwrap_or_default(),
-        stderr: err_t.join().unwrap_or_default(),
-    })
+    Some(Output { status, stdout: out_t.join().unwrap_or_default(), stderr: err_t.join().unwrap_or_default() })
 }
 
 /// `name`'s full path if it is one of the usual install places (never asks
 /// macOS to install developer tools just to look).
 pub fn find_tool(candidates: &[&str]) -> Option<std::path::PathBuf> {
-    candidates
-        .iter()
-        .map(std::path::PathBuf::from)
-        .find(|p| p.is_file())
+    candidates.iter().map(std::path::PathBuf::from).find(|p| p.is_file())
 }
 
 #[cfg(test)]
@@ -61,11 +49,7 @@ mod tests {
 
     #[test]
     fn collects_output() {
-        let o = output(
-            Command::new("sh").args(["-c", "echo hi; echo err >&2; exit 3"]),
-            Duration::from_secs(5),
-        )
-        .unwrap();
+        let o = output(Command::new("sh").args(["-c", "echo hi; echo err >&2; exit 3"]), Duration::from_secs(5)).unwrap();
         assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "hi");
         assert_eq!(String::from_utf8_lossy(&o.stderr).trim(), "err");
         assert_eq!(o.status.code(), Some(3));
@@ -80,11 +64,7 @@ mod tests {
 
     #[test]
     fn missing_tool() {
-        assert!(output(
-            &mut Command::new("/definitely/not/a/tool"),
-            Duration::from_secs(1)
-        )
-        .is_none());
+        assert!(output(&mut Command::new("/definitely/not/a/tool"), Duration::from_secs(1)).is_none());
         assert!(find_tool(&["/definitely/not/a/tool"]).is_none());
     }
 }

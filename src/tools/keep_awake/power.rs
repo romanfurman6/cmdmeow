@@ -46,26 +46,13 @@ impl Power {
             }
         }
         if want.system != self.system.is_some() {
-            self.system = toggle(
-                self.system.take(),
-                want.system,
-                "PreventUserIdleSystemSleep",
-                &name(reason, false),
-            );
+            self.system = toggle(self.system.take(), want.system, "PreventUserIdleSystemSleep", &name(reason, false));
         }
         let display = want.system && want.display;
         if display != self.display.is_some() {
-            self.display = toggle(
-                self.display.take(),
-                display,
-                "PreventUserIdleDisplaySleep",
-                &name(reason, true),
-            );
+            self.display = toggle(self.display.take(), display, "PreventUserIdleDisplaySleep", &name(reason, true));
         }
-        self.held = Want {
-            system: want.system,
-            display,
-        };
+        self.held = Want { system: want.system, display };
     }
 }
 
@@ -77,14 +64,7 @@ impl Drop for Power {
 
 fn name(reason: &str, screen: bool) -> String {
     let screen = if screen { ", screen" } else { "" };
-    if reason.is_empty() {
-        format!(
-            "Cmd+Meow Keep Awake{}",
-            if screen.is_empty() { "" } else { " (screen)" }
-        )
-    } else {
-        format!("Cmd+Meow Keep Awake ({reason}{screen})")
-    }
+    if reason.is_empty() { format!("Cmd+Meow Keep Awake{}", if screen.is_empty() { "" } else { " (screen)" }) } else { format!("Cmd+Meow Keep Awake ({reason}{screen})") }
 }
 
 fn toggle(old: Option<u32>, on: bool, kind: &str, name: &str) -> Option<u32> {
@@ -109,22 +89,13 @@ mod mac {
 
     #[link(name = "CoreFoundation", kind = "framework")]
     unsafe extern "C" {
-        fn CFStringCreateWithCString(
-            alloc: *const c_void,
-            s: *const c_char,
-            encoding: u32,
-        ) -> CFStringRef;
+        fn CFStringCreateWithCString(alloc: *const c_void, s: *const c_char, encoding: u32) -> CFStringRef;
         fn CFRelease(p: *const c_void);
     }
 
     #[link(name = "IOKit", kind = "framework")]
     unsafe extern "C" {
-        fn IOPMAssertionCreateWithName(
-            kind: CFStringRef,
-            level: u32,
-            name: CFStringRef,
-            id: *mut u32,
-        ) -> i32;
+        fn IOPMAssertionCreateWithName(kind: CFStringRef, level: u32, name: CFStringRef, id: *mut u32) -> i32;
         fn IOPMAssertionRelease(id: u32) -> i32;
         fn IOPMAssertionSetProperty(id: u32, key: CFStringRef, value: *const c_void) -> i32;
     }
@@ -190,42 +161,12 @@ mod tests {
     #[test]
     fn display_needs_system() {
         let mut p = Power::default();
-        p.apply(
-            Want {
-                system: false,
-                display: true,
-            },
-            "",
-        );
+        p.apply(Want { system: false, display: true }, "");
         assert_eq!(p.held(), Want::default());
-        p.apply(
-            Want {
-                system: true,
-                display: true,
-            },
-            "by hand",
-        );
-        assert_eq!(
-            p.held(),
-            Want {
-                system: true,
-                display: true
-            }
-        );
-        p.apply(
-            Want {
-                system: true,
-                display: false,
-            },
-            "by hand",
-        );
-        assert_eq!(
-            p.held(),
-            Want {
-                system: true,
-                display: false
-            }
-        );
+        p.apply(Want { system: true, display: true }, "by hand");
+        assert_eq!(p.held(), Want { system: true, display: true });
+        p.apply(Want { system: true, display: false }, "by hand");
+        assert_eq!(p.held(), Want { system: true, display: false });
         p.apply(Want::default(), "");
         assert_eq!(p.held(), Want::default());
     }
@@ -234,13 +175,7 @@ mod tests {
     fn name_says_why() {
         assert_eq!(name("", false), "Cmd+Meow Keep Awake");
         assert_eq!(name("", true), "Cmd+Meow Keep Awake (screen)");
-        assert_eq!(
-            name("Claude: cmdmeow", false),
-            "Cmd+Meow Keep Awake (Claude: cmdmeow)"
-        );
-        assert_eq!(
-            name("by hand", true),
-            "Cmd+Meow Keep Awake (by hand, screen)"
-        );
+        assert_eq!(name("Claude: cmdmeow", false), "Cmd+Meow Keep Awake (Claude: cmdmeow)");
+        assert_eq!(name("by hand", true), "Cmd+Meow Keep Awake (by hand, screen)");
     }
 }

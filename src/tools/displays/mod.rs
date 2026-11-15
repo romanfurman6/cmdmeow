@@ -47,24 +47,13 @@ impl Displays {
     pub fn new(env: &ToolEnv) -> Self {
         let on = Arc::new(AtomicBool::new(true));
         if env.demo {
-            let view = View {
-                screens: demo_screens(),
-                ..Default::default()
-            };
-            return Displays {
-                view: Arc::new(Mutex::new(view)),
-                tx: None,
-                dir: None,
-                on,
-            };
+            let view = View { screens: demo_screens(), ..Default::default() };
+            return Displays { view: Arc::new(Mutex::new(view)), tx: None, dir: None, on };
         }
         let dir = engine::data_dir();
         let settings: Settings = crate::kit::fs::load_json(&dir.join(SETTINGS_FILE));
         let levels: HashMap<String, Levels> = crate::kit::fs::load_json(&dir.join(LEVELS_FILE));
-        let view = Arc::new(Mutex::new(View {
-            settings,
-            ..Default::default()
-        }));
+        let view = Arc::new(Mutex::new(View { settings, ..Default::default() }));
         let (tx, rx) = channel();
         {
             let (view, ctx, dir) = (view.clone(), env.ctx.clone(), dir.clone());
@@ -74,12 +63,7 @@ impl Displays {
                 .ok();
         }
         keys(&view, &tx, &on, &env.ctx);
-        Displays {
-            view,
-            tx: Some(tx),
-            dir: Some(dir),
-            on,
-        }
+        Displays { view, tx: Some(tx), dir: Some(dir), on }
     }
 
     /// Change a level: on screen at once, on the wire from the worker.
@@ -113,19 +97,10 @@ fn keys(view: &Arc<Mutex<View>>, tx: &Sender<Cmd>, on: &Arc<AtomicBool>, ctx: &e
         if !on.load(Ordering::Relaxed) {
             return false;
         }
-        let sound = matches!(
-            key,
-            engine::Key::VolumeUp | engine::Key::VolumeDown | engine::Key::Mute
-        );
-        let audio = if sound {
-            mac::audio()
-        } else {
-            engine::Audio::Elsewhere
-        };
+        let sound = matches!(key, engine::Key::VolumeUp | engine::Key::VolumeDown | engine::Key::Mute);
+        let audio = if sound { mac::audio() } else { engine::Audio::Elsewhere };
         let mut v = view.lock_ok();
-        let Some(cmd) = engine::on_key(&v, key, fine, at, &audio) else {
-            return false;
-        };
+        let Some(cmd) = engine::on_key(&v, key, fine, at, &audio) else { return false };
         v.apply(cmd);
         v.osd = engine::osd_for(&v, cmd, Instant::now());
         drop(v);
@@ -138,14 +113,7 @@ fn keys(view: &Arc<Mutex<View>>, tx: &Sender<Cmd>, on: &Arc<AtomicBool>, ctx: &e
 /// The worker: owns the OS side, writes levels, and checks the display
 /// list every few seconds, also while every window is hidden (a monitor
 /// plugged in at night should still get its levels back).
-fn work<B: Bus>(
-    bus: B,
-    levels: HashMap<String, Levels>,
-    view: Arc<Mutex<View>>,
-    rx: Receiver<Cmd>,
-    ctx: egui::Context,
-    dir: &Path,
-) {
+fn work<B: Bus>(bus: B, levels: HashMap<String, Levels>, view: Arc<Mutex<View>>, rx: Receiver<Cmd>, ctx: egui::Context, dir: &Path) {
     let mut e = Engine::new(bus, levels);
     let mut clock = (SystemTime::now(), Instant::now());
     let mut next = Instant::now();
@@ -166,12 +134,7 @@ fn work<B: Bus>(
         e.flush();
         if rescan || Instant::now() >= next {
             let (wall, mono) = (SystemTime::now(), Instant::now());
-            let woke = engine::slept(
-                wall.duration_since(clock.0)
-                    .map(|d| d.as_secs_f64())
-                    .unwrap_or(0.0),
-                mono.duration_since(clock.1).as_secs_f64(),
-            );
+            let woke = engine::slept(wall.duration_since(clock.0).map(|d| d.as_secs_f64()).unwrap_or(0.0), mono.duration_since(clock.1).as_secs_f64());
             clock = (wall, mono);
             if e.refresh(woke) {
                 view.lock_ok().screens = e.screens.clone();
@@ -192,24 +155,8 @@ fn demo_screens() -> Vec<Screen> {
     use engine::How;
     let at = |x: f32| Rect::from_min_size(Pos2::new(x, 0.0), Vec2::new(1512.0, 982.0));
     vec![
-        Screen::sample(
-            1,
-            "Built-in Retina Display",
-            true,
-            How::Native,
-            at(0.0),
-            0.72,
-            None,
-        ),
-        Screen::sample(
-            2,
-            "DELL U2723QE",
-            false,
-            How::Ddc,
-            at(1512.0),
-            0.45,
-            Some(0.3),
-        ),
+        Screen::sample(1, "Built-in Retina Display", true, How::Native, at(0.0), 0.72, None),
+        Screen::sample(2, "DELL U2723QE", false, How::Ddc, at(1512.0), 0.45, Some(0.3)),
         Screen::sample(3, "LG TV SSCR2", false, How::Dim, at(3024.0), 0.8, None),
     ]
 }
@@ -222,10 +169,7 @@ impl Tool for Displays {
         "Displays"
     }
     fn badge(&self) -> Badge {
-        Badge {
-            icon: Icon::Display,
-            color: tint::DISPLAYS(),
-        }
+        Badge { icon: Icon::Display, color: tint::DISPLAYS() }
     }
     fn section(&self) -> &'static str {
         "Utilities"
@@ -238,14 +182,7 @@ impl Tool for Displays {
         vec![Need::may(Perm::Accessibility)]
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec {
-            id: LEVELS,
-            title: "Displays",
-            about: "Brightness and volume of your monitors.",
-            sizes: &[Size::S14, Size::S24],
-            size: Size::S14,
-            default_on: false,
-        }]
+        vec![WidgetSpec { id: LEVELS, title: "Displays", about: "Brightness and volume of your monitors.", sizes: &[Size::S14, Size::S24], size: Size::S14, default_on: false }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);
@@ -265,11 +202,7 @@ impl Tool for Displays {
     }
     fn tick(&mut self, ctx: &egui::Context) -> bool {
         // the level after a key needs frames while it shows, panel or not
-        let showing = self
-            .view
-            .lock_ok()
-            .osd
-            .is_some_and(|o| o.at.elapsed().as_secs_f32() < OSD_SECS);
+        let showing = self.view.lock_ok().osd.is_some_and(|o| o.at.elapsed().as_secs_f32() < OSD_SECS);
         if showing {
             ctx.request_repaint_after(Duration::from_millis(30));
         }
@@ -295,10 +228,7 @@ mod tests {
     use super::*;
 
     fn demo() -> Displays {
-        Displays::new(&ToolEnv {
-            ctx: egui::Context::default(),
-            demo: true,
-        })
+        Displays::new(&ToolEnv { ctx: egui::Context::default(), demo: true })
     }
 
     #[test]
@@ -320,10 +250,7 @@ mod tests {
         assert!(s.muted);
         // no speakers: volume stays unknown
         d.set(Cmd::Volume(3, 0.6));
-        assert_eq!(
-            d.screens().into_iter().find(|s| s.id == 3).unwrap().volume,
-            None
-        );
+        assert_eq!(d.screens().into_iter().find(|s| s.id == 3).unwrap().volume, None);
     }
 
     #[test]
@@ -331,21 +258,13 @@ mod tests {
         use engine::tests::{found, Fake};
         let mut bus = Fake::default();
         bus.found = vec![found(2, "dell", 0.0)];
-        bus.ddc.insert(
-            (2, ddc::vcp::BRIGHTNESS),
-            ddc::Reading {
-                current: 40,
-                max: 100,
-            },
-        );
+        bus.ddc.insert((2, ddc::vcp::BRIGHTNESS), ddc::Reading { current: 40, max: 100 });
         let dir = std::env::temp_dir().join(format!("cmdmeow-displays-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let view = Arc::new(Mutex::new(View::default()));
         let (tx, rx) = channel();
         let (v2, d2) = (view.clone(), dir.clone());
-        let h = std::thread::spawn(move || {
-            work(bus, HashMap::new(), v2, rx, egui::Context::default(), &d2)
-        });
+        let h = std::thread::spawn(move || work(bus, HashMap::new(), v2, rx, egui::Context::default(), &d2));
         // the first refresh publishes the monitor
         let t0 = Instant::now();
         while view.lock_ok().screens.is_empty() && t0.elapsed() < Duration::from_secs(5) {

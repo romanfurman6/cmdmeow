@@ -21,8 +21,7 @@ use std::time::{Duration, Instant};
 
 /// The newest non-prerelease Release's manifest (a stable GitHub redirect,
 /// no API call, so no rate limit).
-pub const MANIFEST_URL: &str =
-    "https://github.com/romanfurman6/cmdmeow/releases/latest/download/latest.json";
+pub const MANIFEST_URL: &str = "https://github.com/romanfurman6/cmdmeow/releases/latest/download/latest.json";
 /// Where the banner sends you when an update can't install itself.
 pub const RELEASES_URL: &str = "https://github.com/romanfurman6/cmdmeow/releases/latest";
 const FIRST_CHECK: Duration = Duration::from_secs(15);
@@ -63,11 +62,7 @@ struct Shared {
     last_check: Option<Instant>,
 }
 
-static SHARED: Mutex<Shared> = Mutex::new(Shared {
-    state: State::Idle,
-    busy: false,
-    last_check: None,
-});
+static SHARED: Mutex<Shared> = Mutex::new(Shared { state: State::Idle, busy: false, last_check: None });
 static STARTED: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 pub fn state() -> State {
@@ -100,57 +95,40 @@ pub fn tick() {
     {
         let mut s = SHARED.lock_ok();
         // a test manifest (CMDMEOW_UPDATE_URL) is checked right away
-        let first = if url == MANIFEST_URL {
-            FIRST_CHECK
-        } else {
-            Duration::from_secs(2)
-        };
-        if s.busy || started.elapsed() < first || s.last_check.is_some_and(|t| t.elapsed() < EVERY)
-        {
+        let first = if url == MANIFEST_URL { FIRST_CHECK } else { Duration::from_secs(2) };
+        if s.busy || started.elapsed() < first || s.last_check.is_some_and(|t| t.elapsed() < EVERY) {
             return;
         }
         // an offered update stays offered; a failed one is checked again
-        if matches!(
-            s.state,
-            State::Downloading(..) | State::Installing(_) | State::Restarting
-        ) {
+        if matches!(s.state, State::Downloading(..) | State::Installing(_) | State::Restarting) {
             return;
         }
         s.busy = true;
         s.last_check = Some(Instant::now());
     }
-    let _ = std::thread::Builder::new()
-        .name("update-check".into())
-        .spawn(move || {
-            let found = fetch_manifest(&url);
-            let mut s = SHARED.lock_ok();
-            s.busy = false;
-            match found {
-                Ok(m) if is_newer(&m.version, env!("CARGO_PKG_VERSION")) => {
-                    eprintln!("[update] {} is out", m.version);
-                    s.state = State::Available(m);
-                }
-                Ok(_) => {
-                    if matches!(s.state, State::Failed(..) | State::Available(_)) {
-                        s.state = State::Idle;
-                    }
-                }
-                Err(e) => eprintln!("[update] check failed: {e}"),
+    let _ = std::thread::Builder::new().name("update-check".into()).spawn(move || {
+        let found = fetch_manifest(&url);
+        let mut s = SHARED.lock_ok();
+        s.busy = false;
+        match found {
+            Ok(m) if is_newer(&m.version, env!("CARGO_PKG_VERSION")) => {
+                eprintln!("[update] {} is out", m.version);
+                s.state = State::Available(m);
             }
-        });
+            Ok(_) => {
+                if matches!(s.state, State::Failed(..) | State::Available(_)) {
+                    s.state = State::Idle;
+                }
+            }
+            Err(e) => eprintln!("[update] check failed: {e}"),
+        }
+    });
 }
 
 /// `body`: how long the whole body may take, so a stalled connection ends
 /// in a failure (and the banner's Download) instead of a frozen bar.
 fn agent(body: Duration) -> ureq::Agent {
-    ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .timeout_connect(Some(Duration::from_secs(20)))
-            .timeout_recv_response(Some(Duration::from_secs(30)))
-            .timeout_recv_body(Some(body))
-            .http_status_as_error(false)
-            .build(),
-    )
+    ureq::Agent::new_with_config(ureq::Agent::config_builder().timeout_connect(Some(Duration::from_secs(20))).timeout_recv_response(Some(Duration::from_secs(30))).timeout_recv_body(Some(body)).http_status_as_error(false).build())
 }
 
 /// `file://` URLs are for local tests only (`CMDMEOW_UPDATE_URL` set).
@@ -163,19 +141,12 @@ fn fetch_manifest(url: &str) -> Result<Manifest, String> {
         let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         return serde_json::from_str(&text).map_err(|e| e.to_string());
     }
-    let resp = agent(Duration::from_secs(30))
-        .get(url)
-        .header("User-Agent", "Cmd+Meow")
-        .call()
-        .map_err(|e| e.to_string())?;
+    let resp = agent(Duration::from_secs(30)).get(url).header("User-Agent", "Cmd+Meow").call().map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
     if status != 200 {
         return Err(format!("manifest answered {status}"));
     }
-    let text = resp
-        .into_body()
-        .read_to_string()
-        .map_err(|e| e.to_string())?;
+    let text = resp.into_body().read_to_string().map_err(|e| e.to_string())?;
     serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
@@ -188,12 +159,7 @@ fn parse(v: &str) -> Option<(u64, u64, u64, bool)> {
         None => (v, false),
     };
     let mut it = core.split('.').map(|n| n.parse::<u64>().ok());
-    let t = (
-        it.next()??,
-        it.next().flatten().unwrap_or(0),
-        it.next().flatten().unwrap_or(0),
-        !pre,
-    );
+    let t = (it.next()??, it.next().flatten().unwrap_or(0), it.next().flatten().unwrap_or(0), !pre);
     Some(t)
 }
 
@@ -208,9 +174,7 @@ pub fn is_newer(remote: &str, current: &str) -> bool {
 pub fn install() {
     let m = {
         let mut s = SHARED.lock_ok();
-        let State::Available(m) = s.state.clone() else {
-            return;
-        };
+        let State::Available(m) = s.state.clone() else { return };
         if s.busy {
             return;
         }
@@ -218,30 +182,26 @@ pub fn install() {
         s.state = State::Downloading(m.version.clone(), 0.0);
         m
     };
-    let _ = std::thread::Builder::new()
-        .name("update-install".into())
-        .spawn(move || {
-            let r = run_install(&m);
-            let mut s = SHARED.lock_ok();
-            s.busy = false;
-            match r {
-                Ok(true) => s.state = State::Restarting,
-                // in place, but no relaunch: the next launch is the new version
-                Ok(false) => s.state = State::Idle,
-                Err(e) => {
-                    eprintln!("[update] {} failed: {e}", m.version);
-                    s.state = State::Failed(m.version.clone(), e);
-                }
+    let _ = std::thread::Builder::new().name("update-install".into()).spawn(move || {
+        let r = run_install(&m);
+        let mut s = SHARED.lock_ok();
+        s.busy = false;
+        match r {
+            Ok(true) => s.state = State::Restarting,
+            // in place, but no relaunch: the next launch is the new version
+            Ok(false) => s.state = State::Idle,
+            Err(e) => {
+                eprintln!("[update] {} failed: {e}", m.version);
+                s.state = State::Failed(m.version.clone(), e);
             }
-        });
+        }
+    });
 }
 
 /// The running app's bundle, from the executable's path.
 fn current_bundle() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-    exe.ancestors()
-        .find(|a| a.extension().is_some_and(|e| e == "app"))
-        .map(Path::to_path_buf)
+    exe.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf)
 }
 
 /// Ok(true): in place and relaunching; Ok(false): in place, relaunch failed.
@@ -259,16 +219,8 @@ fn run_install(m: &Manifest) -> Result<bool, String> {
         download(m, &zip)?;
         set(State::Installing(m.version.clone()));
         let out = staging.join("x");
-        run(
-            "/usr/bin/ditto",
-            &["-x", "-k", path_str(&zip)?, path_str(&out)?],
-        )?;
-        let new_app = std::fs::read_dir(&out)
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .map(|e| e.path())
-            .find(|p| p.extension().is_some_and(|e| e == "app"))
-            .ok_or("no app in the zip")?;
+        run("/usr/bin/ditto", &["-x", "-k", path_str(&zip)?, path_str(&out)?])?;
+        let new_app = std::fs::read_dir(&out).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|e| e == "app")).ok_or("no app in the zip")?;
         verify(&new_app, &bundle, &m.version)?;
         swap(&bundle, &new_app, dir)
     })();
@@ -293,13 +245,7 @@ fn path_str(p: &Path) -> Result<&str, String> {
 }
 
 fn old_name(bundle: &Path) -> String {
-    format!(
-        ".{}.old",
-        bundle
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    )
+    format!(".{}.old", bundle.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
 }
 
 /// Fetch the zip to `to`, hashing as it comes, and compare with the manifest.
@@ -312,10 +258,7 @@ fn download(m: &Manifest, to: &Path) -> Result<(), String> {
         file.write_all(chunk).map_err(|e| e.to_string())?;
         done += chunk.len() as u64;
         if total > 0 {
-            set(State::Downloading(
-                m.version.clone(),
-                (done as f32 / total as f32).min(1.0),
-            ));
+            set(State::Downloading(m.version.clone(), (done as f32 / total as f32).min(1.0)));
         }
         Ok(())
     };
@@ -326,20 +269,12 @@ fn download(m: &Manifest, to: &Path) -> Result<(), String> {
         if !m.url.starts_with("https://") {
             return Err("update URL isn't https".into());
         }
-        let resp = agent(Duration::from_secs(20 * 60))
-            .get(&m.url)
-            .header("User-Agent", "Cmd+Meow")
-            .call()
-            .map_err(|e| format!("couldn't reach the download: {e}"))?;
+        let resp = agent(Duration::from_secs(20 * 60)).get(&m.url).header("User-Agent", "Cmd+Meow").call().map_err(|e| format!("couldn't reach the download: {e}"))?;
         let status = resp.status().as_u16();
         if status != 200 {
             return Err(format!("the download answered {status}"));
         }
-        let header_len = resp
-            .headers()
-            .get("content-length")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok());
+        let header_len = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
         let len = header_len.unwrap_or(m.size);
         // never more than promised (plus slack), so a bad server can't fill the disk
         let cap = m.size.max(header_len.unwrap_or(0)).max(1 << 20) + (1 << 20);
@@ -348,9 +283,7 @@ fn download(m: &Manifest, to: &Path) -> Result<(), String> {
         let mut reader = body.as_reader();
         let mut buf = vec![0u8; 1 << 16];
         loop {
-            let n = reader
-                .read(&mut buf)
-                .map_err(|e| format!("the download broke off: {e}"))?;
+            let n = reader.read(&mut buf).map_err(|e| format!("the download broke off: {e}"))?;
             if n == 0 {
                 break;
             }
@@ -374,15 +307,8 @@ fn hex(b: &[u8]) -> String {
 }
 
 fn run(cmd: &str, args: &[&str]) -> Result<String, String> {
-    let o = Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| format!("{cmd}: {e}"))?;
-    let all = format!(
-        "{}{}",
-        String::from_utf8_lossy(&o.stdout),
-        String::from_utf8_lossy(&o.stderr)
-    );
+    let o = Command::new(cmd).args(args).output().map_err(|e| format!("{cmd}: {e}"))?;
+    let all = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     if o.status.success() {
         Ok(all)
     } else {
@@ -397,30 +323,18 @@ fn team_id(app: &Path) -> Option<String> {
 }
 
 fn parse_team(codesign_out: &str) -> Option<String> {
-    codesign_out
-        .lines()
-        .find_map(|l| l.strip_prefix("TeamIdentifier="))
-        .map(str::trim)
-        .filter(|t| !t.is_empty() && *t != "not set")
-        .map(str::to_owned)
+    codesign_out.lines().find_map(|l| l.strip_prefix("TeamIdentifier=")).map(str::trim).filter(|t| !t.is_empty() && *t != "not set").map(str::to_owned)
 }
 
 fn info(app: &Path, key: &str) -> Option<String> {
-    super::plist::read(&app.join("Contents/Info.plist"))?
-        .get(key)?
-        .str()
-        .map(str::to_owned)
+    super::plist::read(&app.join("Contents/Info.plist"))?.get(key)?.str().map(str::to_owned)
 }
 
 /// The new app must be validly signed by the same team as the running one,
 /// be the same app, and be the version the manifest promised.
 fn verify(new_app: &Path, current: &Path, version: &str) -> Result<(), String> {
-    run(
-        "/usr/bin/codesign",
-        &["--verify", "--deep", "--strict", path_str(new_app)?],
-    )?;
-    let mine =
-        team_id(current).ok_or("this copy isn't signed by a team, so updates can't be checked")?;
+    run("/usr/bin/codesign", &["--verify", "--deep", "--strict", path_str(new_app)?])?;
+    let mine = team_id(current).ok_or("this copy isn't signed by a team, so updates can't be checked")?;
     let theirs = team_id(new_app).ok_or("the download isn't signed")?;
     if mine != theirs {
         return Err(format!("signed by another team ({theirs})"));
@@ -511,8 +425,7 @@ mod tests {
         let m: Manifest = serde_json::from_str(r#"{"version":"0.1.2","url":"https://x/CmdMeow.zip","sha256":"ab","size":12,"notes":"x"}"#).unwrap();
         assert_eq!(m.version, "0.1.2");
         assert_eq!(m.size, 12);
-        let m: Manifest =
-            serde_json::from_str(r#"{"version":"0.1.2","url":"u","sha256":"ab"}"#).unwrap();
+        let m: Manifest = serde_json::from_str(r#"{"version":"0.1.2","url":"u","sha256":"ab"}"#).unwrap();
         assert_eq!(m.size, 0);
     }
 
@@ -530,20 +443,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let src = dir.join("src.zip");
         std::fs::write(&src, b"hello").unwrap();
-        let good = Manifest {
-            version: "9.9.9".into(),
-            url: format!("file://{}", src.display()),
-            sha256: "2CF24DBA5FB0A30E26E83B2AC5B9E29E1B161E5C1FA7425E73043362938B9824".into(),
-            size: 5,
-        };
+        let good = Manifest { version: "9.9.9".into(), url: format!("file://{}", src.display()), sha256: "2CF24DBA5FB0A30E26E83B2AC5B9E29E1B161E5C1FA7425E73043362938B9824".into(), size: 5 };
         assert!(download(&good, &dir.join("a.zip")).is_ok());
-        let bad = Manifest {
-            sha256: "00".into(),
-            ..good
-        };
-        assert!(download(&bad, &dir.join("b.zip"))
-            .unwrap_err()
-            .contains("checksum"));
+        let bad = Manifest { sha256: "00".into(), ..good };
+        assert!(download(&bad, &dir.join("b.zip")).unwrap_err().contains("checksum"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

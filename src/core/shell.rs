@@ -120,17 +120,8 @@ impl App {
         let ctx = cc.egui_ctx.clone();
         let demo = opts.screenshot.is_some();
         // screenshots stay silent; otherwise sounds are on until switched off
-        crate::kit::sound::set_on(
-            !demo
-                && cc
-                    .storage
-                    .and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY))
-                    .unwrap_or(true),
-        );
-        let tools = crate::tools::all(&ToolEnv {
-            ctx: ctx.clone(),
-            demo,
-        });
+        crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
+        let tools = crate::tools::all(&ToolEnv { ctx: ctx.clone(), demo });
 
         // the menu bar icon
         let (tx, tray_rx): (Sender<tray_icon::TrayIconEvent>, _) = std::sync::mpsc::channel();
@@ -152,19 +143,8 @@ impl App {
         };
 
         // screenshots always use the default widgets
-        let prefs: WidgetPrefs = if demo {
-            None
-        } else {
-            cc.storage
-                .and_then(|s| eframe::get_value(s, super::settings::STORAGE_KEY))
-        }
-        .unwrap_or_default();
-        let stored_off: Option<Vec<String>> = if demo {
-            None
-        } else {
-            cc.storage
-                .and_then(|s| eframe::get_value(s, super::settings::TOOLS_KEY))
-        };
+        let prefs: WidgetPrefs = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::STORAGE_KEY)) }.unwrap_or_default();
+        let stored_off: Option<Vec<String>> = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::TOOLS_KEY)) };
         // a fresh install shows setup and starts with a few tools off
         let first_run = !demo && !super::onboard::done_marker().exists();
         let tools_off: Vec<String> = match stored_off {
@@ -176,11 +156,7 @@ impl App {
         // a later grant after a restart)
         let _ = crate::kit::perms::screen_at_launch();
         // the window opens on the sidebar's first page (Clean section first)
-        let page = tools
-            .iter()
-            .position(|t| t.has_page() && t.section() == "Clean")
-            .or_else(|| tools.iter().position(|t| t.has_page()))
-            .unwrap_or(0);
+        let page = tools.iter().position(|t| t.has_page() && t.section() == "Clean").or_else(|| tools.iter().position(|t| t.has_page())).unwrap_or(0);
         let mut app = App {
             tools,
             mode: Mode::Panel,
@@ -221,8 +197,7 @@ impl App {
             // (or after setup's "Open panel" restart), never by itself
             start_hidden: !demo && !crate::kit::perms::launched_to_panel(),
             hold_panel: None,
-            links: (!demo)
-                .then(|| crate::kit::url_scheme::Inbox::new("open", Some(ctx.clone()), open_link)),
+            links: (!demo).then(|| crate::kit::url_scheme::Inbox::new("open", Some(ctx.clone()), open_link)),
             update_banner: false,
         };
         app.widgets = prefs.resolve(&app.available_widgets());
@@ -263,12 +238,7 @@ impl App {
             }
         }
         // the registry's preferred order first, the rest as the tools list them
-        let rank = |k: &str| {
-            crate::tools::DEFAULT_WIDGET_ORDER
-                .iter()
-                .position(|o| *o == k)
-                .unwrap_or(usize::MAX)
-        };
+        let rank = |k: &str| crate::tools::DEFAULT_WIDGET_ORDER.iter().position(|o| *o == k).unwrap_or(usize::MAX);
         v.sort_by_key(|(k, _, _)| rank(k));
         v
     }
@@ -283,17 +253,9 @@ impl App {
 
     pub fn save_widgets(&self, storage: &mut dyn eframe::Storage) {
         if !self.demo {
-            eframe::set_value(
-                storage,
-                super::settings::STORAGE_KEY,
-                &WidgetPrefs::from_entries(&self.widgets),
-            );
+            eframe::set_value(storage, super::settings::STORAGE_KEY, &WidgetPrefs::from_entries(&self.widgets));
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
-            eframe::set_value(
-                storage,
-                crate::kit::sound::STORAGE_KEY,
-                &crate::kit::sound::on(),
-            );
+            eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
         }
     }
 
@@ -304,9 +266,7 @@ impl App {
 
     /// Whether the user left tool `i` on.
     pub fn tool_on(&self, i: usize) -> bool {
-        self.tools
-            .get(i)
-            .is_some_and(|t| !self.tools_off.iter().any(|id| id == t.id()))
+        self.tools.get(i).is_some_and(|t| !self.tools_off.iter().any(|id| id == t.id()))
     }
 
     pub fn set_tool_on(&mut self, i: usize, on: bool) {
@@ -335,21 +295,7 @@ impl App {
         // and Accessibility missing
         if let Some(rest) = view.strip_prefix("locked-") {
             use crate::kit::perms::{Perm, Status};
-            self.perm_watch.demo = Some(
-                Perm::SYSTEM
-                    .into_iter()
-                    .map(|p| {
-                        (
-                            p,
-                            if matches!(p, Perm::Screen | Perm::FullDisk | Perm::Accessibility) {
-                                Status::NotAsked
-                            } else {
-                                Status::Allowed
-                            },
-                        )
-                    })
-                    .collect(),
-            );
+            self.perm_watch.demo = Some(Perm::SYSTEM.into_iter().map(|p| (p, if matches!(p, Perm::Screen | Perm::FullDisk | Perm::Accessibility) { Status::NotAsked } else { Status::Allowed })).collect());
             return self.apply_view(rest);
         }
         match view {
@@ -368,10 +314,7 @@ impl App {
             }
             // one widget alone at one size: "widget-system/devices@4:4"
             v if v.starts_with("widget-") => {
-                if let Some((key, z)) = v["widget-".len()..]
-                    .split_once('@')
-                    .and_then(|(k, z)| Size::parse(z).map(|z| (k.to_string(), z)))
-                {
+                if let Some((key, z)) = v["widget-".len()..].split_once('@').and_then(|(k, z)| Size::parse(z).map(|z| (k.to_string(), z))) {
                     for e in &mut self.widgets {
                         e.on = false;
                     }
@@ -385,25 +328,9 @@ impl App {
                     t.demo_view("sizes");
                 }
                 let show: &[(&str, Size)] = if view == "sizes" {
-                    &[
-                        ("cleanup/clean", Size::S11),
-                        ("system/cpu", Size::S11),
-                        ("system/memory", Size::S12),
-                        ("fan/fans", Size::S14),
-                        ("capture/capture", Size::S14),
-                        ("keep_awake/card", Size::S24),
-                        ("clipboard/recent", Size::S24),
-                    ]
+                    &[("cleanup/clean", Size::S11), ("system/cpu", Size::S11), ("system/memory", Size::S12), ("fan/fans", Size::S14), ("capture/capture", Size::S14), ("keep_awake/card", Size::S24), ("clipboard/recent", Size::S24)]
                 } else {
-                    &[
-                        ("system/health", Size::S24),
-                        ("lens/map", Size::S24),
-                        ("claude/limits", Size::S24),
-                        ("system/storage", Size::S11),
-                        ("system/memory", Size::S11),
-                        ("system/battery", Size::S12),
-                        ("fan/fans", Size::S44),
-                    ]
+                    &[("system/health", Size::S24), ("lens/map", Size::S24), ("claude/limits", Size::S24), ("system/storage", Size::S11), ("system/memory", Size::S11), ("system/battery", Size::S12), ("fan/fans", Size::S44)]
                 };
                 for e in &mut self.widgets {
                     e.on = false;
@@ -421,68 +348,28 @@ impl App {
                 for e in &mut self.widgets {
                     e.on = false;
                 }
-                let keys: Vec<String> = self
-                    .tools
-                    .iter()
-                    .flat_map(|t| {
-                        t.widgets()
-                            .into_iter()
-                            .filter(|w| w.sizes.contains(&Size::S14))
-                            .map(|w| super::settings::widget_key(t.id(), w.id))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
+                let keys: Vec<String> = self.tools.iter().flat_map(|t| t.widgets().into_iter().filter(|w| w.sizes.contains(&Size::S14)).map(|w| super::settings::widget_key(t.id(), w.id)).collect::<Vec<_>>()).collect();
                 for k in keys {
                     super::settings::add_entry(&mut self.widgets, &k, Size::S14, None);
                 }
                 return;
             }
             // first-run setup, one step each
-            "setup"
-            | "setup-tools"
-            | "setup-tools-all"
-            | "setup-tools-preview"
-            | "setup-ai"
-            | "setup-signins"
-            | "setup-models"
-            | "setup-perms"
-            | "setup-crash"
-            | "setup-ready" => {
+            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
                 use crate::kit::perms::{Perm, Status};
-                self.perm_watch.demo = Some(
-                    [
-                        (Perm::Screen, Status::Allowed),
-                        (Perm::Accessibility, Status::Allowed),
-                        (Perm::FullDisk, Status::NotAsked),
-                        (Perm::SystemEvents, Status::Denied),
-                        (Perm::Microphone, Status::Allowed),
-                    ]
-                    .into_iter()
-                    .collect(),
-                );
+                self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
                 // a few goals picked ("setup-tools" shows none, as a fresh install);
                 // the full list with a few more
                 use crate::tools::*;
-                let picked = [
-                    cleanup::ID,
-                    lens::ID,
-                    uninstaller::ID,
-                    clipboard::ID,
-                    capture::ID,
-                    capture::VIDEO_ID,
-                    capture::SHARING_ID,
-                ];
+                let picked = [cleanup::ID, lens::ID, uninstaller::ID, clipboard::ID, capture::ID, capture::VIDEO_ID, capture::SHARING_ID];
                 let all = view == "setup-tools-all";
                 let more = [dictation::ID, system::ID];
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
                     // AI Usage on: the Sign-ins step (3a) shows
-                    let on = (view != "setup-tools" && picked.contains(&id))
-                        || (all && more.contains(&id))
-                        || (view == "setup-models" && id == dictation::ID)
-                        || (view == "setup-signins" && id == claude::ID);
+                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id)) || (view == "setup-models" && id == dictation::ID) || (view == "setup-signins" && id == claude::ID);
                     self.set_tool_on(i, on);
                 }
                 // which steps exist depends on the tools just switched on
@@ -499,8 +386,7 @@ impl App {
                 self.mode = Mode::FdaHelp;
                 return;
             }
-            "customize" | "settings-tools" | "settings-general" | "settings-ai"
-            | "settings-ai-check" => {
+            "customize" | "settings-tools" | "settings-general" | "settings-ai" | "settings-ai-check" => {
                 self.mode = Mode::Window;
                 self.settings_open = true;
                 self.settings_tab = match view {
@@ -536,18 +422,12 @@ impl App {
     }
 
     pub fn page_tools(&self) -> Vec<usize> {
-        (0..self.tools.len())
-            .filter(|&i| self.tools[i].has_page() && self.tool_on(i))
-            .collect()
+        (0..self.tools.len()).filter(|&i| self.tools[i].has_page() && self.tool_on(i)).collect()
     }
 
     /// A fresh per-frame context for tools.
     pub fn cx(&self) -> Cx {
-        Cx::new(
-            self.detail
-                .as_ref()
-                .map(|(i, d)| (self.tools[*i].id().to_string(), d.clone())),
-        )
+        Cx::new(self.detail.as_ref().map(|(i, d)| (self.tools[*i].id().to_string(), d.clone())))
     }
 
     /// Carry out what tools asked for this frame.
@@ -561,18 +441,10 @@ impl App {
                         self.open_window(ctx, i);
                     }
                 }
-                Action::ShowDetail {
-                    tool,
-                    detail,
-                    toggle,
-                } => {
+                Action::ShowDetail { tool, detail, toggle } => {
                     if let Some(i) = self.tool_index(&tool) {
                         let same = self.detail.as_ref() == Some(&(i, detail.clone()));
-                        self.detail = if same && toggle {
-                            None
-                        } else {
-                            Some((i, detail))
-                        };
+                        self.detail = if same && toggle { None } else { Some((i, detail)) };
                         self.reshape(ctx);
                     }
                 }
@@ -608,52 +480,26 @@ impl App {
     }
 
     pub fn max_panel_height(&self, ctx: &egui::Context) -> f32 {
-        let screen = ctx
-            .input(|i| i.viewport().monitor_size)
-            .unwrap_or(Vec2::new(1512.0, 982.0));
+        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
         (screen.y - 40.0).max(400.0)
     }
 
     pub fn window_size(&self, ctx: &egui::Context) -> Vec2 {
         match self.mode {
             Mode::Panel => {
-                let w = m::PANEL_WIDTH
-                    + if self.sheet_open() {
-                        m::DETAIL_WIDTH + 12.0
-                    } else {
-                        0.0
-                    };
+                let w = m::PANEL_WIDTH + if self.sheet_open() { m::DETAIL_WIDTH + 12.0 } else { 0.0 };
                 Vec2::new(w, self.panel_height().min(self.max_panel_height(ctx)))
             }
             // screenshots: CMDMEOW_SHOT_W=<pt> (or "min") checks narrow windows
-            Mode::Window => match std::env::var("CMDMEOW_SHOT_W")
-                .ok()
-                .filter(|_| self.screenshot.is_some())
-            {
-                Some(w) => Vec2::new(
-                    if w == "min" {
-                        Self::min_app_width()
-                    } else {
-                        w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width())
-                    },
-                    m::APP_HEIGHT,
-                ),
+            Mode::Window => match std::env::var("CMDMEOW_SHOT_W").ok().filter(|_| self.screenshot.is_some()) {
+                Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, m::APP_HEIGHT),
                 None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
             },
             // setup shows in the app window: screenshots at its size
             // (CMDMEOW_SHOT_W / CMDMEOW_SHOT_H=<pt> check other window sizes)
             Mode::Setup => {
-                let pt = |k: &str, d: f32| {
-                    std::env::var(k)
-                        .ok()
-                        .filter(|_| self.screenshot.is_some())
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(d)
-                };
-                Vec2::new(
-                    pt("CMDMEOW_SHOT_W", m::APP_WIDTH),
-                    pt("CMDMEOW_SHOT_H", m::APP_HEIGHT),
-                )
+                let pt = |k: &str, d: f32| std::env::var(k).ok().filter(|_| self.screenshot.is_some()).and_then(|v| v.parse().ok()).unwrap_or(d);
+                Vec2::new(pt("CMDMEOW_SHOT_W", m::APP_WIDTH), pt("CMDMEOW_SHOT_H", m::APP_HEIGHT))
             }
             Mode::FdaHelp => Vec2::new(360.0, 132.0),
         }
@@ -662,12 +508,8 @@ impl App {
     /// Where the panel's top-left corner goes: under the menu bar icon,
     /// kept on screen.
     fn panel_pos(&self, ctx: &egui::Context, size: Vec2) -> Pos2 {
-        let screen = ctx
-            .input(|i| i.viewport().monitor_size)
-            .unwrap_or(Vec2::new(1512.0, 982.0));
-        let anchor = self
-            .anchor
-            .unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
+        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
+        let anchor = self.anchor.unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
         let right = (anchor.x + m::PANEL_WIDTH / 2.0).clamp(m::PANEL_WIDTH, screen.x - 8.0);
         Pos2::new((right - size.x).max(8.0), anchor.y + 6.0)
     }
@@ -676,16 +518,10 @@ impl App {
     /// then, as it shows or the theme switches): put it back. Checked every
     /// pass the panel is on screen; it's an input read and a compare.
     fn keep_panel_in_place(&mut self, ctx: &egui::Context) {
-        if self.mode != Mode::Panel
-            || !self.visible
-            || self.screenshot.is_some()
-            || self.pending_shape
-        {
+        if self.mode != Mode::Panel || !self.visible || self.screenshot.is_some() || self.pending_shape {
             return;
         }
-        let Some(at) = ctx.input(|i| i.viewport().outer_rect) else {
-            return;
-        };
+        let Some(at) = ctx.input(|i| i.viewport().outer_rect) else { return };
         let want = self.panel_pos(ctx, self.window_size(ctx));
         // only a drop straight down: a panel macOS placed elsewhere on
         // purpose (another display) is left where it is
@@ -702,15 +538,11 @@ impl App {
         if self.anchor.is_some() || self.mode != Mode::Panel || !self.visible {
             return;
         }
-        let Some(rect) = self.tray.as_ref().and_then(|t| t.rect()) else {
-            return;
-        };
+        let Some(rect) = self.tray.as_ref().and_then(|t| t.rect()) else { return };
         if rect.size.width == 0 || rect.size.height == 0 {
             return;
         }
-        let ppp = ctx
-            .input(|i| i.viewport().native_pixels_per_point)
-            .unwrap_or(2.0);
+        let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
         let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
         let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
         // right after launch the icon isn't in the menu bar yet (it sits
@@ -730,37 +562,20 @@ impl App {
         if self.screenshot.is_some() {
             return;
         }
-        let screen = ctx
-            .input(|i| i.viewport().monitor_size)
-            .unwrap_or(Vec2::new(1512.0, 982.0));
+        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
         match self.mode {
             Mode::Panel => {
-                ctx.send_viewport_cmd_to(
-                    egui::ViewportId::ROOT,
-                    ViewportCommand::OuterPosition(self.panel_pos(ctx, size)),
-                );
-                ctx.send_viewport_cmd_to(
-                    egui::ViewportId::ROOT,
-                    ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop),
-                );
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(self.panel_pos(ctx, size)));
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
                 // the app window may still be open (or minimized) behind the
                 // panel: it keeps its Dock icon. Dropping it made macOS pull
                 // a minimized window back up, and an open one look quit
                 crate::kit::native::set_dock_icon(self.app_open || self.setup.is_some());
             }
             Mode::Window | Mode::Setup | Mode::FdaHelp => {
-                let pos = Pos2::new(
-                    ((screen.x - size.x) / 2.0).max(0.0),
-                    ((screen.y - size.y) / 2.0).max(30.0),
-                );
-                ctx.send_viewport_cmd_to(
-                    egui::ViewportId::ROOT,
-                    ViewportCommand::OuterPosition(pos),
-                );
-                ctx.send_viewport_cmd_to(
-                    egui::ViewportId::ROOT,
-                    ViewportCommand::WindowLevel(egui::WindowLevel::Normal),
-                );
+                let pos = Pos2::new(((screen.x - size.x) / 2.0).max(0.0), ((screen.y - size.y) / 2.0).max(30.0));
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::OuterPosition(pos));
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::WindowLevel(egui::WindowLevel::Normal));
                 crate::kit::native::set_dock_icon(true);
             }
         }
@@ -806,16 +621,8 @@ impl App {
 
     fn handle_tray(&mut self, ctx: &egui::Context) {
         while let Ok(ev) = self.tray_rx.try_recv() {
-            if let tray_icon::TrayIconEvent::Click {
-                rect,
-                button: tray_icon::MouseButton::Left,
-                button_state: tray_icon::MouseButtonState::Up,
-                ..
-            } = ev
-            {
-                let ppp = ctx
-                    .input(|i| i.viewport().native_pixels_per_point)
-                    .unwrap_or(2.0);
+            if let tray_icon::TrayIconEvent::Click { rect, button: tray_icon::MouseButton::Left, button_state: tray_icon::MouseButtonState::Up, .. } = ev {
+                let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
                 let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
                 let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
                 self.anchor = Some(Pos2::new(cx, bottom));
@@ -838,12 +645,7 @@ impl App {
         let title = if self.setup.is_some() || !super::onboard::is_done() {
             "Finish setup".to_string()
         } else {
-            self.tools
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| self.tool_on(*i))
-                .find_map(|(_, t)| t.tray_title())
-                .unwrap_or_default()
+            self.tools.iter().enumerate().filter(|(i, _)| self.tool_on(*i)).find_map(|(_, t)| t.tray_title()).unwrap_or_default()
         };
         if title != self.tray_title {
             // tray-icon's set_title(None) leaves the old text on macOS (the
@@ -889,8 +691,7 @@ impl App {
                 }
                 continue;
             }
-            let found = (0..self.tools.len())
-                .find(|&i| link_matches(self.tools[i].id(), self.tools[i].name(), &tool));
+            let found = (0..self.tools.len()).find(|&i| link_matches(self.tools[i].id(), self.tools[i].name(), &tool));
             match found.filter(|&i| self.tool_on(i) && self.tools[i].has_page()) {
                 Some(i) => {
                     let t = &mut self.tools[i];
@@ -932,11 +733,7 @@ impl eframe::App for App {
             if let Some(t) = self.tools.iter_mut().find(|t| t.id() == id) {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| t.set_on(false)));
             }
-            if self
-                .detail
-                .as_ref()
-                .is_some_and(|(d, _)| self.tools.get(*d).is_some_and(|t| t.id() == id))
-            {
+            if self.detail.as_ref().is_some_and(|(d, _)| self.tools.get(*d).is_some_and(|t| t.id() == id)) {
                 self.detail = None;
             }
         }
@@ -944,12 +741,8 @@ impl eframe::App for App {
         // it's on screen eframe runs that pass for it anyway. Asking again
         // every pass was a loop: each ask is itself a repaint request, so a
         // still window drew 10 times a second
-        let app_drawing = self
-            .app_drawn
-            .is_some_and(|t| t.elapsed().as_millis() < 1500);
-        if ((self.app_open || self.setup.is_some()) && !app_drawing || tools_need_frames)
-            && !self.visible
-        {
+        let app_drawing = self.app_drawn.is_some_and(|t| t.elapsed().as_millis() < 1500);
+        if ((self.app_open || self.setup.is_some()) && !app_drawing || tools_need_frames) && !self.visible {
             ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
         }
         // background work slows down and stops asking for frames while
@@ -985,10 +778,7 @@ impl eframe::App for App {
         }
         self.keep_panel_in_place(ctx);
         // closing the window keeps the app in the menu bar
-        if ctx.input(|i| i.viewport().close_requested())
-            && self.screenshot.is_none()
-            && !QUIT.load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if ctx.input(|i| i.viewport().close_requested()) && self.screenshot.is_none() && !QUIT.load(std::sync::atomic::Ordering::SeqCst) {
             ctx.send_viewport_cmd(ViewportCommand::CancelClose);
             self.hide(ctx);
         }
@@ -1005,13 +795,7 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if self.hold_panel.is_none()
-            && self.mode == Mode::Panel
-            && self.visible
-            && self.had_focus
-            && focused == Some(false)
-            && self.screenshot.is_none()
-        {
+        if self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
             self.hide(ctx);
         }
     }
@@ -1041,10 +825,7 @@ impl eframe::App for App {
         let since = self.theme_checked.map(|t| t.elapsed());
         // the system just said it switched (or we did): look every pass for
         // a moment, as the app's own appearance may follow a beat later
-        let noted = THEME_NOTED.with(|n| {
-            n.get()
-                .is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1500))
-        });
+        let noted = THEME_NOTED.with(|n| n.get().is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(1500)));
         if noted {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
@@ -1053,11 +834,7 @@ impl eframe::App for App {
         } else {
             self.theme_checked = Some(Instant::now());
             sync_theme(&ctx, self.screenshot.is_none());
-            let r = if self.mode == Mode::Panel {
-                m::CARD_RADIUS as f64 + 6.0
-            } else {
-                16.0
-            };
+            let r = if self.mode == Mode::Panel { m::CARD_RADIUS as f64 + 6.0 } else { 16.0 };
             if self.screenshot.is_none() {
                 crate::kit::native::apply_glass(r);
             }
@@ -1071,69 +848,36 @@ impl eframe::App for App {
             }
             if self.frame == 150 {
                 let out = std::path::Path::new(&dir).join("panel.png");
-                let ok = std::process::Command::new("/usr/sbin/screencapture")
-                    .arg("-x")
-                    .arg(&out)
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
-                eprintln!(
-                    "[self-shot] {} {}",
-                    out.display(),
-                    if ok { "saved" } else { "failed" }
-                );
+                let ok = std::process::Command::new("/usr/sbin/screencapture").arg("-x").arg(&out).status().map(|s| s.success()).unwrap_or(false);
+                eprintln!("[self-shot] {} {}", out.display(), if ok { "saved" } else { "failed" });
             }
             ctx.request_repaint();
         }
         if env_once("CMDMEOW_SCALE_LOG").is_some() {
             // the scale egui renders at, logged when it changes (the panel
             // shown on another display)
-            let scale = (
-                ctx.pixels_per_point(),
-                ctx.input(|i| i.viewport().native_pixels_per_point),
-            );
+            let scale = (ctx.pixels_per_point(), ctx.input(|i| i.viewport().native_pixels_per_point));
             if self.debug_scale != Some(scale) {
                 self.debug_scale = Some(scale);
-                eprintln!(
-                    "[scale] ppp {} native {:?} frame {}\n{}",
-                    scale.0,
-                    scale.1,
-                    self.frame,
-                    crate::kit::native::debug_windows()
-                );
+                eprintln!("[scale] ppp {} native {:?} frame {}\n{}", scale.0, scale.1, self.frame, crate::kit::native::debug_windows());
             }
         }
         if env_once("CMDMEOW_DEBUG").is_some() {
             match self.frame {
-                30 => eprintln!(
-                    "== start screen {:?}\n{}",
-                    ui.max_rect(),
-                    crate::kit::native::debug_windows()
-                ),
-                120 => eprintln!(
-                    "== panel screen {:?}\n{}",
-                    ui.max_rect(),
-                    crate::kit::native::debug_windows()
-                ),
+                30 => eprintln!("== start screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
+                120 => eprintln!("== panel screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
                 150 => {
                     let p = self.page;
                     self.open_window(&ctx, p)
                 }
-                220 => eprintln!(
-                    "== app screen {:?}\n{}",
-                    ui.max_rect(),
-                    crate::kit::native::debug_windows()
-                ),
+                220 => eprintln!("== app screen {:?}\n{}", ui.max_rect(), crate::kit::native::debug_windows()),
                 _ => {}
             }
             ctx.request_repaint();
         }
         let full = ui.max_rect();
         // screenshots: wait until the window has its size for the chosen view
-        if self.screenshot.is_some()
-            && (full.size() - self.window_size(&ctx)).length() > 2.0
-            && self.frame < 60
-        {
+        if self.screenshot.is_some() && (full.size() - self.window_size(&ctx)).length() > 2.0 && self.frame < 60 {
             self.screenshot_step(&ctx);
             return;
         }
@@ -1148,23 +892,11 @@ impl eframe::App for App {
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
                 glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);
-                let panel = Rect::from_min_size(
-                    Pos2::new(full.right() - m::PANEL_WIDTH, full.top()),
-                    Vec2::new(m::PANEL_WIDTH, full.height()),
-                );
+                let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 if self.sheet_open() {
-                    let sheet = Rect::from_min_size(
-                        full.left_top(),
-                        Vec2::new(m::DETAIL_WIDTH, full.height()),
-                    );
+                    let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));
                     let x = panel.left() - 6.0;
-                    ui.painter().line_segment(
-                        [
-                            Pos2::new(x, full.top() + 18.0),
-                            Pos2::new(x, full.bottom() - 18.0),
-                        ],
-                        egui::Stroke::new(1.0, white(30)),
-                    );
+                    ui.painter().line_segment([Pos2::new(x, full.top() + 18.0), Pos2::new(x, full.bottom() - 18.0)], egui::Stroke::new(1.0, white(30)));
                     super::panel::detail(self, ui, sheet, &mut cx);
                 }
                 let before = self.widgets.clone();
@@ -1206,17 +938,9 @@ impl eframe::App for App {
             if at.elapsed().as_secs_f32() < 3.0 {
                 let p = ui.painter();
                 let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
-                let r = Rect::from_center_size(
-                    Pos2::new(full.center().x, full.bottom() - 40.0),
-                    g.size() + Vec2::new(28.0, 16.0),
-                );
+                let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), g.size() + Vec2::new(28.0, 16.0));
                 p.rect_filled(r, r.height() / 2.0, POPOVER());
-                p.rect_stroke(
-                    r,
-                    r.height() / 2.0,
-                    egui::Stroke::new(1.0, CARD_EDGE()),
-                    egui::StrokeKind::Inside,
-                );
+                p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, CARD_EDGE()), egui::StrokeKind::Inside);
                 p.galley(r.center() - g.size() / 2.0, g, TEXT());
                 ctx.request_repaint();
             } else {
@@ -1258,14 +982,12 @@ impl eframe::App for App {
 /// A debugging switch from the environment, read once: `getenv` locks, and
 /// the pass runs up to the display's rate.
 fn env_once(key: &'static str) -> Option<&'static std::ffi::OsStr> {
-    static VARS: std::sync::Mutex<Vec<(&'static str, Option<&'static std::ffi::OsStr>)>> =
-        std::sync::Mutex::new(Vec::new());
+    static VARS: std::sync::Mutex<Vec<(&'static str, Option<&'static std::ffi::OsStr>)>> = std::sync::Mutex::new(Vec::new());
     let mut v = VARS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((_, val)) = v.iter().find(|(k, _)| *k == key) {
         return *val;
     }
-    let val: Option<&'static std::ffi::OsStr> =
-        std::env::var_os(key).map(|s| &*Box::leak(s.into_boxed_os_str()));
+    let val: Option<&'static std::ffi::OsStr> = std::env::var_os(key).map(|s| &*Box::leak(s.into_boxed_os_str()));
     v.push((key, val));
     val
 }
@@ -1281,20 +1003,13 @@ static FIRST_FRAMES: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::
 pub fn first_frames_shown() -> bool {
     // the kick needs the window's size; without one, give up waiting after 1.5 s
     static SINCE: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    FIRST_FRAMES.load(std::sync::atomic::Ordering::Relaxed) >= 2
-        || SINCE
-            .get_or_init(std::time::Instant::now)
-            .elapsed()
-            .as_secs_f32()
-            > 1.5
+    FIRST_FRAMES.load(std::sync::atomic::Ordering::Relaxed) >= 2 || SINCE.get_or_init(std::time::Instant::now).elapsed().as_secs_f32() > 1.5
 }
 
 fn kick_first_frames(ctx: &egui::Context) {
     use std::sync::atomic::Ordering;
     let state = &FIRST_FRAMES;
-    let Some(r) = ctx.input(|i| i.viewport().inner_rect) else {
-        return;
-    };
+    let Some(r) = ctx.input(|i| i.viewport().inner_rect) else { return };
     let id = egui::Id::new("kick-first-frames");
     let now = ctx.input(|i| i.time);
     let first = ctx.data_mut(|d| *d.get_temp_mut_or_insert_with(id, || now));
@@ -1362,10 +1077,7 @@ impl App {
             let vctx = ui.ctx().clone();
             if let Some(at) = self.app_asked.take() {
                 if crate::kit::fs::is_dev() {
-                    eprintln!(
-                        "[timing] window first frame {} ms after the click",
-                        at.elapsed().as_millis()
-                    );
+                    eprintln!("[timing] window first frame {} ms after the click", at.elapsed().as_millis());
                 }
             }
             app_focused = vctx.input(|i| i.viewport().focused) == Some(true);
@@ -1465,17 +1177,13 @@ impl App {
     }
 
     fn screenshot_step(&mut self, ctx: &egui::Context) {
-        let Some(path) = self.screenshot.clone() else {
-            return;
-        };
+        let Some(path) = self.screenshot.clone() else { return };
         ctx.request_repaint();
         if self.frame == 120 {
-            ctx.send_viewport_cmd(ViewportCommand::Screenshot(egui::ScreenshotCallback::new(
-                move |img| {
-                    save_png(&img, &path);
-                    std::process::exit(0);
-                },
-            )));
+            ctx.send_viewport_cmd(ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img| {
+                save_png(&img, &path);
+                std::process::exit(0);
+            })));
         }
         if self.frame > 400 {
             eprintln!("screenshot was not delivered");
@@ -1494,11 +1202,7 @@ fn save_png(img: &egui::ColorImage, path: &std::path::Path) {
         let [r, g, b, a] = px.to_srgba_unmultiplied();
         let af = a as f32 / 255.0;
         let mix = |c: u8, k: u8| (c as f32 * af + k as f32 * (1.0 - af)).round() as u8;
-        buf.put_pixel(
-            (i % w) as u32,
-            (i / w) as u32,
-            image::Rgba([mix(r, bg[0]), mix(g, bg[1]), mix(b, bg[2]), 255]),
-        );
+        buf.put_pixel((i % w) as u32, (i / w) as u32, image::Rgba([mix(r, bg[0]), mix(g, bg[1]), mix(b, bg[2]), 255]));
     }
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
@@ -1552,16 +1256,8 @@ fn install_fonts(ctx: &egui::Context) {
     // read once and shared by every weight (and every theme switch, which
     // installs the fonts again): SF is one big variable font file, and a
     // copy per weight held it in memory three times
-    fn system_font(
-        path: &str,
-        cell: &'static std::sync::OnceLock<Option<egui::epaint::text::Blob>>,
-    ) -> Option<egui::epaint::text::Blob> {
-        cell.get_or_init(|| {
-            std::fs::read(path)
-                .ok()
-                .map(|b| Arc::new(b) as egui::epaint::text::Blob)
-        })
-        .clone()
+    fn system_font(path: &str, cell: &'static std::sync::OnceLock<Option<egui::epaint::text::Blob>>) -> Option<egui::epaint::text::Blob> {
+        cell.get_or_init(|| std::fs::read(path).ok().map(|b| Arc::new(b) as egui::epaint::text::Blob)).clone()
     }
     static SF: std::sync::OnceLock<Option<egui::epaint::text::Blob>> = std::sync::OnceLock::new();
     static MONO: std::sync::OnceLock<Option<egui::epaint::text::Blob>> = std::sync::OnceLock::new();
@@ -1573,11 +1269,7 @@ fn install_fonts(ctx: &egui::Context) {
         // light text on dark reads heavier than dark text on light, so light
         // mode sets every weight a step up
         let light = glass::is_light();
-        let (w_regular, w_bold, w_hero) = if light {
-            (510.0, 680.0, 520.0)
-        } else {
-            (430.0, 620.0, 330.0)
-        };
+        let (w_regular, w_bold, w_hero) = if light { (510.0, 680.0, 520.0) } else { (430.0, 620.0, 330.0) };
         let mut regular = FontData::from_blob(bytes.clone(), 0);
         regular.tweak.coords = VariationCoords::new([("wght", w_regular)]);
         let mut semibold = FontData::from_blob(bytes.clone(), 0);
@@ -1587,52 +1279,30 @@ fn install_fonts(ctx: &egui::Context) {
         fonts.font_data.insert("sf".into(), Arc::new(regular));
         fonts.font_data.insert("sf-bold".into(), Arc::new(semibold));
         fonts.font_data.insert("sf-hero".into(), Arc::new(hero));
-        fonts
-            .families
-            .get_mut(&FontFamily::Proportional)
-            .unwrap()
-            .insert(0, "sf".into());
+        fonts.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "sf".into());
         bold_family.push("sf-bold".to_string());
         hero_family.push("sf-hero".to_string());
     }
     if let Some(bytes) = mono {
-        fonts
-            .font_data
-            .insert("sf-mono".into(), Arc::new(FontData::from_blob(bytes, 0)));
-        fonts
-            .families
-            .get_mut(&FontFamily::Monospace)
-            .unwrap()
-            .insert(0, "sf-mono".into());
+        fonts.font_data.insert("sf-mono".into(), Arc::new(FontData::from_blob(bytes, 0)));
+        fonts.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "sf-mono".into());
     }
-    let mut fallback = fonts
-        .families
-        .get(&FontFamily::Proportional)
-        .cloned()
-        .unwrap_or_default();
+    let mut fallback = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     // without SF the hero family is the bold one
     if hero_family.is_empty() {
         hero_family = bold_family.clone();
     }
     hero_family.extend(fallback.iter().cloned());
     bold_family.append(&mut fallback);
-    fonts
-        .families
-        .insert(FontFamily::Name("bold".into()), bold_family);
-    fonts
-        .families
-        .insert(FontFamily::Name("hero".into()), hero_family);
+    fonts.families.insert(FontFamily::Name("bold".into()), bold_family);
+    fonts.families.insert(FontFamily::Name("hero".into()), hero_family);
     ctx.set_fonts(fonts);
     // one look for every window: egui otherwise picks its dark or light style
     // per window from that window's own appearance (ours are pinned, and
     // switch one by one), and the two styles render text differently. A
     // window on the other style made egui rebuild the shared glyph atlas
     // under the other, which then drew garbled text
-    let (theme, visuals) = if glass::is_light() {
-        (egui::Theme::Light, egui::Visuals::light())
-    } else {
-        (egui::Theme::Dark, egui::Visuals::dark())
-    };
+    let (theme, visuals) = if glass::is_light() { (egui::Theme::Light, egui::Visuals::light()) } else { (egui::Theme::Dark, egui::Visuals::dark()) };
     ctx.set_theme(theme);
     ctx.set_visuals_of(egui::Theme::Dark, visuals.clone());
     ctx.set_visuals_of(egui::Theme::Light, visuals);
@@ -1644,8 +1314,7 @@ fn install_fonts(ctx: &egui::Context) {
         s.spacing.scroll.bar_width = glass::sp::SCROLL_BAR_W;
         s.spacing.scroll.floating = true;
         s.spacing.scroll.floating_allocated_width = glass::sp::SCROLL_GUTTER;
-        s.spacing.scroll.bar_outer_margin =
-            (glass::sp::SCROLL_GUTTER - glass::sp::SCROLL_BAR_W) / 2.0;
+        s.spacing.scroll.bar_outer_margin = (glass::sp::SCROLL_GUTTER - glass::sp::SCROLL_BAR_W) / 2.0;
         s.visuals.widgets.noninteractive.fg_stroke.color = TEXT();
     });
 }
@@ -1657,10 +1326,7 @@ mod tests {
     #[test]
     fn open_links_name_a_tool_and_a_route() {
         assert_eq!(open_link("disk-map"), Some(("disk-map".into(), "".into())));
-        assert_eq!(
-            open_link("capture/history"),
-            Some(("capture".into(), "history".into()))
-        );
+        assert_eq!(open_link("capture/history"), Some(("capture".into(), "history".into())));
         assert_eq!(open_link(""), None);
     }
 

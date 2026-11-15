@@ -4,10 +4,7 @@
 use super::monitor::{SpeedMode, SpeedPhase, SpeedTest};
 use crate::kit::glass::*;
 use egui::epaint::{PathShape, PathStroke};
-use egui::{
-    Align2, Color32, CornerRadius, FontFamily, FontId, Id, Key, Order, Pos2, Rect, Sense, Stroke,
-    StrokeKind, Ui, Vec2,
-};
+use egui::{Align2, Color32, CornerRadius, FontFamily, FontId, Id, Key, Order, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::f32::consts::PI;
 
 fn id() -> Id {
@@ -90,17 +87,10 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
             ui.set_min_size(full.size());
             // the scrim swallows clicks; a click on it closes the modal
             let scrim = ui.interact(full, id().with("scrim"), Sense::click());
-            ui.painter().rect_filled(
-                full,
-                CornerRadius::same(WINDOW_R),
-                Color32::from_black_alpha((115.0 * ease) as u8),
-            );
+            ui.painter().rect_filled(full, CornerRadius::same(WINDOW_R), Color32::from_black_alpha((115.0 * ease) as u8));
             ui.multiply_opacity(ease);
             let h = PAD + 28.0 + sp::M + 2.0 * DIAL_R + sp::L + 56.0 + sp::L + 30.0 + PAD;
-            let m = Rect::from_center_size(
-                full.center() + Vec2::new(0.0, (1.0 - ease) * 18.0),
-                Vec2::new(W.min(full.width() - 32.0), h),
-            );
+            let m = Rect::from_center_size(full.center() + Vec2::new(0.0, (1.0 - ease) * 18.0), Vec2::new(W.min(full.width() - 32.0), h));
             let card = ui.interact(m, id().with("card"), Sense::click());
             card_bg(ui.painter(), m);
             let (rerun, closed) = content(ui, m, s);
@@ -117,12 +107,7 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
 }
 
 fn card_bg(p: &egui::Painter, m: Rect) {
-    let shadow = egui::epaint::Shadow {
-        offset: [0, 20],
-        blur: 60,
-        spread: 0,
-        color: Color32::from_black_alpha(128),
-    };
+    let shadow = egui::epaint::Shadow { offset: [0, 20], blur: 60, spread: 0, color: Color32::from_black_alpha(128) };
     p.add(shadow.as_shape(m, CornerRadius::same(16)));
     p.rect_filled(m, 16.0, POPOVER());
     p.rect_stroke(m, 16.0, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
@@ -148,20 +133,8 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
     let mut y = m.top() + PAD;
 
     // header
-    let tr = p.text(
-        Pos2::new(x0, y + 14.0),
-        Align2::LEFT_CENTER,
-        "Speed test",
-        ty::lead(),
-        TEXT(),
-    );
-    p.text(
-        Pos2::new(tr.right() + 8.0, y + 15.0),
-        Align2::LEFT_CENTER,
-        s.mode.label(),
-        ty::caption(),
-        ty::caption_color(),
-    );
+    let tr = p.text(Pos2::new(x0, y + 14.0), Align2::LEFT_CENTER, "Speed test", ty::lead(), TEXT());
+    p.text(Pos2::new(tr.right() + 8.0, y + 15.0), Align2::LEFT_CENTER, s.mode.label(), ty::caption(), ty::caption_color());
     let cr = Rect::from_center_size(Pos2::new(x1 - 13.0, y + 14.0), Vec2::splat(26.0));
     let mut closed = round_button(ui, cr, Icon::Close, "Close").clicked();
     y += 28.0 + sp::M;
@@ -177,16 +150,9 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
     let frac = ctx.animate_value_with_time(id().with("dial"), dial(target), 0.35);
     // the finished number lands at once; only live readings glide
     let glide = ctx.animate_value_with_time(id().with("num"), target as f32, 0.35) as f64;
-    let shown = if s.phase == SpeedPhase::Done {
-        target
-    } else {
-        glide
-    };
+    let shown = if s.phase == SpeedPhase::Done { target } else { glide };
     // track and stops
-    p.add(PathShape::line(
-        arc_points(c, DIAL_R, A0, A0 + SPAN, 96),
-        PathStroke::new(DIAL_W, white(18)),
-    ));
+    p.add(PathShape::line(arc_points(c, DIAL_R, A0, A0 + SPAN, 96), PathStroke::new(DIAL_W, white(18))));
     for end in [A0, A0 + SPAN] {
         p.circle_filled(c + Vec2::angled(end) * DIAL_R, DIAL_W / 2.0, white(18));
     }
@@ -195,13 +161,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
         let ang = A0 + SPAN * k;
         let dir = Vec2::angled(ang);
         let lit = k <= frac + 1e-3 && frac > 0.0;
-        p.text(
-            c + dir * (DIAL_R - 26.0),
-            Align2::CENTER_CENTER,
-            stop_label(*v),
-            font(11.0),
-            if lit { TEXT_SOFT() } else { TEXT_MUTED() },
-        );
+        p.text(c + dir * (DIAL_R - 26.0), Align2::CENTER_CENTER, stop_label(*v), font(11.0), if lit { TEXT_SOFT() } else { TEXT_MUTED() });
     }
     // the filled arc fades in from the start; a soft glow rides the tip
     if frac > 0.002 {
@@ -215,16 +175,8 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
         }
         p.circle_filled(pts[0], DIAL_W / 2.0, with_alpha(col, 0.35));
         let tip = *pts.last().unwrap();
-        let pulse = if s.running {
-            0.5 + 0.5 * (t * 6.0).sin()
-        } else {
-            0.0
-        };
-        p.circle_filled(
-            tip,
-            DIAL_W / 2.0 + 6.0 + 3.0 * pulse,
-            with_alpha(col, 0.18 + 0.10 * pulse),
-        );
+        let pulse = if s.running { 0.5 + 0.5 * (t * 6.0).sin() } else { 0.0 };
+        p.circle_filled(tip, DIAL_W / 2.0 + 6.0 + 3.0 * pulse, with_alpha(col, 0.18 + 0.10 * pulse));
         p.circle_filled(tip, DIAL_W / 2.0, col);
         p.circle_filled(tip, 3.0, POPOVER());
     }
@@ -242,50 +194,26 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
             let alpha = 1.0 - i as f32 / n as f32;
             let pa = c + Vec2::angled(A0 + SPAN * k0) * DIAL_R;
             let pb = c + Vec2::angled(A0 + SPAN * k1) * DIAL_R;
-            p.line_segment(
-                [pa, pb],
-                Stroke::new(DIAL_W, with_alpha(down_color(), 0.8 * alpha)),
-            );
+            p.line_segment([pa, pb], Stroke::new(DIAL_W, with_alpha(down_color(), 0.8 * alpha)));
         }
     }
     // the number in the middle
     let big = FontId::new(46.0, FontFamily::Name("hero".into()));
     let num = match s.phase {
-        SpeedPhase::Ping => s
-            .latency_ms
-            .map(|l| format!("{l:.0}"))
-            .unwrap_or_else(|| "—".into()),
+        SpeedPhase::Ping => s.latency_ms.map(|l| format!("{l:.0}")).unwrap_or_else(|| "—".into()),
         SpeedPhase::Idle => "—".into(),
         SpeedPhase::Done if s.down_mbps.is_none() => "—".into(),
         _ => mbps_text(shown.max(0.0)),
     };
-    p.text(
-        c + Vec2::new(0.0, -8.0),
-        Align2::CENTER_CENTER,
-        num,
-        big,
-        TEXT(),
-    );
-    let unit = if s.phase == SpeedPhase::Ping {
-        "ms"
-    } else {
-        "Mbps"
-    };
-    p.text(
-        c + Vec2::new(0.0, 24.0),
-        Align2::CENTER_CENTER,
-        unit,
-        ty::body(),
-        TEXT_DIM(),
-    );
+    p.text(c + Vec2::new(0.0, -8.0), Align2::CENTER_CENTER, num, big, TEXT());
+    let unit = if s.phase == SpeedPhase::Ping { "ms" } else { "Mbps" };
+    p.text(c + Vec2::new(0.0, 24.0), Align2::CENTER_CENTER, unit, ty::body(), TEXT_DIM());
     let (glyph, label, lcol) = match s.phase {
         SpeedPhase::Ping => (None, "Ping", TEXT_DIM()),
         SpeedPhase::Download => (Some(Icon::Down), "Download", down_color()),
         SpeedPhase::Upload => (Some(Icon::Up), "Upload", up_color()),
         SpeedPhase::Done if s.error.is_some() => (None, "", TEXT_DIM()),
-        SpeedPhase::Done if s.down_mbps.is_none() || s.up_mbps.is_none() => {
-            (None, "Stopped", TEXT_DIM())
-        }
+        SpeedPhase::Done if s.down_mbps.is_none() || s.up_mbps.is_none() => (None, "Stopped", TEXT_DIM()),
         _ => (Some(Icon::Down), "Download", down_color()),
     };
     if !label.is_empty() {
@@ -295,12 +223,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
         let total = iw + g.size().x;
         let left = lp.x - total / 2.0;
         if let Some(gl) = glyph {
-            icon(
-                &p,
-                gl,
-                Rect::from_center_size(Pos2::new(left + 5.0, lp.y), Vec2::splat(11.0)),
-                lcol,
-            );
+            icon(&p, gl, Rect::from_center_size(Pos2::new(left + 5.0, lp.y), Vec2::splat(11.0)), lcol);
         }
         p.galley(Pos2::new(left + iw, lp.y - g.size().y / 2.0), g, lcol);
     }
@@ -311,99 +234,34 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
     glass_card(&p, row, R_CARD, 0.0, false);
     let cw = row.width() / 3.0;
     let cols = [
-        Col {
-            label: "Ping",
-            value: s.latency_ms,
-            unit: "ms",
-            color: TEXT(),
-            phase: SpeedPhase::Ping,
-            glyph: None,
-        },
-        Col {
-            label: "Download",
-            value: s.down_mbps,
-            unit: "Mbps",
-            color: down_color(),
-            phase: SpeedPhase::Download,
-            glyph: Some(Icon::Down),
-        },
-        Col {
-            label: "Upload",
-            value: s.up_mbps,
-            unit: "Mbps",
-            color: up_color(),
-            phase: SpeedPhase::Upload,
-            glyph: Some(Icon::Up),
-        },
+        Col { label: "Ping", value: s.latency_ms, unit: "ms", color: TEXT(), phase: SpeedPhase::Ping, glyph: None },
+        Col { label: "Download", value: s.down_mbps, unit: "Mbps", color: down_color(), phase: SpeedPhase::Download, glyph: Some(Icon::Down) },
+        Col { label: "Upload", value: s.up_mbps, unit: "Mbps", color: up_color(), phase: SpeedPhase::Upload, glyph: Some(Icon::Up) },
     ];
-    for (
-        k,
-        Col {
-            label,
-            value: v,
-            unit,
-            color: vc,
-            phase: ph,
-            glyph: gl,
-        },
-    ) in cols.into_iter().enumerate()
-    {
+    for (k, Col { label, value: v, unit, color: vc, phase: ph, glyph: gl }) in cols.into_iter().enumerate() {
         let cx = row.left() + k as f32 * cw + 14.0;
         if k > 0 {
             let lx = row.left() + k as f32 * cw;
-            p.line_segment(
-                [
-                    Pos2::new(lx, row.top() + 12.0),
-                    Pos2::new(lx, row.bottom() - 12.0),
-                ],
-                Stroke::new(1.0, white(HAIRLINE)),
-            );
+            p.line_segment([Pos2::new(lx, row.top() + 12.0), Pos2::new(lx, row.bottom() - 12.0)], Stroke::new(1.0, white(HAIRLINE)));
         }
         let active = s.running && s.phase == ph;
         let lc = if active { vc } else { TEXT_DIM() };
         let mut lx = cx;
         if let Some(gl) = gl {
-            icon(
-                &p,
-                gl,
-                Rect::from_center_size(Pos2::new(lx + 5.0, row.top() + 17.0), Vec2::splat(10.0)),
-                lc,
-            );
+            icon(&p, gl, Rect::from_center_size(Pos2::new(lx + 5.0, row.top() + 17.0), Vec2::splat(10.0)), lc);
             lx += 14.0;
         }
-        p.text(
-            Pos2::new(lx, row.top() + 17.0),
-            Align2::LEFT_CENTER,
-            label,
-            ty::label(),
-            lc,
-        );
+        p.text(Pos2::new(lx, row.top() + 17.0), Align2::LEFT_CENTER, label, ty::label(), lc);
         match v {
             Some(v) => {
-                let txt = if unit == "ms" {
-                    format!("{v:.0}")
-                } else {
-                    mbps_text(v)
-                };
+                let txt = if unit == "ms" { format!("{v:.0}") } else { mbps_text(v) };
                 let g = p.layout_no_wrap(txt, ty::number(), TEXT());
                 let gw = g.size().x;
                 p.galley(Pos2::new(cx, row.top() + 26.0), g, TEXT());
-                let ur = p.text(
-                    Pos2::new(cx + gw + 4.0, row.top() + 46.0),
-                    Align2::LEFT_BOTTOM,
-                    unit,
-                    ty::label(),
-                    TEXT_DIM(),
-                );
+                let ur = p.text(Pos2::new(cx + gw + 4.0, row.top() + 46.0), Align2::LEFT_BOTTOM, unit, ty::label(), TEXT_DIM());
                 // jitter rides along with ping
                 if let (SpeedPhase::Ping, Some(j)) = (ph, s.jitter_ms) {
-                    p.text(
-                        Pos2::new(ur.right() + 6.0, row.top() + 46.0),
-                        Align2::LEFT_BOTTOM,
-                        format!("±{j:.0}"),
-                        ty::label(),
-                        TEXT_MUTED(),
-                    );
+                    p.text(Pos2::new(ur.right() + 6.0, row.top() + 46.0), Align2::LEFT_BOTTOM, format!("±{j:.0}"), ty::label(), TEXT_MUTED());
                 }
             }
             None if active => {
@@ -413,18 +271,11 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
                     SpeedPhase::Upload => ((s.progress - 0.6) / 0.4).clamp(0.0, 1.0),
                     _ => 0.5 + 0.5 * (t * 4.0).sin(),
                 };
-                let br =
-                    Rect::from_min_size(Pos2::new(cx, row.top() + 36.0), Vec2::new(cw - 28.0, 4.0));
+                let br = Rect::from_min_size(Pos2::new(cx, row.top() + 36.0), Vec2::new(cw - 28.0, 4.0));
                 bar(&p, br, part, vc);
             }
             None => {
-                p.text(
-                    Pos2::new(cx, row.top() + 26.0),
-                    Align2::LEFT_TOP,
-                    "—",
-                    ty::number(),
-                    TEXT_MUTED(),
-                );
+                p.text(Pos2::new(cx, row.top() + 26.0), Align2::LEFT_TOP, "—", ty::number(), TEXT_MUTED());
             }
         }
     }
@@ -449,10 +300,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
                 SpeedMode::Quick => "About 6 seconds",
                 SpeedMode::Full => "About 20 seconds, more streams",
             };
-            if pill_button(ui, r, label, BTN_SECONDARY, true)
-                .on_hover_text(tip)
-                .clicked()
-            {
+            if pill_button(ui, r, label, BTN_SECONDARY, true).on_hover_text(tip).clicked() {
                 again = Some(mode);
             }
             l = r.left();
@@ -468,25 +316,9 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
     }
     let tw = left - sp::M - x0;
     if let Some(e) = &s.error {
-        text_fit(
-            &p,
-            Pos2::new(x0, by + 15.0),
-            Align2::LEFT_CENTER,
-            e,
-            ty::label(),
-            AMBER(),
-            tw,
-        );
+        text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, e, ty::label(), AMBER(), tw);
     } else if let Some(server) = &s.server {
-        text_fit(
-            &p,
-            Pos2::new(x0, by + 15.0),
-            Align2::LEFT_CENTER,
-            &server.line(),
-            ty::label(),
-            TEXT_DIM(),
-            tw,
-        );
+        text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, &server.line(), ty::label(), TEXT_DIM(), tw);
     }
     (again, closed)
 }

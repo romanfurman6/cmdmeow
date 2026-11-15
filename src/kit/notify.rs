@@ -71,9 +71,7 @@ fn dispatch(handler: &str, payload: String) {
 #[cfg(target_os = "macos")]
 mod mac {
     use objc2_foundation::{NSBundle, NSString};
-    use objc2_user_notifications::{
-        UNMutableNotificationContent, UNNotificationRequest, UNUserNotificationCenter,
-    };
+    use objc2_user_notifications::{UNMutableNotificationContent, UNNotificationRequest, UNUserNotificationCenter};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -89,11 +87,7 @@ mod mac {
         let content = UNMutableNotificationContent::new();
         content.setTitle(&NSString::from_str(title));
         content.setBody(&NSString::from_str(body));
-        let id = NSString::from_str(&format!(
-            "cmdmeow.{}.{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
+        let id = NSString::from_str(&format!("cmdmeow.{}.{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
         let req = UNNotificationRequest::requestWithIdentifier_content_trigger(&id, &content, None);
         center.addNotificationRequest_withCompletionHandler(&req, None);
     }
@@ -102,10 +96,7 @@ mod mac {
     use objc2::runtime::ProtocolObject;
     use objc2::{define_class, msg_send, AnyThread};
     use objc2_foundation::{NSArray, NSObject, NSObjectProtocol, NSSet};
-    use objc2_user_notifications::{
-        UNNotificationAction, UNNotificationActionOptions, UNNotificationCategory,
-        UNNotificationCategoryOptions, UNNotificationResponse, UNUserNotificationCenterDelegate,
-    };
+    use objc2_user_notifications::{UNNotificationAction, UNNotificationActionOptions, UNNotificationCategory, UNNotificationCategoryOptions, UNNotificationResponse, UNUserNotificationCenterDelegate};
     use std::collections::{BTreeMap, HashMap};
     use std::sync::{Mutex, OnceLock};
 
@@ -126,18 +117,10 @@ mod mac {
 
         unsafe impl UNUserNotificationCenterDelegate for Delegate {
             #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
-            fn did_receive(
-                &self,
-                _center: &UNUserNotificationCenter,
-                response: &UNNotificationResponse,
-                done: &block2::DynBlock<dyn Fn()>,
-            ) {
+            fn did_receive(&self, _center: &UNUserNotificationCenter, response: &UNNotificationResponse, done: &block2::DynBlock<dyn Fn()>) {
                 let action = response.actionIdentifier().to_string();
                 let id = response.notification().request().identifier().to_string();
-                let hit = SENT
-                    .lock()
-                    .ok()
-                    .and_then(|mut g| g.as_mut().and_then(|m| m.remove(&id)));
+                let hit = SENT.lock().ok().and_then(|mut g| g.as_mut().and_then(|m| m.remove(&id)));
                 if action == ACTION {
                     if let Some((handler, payload)) = hit {
                         super::dispatch(handler, payload);
@@ -175,17 +158,8 @@ mod mac {
         let cats: Vec<Retained<UNNotificationCategory>> = g
             .iter()
             .map(|(cid, title)| {
-                let act = UNNotificationAction::actionWithIdentifier_title_options(
-                    &NSString::from_str(ACTION),
-                    &NSString::from_str(title),
-                    UNNotificationActionOptions::empty(),
-                );
-                UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
-                    &NSString::from_str(cid),
-                    &NSArray::from_retained_slice(&[act]),
-                    &NSArray::new(),
-                    UNNotificationCategoryOptions::empty(),
-                )
+                let act = UNNotificationAction::actionWithIdentifier_title_options(&NSString::from_str(ACTION), &NSString::from_str(title), UNNotificationActionOptions::empty());
+                UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(&NSString::from_str(cid), &NSArray::from_retained_slice(&[act]), &NSArray::new(), UNNotificationCategoryOptions::empty())
             })
             .collect();
         center.setNotificationCategories(&NSSet::from_retained_slice(&cats));
@@ -205,11 +179,7 @@ mod mac {
         content.setTitle(&NSString::from_str(title));
         content.setBody(&NSString::from_str(body));
         content.setCategoryIdentifier(&NSString::from_str(&cat));
-        let id = format!(
-            "cmdmeow.{}.{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        );
+        let id = format!("cmdmeow.{}.{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed));
         if let Ok(mut g) = SENT.lock() {
             let m = g.get_or_insert_with(HashMap::new);
             // a long run can't grow this without bound
@@ -218,23 +188,13 @@ mod mac {
             }
             m.insert(id.clone(), (handler, payload.to_string()));
         }
-        let req = UNNotificationRequest::requestWithIdentifier_content_trigger(
-            &NSString::from_str(&id),
-            &content,
-            None,
-        );
+        let req = UNNotificationRequest::requestWithIdentifier_content_trigger(&NSString::from_str(&id), &content, None);
         center.addNotificationRequest_withCompletionHandler(&req, None);
     }
 
     fn osascript(title: &str, body: &str) {
         let q = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!(
-            "display notification \"{}\" with title \"{}\"",
-            q(body),
-            q(title)
-        );
-        let _ = std::process::Command::new("osascript")
-            .args(["-e", &script])
-            .spawn();
+        let script = format!("display notification \"{}\" with title \"{}\"", q(body), q(title));
+        let _ = std::process::Command::new("osascript").args(["-e", &script]).spawn();
     }
 }

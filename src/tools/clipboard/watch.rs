@@ -36,8 +36,7 @@ pub fn spawn(shared: Arc<Shared>, tx: Sender<Clip>, ctx: egui::Context) {
                     continue;
                 }
                 last = n;
-                if shared.paused.load(Ordering::Relaxed) || n == shared.own.load(Ordering::Relaxed)
-                {
+                if shared.paused.load(Ordering::Relaxed) || n == shared.own.load(Ordering::Relaxed) {
                     continue;
                 }
                 let images = shared.images.load(Ordering::Relaxed);
@@ -48,15 +47,7 @@ pub fn spawn(shared: Arc<Shared>, tx: Sender<Clip>, ctx: egui::Context) {
                 }
                 // one word copied while a password field has the keyboard is
                 // most likely that password, even when the app didn't mark it
-                if clip.secure
-                    && !super::privacy::terminal(&clip.bundle)
-                    && clip.files.is_empty()
-                    && clip.png.is_none()
-                    && clip
-                        .text
-                        .as_deref()
-                        .is_some_and(super::privacy::password_shaped)
-                {
+                if clip.secure && !super::privacy::terminal(&clip.bundle) && clip.files.is_empty() && clip.png.is_none() && clip.text.as_deref().is_some_and(super::privacy::password_shaped) {
                     clip.concealed = true;
                 }
                 if clip.concealed {

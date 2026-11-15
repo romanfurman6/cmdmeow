@@ -66,13 +66,7 @@ pub struct Settings {
 
 /// The default before version 1.
 fn old_default() -> Shortcut {
-    Shortcut {
-        cmd: false,
-        shift: false,
-        alt: true,
-        ctrl: false,
-        key: "Space".into(),
-    }
+    Shortcut { cmd: false, shift: false, alt: true, ctrl: false, key: "Space".into() }
 }
 
 /// The choices for [`Settings::silence_secs`].
@@ -86,14 +80,7 @@ impl Settings {
     /// (any case). Returns whether it was added.
     pub fn add_word(&mut self, w: &str) -> bool {
         let w = w.split_whitespace().collect::<Vec<_>>().join(" ");
-        if w.is_empty()
-            || w.chars().count() > 40
-            || self.words.len() >= WORDS_MAX
-            || self
-                .words
-                .iter()
-                .any(|x| x.to_lowercase() == w.to_lowercase())
-        {
+        if w.is_empty() || w.chars().count() > 40 || self.words.len() >= WORDS_MAX || self.words.iter().any(|x| x.to_lowercase() == w.to_lowercase()) {
             return false;
         }
         self.words.push(w);
@@ -106,26 +93,12 @@ impl Settings {
 }
 
 pub fn default_shortcut() -> Shortcut {
-    Shortcut {
-        cmd: false,
-        shift: false,
-        alt: true,
-        ctrl: false,
-        key: "D".into(),
-    }
+    Shortcut { cmd: false, shift: false, alt: true, ctrl: false, key: "D".into() }
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings {
-            shortcut: Some(default_shortcut()),
-            engine: Engine::Parakeet,
-            restore_clipboard: true,
-            keep_history: true,
-            silence_secs: 5,
-            words: Vec::new(),
-            version: VERSION,
-        }
+        Settings { shortcut: Some(default_shortcut()), engine: Engine::Parakeet, restore_clipboard: true, keep_history: true, silence_secs: 5, words: Vec::new(), version: VERSION }
     }
 }
 
@@ -179,30 +152,18 @@ impl History {
 
     /// Words said since `since` (unix seconds).
     pub fn words_since(&self, since: i64) -> usize {
-        self.items
-            .iter()
-            .take_while(|s| s.at >= since)
-            .map(|s| s.text.split_whitespace().count())
-            .sum()
+        self.items.iter().take_while(|s| s.at >= since).map(|s| s.text.split_whitespace().count()).sum()
     }
 }
 
 /// What was said, sealed on disk (see [`crate::kit::vault`]); `history.json`
 /// from before that is sealed on first load.
 pub fn load_history(dir: &Path) -> History {
-    crate::kit::vault::load_json(
-        crate::kit::vault::shared().as_deref(),
-        &dir.join("history.bin"),
-        &dir.join("history.json"),
-    )
+    crate::kit::vault::load_json(crate::kit::vault::shared().as_deref(), &dir.join("history.bin"), &dir.join("history.json"))
 }
 
 pub fn save_history(dir: &Path, h: &History) {
-    crate::kit::vault::save_json_later(
-        crate::kit::vault::shared().as_deref(),
-        &dir.join("history.bin"),
-        h,
-    );
+    crate::kit::vault::save_json_later(crate::kit::vault::shared().as_deref(), &dir.join("history.bin"), h);
 }
 
 #[cfg(test)]
@@ -213,12 +174,7 @@ mod tests {
     fn history_keeps_the_newest() {
         let mut h = History::default();
         for k in 0..HISTORY_MAX + 5 {
-            h.add(Said {
-                at: k as i64,
-                text: "one two".into(),
-                app: String::new(),
-                secs: 1.0,
-            });
+            h.add(Said { at: k as i64, text: "one two".into(), app: String::new(), secs: 1.0 });
         }
         assert_eq!(h.items.len(), HISTORY_MAX);
         assert_eq!(h.items[0].at, (HISTORY_MAX + 4) as i64);
@@ -227,35 +183,14 @@ mod tests {
 
     #[test]
     fn old_default_shortcut_moves_to_option_d_once() {
-        let s = upgrade(
-            serde_json::from_str(
-                r#"{"shortcut":{"cmd":false,"shift":false,"alt":true,"ctrl":false,"key":"Space"}}"#,
-            )
-            .unwrap(),
-        );
-        assert_eq!(
-            s.shortcut.as_ref().map(|k| k.display()),
-            Some("⌥D".to_string())
-        );
+        let s = upgrade(serde_json::from_str(r#"{"shortcut":{"cmd":false,"shift":false,"alt":true,"ctrl":false,"key":"Space"}}"#).unwrap());
+        assert_eq!(s.shortcut.as_ref().map(|k| k.display()), Some("⌥D".to_string()));
         // chosen again after the upgrade: kept
-        let again = upgrade(Settings {
-            shortcut: Some(old_default()),
-            ..s
-        });
+        let again = upgrade(Settings { shortcut: Some(old_default()), ..s });
         assert_eq!(again.shortcut, Some(old_default()));
         // someone's own pick is never touched
-        let mine = Shortcut {
-            cmd: true,
-            shift: true,
-            alt: false,
-            ctrl: false,
-            key: "D".into(),
-        };
-        let s = upgrade(Settings {
-            shortcut: Some(mine.clone()),
-            version: 0,
-            ..Settings::default()
-        });
+        let mine = Shortcut { cmd: true, shift: true, alt: false, ctrl: false, key: "D".into() };
+        let s = upgrade(Settings { shortcut: Some(mine.clone()), version: 0, ..Settings::default() });
         assert_eq!(s.shortcut, Some(mine));
     }
 
@@ -275,17 +210,7 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"lang":"Uk"}"#).unwrap();
         assert_eq!(s.shortcut, Some(default_shortcut()));
         assert!(s.restore_clipboard);
-        assert_eq!(
-            s.stop_after_silence(),
-            Some(std::time::Duration::from_secs(5))
-        );
-        assert_eq!(
-            Settings {
-                silence_secs: 0,
-                ..s.clone()
-            }
-            .stop_after_silence(),
-            None
-        );
+        assert_eq!(s.stop_after_silence(), Some(std::time::Duration::from_secs(5)));
+        assert_eq!(Settings { silence_secs: 0, ..s.clone() }.stop_after_silence(), None);
     }
 }

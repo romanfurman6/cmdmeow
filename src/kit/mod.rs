@@ -15,24 +15,24 @@ pub mod empty;
 pub mod fs;
 pub mod fswatch;
 pub mod glass;
+pub mod ioreport;
 pub mod helper;
 pub mod hotkeys;
-pub mod ioreport;
 pub mod login;
 pub mod macos;
 pub mod mechanics;
 pub mod native;
-pub mod notify;
 pub mod parakeet;
+pub mod notify;
 pub mod perms;
 pub mod plist;
 pub mod remove;
 pub mod repaint_log;
 pub mod settings_window;
 pub mod smc;
-pub mod sound;
 pub mod spin;
 pub mod sync;
+pub mod sound;
 pub mod tile;
 pub mod update;
 pub mod url_scheme;
@@ -44,11 +44,7 @@ pub mod whisper;
 /// the UI keeps its frames while the model works.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn work_threads() -> usize {
-    work_threads_for(
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4),
-    )
+    work_threads_for(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4))
 }
 
 fn work_threads_for(cores: usize) -> usize {

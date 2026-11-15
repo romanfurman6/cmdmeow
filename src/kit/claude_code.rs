@@ -2,10 +2,10 @@
 //! Shared by every tool that talks to Claude Code (limits, the AI judge,
 //! keeping in-use projects safe).
 
-use crate::kit::activity::Kick;
 use crate::kit::mechanics as m;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use crate::kit::activity::Kick;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::SystemTime;
 
@@ -119,15 +119,8 @@ pub struct Project {
 impl Project {
     pub fn display_name(&self) -> String {
         match &self.cwd {
-            Some(c) => c
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| c.display().to_string()),
-            None => self
-                .folder
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+            Some(c) => c.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| c.display().to_string()),
+            None => self.folder.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
         }
     }
     pub fn days_idle(&self) -> f64 {
@@ -165,17 +158,12 @@ pub fn claude_cmd(bin: &Path) -> Command {
     // a neutral working folder so no project settings or CLAUDE().md get involved
     c.current_dir(std::env::temp_dir());
     let path = std::env::var("PATH").unwrap_or_default();
-    c.env(
-        "PATH",
-        format!("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{path}"),
-    );
+    c.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{path}"));
     c
 }
 
 pub fn projects_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".claude/projects")
+    dirs::home_dir().unwrap_or_default().join(".claude/projects")
 }
 
 /// Every folder Claude Code keeps session logs in: `~/.claude/projects`,
@@ -200,9 +188,7 @@ fn log_dirs_in(home: &std::path::Path) -> Vec<PathBuf> {
 /// folder: call it only once Full Disk Access is granted (Cleanup's scan).
 pub fn scan_projects() -> Vec<Project> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(projects_dir()) else {
-        return out;
-    };
+    let Ok(rd) = std::fs::read_dir(projects_dir()) else { return out };
     for e in rd.flatten() {
         let folder = e.path();
         if !folder.is_dir() {
@@ -214,12 +200,7 @@ pub fn scan_projects() -> Vec<Project> {
             let mut jsonls: Vec<(SystemTime, PathBuf)> = files
                 .flatten()
                 .filter(|f| f.path().extension().map(|x| x == "jsonl").unwrap_or(false))
-                .filter_map(|f| {
-                    f.metadata()
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .map(|t| (t, f.path()))
-                })
+                .filter_map(|f| f.metadata().ok().and_then(|m| m.modified().ok()).map(|t| (t, f.path())))
                 .collect();
             jsonls.sort_by_key(|x| std::cmp::Reverse(x.0));
             last = jsonls.first().map(|x| x.0);
@@ -235,10 +216,7 @@ pub fn scan_projects() -> Vec<Project> {
         }
         // the folder name is the project path with every non-alphanumeric
         // character turned into '-'; find the real folder it stands for
-        let enc = folder
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let enc = folder.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         // (a session's logged cwd may be a subfolder; trust it when it exists)
         if let Some(real) = resolve_encoded(&enc) {
             cwd = Some(real);
@@ -246,12 +224,7 @@ pub fn scan_projects() -> Vec<Project> {
             cwd = Some(PathBuf::from(enc.replace('-', "/")));
         }
         let cwd_exists = cwd.as_ref().map(|c| exists_quiet(c)).unwrap_or(false);
-        out.push(Project {
-            folder,
-            cwd,
-            cwd_exists,
-            last_used: last,
-        });
+        out.push(Project { folder, cwd, cwd_exists, last_used: last });
     }
     out.sort_by_key(|p| std::cmp::Reverse(p.last_used));
     out
@@ -259,9 +232,7 @@ pub fn scan_projects() -> Vec<Project> {
 
 /// How Claude Code names a project folder: non-alphanumerics become '-'.
 pub fn encode(path: &str) -> String {
-    path.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
+    path.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
 }
 
 /// Does `p` exist? A path in Downloads/Desktop/Documents (without Full
@@ -327,13 +298,7 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         assert_eq!(log_dirs_in(&home), vec![home.join(".claude/projects")]);
         std::fs::create_dir_all(home.join(".config/claude/projects")).unwrap();
-        assert_eq!(
-            log_dirs_in(&home),
-            vec![
-                home.join(".claude/projects"),
-                home.join(".config/claude/projects")
-            ]
-        );
+        assert_eq!(log_dirs_in(&home), vec![home.join(".claude/projects"), home.join(".config/claude/projects")]);
         let _ = std::fs::remove_dir_all(&home);
     }
 

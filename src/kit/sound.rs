@@ -63,10 +63,7 @@ pub fn play(cue: Cue) {
     if !on() {
         return;
     }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     let last = LAST.swap(now, Ordering::Relaxed);
     if now.saturating_sub(last) < 250 {
         return;
@@ -184,10 +181,7 @@ mod tests {
     fn cues_are_short_quiet_and_end_silent() {
         for c in Cue::ALL {
             let s = synth(c);
-            assert!(
-                !s.is_empty() && s.len() <= (1.25 * RATE as f32) as usize,
-                "{c:?} too long"
-            );
+            assert!(!s.is_empty() && s.len() <= (1.25 * RATE as f32) as usize, "{c:?} too long");
             let peak = s.iter().fold(0.0f32, |m, x| m.max(x.abs()));
             assert!((peak - PEAK).abs() < 1e-3, "{c:?} peak {peak}");
             assert!(s.last().unwrap().abs() < 1e-3, "{c:?} clicks at the end");
@@ -201,10 +195,7 @@ mod tests {
         let b = wav(&s);
         assert_eq!(&b[0..4], b"RIFF");
         assert_eq!(&b[8..16], b"WAVEfmt ");
-        assert_eq!(
-            u32::from_le_bytes(b[40..44].try_into().unwrap()) as usize,
-            s.len() * 2
-        );
+        assert_eq!(u32::from_le_bytes(b[40..44].try_into().unwrap()) as usize, s.len() * 2);
         assert_eq!(b.len(), 44 + s.len() * 2);
     }
 
@@ -221,9 +212,7 @@ mod tests {
     #[test]
     #[ignore]
     fn write_previews() {
-        let dir = std::path::PathBuf::from(
-            std::env::var("SOUND_PREVIEW_DIR").unwrap_or_else(|_| "sound-previews".into()),
-        );
+        let dir = std::path::PathBuf::from(std::env::var("SOUND_PREVIEW_DIR").unwrap_or_else(|_| "sound-previews".into()));
         std::fs::create_dir_all(&dir).unwrap();
         for c in Cue::ALL {
             std::fs::write(dir.join(format!("{}.wav", c.name())), wav(&synth(c))).unwrap();

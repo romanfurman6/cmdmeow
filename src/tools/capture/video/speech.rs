@@ -40,11 +40,7 @@ pub struct Saved {
 fn stamp(path: &Path) -> (u64, u64) {
     let m = std::fs::metadata(path).ok();
     let len = m.as_ref().map(|m| m.len()).unwrap_or(0);
-    let modified = m
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let modified = m.and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
     (len, modified)
 }
 
@@ -67,16 +63,7 @@ pub fn store(video: &Path, lines: &[Line]) {
     if let Some(dir) = p.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    crate::kit::fs::save_json(
-        &p,
-        &Saved {
-            path: video.to_path_buf(),
-            len,
-            modified,
-            lines: lines.to_vec(),
-        },
-        false,
-    );
+    crate::kit::fs::save_json(&p, &Saved { path: video.to_path_buf(), len, modified, lines: lines.to_vec() }, false);
 }
 
 /// The lines as they fall in the edited video: times moved up past the
@@ -86,12 +73,7 @@ pub fn edited_lines(lines: &[Line], edl: &Edl) -> Vec<Line> {
         .iter()
         .filter_map(|l| {
             let (s, e) = (edl.edited_at(l.start), edl.edited_at(l.end));
-            (e - s >= 0.2).then(|| Line {
-                start: s,
-                end: e,
-                text: l.text.clone(),
-                words: Vec::new(),
-            })
+            (e - s >= 0.2).then(|| Line { start: s, end: e, text: l.text.clone(), words: Vec::new() })
         })
         .collect()
 }
@@ -108,36 +90,19 @@ pub fn line_at(lines: &[Line], t: f64) -> Option<usize> {
 
 fn srt_time(t: f64) -> String {
     let ms = (t.max(0.0) * 1000.0).round() as u64;
-    format!(
-        "{:02}:{:02}:{:02},{:03}",
-        ms / 3_600_000,
-        ms / 60_000 % 60,
-        ms / 1000 % 60,
-        ms % 1000
-    )
+    format!("{:02}:{:02}:{:02},{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
 }
 
 pub fn srt(lines: &[Line]) -> String {
     let mut out = String::new();
     for (k, l) in lines.iter().enumerate() {
-        out.push_str(&format!(
-            "{}\n{} --> {}\n{}\n\n",
-            k + 1,
-            srt_time(l.start),
-            srt_time(l.end),
-            l.text.trim()
-        ));
+        out.push_str(&format!("{}\n{} --> {}\n{}\n\n", k + 1, srt_time(l.start), srt_time(l.end), l.text.trim()));
     }
     out
 }
 
 pub fn txt(lines: &[Line]) -> String {
-    lines
-        .iter()
-        .map(|l| l.text.trim())
-        .filter(|t| !t.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    lines.iter().map(|l| l.text.trim()).filter(|t| !t.is_empty()).collect::<Vec<_>>().join("\n")
 }
 
 /// Whisper's raw segments → clean lines (no blanks, no "[music]" asides).
@@ -146,20 +111,9 @@ pub fn tidy(raw: Vec<crate::kit::whisper::Segment>) -> Vec<Line> {
     raw.into_iter()
         .filter_map(|s| {
             let t = s.text.trim().to_string();
-            let aside = (t.starts_with('[') && t.ends_with(']'))
-                || (t.starts_with('(') && t.ends_with(')'));
-            let words = s
-                .words
-                .into_iter()
-                .filter(|w| w.1 >= w.0)
-                .map(|(start, end, text)| Word { start, end, text })
-                .collect();
-            (!t.is_empty() && !aside && s.end > s.start).then_some(Line {
-                start: s.start,
-                end: s.end,
-                text: t,
-                words,
-            })
+            let aside = (t.starts_with('[') && t.ends_with(']')) || (t.starts_with('(') && t.ends_with(')'));
+            let words = s.words.into_iter().filter(|w| w.1 >= w.0).map(|(start, end, text)| Word { start, end, text }).collect();
+            (!t.is_empty() && !aside && s.end > s.start).then_some(Line { start: s.start, end: s.end, text: t, words })
         })
         .collect()
 }
@@ -191,12 +145,7 @@ const MADE_UP: [&str; 16] = [
 /// `pcm` is the 16 kHz mono sound the lines came from.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn made_up(l: &Line, pcm: &[f32]) -> bool {
-    let plain: String = l
-        .text
-        .chars()
-        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-        .collect::<String>()
-        .to_lowercase();
+    let plain: String = l.text.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().to_lowercase();
     let plain = plain.split_whitespace().collect::<Vec<_>>().join(" ");
     let (a, b) = match (l.words.first(), l.words.last()) {
         (Some(f), Some(w)) => (f.start, w.end),
@@ -214,11 +163,7 @@ pub fn made_up(l: &Line, pcm: &[f32]) -> bool {
 /// Transcribe the voice in `video` with model `m`. Blocks; progress is in
 /// percent (`total` 100).
 #[cfg(target_os = "macos")]
-pub fn transcribe(
-    video: &Path,
-    m: Model,
-    p: &std::sync::Arc<Progress>,
-) -> Result<Vec<Line>, String> {
+pub fn transcribe(video: &Path, m: Model, p: &std::sync::Arc<Progress>) -> Result<Vec<Line>, String> {
     p.total.store(100, Ordering::Relaxed);
     p.done.store(0, Ordering::Relaxed);
     // the mix: everyone in a call, not only this Mac's microphone
@@ -237,11 +182,7 @@ pub fn transcribe(
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn transcribe(
-    _video: &Path,
-    _m: Model,
-    _p: &std::sync::Arc<Progress>,
-) -> Result<Vec<Line>, String> {
+pub fn transcribe(_video: &Path, _m: Model, _p: &std::sync::Arc<Progress>) -> Result<Vec<Line>, String> {
     Err("Transcribing needs macOS".into())
 }
 
@@ -250,32 +191,20 @@ mod tests {
     use super::*;
 
     fn line(s: f64, e: f64, t: &str) -> Line {
-        Line {
-            start: s,
-            end: e,
-            text: t.into(),
-            words: Vec::new(),
-        }
+        Line { start: s, end: e, text: t.into(), words: Vec::new() }
     }
 
     #[test]
     fn lines_whisper_made_up_are_dropped() {
-        let loud: Vec<f32> = (0..16_000 * 12)
-            .map(|i| ((i as f32) * 0.05).sin() * 0.2)
-            .collect();
+        let loud: Vec<f32> = (0..16_000 * 12).map(|i| ((i as f32) * 0.05).sin() * 0.2).collect();
         // a "Thank you." over ten seconds of beeps, and a real one
         assert!(made_up(&line(0.0, 10.1, "Thank you."), &loud));
         assert!(!made_up(&line(9.0, 10.0, "Thank you."), &loud));
         assert!(made_up(&line(0.0, 6.0, "Продолжение следует..."), &loud));
-        assert!(!made_up(
-            &line(0.0, 6.0, "Thank you all for coming today"),
-            &loud
-        ));
+        assert!(!made_up(&line(0.0, 6.0, "Thank you all for coming today"), &loud));
         // anything over near silence
         let mut quiet = loud.clone();
-        quiet[16_000 * 2..16_000 * 5]
-            .iter_mut()
-            .for_each(|v| *v *= 0.001);
+        quiet[16_000 * 2..16_000 * 5].iter_mut().for_each(|v| *v *= 0.001);
         assert!(made_up(&line(2.0, 5.0, "Hello there"), &quiet));
         assert!(!made_up(&line(5.0, 8.0, "Hello there"), &quiet));
     }
@@ -284,11 +213,7 @@ mod tests {
     fn captions_follow_the_cuts() {
         let mut edl = Edl::new(10.0);
         edl.cut(2.0, 5.0);
-        let lines = vec![
-            line(0.5, 1.5, "hello"),
-            line(2.5, 4.5, "gone"),
-            line(5.0, 6.0, "after"),
-        ];
+        let lines = vec![line(0.5, 1.5, "hello"), line(2.5, 4.5, "gone"), line(5.0, 6.0, "after")];
         let e = edited_lines(&lines, &edl);
         assert_eq!(e, vec![line(0.5, 1.5, "hello"), line(2.0, 3.0, "after")]);
         assert!(line_cut(&lines[1], &edl));
@@ -304,18 +229,8 @@ mod tests {
 
     #[test]
     fn asides_and_blanks_are_dropped() {
-        let seg = |a: f64, b: f64, t: &str| crate::kit::whisper::Segment {
-            start: a,
-            end: b,
-            text: t.into(),
-            words: Vec::new(),
-        };
-        let raw = vec![
-            seg(0.0, 1.0, " [Music] "),
-            seg(1.0, 2.0, " Okay "),
-            seg(2.0, 2.0, "x"),
-            seg(3.0, 4.0, "  "),
-        ];
+        let seg = |a: f64, b: f64, t: &str| crate::kit::whisper::Segment { start: a, end: b, text: t.into(), words: Vec::new() };
+        let raw = vec![seg(0.0, 1.0, " [Music] "), seg(1.0, 2.0, " Okay "), seg(2.0, 2.0, "x"), seg(3.0, 4.0, "  ")];
         assert_eq!(tidy(raw), vec![line(1.0, 2.0, "Okay")]);
     }
 

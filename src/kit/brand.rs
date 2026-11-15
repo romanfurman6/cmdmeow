@@ -35,9 +35,7 @@ fn outline() -> Option<tiny_skia::Path> {
 /// Circular arc around (cx, cy) from angle `a0` to `a1` (radians, y down),
 /// in cubic pieces of at most 90°.
 fn arc(pb: &mut PathBuilder, cx: f32, cy: f32, r: f32, a0: f32, a1: f32) {
-    let n = ((a1 - a0).abs() / std::f32::consts::FRAC_PI_2)
-        .ceil()
-        .max(1.0) as usize;
+    let n = ((a1 - a0).abs() / std::f32::consts::FRAC_PI_2).ceil().max(1.0) as usize;
     let step = (a1 - a0) / n as f32;
     let k = 4.0 / 3.0 * (step / 4.0).tan() * r;
     let p = |a: f32| (cx + r * a.cos(), cy + r * a.sin());
@@ -47,14 +45,7 @@ fn arc(pb: &mut PathBuilder, cx: f32, cy: f32, r: f32, a0: f32, a1: f32) {
         let (s, e) = (a0 + step * i as f32, a0 + step * (i + 1) as f32);
         let (sx, sy) = p(s);
         let (ex, ey) = p(e);
-        pb.cubic_to(
-            sx - k * s.sin(),
-            sy + k * s.cos(),
-            ex + k * e.sin(),
-            ey - k * e.cos(),
-            ex,
-            ey,
-        );
+        pb.cubic_to(sx - k * s.sin(), sy + k * s.cos(), ex + k * e.sin(), ey - k * e.cos(), ex, ey);
     }
 }
 
@@ -67,12 +58,7 @@ fn command() -> Option<tiny_skia::Path> {
     arc(&mut pb, r, t, rad, PI, 2.5 * PI); // top right: west, over the top, to south
     arc(&mut pb, l, b, rad, -0.5 * PI, -2.0 * PI); // bottom left: north, round the left, to east
     arc(&mut pb, r, b, rad, 1.5 * PI, 3.0 * PI); // bottom right: north, round the right, to west
-    for (x0, y0, x1, y1) in [
-        (l + rad, t, l + rad, b),
-        (r - rad, t, r - rad, b),
-        (l, t + rad, r, t + rad),
-        (l, b - rad, r, b - rad),
-    ] {
+    for (x0, y0, x1, y1) in [(l + rad, t, l + rad, b), (r - rad, t, r - rad, b), (l, t + rad, r, t + rad), (l, b - rad, r, b - rad)] {
         pb.move_to(x0, y0);
         pb.line_to(x1, y1);
     }
@@ -81,9 +67,7 @@ fn command() -> Option<tiny_skia::Path> {
 
 /// The mark as straight RGBA (black, alpha = coverage) in a `px` square.
 pub fn glyph_rgba(px: u32) -> Vec<u8> {
-    let Some(mut pm) = Pixmap::new(px, px) else {
-        return vec![0; (px * px * 4) as usize];
-    };
+    let Some(mut pm) = Pixmap::new(px, px) else { return vec![0; (px * px * 4) as usize] };
     let scale = px as f32 / 1024.0;
     let t = Transform::from_scale(scale, scale).pre_translate(512.0 - 511.5, 512.0 - 518.0);
     let mut ink = Paint::default();
@@ -95,11 +79,7 @@ pub fn glyph_rgba(px: u32) -> Vec<u8> {
     let mut cut = Paint::default();
     cut.blend_mode = BlendMode::Clear;
     cut.anti_alias = true;
-    let stroke = Stroke {
-        width: 59.0,
-        line_cap: LineCap::Butt,
-        ..Stroke::default()
-    };
+    let stroke = Stroke { width: 59.0, line_cap: LineCap::Butt, ..Stroke::default() };
     if let Some(p) = command() {
         pm.stroke_path(&p, &cut, &stroke, t, None);
     }
@@ -161,23 +141,13 @@ pub fn mascot_rgba(px: u32) -> [Vec<u8>; 3] {
     ink.set_color_rgba8(255, 255, 255, 255);
     ink.anti_alias = true;
     let layer = |path: Option<tiny_skia::Path>, cut: bool| -> Vec<u8> {
-        let Some(mut pm) = Pixmap::new(px, px) else {
-            return vec![0; (px * px * 4) as usize];
-        };
+        let Some(mut pm) = Pixmap::new(px, px) else { return vec![0; (px * px * 4) as usize] };
         if let Some(p) = path {
             pm.fill_path(&p, &ink, FillRule::Winding, t, None);
         }
         if cut {
-            let clear = Paint {
-                blend_mode: BlendMode::Clear,
-                anti_alias: true,
-                ..Paint::default()
-            };
-            let stroke = Stroke {
-                width: 59.0,
-                line_cap: LineCap::Butt,
-                ..Stroke::default()
-            };
+            let clear = Paint { blend_mode: BlendMode::Clear, anti_alias: true, ..Paint::default() };
+            let stroke = Stroke { width: 59.0, line_cap: LineCap::Butt, ..Stroke::default() };
             if let Some(p) = command() {
                 pm.stroke_path(&p, &clear, &stroke, t, None);
             }
@@ -191,11 +161,7 @@ pub fn mascot_rgba(px: u32) -> [Vec<u8>; 3] {
         }
         v
     };
-    [
-        layer(body(), true),
-        layer(ear(false), false),
-        layer(ear(true), false),
-    ]
+    [layer(body(), true), layer(ear(false), false), layer(ear(true), false)]
 }
 
 /// The mascot's three layers as textures, made once per context.
@@ -206,18 +172,8 @@ fn mascot_textures(ctx: &egui::Context) -> [egui::TextureHandle; 3] {
     }
     let n = 256;
     let [b, l, r] = mascot_rgba(n);
-    let load = |name: &str, px: &[u8]| {
-        ctx.load_texture(
-            name,
-            egui::ColorImage::from_rgba_unmultiplied([n as usize, n as usize], px),
-            egui::TextureOptions::LINEAR,
-        )
-    };
-    let t = [
-        load("cmdmeow-mascot-body", &b),
-        load("cmdmeow-mascot-ear-l", &l),
-        load("cmdmeow-mascot-ear-r", &r),
-    ];
+    let load = |name: &str, px: &[u8]| ctx.load_texture(name, egui::ColorImage::from_rgba_unmultiplied([n as usize, n as usize], px), egui::TextureOptions::LINEAR);
+    let t = [load("cmdmeow-mascot-body", &b), load("cmdmeow-mascot-ear-l", &l), load("cmdmeow-mascot-ear-r", &r)];
     ctx.data_mut(|d| d.insert_temp(id, t.clone()));
     t
 }
@@ -236,17 +192,8 @@ pub fn draw_mascot(p: &egui::Painter, rect: egui::Rect, col: egui::Color32, ears
     }
     let [body, ear_l, ear_r] = mascot_textures(p.ctx());
     // the layers are drawn with the mark's own small offset (see glyph_rgba)
-    let at = |(x, y): (f32, f32)| {
-        rect.min
-            + egui::Vec2::new(
-                (x + 0.5) / 1024.0 * rect.width(),
-                (y - 6.0) / 1024.0 * rect.height(),
-            )
-    };
-    for (tex, pivot, turn) in [
-        (&ear_l, EAR_PIVOT[0], -ears.0),
-        (&ear_r, EAR_PIVOT[1], ears.1),
-    ] {
+    let at = |(x, y): (f32, f32)| rect.min + egui::Vec2::new((x + 0.5) / 1024.0 * rect.width(), (y - 6.0) / 1024.0 * rect.height());
+    for (tex, pivot, turn) in [(&ear_l, EAR_PIVOT[0], -ears.0), (&ear_r, EAR_PIVOT[1], ears.1)] {
         let mut m = egui::Mesh::with_texture(tex.id());
         m.add_rect_with_uv(rect, uv, col);
         if turn != 0.0 {
@@ -298,10 +245,7 @@ mod tests {
     use super::*;
 
     fn alpha(px: &[u8], n: u32, x: f32, y: f32) -> u8 {
-        let (x, y) = (
-            (x / 1024.0 * n as f32) as u32,
-            (y / 1024.0 * n as f32) as u32,
-        );
+        let (x, y) = ((x / 1024.0 * n as f32) as u32, (y / 1024.0 * n as f32) as u32);
         px[((y * n + x) * 4 + 3) as usize]
     }
 
@@ -316,16 +260,8 @@ mod tests {
         assert_eq!(alpha(&px, n, 512.0, 100.0), 0, "gap between the ears");
         assert_eq!(alpha(&px, n, 435.0, 600.0), 0, "left bar of the ⌘");
         assert_eq!(alpha(&px, n, 300.0, 350.0), 0, "top-left loop");
-        assert_eq!(
-            alpha(&px, n, 512.0, 600.0),
-            255,
-            "the ⌘'s middle square stays filled"
-        );
-        assert_eq!(
-            alpha(&px, n, 348.0, 434.0),
-            255,
-            "inside a loop stays filled"
-        );
+        assert_eq!(alpha(&px, n, 512.0, 600.0), 255, "the ⌘'s middle square stays filled");
+        assert_eq!(alpha(&px, n, 348.0, 434.0), 255, "inside a loop stays filled");
         assert_eq!(alpha(&px, n, 10.0, 10.0), 0, "corner is clear");
     }
 
@@ -343,19 +279,12 @@ mod tests {
             cov += a(&body) * (1.0 - cov);
             worst = worst.max(((cov * 255.0).round() as i32 - mark[i * 4 + 3] as i32).abs());
         }
-        assert!(
-            worst <= 40,
-            "layers differ from the mark by {worst}/255 somewhere"
-        );
+        assert!(worst <= 40, "layers differ from the mark by {worst}/255 somewhere");
         assert_eq!(alpha(&body, n, 150.0, 600.0), 255, "keycap body");
         assert_eq!(alpha(&body, n, 165.0, 90.0), 0, "no ears on the body layer");
         assert_eq!(alpha(&ear_l, n, 165.0, 90.0), 255, "left ear");
         assert_eq!(alpha(&ear_r, n, 850.0, 90.0), 255, "right ear");
-        assert_eq!(
-            alpha(&ear_l, n, 850.0, 90.0),
-            0,
-            "left layer has only the left ear"
-        );
+        assert_eq!(alpha(&ear_l, n, 850.0, 90.0), 0, "left layer has only the left ear");
         assert_eq!(alpha(&body, n, 435.0, 600.0), 0, "⌘ cut out of the body");
         assert_eq!(body[(128 * n as usize + 40) * 4], 255, "white ink");
     }

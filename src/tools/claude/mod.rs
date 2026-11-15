@@ -10,11 +10,9 @@ mod parts;
 pub mod settings_ui;
 mod ui;
 
-use crate::core::tool::{
-    Action, Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM,
-};
-use crate::kit::ai::{self, UsageInfo};
+use crate::core::tool::{Action, Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM};
 use crate::kit::glass::{tint, Icon};
+use crate::kit::ai::{self, UsageInfo};
 use egui::{Rect, Ui};
 
 pub const ID: ToolId = "claude";
@@ -55,8 +53,7 @@ pub mod keychain {
     /// sign-in in the Keychain (or it's connected already).
     pub fn wanted(demo: bool) -> bool {
         let set = ai::settings::get();
-        demo || ((set.is_on("claude") || set.main == "claude")
-            && (set.claude_keychain == "ok" || exists()))
+        demo || ((set.is_on("claude") || set.main == "claude") && (set.claude_keychain == "ok" || exists()))
     }
 
     pub fn status() -> crate::kit::perms::Status {
@@ -118,10 +115,7 @@ pub struct Claude {
 
 impl Claude {
     pub fn new(env: &ToolEnv) -> Self {
-        Claude {
-            all: backend::start(env.ctx.clone(), env.demo),
-            demo: env.demo,
-        }
+        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo }
     }
 }
 
@@ -140,26 +134,17 @@ impl Claude {
         let pick = match set.menu_bar.as_str() {
             "off" => return None,
             "closest" => ai::alerts::closest(&infos).map(|(i, l)| (i.clone(), Some(l.pct))),
-            id => infos
-                .iter()
-                .find(|i| ai::meta(i.provider).id == id)
-                .map(|i| (i.clone(), i.session().map(|l| l.pct))),
+            id => infos.iter().find(|i| ai::meta(i.provider).id == id).map(|i| (i.clone(), i.session().map(|l| l.pct))),
         };
         match pick {
             Some((_, Some(pct))) => Some(format!("{pct:.0}%")),
-            _ => infos
-                .iter()
-                .find(|i| i.is_api() && i.local.usd_month > 0.0)
-                .map(|i| format!("${:.0}", i.local.usd_month)),
+            _ => infos.iter().find(|i| i.is_api() && i.local.usd_month > 0.0).map(|i| format!("${:.0}", i.local.usd_month)),
         }
     }
 }
 
 fn badge() -> Badge {
-    Badge {
-        icon: Icon::Gauge,
-        color: tint::CLAUDE(),
-    }
+    Badge { icon: Icon::Gauge, color: tint::CLAUDE() }
 }
 
 impl Tool for Claude {
@@ -179,14 +164,7 @@ impl Tool for Claude {
         "Monitor"
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec {
-            id: LIMITS,
-            title: "AI limits",
-            about: "Session and weekly limits of Claude or Codex, tokens today.",
-            sizes: UP_TO_MEDIUM,
-            size: Size::S14,
-            default_on: true,
-        }]
+        vec![WidgetSpec { id: LIMITS, title: "AI limits", about: "Session and weekly limits of Claude or Codex, tokens today.", sizes: UP_TO_MEDIUM, size: Size::S14, default_on: true }]
     }
     fn widget_ui(&mut self, widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         if widget != LIMITS {
@@ -215,23 +193,13 @@ impl Tool for Claude {
     }
     fn recommendations(&self) -> Vec<Recommendation> {
         let info = self.info();
-        let Some(l) = info.session().filter(|l| l.pct >= 80.0) else {
-            return Vec::new();
-        };
+        let Some(l) = info.session().filter(|l| l.pct >= 80.0) else { return Vec::new() };
         vec![Recommendation {
             priority: 60,
             title: format!("Your {} session is almost used up", info.provider),
-            body: format!(
-                "{:.0}% of the current 5-hour session is used. It {}.",
-                l.pct,
-                ui::short_reset(&l.resets)
-            ),
+            body: format!("{:.0}% of the current 5-hour session is used. It {}.", l.pct, ui::short_reset(&l.resets)),
             action: "See Limits".into(),
-            go: Action::ShowDetail {
-                tool: ID.into(),
-                detail: LIMITS.into(),
-                toggle: true,
-            },
+            go: Action::ShowDetail { tool: ID.into(), detail: LIMITS.into(), toggle: true },
         }]
     }
     fn tray_title(&self) -> Option<String> {
@@ -243,11 +211,7 @@ impl Tool for Claude {
             "claude" => Some(View::Page),
             "codex" | "codex-detail" | "gemini" | "all" => {
                 backend::select(ai::index_of(view.trim_end_matches("-detail")), true);
-                Some(if view.ends_with("-detail") {
-                    View::Detail(LIMITS)
-                } else {
-                    View::Page
-                })
+                Some(if view.ends_with("-detail") { View::Detail(LIMITS) } else { View::Page })
             }
             "claude-api" => {
                 let mut g = self.all[0].lock_ok();
@@ -260,19 +224,8 @@ impl Tool for Claude {
                 Some(View::Page)
             }
             "claude-missing" => {
-                let error = Some(format!(
-                    "Claude Code isn't installed on this Mac. {}",
-                    crate::kit::claude_code::Availability::NotInstalled.how()
-                ));
-                *self.all[0].lock_ok() = UsageInfo {
-                    provider: ai::claude::NAME,
-                    loading: false,
-                    scanned: true,
-                    installed: false,
-                    fetched: Some(chrono::Local::now()),
-                    error,
-                    ..Default::default()
-                };
+                let error = Some(format!("Claude Code isn't installed on this Mac. {}", crate::kit::claude_code::Availability::NotInstalled.how()));
+                *self.all[0].lock_ok() = UsageInfo { provider: ai::claude::NAME, loading: false, scanned: true, installed: false, fetched: Some(chrono::Local::now()), error, ..Default::default() };
                 Some(View::Page)
             }
             _ => None,
@@ -289,11 +242,7 @@ mod tests {
     #[test]
     fn keychain_row_and_status() {
         let set = |state: &str, main: &str, off: &[&str]| {
-            let (state, main, off) = (
-                state.to_string(),
-                main.to_string(),
-                off.iter().map(|s| s.to_string()).collect(),
-            );
+            let (state, main, off) = (state.to_string(), main.to_string(), off.iter().map(|s| s.to_string()).collect());
             ai::settings::update(false, move |s| {
                 s.claude_keychain = state;
                 s.main = main;

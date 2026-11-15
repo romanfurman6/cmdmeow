@@ -134,11 +134,7 @@ impl Check {
     pub fn new(tool: &'static str, demo: bool) -> Check {
         Check {
             tool,
-            inner: Arc::new(Mutex::new(Inner {
-                phase: Phase::Idle,
-                headline: String::new(),
-                recs: Vec::new(),
-            })),
+            inner: Arc::new(Mutex::new(Inner { phase: Phase::Idle, headline: String::new(), recs: Vec::new() })),
             cancel: None,
             hovered: None,
             icons: HashMap::new(),
@@ -167,11 +163,7 @@ impl Check {
     pub fn revealed(&mut self, ctx: &egui::Context) -> Option<(String, f32)> {
         let (key, at) = self.reveal.clone()?;
         // screenshots hold the ring
-        let k = if self.demo {
-            1.0
-        } else {
-            crate::kit::glass::reveal::strength(ctx.input(|i| i.time) - at)
-        };
+        let k = if self.demo { 1.0 } else { crate::kit::glass::reveal::strength(ctx.input(|i| i.time) - at) };
         if k <= 0.0 {
             self.reveal = None;
             return None;
@@ -208,13 +200,7 @@ impl Check {
     /// Recommendations not skipped.
     pub fn recs(&self) -> Vec<Rec> {
         let skipped = skipped(self.tool);
-        self.inner
-            .lock_ok()
-            .recs
-            .iter()
-            .filter(|r| !skipped.contains(&skip_id(r)))
-            .cloned()
-            .collect()
+        self.inner.lock_ok().recs.iter().filter(|r| !skipped.contains(&skip_id(r))).cloned().collect()
     }
 
     /// Ask the main agent in the background.
@@ -230,11 +216,7 @@ impl Check {
             g.headline.clear();
         }
         self.answer = ask.answer.iter().cloned().collect();
-        self.actions = ask
-            .actions
-            .iter()
-            .map(|(id, _, label)| (*id, *label))
-            .collect();
+        self.actions = ask.actions.iter().map(|(id, _, label)| (*id, *label)).collect();
         let inner = self.inner.clone();
         let ctx = ctx.clone();
         let tool = self.tool;
@@ -257,13 +239,7 @@ impl Check {
                         None => g.phase = Phase::Failed(format!("{} gave no answer", agent.name())),
                     }
                 }
-                Err(e) => {
-                    g.phase = Phase::Failed(if e.is_empty() {
-                        format!("{} failed", agent.name())
-                    } else {
-                        e
-                    })
-                }
+                Err(e) => g.phase = Phase::Failed(if e.is_empty() { format!("{} failed", agent.name()) } else { e }),
             }
             drop(g);
             ctx.request_repaint();
@@ -286,12 +262,7 @@ impl Check {
     /// Start when the list holds something no automatic check has seen yet
     /// (the first time, or a new item), never because items went away (the
     /// person turned one off or removed it). For live lists with no scan.
-    pub fn auto_new(
-        &mut self,
-        ctx: &egui::Context,
-        ids: impl IntoIterator<Item = String>,
-        ask: impl FnOnce() -> Ask,
-    ) {
+    pub fn auto_new(&mut self, ctx: &egui::Context, ids: impl IntoIterator<Item = String>, ask: impl FnOnce() -> Ask) {
         if self.demo || !self.note_new(ids) {
             return;
         }
@@ -346,10 +317,7 @@ impl Check {
 
     /// Recommendations that aren't answers.
     pub fn tips(&self) -> Vec<Rec> {
-        self.recs()
-            .into_iter()
-            .filter(|r| !self.is_answer(r))
-            .collect()
+        self.recs().into_iter().filter(|r| !self.is_answer(r)).collect()
     }
 
     /// Whether `r` answers a key that waited on the user.
@@ -363,40 +331,13 @@ impl Check {
     }
 
     /// A sample recommendation for screenshots.
-    pub fn demo_rec(
-        action: &str,
-        label: &str,
-        title: &str,
-        value: &str,
-        why: &str,
-        name: &str,
-    ) -> Rec {
-        Rec {
-            key: title.into(),
-            action: action.into(),
-            label: label.into(),
-            title: title.into(),
-            value: value.into(),
-            why: why.into(),
-            icon: None,
-            name: name.into(),
-        }
+    pub fn demo_rec(action: &str, label: &str, title: &str, value: &str, why: &str, name: &str) -> Rec {
+        Rec { key: title.into(), action: action.into(), label: label.into(), title: title.into(), value: value.into(), why: why.into(), icon: None, name: name.into() }
     }
 
     /// A sample recommendation about the item `key`, for screenshots.
-    pub fn demo_rec_for(
-        key: &str,
-        action: &str,
-        label: &str,
-        title: &str,
-        value: &str,
-        why: &str,
-        name: &str,
-    ) -> Rec {
-        Rec {
-            key: key.into(),
-            ..Self::demo_rec(action, label, title, value, why, name)
-        }
+    pub fn demo_rec_for(key: &str, action: &str, label: &str, title: &str, value: &str, why: &str, name: &str) -> Rec {
+        Rec { key: key.into(), ..Self::demo_rec(action, label, title, value, why, name) }
     }
 
     /// The popover closed after a click on the tip about `key`, for screenshots.
@@ -438,20 +379,11 @@ fn skip_id(r: &Rec) -> String {
 // ------------------------------------------------------------------ prompt
 
 fn prompt(ask: &Ask) -> (String, String) {
-    let acts: Vec<String> = ask
-        .actions
-        .iter()
-        .map(|(id, what, _)| format!("- {id}: {what}"))
-        .collect();
+    let acts: Vec<String> = ask.actions.iter().map(|(id, what, _)| format!("- {id}: {what}")).collect();
     let first = if ask.answer.is_empty() {
         String::new()
     } else {
-        let keys: Vec<&str> = ask
-            .answer
-            .iter()
-            .take(MAX_ANSWERS)
-            .map(|k| k.as_str())
-            .collect();
+        let keys: Vec<&str> = ask.answer.iter().take(MAX_ANSWERS).map(|k| k.as_str()).collect();
         format!(
             "These keys wait for the user's decision: {}. First give exactly one rec for each of them, picking the action you would take; then the other suggestions. ",
             keys.join(", ")
@@ -470,11 +402,7 @@ fn prompt(ask: &Ask) -> (String, String) {
         acts = acts.join("\n"),
     );
     let mut lines: Vec<String> = ask.facts.clone();
-    lines.extend(
-        ask.items
-            .iter()
-            .map(|i| format!("[{}] {}", i.key, i.line.replace('\n', " "))),
-    );
+    lines.extend(ask.items.iter().map(|i| format!("[{}] {}", i.key, i.line.replace('\n', " "))));
     (system, lines.join("\n"))
 }
 
@@ -515,18 +443,10 @@ fn parse(text: &str, ask: &Ask) -> Option<(String, Vec<Rec>)> {
             serde_json::Value::Number(n) => n.to_string(),
             _ => continue,
         };
-        let Some(item) = ask.items.iter().find(|i| i.key == key) else {
-            continue;
-        };
-        let Some(&(id, _, label)) = ask.actions.iter().find(|(id, _, _)| *id == r.action) else {
-            continue;
-        };
+        let Some(item) = ask.items.iter().find(|i| i.key == key) else { continue };
+        let Some(&(id, _, label)) = ask.actions.iter().find(|(id, _, _)| *id == r.action) else { continue };
         let is_answer = ask.answer.contains(&key);
-        if r.title.trim().is_empty()
-            || out
-                .iter()
-                .any(|o| o.key == key && (o.action == id || is_answer))
-        {
+        if r.title.trim().is_empty() || out.iter().any(|o| o.key == key && (o.action == id || is_answer)) {
             continue;
         }
         let others = out.iter().filter(|o| !ask.answer.contains(&o.key)).count();
@@ -566,10 +486,7 @@ pub struct Settings {
 
 impl Settings {
     pub fn is_on(&self, tool: &str) -> bool {
-        self.on
-            .get(tool)
-            .copied()
-            .unwrap_or_else(|| TOOLS.iter().find(|t| t.0 == tool).is_some_and(|t| t.2))
+        self.on.get(tool).copied().unwrap_or_else(|| TOOLS.iter().find(|t| t.0 == tool).is_some_and(|t| t.2))
     }
 }
 
@@ -579,14 +496,7 @@ fn dir() -> PathBuf {
 
 fn cell() -> &'static Mutex<Settings> {
     static S: OnceLock<Mutex<Settings>> = OnceLock::new();
-    S.get_or_init(|| {
-        Mutex::new(
-            std::fs::read(dir().join("check.json"))
-                .ok()
-                .and_then(|b| serde_json::from_slice(&b).ok())
-                .unwrap_or_default(),
-        )
-    })
+    S.get_or_init(|| Mutex::new(std::fs::read(dir().join("check.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()))
 }
 
 pub fn settings() -> Settings {
@@ -607,22 +517,11 @@ pub fn update(save: bool, f: impl FnOnce(&mut Settings)) {
 
 fn skipped_cell() -> &'static Mutex<HashMap<String, Vec<String>>> {
     static S: OnceLock<Mutex<HashMap<String, Vec<String>>>> = OnceLock::new();
-    S.get_or_init(|| {
-        Mutex::new(
-            std::fs::read(dir().join("check-skipped.json"))
-                .ok()
-                .and_then(|b| serde_json::from_slice(&b).ok())
-                .unwrap_or_default(),
-        )
-    })
+    S.get_or_init(|| Mutex::new(std::fs::read(dir().join("check-skipped.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()))
 }
 
 fn skipped(tool: &str) -> Vec<String> {
-    skipped_cell()
-        .lock_ok()
-        .get(tool)
-        .cloned()
-        .unwrap_or_default()
+    skipped_cell().lock_ok().get(tool).cloned().unwrap_or_default()
 }
 
 fn add_skipped(tool: &str, id: String, save: bool) {
@@ -658,29 +557,15 @@ pub struct Spent {
 }
 
 fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 /// Note what an agent call cost (AI Check and Cleanup's path check).
 pub fn log_usage(tool: &str, agent: Agent, usage: Usage) {
     use std::io::Write;
-    let e = Spent {
-        t: now(),
-        tool: tool.into(),
-        agent: agent.name().to_lowercase(),
-        usage,
-    };
+    let e = Spent { t: now(), tool: tool.into(), agent: agent.name().to_lowercase(), usage };
     let _ = std::fs::create_dir_all(dir());
-    if let (Ok(mut f), Ok(line)) = (
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir().join("usage.jsonl")),
-        serde_json::to_string(&e),
-    ) {
+    if let (Ok(mut f), Ok(line)) = (std::fs::OpenOptions::new().create(true).append(true).open(dir().join("usage.jsonl")), serde_json::to_string(&e)) {
         let _ = writeln!(f, "{line}");
     }
 }
@@ -701,11 +586,7 @@ pub fn total(days: u64) -> Total {
 
 fn sum(text: &str, since: u64) -> Total {
     let mut t = Total::default();
-    for e in text
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Spent>(l).ok())
-        .filter(|e| e.t >= since)
-    {
+    for e in text.lines().filter_map(|l| serde_json::from_str::<Spent>(l).ok()).filter(|e| e.t >= since) {
         t.calls += 1;
         t.tokens += e.usage.tokens();
         t.cost += e.usage.cost.unwrap_or(0.0);
@@ -720,23 +601,10 @@ mod tests {
     fn ask() -> Ask {
         Ask {
             task: "Find leftovers.".into(),
-            actions: vec![
-                ("remove", "move it to the Trash", "Remove"),
-                ("open", "open the app", "Open"),
-            ],
+            actions: vec![("remove", "move it to the Trash", "Remove"), ("open", "open the app", "Open")],
             items: vec![
-                Item {
-                    key: "1".into(),
-                    line: "Android SDK 5.8 GB".into(),
-                    icon: None,
-                    name: "Android Studio".into(),
-                },
-                Item {
-                    key: "2".into(),
-                    line: "Zoom 1 GB".into(),
-                    icon: None,
-                    name: "Zoom".into(),
-                },
+                Item { key: "1".into(), line: "Android SDK 5.8 GB".into(), icon: None, name: "Android Studio".into() },
+                Item { key: "2".into(), line: "Zoom 1 GB".into(), icon: None, name: "Zoom".into() },
             ],
             facts: vec!["Disk 80% full".into()],
             answer: Vec::new(),
@@ -748,10 +616,7 @@ mod tests {
         let (sys, lines) = prompt(&ask());
         assert!(sys.contains("- remove: move it to the Trash"));
         assert!(sys.contains("untrusted"));
-        assert_eq!(
-            lines,
-            "Disk 80% full\n[1] Android SDK 5.8 GB\n[2] Zoom 1 GB"
-        );
+        assert_eq!(lines, "Disk 80% full\n[1] Android SDK 5.8 GB\n[2] Zoom 1 GB");
     }
 
     #[test]
@@ -766,18 +631,8 @@ mod tests {
         let (h, recs) = parse(text, &ask()).unwrap();
         assert_eq!(h, "Two old apps");
         assert_eq!(recs.len(), 2);
-        assert_eq!(
-            (
-                recs[0].key.as_str(),
-                recs[0].label.as_str(),
-                recs[0].name.as_str()
-            ),
-            ("1", "Remove", "Android Studio")
-        );
-        assert_eq!(
-            (recs[1].key.as_str(), recs[1].action.as_str()),
-            ("2", "open")
-        );
+        assert_eq!((recs[0].key.as_str(), recs[0].label.as_str(), recs[0].name.as_str()), ("1", "Remove", "Android Studio"));
+        assert_eq!((recs[1].key.as_str(), recs[1].action.as_str()), ("2", "open"));
         assert!(parse("no json", &ask()).is_none());
         assert_eq!(parse(r#"{"recs":[]}"#, &ask()).unwrap().1.len(), 0);
     }
@@ -785,22 +640,8 @@ mod tests {
     #[test]
     fn parse_caps_count_and_length() {
         let mut a = ask();
-        a.items = (0..9)
-            .map(|k| Item {
-                key: k.to_string(),
-                line: String::new(),
-                icon: None,
-                name: String::new(),
-            })
-            .collect();
-        let recs: Vec<String> = (0..9)
-            .map(|k| {
-                format!(
-                    r#"{{"key":"{k}","action":"remove","title":"{}","value":"","why":""}}"#,
-                    "t".repeat(200)
-                )
-            })
-            .collect();
+        a.items = (0..9).map(|k| Item { key: k.to_string(), line: String::new(), icon: None, name: String::new() }).collect();
+        let recs: Vec<String> = (0..9).map(|k| format!(r#"{{"key":"{k}","action":"remove","title":"{}","value":"","why":""}}"#, "t".repeat(200))).collect();
         let (_, out) = parse(&format!(r#"{{"recs":[{}]}}"#, recs.join(",")), &a).unwrap();
         assert_eq!(out.len(), MAX_RECS);
         assert!(out[0].title.chars().count() <= 80);
@@ -809,9 +650,7 @@ mod tests {
     #[test]
     fn defaults_follow_the_tool_list() {
         let mut s = Settings::default();
-        assert!(
-            !s.is_on("cleanup") && !s.is_on("startup") && !s.is_on("lens") && !s.is_on("system")
-        );
+        assert!(!s.is_on("cleanup") && !s.is_on("startup") && !s.is_on("lens") && !s.is_on("system"));
         assert!(!s.is_on("capture"));
         s.on.insert("lens".into(), true);
         s.on.insert("cleanup".into(), false);
@@ -820,27 +659,8 @@ mod tests {
 
     #[test]
     fn usage_sums_recent_calls() {
-        let mk = |t, cost| {
-            serde_json::to_string(&Spent {
-                t,
-                tool: "cleanup".into(),
-                agent: "claude".into(),
-                usage: Usage {
-                    input: 100,
-                    output: 20,
-                    cost,
-                    estimate: false,
-                },
-            })
-            .unwrap()
-        };
-        let text = [
-            mk(10, Some(0.5)),
-            mk(100, Some(0.25)),
-            mk(200, None),
-            "junk".into(),
-        ]
-        .join("\n");
+        let mk = |t, cost| serde_json::to_string(&Spent { t, tool: "cleanup".into(), agent: "claude".into(), usage: Usage { input: 100, output: 20, cost, estimate: false } }).unwrap();
+        let text = [mk(10, Some(0.5)), mk(100, Some(0.25)), mk(200, None), "junk".into()].join("\n");
         let t = sum(&text, 50);
         assert_eq!((t.calls, t.tokens), (2, 240));
         assert!((t.cost - 0.25).abs() < 1e-9);
@@ -864,21 +684,12 @@ mod tests {
     #[test]
     fn answers_and_tips_split() {
         let mut c = Check::new("cleanup", true);
-        c.set_demo(
-            "",
-            vec![
-                Check::demo_rec("select", "Clean", "a", "", "why a", "A"),
-                Check::demo_rec("keep", "Keep", "b", "", "why b", "B"),
-            ],
-        );
+        c.set_demo("", vec![Check::demo_rec("select", "Clean", "a", "", "why a", "A"), Check::demo_rec("keep", "Keep", "b", "", "why b", "B")]);
         c.answer = ["a".to_string()].into_iter().collect();
         assert_eq!(c.answer_for("a").map(|r| r.why), Some("why a".into()));
         // a tip isn't an answer, even for its own key
         assert!(c.answer_for("b").is_none());
-        assert_eq!(
-            c.tips().iter().map(|r| r.key.as_str()).collect::<Vec<_>>(),
-            vec!["b"]
-        );
+        assert_eq!(c.tips().iter().map(|r| r.key.as_str()).collect::<Vec<_>>(), vec!["b"]);
     }
 
     #[test]
@@ -893,11 +704,7 @@ mod tests {
             {"key":"2","action":"remove","title":"c","value":"","why":""}]}"#;
         let (_, out) = parse(text, &a).unwrap();
         // one answer for key 2 (the first), put first; the other rec after it
-        assert_eq!(
-            out.iter()
-                .map(|r| (r.key.as_str(), r.action.as_str()))
-                .collect::<Vec<_>>(),
-            vec![("2", "open"), ("1", "remove")]
-        );
+        assert_eq!(out.iter().map(|r| (r.key.as_str(), r.action.as_str())).collect::<Vec<_>>(), vec![("2", "open"), ("1", "remove")]);
     }
+
 }

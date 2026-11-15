@@ -15,9 +15,7 @@ static CLIENT: Mutex<Option<sentry::ClientInitGuard>> = Mutex::new(None);
 
 /// The DSN this binary was built with, if any.
 fn dsn() -> Option<&'static str> {
-    option_env!("CMDMEOW_SENTRY_DSN")
-        .map(str::trim)
-        .filter(|d| !d.is_empty())
+    option_env!("CMDMEOW_SENTRY_DSN").map(str::trim).filter(|d| !d.is_empty())
 }
 
 /// This is an official build that can send crash reports (so ask about it).
@@ -117,12 +115,7 @@ impl Drop for Flush {
 /// (error texts, breadcrumbs, extra data, stack frame paths), so none of
 /// them carries the user name.
 fn scrub(event: &mut sentry::protocol::Event<'static>) {
-    let Some(home) = dirs::home_dir()
-        .map(|h| h.to_string_lossy().into_owned())
-        .filter(|h| h.len() > 1)
-    else {
-        return;
-    };
+    let Some(home) = dirs::home_dir().map(|h| h.to_string_lossy().into_owned()).filter(|h| h.len() > 1) else { return };
     scrub_with(event, &home);
 }
 
@@ -203,47 +196,18 @@ mod tests {
     fn home_folder_is_scrubbed() {
         use sentry::protocol::{Breadcrumb, Event, Exception, Frame, Stacktrace, Value};
         let home = "/Users/someone";
-        let frame = Frame {
-            abs_path: Some(format!("{home}/src/a.rs")),
-            filename: Some(format!("{home}/src/a.rs")),
-            ..Default::default()
-        };
-        let mut ev = Event {
-            message: Some(format!("no file {home}/Desktop/a.png")),
-            ..Default::default()
-        };
-        ev.exception.values.push(Exception {
-            value: Some(format!("open {home}/x")),
-            stacktrace: Some(Stacktrace {
-                frames: vec![frame],
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
-        let mut b = Breadcrumb {
-            message: Some(format!("read {home}/y")),
-            ..Default::default()
-        };
-        b.data
-            .insert("path".into(), Value::String(format!("{home}/z")));
+        let frame = Frame { abs_path: Some(format!("{home}/src/a.rs")), filename: Some(format!("{home}/src/a.rs")), ..Default::default() };
+        let mut ev = Event { message: Some(format!("no file {home}/Desktop/a.png")), ..Default::default() };
+        ev.exception.values.push(Exception { value: Some(format!("open {home}/x")), stacktrace: Some(Stacktrace { frames: vec![frame], ..Default::default() }), ..Default::default() });
+        let mut b = Breadcrumb { message: Some(format!("read {home}/y")), ..Default::default() };
+        b.data.insert("path".into(), Value::String(format!("{home}/z")));
         ev.breadcrumbs.values.push(b);
-        ev.extra.insert(
-            "files".into(),
-            Value::Array(vec![Value::String(format!("{home}/w"))]),
-        );
+        ev.extra.insert("files".into(), Value::Array(vec![Value::String(format!("{home}/w"))]));
         super::scrub_with(&mut ev, home);
         let all = serde_json::to_string(&ev).unwrap();
         assert!(!all.contains(home), "{all}");
         assert_eq!(ev.message.as_deref(), Some("no file ~/Desktop/a.png"));
-        assert_eq!(
-            ev.exception.values[0].stacktrace.as_ref().unwrap().frames[0]
-                .abs_path
-                .as_deref(),
-            Some("~/src/a.rs")
-        );
-        assert_eq!(
-            ev.breadcrumbs.values[0].message.as_deref(),
-            Some("read ~/y")
-        );
+        assert_eq!(ev.exception.values[0].stacktrace.as_ref().unwrap().frames[0].abs_path.as_deref(), Some("~/src/a.rs"));
+        assert_eq!(ev.breadcrumbs.values[0].message.as_deref(), Some("read ~/y"));
     }
 }
