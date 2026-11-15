@@ -1342,7 +1342,7 @@ fn install_fonts(ctx: &egui::Context) {
         // light text on dark reads heavier than dark text on light, so light
         // mode sets every weight a step up
         let light = glass::is_light();
-        let (w_regular, w_bold, w_hero) = if light { (510.0, 680.0, 520.0) } else { (430.0, 620.0, 330.0) };
+        let (w_regular, w_bold, w_hero) = if light { (510.0, 680.0, 680.0) } else { (430.0, 620.0, 620.0) };
         let mut regular = FontData::from_blob(bytes.clone(), 0);
         regular.tweak.coords = VariationCoords::new([("wght", w_regular)]);
         let mut semibold = FontData::from_blob(bytes.clone(), 0);
