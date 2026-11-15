@@ -120,6 +120,8 @@ struct Main {
     quiet: Instant,
     /// A tidy is on its way (asking Finder, or carrying files).
     tidying: bool,
+    /// Where Finder showed each file of the tidy, so Put back can lay it there again.
+    spots: Vec<(PathBuf, f64, f64)>,
     seed: u32,
     /// The sound that plays (`NSSound`) and whether it is the looping purr.
     voice: Option<(Retained<AnyObject>, bool)>,
@@ -365,7 +367,8 @@ impl Main {
             let Some(path) = paths.get(f.file).cloned() else { continue };
             later(Duration::from_secs_f64(f.fall as f64 / desk::FPS), move |m| {
                 if m.desk.as_ref().is_some_and(|d| d.turn == turn) {
-                    put_away(&path);
+                    let spot = m.spots.iter().find(|(p, ..)| *p == path).map(|(_, x, y)| (*x, *y));
+                    put_away(&path, spot);
                 }
             });
         }
@@ -500,6 +503,8 @@ impl Main {
         };
         // Finder counts down from the top of the main screen; the window, up from the bottom of its usable area
         let mut files = Vec::new();
+        self.spots = found.clone();
+        let _ = std::fs::remove_file(tidy_log());
         for (path, x, y) in found {
             let at = NSPoint::new(x - area.origin.x, top - y - area.origin.y);
             let on_screen = at.x > 0.0 && at.x < area.size.width && at.y > 0.0 && at.y < area.size.height;
@@ -1184,8 +1189,60 @@ pub fn tidy() {
     with_main(|m| m.tidy());
 }
 
+/// Put back the files of the last tidy (main thread).
+pub fn put_back() {
+    let _ = std::thread::Builder::new().name("cat put back".into()).spawn(put_back_now);
+}
+
+/// Each tidied file, one per line: where it was, where it went, Finder's x and y.
+fn tidy_log() -> PathBuf {
+    crate::kit::fs::data_path("cat-tidy")
+}
+
+fn put_back_now() {
+    let Ok(text) = std::fs::read_to_string(tidy_log()) else { return };
+    let mut spots = Vec::new();
+    for l in text.lines() {
+        let mut it = l.split('\t');
+        let (Some(from), Some(to)) = (it.next().map(PathBuf::from), it.next().map(PathBuf::from)) else { continue };
+        if !to.exists() || from.exists() || std::fs::rename(&to, &from).is_err() {
+            continue;
+        }
+        let x: Option<f64> = it.next().and_then(|v| v.parse().ok());
+        let y: Option<f64> = it.next().and_then(|v| v.parse().ok());
+        if let (Some(x), Some(y)) = (x, y) {
+            spots.push((from, x, y));
+        }
+    }
+    let _ = std::fs::remove_file(tidy_log());
+    if spots.is_empty() {
+        return;
+    }
+    // Finder needs a moment to see the files again before it can place them
+    std::thread::sleep(Duration::from_millis(600));
+    let mut script = String::from("tell application \"Finder\"\n");
+    for (path, x, y) in &spots {
+        let p = path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+        script.push_str(&format!("try\nset desktop position of (POSIX file \"{p}\" as alias) to {{{}, {}}}\nend try\n", x.round(), y.round()));
+    }
+    script.push_str("end tell");
+    if let Err(e) = crate::kit::macos::osascript(&script) {
+        if log() {
+            eprintln!("[cat] Finder could not place the files back: {e}");
+        }
+    }
+}
+
+/// A file is in use when it changed in the last minute or is still downloading.
+fn busy(path: &std::path::Path, meta: &std::fs::Metadata) -> bool {
+    let fresh = meta.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age < Duration::from_secs(60));
+    let partial = path.extension().is_some_and(|e| matches!(e.to_string_lossy().as_ref(), "download" | "crdownload" | "part" | "partial"));
+    fresh || partial
+}
+
 /// The files lying on the Desktop and where Finder shows them (points
-/// down from the top of the main screen). Folders stay where they are.
+/// down from the top of the main screen). Folders, hidden files and files
+/// in use stay where they are.
 fn desktop_files() -> Vec<(PathBuf, f64, f64)> {
     let Some(desktop) = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop")) else { return Vec::new() };
     let script = r#"tell application "Finder"
@@ -1214,14 +1271,15 @@ end tell"#;
             let x: f64 = it.next()?.trim().parse().ok()?;
             let y: f64 = it.next()?.trim().parse().ok()?;
             let plain = path.parent() == Some(desktop.as_path()) && path.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
-            let file = std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file());
+            let file = std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file() && !busy(&path, &m));
             (plain && file).then_some((path, x, y))
         })
         .collect()
 }
 
-/// Move `path` into the tidy folder beside it (a name already there gets a number).
-fn put_away(path: &std::path::Path) {
+/// Move `path` into the tidy folder beside it (a name already there gets a
+/// number), and note it so Put back can undo it.
+fn put_away(path: &std::path::Path, spot: Option<(f64, f64)>) {
     let Some(dir) = path.parent().map(|p| p.join(TIDY_FOLDER)) else { return };
     let Some(name) = path.file_name() else { return };
     if std::fs::create_dir_all(&dir).is_err() {
@@ -1239,7 +1297,12 @@ fn put_away(path: &std::path::Path) {
         if log() {
             eprintln!("[cat] could not tidy {}: {e}", path.display());
         }
+        return;
     }
+    let (x, y) = spot.map(|(x, y)| (x.to_string(), y.to_string())).unwrap_or_default();
+    let line = format!("{}\t{}\t{x}\t{y}\n", path.display(), to.display());
+    use std::io::Write;
+    let _ = std::fs::OpenOptions::new().create(true).append(true).open(tidy_log()).and_then(|mut f| f.write_all(line.as_bytes()));
 }
 
 pub fn start(prefs: Prefs, status_item: *mut c_void) {
@@ -1251,7 +1314,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
     let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(1);
-    let main = Main { item, over: None, desk: None, live: false, doing: None, rest_next: Rest::Away, asked: 0, quiet: Instant::now(), tidying: false, seed: seed | 1, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
+    let main = Main { item, over: None, desk: None, live: false, doing: None, rest_next: Rest::Away, asked: 0, quiet: Instant::now(), tidying: false, spots: Vec::new(), seed: seed | 1, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
     if !prefs.hiss {
         super::slap::tidy();
     }

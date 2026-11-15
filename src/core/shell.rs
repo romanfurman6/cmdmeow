@@ -106,7 +106,7 @@ pub struct App {
     /// The update banner was shown last frame (see `kit::update`).
     update_banner: bool,
     /// The cat's tidy shortcut, and whether it is bound.
-    cat_keys: Option<crate::kit::hotkeys::Keys<()>>,
+    cat_keys: Option<crate::kit::hotkeys::Keys<bool>>,
     cat_bound: bool,
 }
 
@@ -745,7 +745,7 @@ impl App {
             }
             if let Some(keys) = self.cat_keys.as_mut() {
                 if want {
-                    let failed = keys.apply(&[((), cat::tidy_shortcut())]);
+                    let failed = keys.apply(&[(false, cat::tidy_shortcut()), (true, cat::put_back_shortcut())]);
                     if let Some((_, e)) = failed.first() {
                         eprintln!("[cat] tidy shortcut: {e}");
                     }
@@ -755,8 +755,14 @@ impl App {
             }
             self.cat_bound = want;
         }
-        if self.cat_bound && self.cat_keys.as_ref().is_some_and(|k| !k.poll().is_empty()) {
-            cat::tidy();
+        if self.cat_bound {
+            for back in self.cat_keys.as_ref().map(|k| k.poll()).unwrap_or_default() {
+                if back {
+                    cat::put_back();
+                } else {
+                    cat::tidy();
+                }
+            }
         }
     }
 }

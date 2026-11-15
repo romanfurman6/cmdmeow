@@ -185,6 +185,18 @@ pub fn tidy_shortcut() -> crate::kit::hotkeys::Shortcut {
     crate::kit::hotkeys::Shortcut { cmd: true, shift: false, alt: true, ctrl: true, key: "T".into() }
 }
 
+/// Puts the last tidy's files back where they were.
+pub const PUT_BACK_KEYS: &str = "⇧⌃⌥⌘T";
+pub fn put_back_shortcut() -> crate::kit::hotkeys::Shortcut {
+    crate::kit::hotkeys::Shortcut { shift: true, ..tidy_shortcut() }
+}
+
+/// The put back shortcut was pressed: the last tidy's files go back.
+pub fn put_back() {
+    #[cfg(target_os = "macos")]
+    mac::put_back();
+}
+
 /// The tidy shortcut was pressed: the cat carries the desktop's files
 /// into a folder (main thread).
 pub fn tidy() {
