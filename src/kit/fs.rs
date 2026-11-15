@@ -661,7 +661,26 @@ fn protected_literal(p: &Path, h: &Path) -> Option<&'static str> {
     if p.join(".git").exists() {
         return Some("Looks like a code project (has .git)");
     }
+    if in_runner(p) {
+        return Some("Part of a CI runner");
+    }
+    if p.starts_with(h.join(".colima")) || p.starts_with(h.join(".lima")) {
+        return Some("Colima and Lima VMs are never removed");
+    }
     None
+}
+
+/// Inside a GitHub Actions runner (its folder holds a `.runner` file): its
+/// checkouts and tools are never removed, whatever they look like.
+pub fn in_runner(p: &Path) -> bool {
+    p.ancestors().any(|a| a.join(".runner").is_file())
+}
+
+/// Never removed, by hand or by a suggestion, whatever it looks like: a CI
+/// runner and the Colima / Lima VMs (their disks back running machines).
+pub fn never_remove(p: &Path) -> bool {
+    let h = home();
+    in_runner(p) || p.starts_with(h.join(".colima")) || p.starts_with(h.join(".lima"))
 }
 
 /// Move to the Trash (so it can be put back). Never falls back to a permanent
@@ -678,6 +697,22 @@ pub fn move_to_trash_at(p: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ci_runner_folders_are_never_removed() {
+        let base = std::env::temp_dir().join(format!("cmdmeow-runner-{}", std::process::id()));
+        let work = base.join("runner-personal/_work/cmdmeow");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(base.join("runner-personal/.runner"), "{}").unwrap();
+        assert!(in_runner(&work) && in_runner(&base.join("runner-personal")));
+        assert!(!in_runner(&base));
+        assert_eq!(protected_literal(&work, Path::new("/nowhere")), Some("Part of a CI runner"));
+        let h = home();
+        assert!(never_remove(&h.join(".colima/_lima/colima/diffdisk")) && never_remove(&h.join(".colima")));
+        assert!(protected_literal(&h.join(".lima/default"), &h).is_some());
+        assert!(!never_remove(&h.join(".colimax")));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn data_folder_moves_over_from_the_old_name() {

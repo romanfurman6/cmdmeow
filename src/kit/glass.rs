@@ -1949,6 +1949,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reveal_holds_then_fades_out() {
+        use reveal::*;
+        assert_eq!(strength(-0.1), 0.0);
+        assert_eq!(strength(0.0), 1.0);
+        assert_eq!(strength(HOLD - 0.01), 1.0);
+        let mid = strength(HOLD + FADE / 2.0);
+        assert!(mid > 0.0 && mid < 1.0);
+        assert!(strength(HOLD + FADE * 0.25) > strength(HOLD + FADE * 0.75));
+        assert_eq!(strength(HOLD + FADE), 0.0);
+    }
+
+    #[test]
     fn disk_ring_fill_is_how_full_the_disk_is() {
         assert_eq!(disk_used(0, 0), 0.0);
         assert_eq!(disk_used(100, 100), 0.0);
