@@ -7,7 +7,8 @@
 //!
 //! It shows only if the work takes longer than [`DELAY`], and once shown it
 //! stays at least [`MIN_SHOWN`], so quick removals never flash. Everything
-//! under it is dimmed and takes no hover, tooltip or click. No shadow.
+//! under it is dimmed and takes no hover, tooltip or click. The card is a
+//! floating surface: Whisper shadow, popover edge (ui-rules P1–P5).
 //!
 //! The mark's fill, wave and ⌘→✓ are Core Animation layers (`spin::mark`);
 //! egui draws only the card and its text, when progress changes.
@@ -241,6 +242,8 @@ fn height(s: &Status) -> f32 {
 fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click> {
     let full = ctx.content_rect();
     let mut click = None;
+    // the page goes still under it: no hover, tip, click or focus (P3)
+    crate::kit::modal::shield(ctx);
     egui::Area::new(key_id(key).with("area")).order(Order::Foreground).fixed_pos(full.min).constrain(false).movable(false).show(ctx, |ui| {
         ui.set_min_size(full.size());
         // the scrim takes every click and hover, so nothing under it reacts
@@ -250,9 +253,10 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
         let center = if page.width() > W + 2.0 * sp::L { page.center() } else { full.center() };
         let m = Rect::from_center_size(center, Vec2::new(W.min(full.width() - 2.0 * sp::L), height(s)));
         let _ = ui.interact(m, key_id(key).with("card"), Sense::click());
-        // no shadow: a flat card with a 1 pt edge
+        // a floating surface: the Whisper shadow and the popover edge (P1, P2)
+        float_shadow(&p, m, R, 1.0);
         p.rect_filled(m, R, POPOVER());
-        p.rect_stroke(m, R, Stroke::new(1.0, white(31)), StrokeKind::Inside);
+        p.rect_stroke(m, R, Stroke::new(1.0, POPOVER_EDGE()), StrokeKind::Inside);
         let mark = Rect::from_center_size(Pos2::new(m.center().x, m.top() + PAD + MARK / 2.0), Vec2::splat(MARK));
         let (frac, state) = match s {
             Status::Working { count, .. } => match count.frac() {
