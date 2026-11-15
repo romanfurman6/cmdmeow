@@ -31,6 +31,8 @@ pub fn show<T>(ctx: &Context, id: ViewportId, builder: ViewportBuilder, mut ui: 
     if ctx.embed_viewports() || has_window(ctx, id) {
         return Some(ctx.show_viewport_immediate(id, builder, |u, class| {
             let out = ui(u, class);
+            // an open menu covers the rest of this window
+            crate::kit::modal::guard_popups(u.ctx());
             // turning fan blades drawn in this window
             crate::kit::spin::flush(u.ctx());
             out

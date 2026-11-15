@@ -1012,8 +1012,6 @@ impl Editor {
         let top = top.clamp(bounds.top() + sp::S, (bounds.bottom() - sp::S - BAR_H).max(bounds.top() + sp::S));
         let left = (anchor.center().x - w / 2.0).clamp(bounds.left() + sp::S, (bounds.right() - sp::S - w).max(bounds.left() + sp::S));
         let r = Rect::from_min_size(Pos2::new(left, top), Vec2::new(w, BAR_H));
-        let sh = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(90) };
-        p.add(sh.as_shape(r, 12.0));
         p.rect_filled(r, 12.0, POPOVER());
         p.rect_stroke(r, 12.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
         // the canvas under the bar takes no clicks

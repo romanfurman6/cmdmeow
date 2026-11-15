@@ -76,6 +76,8 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
         return None;
     }
     let ease = 1.0 - (1.0 - a).powi(3);
+    // nothing under the dialog reacts while it's up
+    crate::kit::modal::shield(&ctx);
     let full = ctx.content_rect();
     let mut again = None;
     egui::Area::new(id().with("area"))
@@ -107,8 +109,6 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
 }
 
 fn card_bg(p: &egui::Painter, m: Rect) {
-    let shadow = egui::epaint::Shadow { offset: [0, 20], blur: 60, spread: 0, color: Color32::from_black_alpha(128) };
-    p.add(shadow.as_shape(m, CornerRadius::same(16)));
     p.rect_filled(m, 16.0, POPOVER());
     p.rect_stroke(m, 16.0, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
 }

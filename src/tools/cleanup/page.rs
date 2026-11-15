@@ -957,6 +957,10 @@ fn kept_row(app: &mut App, ui: &mut Ui, i: usize, rr: Rect) {
 }
 
 fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
+    crate::kit::modal::layer(ui, "cleanup-confirm", |ui| confirm_body(app, ui, r));
+}
+
+fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     // block clicks to the page underneath
@@ -993,8 +997,6 @@ fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
     let bw = 440.0 - 44.0;
     let body_h = p.layout(body.clone(), font(13.0), TEXT_SOFT(), bw).size().y;
     let m = Rect::from_center_size(r.center(), Vec2::new(440.0, 22.0 + 22.0 + 14.0 + body_h + 18.0 + 30.0 + 22.0));
-    let shadow = egui::epaint::Shadow { offset: [0, 20], blur: 60, spread: 0, color: Color32::from_black_alpha(128) };
-    p.add(shadow.as_shape(m, CornerRadius::same(14)));
     p.rect_filled(m, 14.0, POPOVER());
     p.rect_stroke(m, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
     p.text(m.min + Vec2::new(22.0, 22.0), Align2::LEFT_TOP, format!("Clean {} items ({})?", n, human_bytes(bytes)), bold(15.0), TEXT());

@@ -159,6 +159,8 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
     let x = chip.left().min(screen.right() - sp::L - w).max(screen.left() + sp::L);
     let rect = Rect::from_min_size(Pos2::new(x, chip.bottom() + 6.0), Vec2::new(w, h));
     let mut ev = None;
+    // the page under the popover stays still while it's open
+    crate::kit::modal::shield(&ctx);
     let area = egui::Area::new(ui.scope_id().with(("ai-pop", c.tool))).order(egui::Order::Foreground).fixed_pos(rect.min).show(&ctx, |ui| {
         let (rr, _) = ui.allocate_exact_size(rect.size(), Sense::click());
         let p = ui.painter().clone();
@@ -200,8 +202,8 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
             }
         }
     });
-    // close on a click elsewhere (the chip toggles itself) or Escape
-    let clicked_out = ctx.input(|i| i.pointer.any_pressed()) && ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !area.response.rect.contains(pos) && !chip.contains(pos));
+    // close on a click elsewhere (the chip too: it sits under the cover) or Escape
+    let clicked_out = ctx.input(|i| i.pointer.any_pressed()) && ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !area.response.rect.contains(pos));
     if clicked_out || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         c.open = false;
         c.hovered = None;

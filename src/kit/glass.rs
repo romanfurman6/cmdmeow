@@ -466,9 +466,7 @@ pub fn liquid_capsule(p: &Painter, rect: Rect, tint: Option<Color32>, hover: f32
     match tint {
         Some(c) => {
             let fill = if hover > 1.0 { lerp_color(c, Color32::BLACK, 0.12) } else { lerp_color(c, Color32::WHITE, 0.12 * hover) };
-            // a soft glow of its own colour below, a darker lip inside
-            let glow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: with_alpha(c, 0.25 * alpha) };
-            p.add(glow.as_shape(rect, r));
+            // flat, with a darker lip inside
             p.rect_filled(rect, r, with_alpha(fill, alpha));
             let lip = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 2.0), rect.max);
             p.with_clip_rect(lip).rect_filled(rect, r, Color32::from_black_alpha((46.0 * alpha) as u8));
