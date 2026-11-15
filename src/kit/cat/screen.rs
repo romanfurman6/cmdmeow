@@ -134,7 +134,7 @@ pub fn load(script: &Script) -> Option<Frames> {
         }
     }
     if script.bowl.is_some() {
-        frames.bowl = decode("bowl.png");
+        frames.bowl = decode("bowl.webp");
     }
     Some(frames)
 }
