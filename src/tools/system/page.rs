@@ -305,12 +305,12 @@ fn memory_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     let y = card_title(p, r, "Memory", Some((word, level_status(s.mem_level()))), Some((&pct, "%")));
     // one stacked bar of what holds the memory
     let tot = s.mem_total.max(1) as f32;
-    let parts = [(s.mem_active, tint::HEALTH()), (s.mem_wired, INDIGO()), (s.mem_compressed, PURPLE())];
+    let parts = [(s.mem_active, series::monitor(0)), (s.mem_wired, series::monitor(1)), (s.mem_compressed, series::monitor(2))];
     let segs: Vec<(f32, Color32)> = parts.iter().map(|(b, c)| (*b as f32 / tot, *c)).collect();
     let rows = vec![
-        (Some(tint::HEALTH()), "App memory".to_string(), human_bytes(s.mem_active)),
-        (Some(INDIGO()), "Wired".to_string(), human_bytes(s.mem_wired)),
-        (Some(PURPLE()), "Compressed".to_string(), human_bytes(s.mem_compressed)),
+        (Some(series::monitor(0)), "App memory".to_string(), human_bytes(s.mem_active)),
+        (Some(series::monitor(1)), "Wired".to_string(), human_bytes(s.mem_wired)),
+        (Some(series::monitor(2)), "Compressed".to_string(), human_bytes(s.mem_compressed)),
         (None, "Swap used".to_string(), human_bytes(s.swap_used)),
         (None, "Installed".to_string(), human_bytes(s.mem_total)),
     ];
@@ -378,7 +378,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let y = card_title(p, r, &title, status, None);
     // two numbers side by side
     let colw = r.width() / 2.0;
-    for (k, (v, label, col)) in [(human_rate(s.net_down), "download", TEXT()), (human_rate(s.net_up), "upload", TEAL())].into_iter().enumerate() {
+    for (k, (v, label, col)) in [(human_rate(s.net_down), "download", TEXT()), (human_rate(s.net_up), "upload", tint::HEALTH())].into_iter().enumerate() {
         let x = r.left() + k as f32 * colw;
         text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &v, ty::lead(), col, colw - sp::S);
         p.text(Pos2::new(x, y + 25.0), Align2::LEFT_TOP, label, ty::caption(), ty::caption_color());
@@ -400,7 +400,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let lt = legend(p, bottom, &rows);
     let gr = Rect::from_min_max(Pos2::new(r.left(), y + 40.0 + sp::M), Pos2::new(r.right(), lt - sp::M));
     if gr.height() > 20.0 {
-        tile::spark(p, gr, &s.net_history, TEAL(), None);
+        tile::spark(p, gr, &s.net_history, tint::HEALTH(), None);
     }
     let mut out = None;
     // the two tests side by side; each opens the dial in its mode

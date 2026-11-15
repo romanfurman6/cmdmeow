@@ -13,7 +13,7 @@ pub fn usage_color(pct: f32) -> Color32 {
     } else if pct >= 70.0 {
         AMBER()
     } else {
-        CLAUDE()
+        tint::CLAUDE()
     }
 }
 
@@ -163,11 +163,11 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
         let br = Rect::from_min_max(Pos2::new(x, plot.bottom() - h), Pos2::new(x + bw, plot.bottom()));
         let over = pace.is_some_and(|pc| val(d) > pc);
         let col = if i == sel {
-            CLAUDE()
+            tint::CLAUDE()
         } else if over {
             with_alpha(RED(), 0.55)
         } else {
-            with_alpha(CLAUDE(), 0.28)
+            with_alpha(tint::CLAUDE(), 0.28)
         };
         p.rect_filled(br, 2.0, col);
     }
@@ -233,7 +233,7 @@ pub fn share_rows(p: &egui::Painter, r: Rect, rows: &[crate::kit::ai::Share], sh
         let name = s.name.replacen(home, "~", 1);
         text_fit(p, Pos2::new(row.left(), ty_), Align2::LEFT_CENTER, &name, ty::body(), TEXT_SOFT(), x1 - row.left());
         let v = value(s);
-        bar(p, Rect::from_min_size(Pos2::new(row.left(), ty_ + 8.0 + 8.0), Vec2::new(row.width(), 4.0)), (v / top) as f32, with_alpha(CLAUDE(), 0.7));
+        bar(p, Rect::from_min_size(Pos2::new(row.left(), ty_ + 8.0 + 8.0), Vec2::new(row.width(), 4.0)), (v / top) as f32, with_alpha(tint::CLAUDE(), 0.7));
     }
 }
 
@@ -247,6 +247,6 @@ pub fn day_bars(p: &egui::Painter, r: Rect, daily: &[u64], gap: f32) {
         let x = r.left() + i as f32 * (bw + gap);
         let br = Rect::from_min_max(Pos2::new(x, r.bottom() - h), Pos2::new(x + bw, r.bottom()));
         let last = i + 1 == daily.len();
-        p.rect_filled(br, 2.0, if last { CLAUDE() } else { white(46) });
+        p.rect_filled(br, 2.0, if last { tint::CLAUDE() } else { white(46) });
     }
 }

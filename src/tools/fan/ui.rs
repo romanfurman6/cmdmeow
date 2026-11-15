@@ -50,23 +50,11 @@ pub fn ring(p: &egui::Painter, c: Pos2, r: f32, width: f32, frac: f32, color: Co
     p.add(Shape::line(pts, Stroke::new(width, color)));
 }
 
-/// The heat scale from 30 °C to 100 °C as a horizontal gradient.
+/// The heat scale from 30 °C to 100 °C: the three [`heat`] steps, 2 pt apart.
 pub fn heat_scale(p: &egui::Painter, r: Rect) {
-    let mut m = Mesh::default();
-    let n = 24;
-    for i in 0..=n {
-        let f = i as f32 / n as f32;
-        let x = r.left() + r.width() * f;
-        let col = heat(30.0 + 70.0 * f);
-        m.colored_vertex(Pos2::new(x, r.top()), col);
-        m.colored_vertex(Pos2::new(x, r.bottom()), col);
-        if i > 0 {
-            let b = (i as u32) * 2;
-            m.add_triangle(b - 2, b - 1, b);
-            m.add_triangle(b - 1, b, b + 1);
-        }
-    }
-    p.add(Shape::mesh(m));
+    use super::data::{HOT_C, WARM_C};
+    let (w, h) = (heat_pos(WARM_C), heat_pos(HOT_C));
+    stacked_bar(p, r, &[(w, heat(30.0)), (h - w, heat(WARM_C)), (1.0 - h, heat(HOT_C))]);
 }
 
 /// Where a temperature sits on [`heat_scale`], 0..1.

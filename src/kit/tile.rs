@@ -26,7 +26,7 @@ pub fn card(ui: &mut Ui, rect: Rect, id: egui::Id, selected: bool) -> Response {
 pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
     if selected {
-        p.rect_stroke(rect, R_TILE, Stroke::new(1.5, BLUE()), StrokeKind::Inside);
+        p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
 }
 
@@ -42,7 +42,7 @@ pub fn stopped(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str) 
     } else {
         text_fit(p, Pos2::new(inner.left() + 26.0, inner.top() + 9.0), Align2::LEFT_CENTER, title, ty::title(), TEXT_DIM(), inner.width() - 26.0);
         let st = p.text(Pos2::new(inner.left(), inner.bottom()), Align2::LEFT_BOTTOM, "Stopped", ty::label(), AMBER());
-        p.text(Pos2::new(st.right() + 8.0, inner.bottom()), Align2::LEFT_BOTTOM, "Restart", ty::label(), BLUE());
+        p.text(Pos2::new(st.right() + 8.0, inner.bottom()), Align2::LEFT_BOTTOM, "Restart", ty::label(), ACTION());
     }
     resp
 }
