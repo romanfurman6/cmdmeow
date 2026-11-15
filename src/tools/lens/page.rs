@@ -179,13 +179,8 @@ fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<bool> {
     }
     y += line_h(&p, &ty::body()) + 32.0;
     let br = Rect::from_center_size(Pos2::new(c.x, y + 22.0), Vec2::new(200.0, 44.0));
-    let resp = ui.interact(br, ui.scope_id().with("map-disk"), Sense::click());
-    let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
-    liquid_capsule(&p, br, Some(ACTION()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
-    p.text(br.center(), Align2::CENTER_CENTER, "Map disk", bold(16.0), on_color(ACTION()));
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
+    let id = ui.scope_id().with("map-disk");
+    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     if resp.clicked() {
         return Some(true);
     }

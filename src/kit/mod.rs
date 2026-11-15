@@ -33,6 +33,7 @@ pub mod settings_window;
 pub mod smc;
 pub mod spin;
 pub mod sync;
+pub mod key;
 pub mod sound;
 pub mod tile;
 pub mod update;

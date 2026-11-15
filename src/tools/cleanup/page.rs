@@ -208,13 +208,8 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
         text_fit(&p, Pos2::new(c.x, c.y + 40.0), Align2::CENTER_CENTER, g.title(), ty::body(), TEXT_SOFT(), cell - 8.0);
     }
     let br = Rect::from_center_size(Pos2::new(area.center().x, top + rows as f32 * cell_h + sp::XXL + btn.y / 2.0), btn);
-    let resp = ui.interact(br, ui.scope_id().with("fresh-scan"), Sense::click());
-    let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
-    liquid_capsule(&p, br, Some(ACTION()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
-    p.text(br.center(), Align2::CENTER_CENTER, "Scan", bold(16.0), on_color(ACTION()));
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
+    let id = ui.scope_id().with("fresh-scan");
+    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     resp.clicked()
 }
 
