@@ -865,7 +865,17 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
         let sw = Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
         if k == n - 1 {
             let keys = p.text(Pos2::new(sw.left() - 12.0, r.center().y), Align2::RIGHT_CENTER, cat::TIDY_KEYS, font(13.0), TEXT_DIM());
-            ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).on_hover_text(format!("Put back  {}", cat::PUT_BACK_KEYS));
+            // right-aligned above the keys, so it never runs past the window's edge
+            if ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).hovered() {
+                egui::Area::new(ui.scope_id().with("cat-put-back"))
+                    .order(Order::Tooltip)
+                    .interactable(false)
+                    .pivot(Align2::RIGHT_BOTTOM)
+                    .fixed_pos(Pos2::new(keys.right(), keys.top() - 6.0))
+                    .show(ui.ctx(), |ui| {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(format!("Put back  {}", cat::PUT_BACK_KEYS)));
+                    });
+            }
         }
         if switch(ui, sw, ui.scope_id().with(("cat", k)), *on, true).clicked() {
             *on = !*on;

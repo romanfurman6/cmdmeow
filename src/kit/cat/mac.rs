@@ -495,7 +495,7 @@ impl Main {
         });
     }
 
-    fn tidy_go(&mut self, found: Vec<(PathBuf, f64, f64)>) {
+    fn tidy_go(&mut self, found: Vec<(PathBuf, Option<(f64, f64)>)>) {
         let Some(mtm) = MainThreadMarker::new() else { return };
         let (Some(area), Some(top)) = (screen::area(mtm), first_screen_height(mtm)) else {
             self.tidying = false;
@@ -503,14 +503,27 @@ impl Main {
         };
         // Finder counts down from the top of the main screen; the window, up from the bottom of its usable area
         let mut files = Vec::new();
-        self.spots = found.clone();
+        self.spots = found.iter().filter_map(|(p, at)| at.map(|(x, y)| (p.clone(), x, y))).collect();
         let _ = std::fs::remove_file(tidy_log());
-        for (path, x, y) in found {
-            let at = NSPoint::new(x - area.origin.x, top - y - area.origin.y);
-            let on_screen = at.x > 0.0 && at.x < area.size.width && at.y > 0.0 && at.y < area.size.height;
-            if on_screen {
-                files.push((path, at));
+        // a file Finder could not place gets the next spot of Finder's own
+        // layout (a column from the top right); one off the screen comes onto its edge
+        let (w, h) = (area.size.width, area.size.height);
+        let mut next = 0usize;
+        for (path, spot) in found {
+            let at = match spot {
+                Some((x, y)) => NSPoint::new(x - area.origin.x, top - y - area.origin.y),
+                None => {
+                    let per = ((h - 60.0) / 100.0).max(1.0) as usize;
+                    let (col, row) = (next / per, next % per);
+                    next += 1;
+                    NSPoint::new(w - 60.0 - col as f64 * 100.0, h - 60.0 - row as f64 * 100.0)
+                }
+            };
+            let at = NSPoint::new(at.x.clamp(40.0, w - 40.0), at.y.clamp(40.0, h - 40.0));
+            if log() {
+                eprintln!("[cat] tidy {} at {:.0},{:.0} (Finder {:?})", path.display(), at.x, at.y, spot);
             }
+            files.push((path, at));
         }
         if files.is_empty() {
             if log() {
@@ -1240,10 +1253,10 @@ fn busy(path: &std::path::Path, meta: &std::fs::Metadata) -> bool {
     fresh || partial
 }
 
-/// The files lying on the Desktop and where Finder shows them (points
-/// down from the top of the main screen). Folders, hidden files and files
-/// in use stay where they are.
-fn desktop_files() -> Vec<(PathBuf, f64, f64)> {
+/// The files lying on the Desktop and, when Finder tells, where it shows
+/// them (points down from the top of the main screen). Folders, hidden
+/// files and files in use stay where they are.
+fn desktop_files() -> Vec<(PathBuf, Option<(f64, f64)>)> {
     let Some(desktop) = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Desktop")) else { return Vec::new() };
     let script = r#"tell application "Finder"
 set out to ""
@@ -1255,26 +1268,50 @@ end try
 end repeat
 return out
 end tell"#;
-    let out = match crate::kit::macos::osascript(script) {
-        Ok(o) => o,
-        Err(e) => {
-            if log() {
-                eprintln!("[cat] Finder said no: {e}");
-            }
-            return Vec::new();
+    let out = crate::kit::macos::osascript(script).unwrap_or_else(|e| {
+        if log() {
+            eprintln!("[cat] Finder said no: {e}");
         }
-    };
-    out.lines()
+        String::new()
+    });
+    if log() {
+        eprintln!("[cat] Finder: {out:?}");
+    }
+    // Finder's numbers may come with a decimal comma
+    let num = |s: &str| s.trim().replace(',', ".").parse::<f64>().ok();
+    let spots: Vec<(PathBuf, f64, f64)> = out
+        .lines()
         .filter_map(|l| {
             let mut it = l.split('\t');
-            let path = PathBuf::from(it.next()?);
-            let x: f64 = it.next()?.trim().parse().ok()?;
-            let y: f64 = it.next()?.trim().parse().ok()?;
-            let plain = path.parent() == Some(desktop.as_path()) && path.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
-            let file = std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file() && !busy(&path, &m));
-            (plain && file).then_some((path, x, y))
+            let path = PathBuf::from(it.next()?.trim());
+            Some((path, num(it.next()?)?, num(it.next()?)?))
         })
-        .collect()
+        .collect();
+    // the folder itself is the truth about what lies there; Finder only adds where
+    let Ok(dir) = std::fs::read_dir(&desktop) else { return Vec::new() };
+    let mut files: Vec<(PathBuf, Option<(f64, f64)>)> = dir
+        .flatten()
+        .map(|e| e.path())
+        .filter(|path| {
+            let shown = path.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.'));
+            shown && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file() && !busy(path, &m))
+        })
+        .map(|path| {
+            let spot = spots.iter().find(|(p, ..)| same_file(p, &path)).map(|(_, x, y)| (*x, *y));
+            (path, spot)
+        })
+        .collect();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+/// Finder may spell a path in another Unicode form than the folder does.
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    use std::os::unix::fs::MetadataExt;
+    matches!((std::fs::metadata(a), std::fs::metadata(b)), (Ok(x), Ok(y)) if x.ino() == y.ino() && x.dev() == y.dev())
 }
 
 /// Move `path` into the tidy folder beside it (a name already there gets a
