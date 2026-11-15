@@ -113,14 +113,6 @@ pub fn parse_meta(json: &str) -> Option<ServerInfo> {
     (!info.line().is_empty()).then_some(info)
 }
 
-/// Place from the `cf-meta-*` headers every test server reply carries, for
-/// when `/meta` won't answer. `get` reads a header by name.
-pub fn meta_from_headers(get: impl Fn(&str) -> Option<String>) -> Option<ServerInfo> {
-    let s = |k: &str| get(k).unwrap_or_default().trim().to_string();
-    let info = ServerInfo { isp: String::new(), city: s("cf-meta-city"), colo: s("cf-meta-colo") };
-    (!info.line().is_empty()).then_some(info)
-}
-
 /// Where a phase is, 0..1, from its elapsed time.
 fn phase_frac(elapsed: Duration, total: Duration) -> f32 {
     (elapsed.as_secs_f32() / total.as_secs_f32().max(1e-3)).clamp(0.0, 1.0)
@@ -272,6 +264,19 @@ fn plan(mode: SpeedMode) -> Plan {
     }
 }
 
+/// Open the connection the pings use: up to `SPEED_TEST_OPEN_TRIES` calls,
+/// each under `SPEED_TEST_CONNECT_TIMEOUT`. Returns the last error.
+fn open_connection<E>(stopped: &dyn Fn() -> bool, call: impl Fn(Duration) -> Result<(), E>) -> Result<(), E> {
+    let mut last = call(m::SPEED_TEST_CONNECT_TIMEOUT);
+    for _ in 1..m::SPEED_TEST_OPEN_TRIES {
+        if last.is_ok() || stopped() {
+            break;
+        }
+        last = call(m::SPEED_TEST_CONNECT_TIMEOUT);
+    }
+    last
+}
+
 /// Lost pings in a row after which the line counts as down and pinging stops.
 const LOST_IN_A_ROW: usize = 3;
 
@@ -390,21 +395,13 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
             let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
             Some((total - server).max(0.1))
         };
-        match agent.get(&ping_url).config().timeout_global(Some(m::SPEED_TEST_CONNECT_TIMEOUT)).build().call() {
-            Err(e) => {
+        // a cold first connection can miss its deadline on a good line (two
+        // of nine M1 runs), so it gets a few tries before "no internet"
+        if let Err(e) = open_connection(&stopped, |limit| agent.get(&ping_url).config().timeout_global(Some(limit)).build().call().map(|_| ())) {
+            if !stopped() {
                 finish(Some(format!("No internet connection ({e})")));
-                return;
             }
-            // the place from its headers, until (unless) /meta says more
-            Ok(r) => {
-                if let Some(info) = meta_from_headers(|k| r.headers().get(k).and_then(|h| h.to_str().ok()).map(str::to_string)) {
-                    set(&|s| {
-                        if s.server.is_none() {
-                            s.server = Some(info.clone());
-                        }
-                    });
-                }
-            }
+            return;
         }
         let rtts = round_trips(pl.pings, &stopped, ping, |rtts, frac| {
             let (lat, jit) = (median(rtts), steady_jitter(rtts));
@@ -509,15 +506,27 @@ mod tests {
     }
 
     #[test]
-    fn place_from_headers() {
-        let h = |k: &str| match k {
-            "cf-meta-city" => Some("Madrid".to_string()),
-            "cf-meta-colo" => Some("MAD".to_string()),
-            _ => None,
+    fn a_cold_first_call_gets_more_tries() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let flaky = |_| {
+            calls.set(calls.get() + 1);
+            if calls.get() < 2 { Err("timeout") } else { Ok(()) }
         };
-        assert_eq!(meta_from_headers(h).unwrap().line(), "Madrid");
-        assert_eq!(meta_from_headers(|k| (k == "cf-meta-colo").then(|| "MAD".to_string())).unwrap().line(), "MAD");
-        assert_eq!(meta_from_headers(|_| None), None);
+        assert_eq!(open_connection(&|| false, flaky), Ok(()));
+        assert_eq!(calls.get(), 2);
+        // a dead line gives up after the last try
+        calls.set(0);
+        let dead = |_| {
+            calls.set(calls.get() + 1);
+            Err::<(), _>("timeout")
+        };
+        assert_eq!(open_connection(&|| false, dead), Err("timeout"));
+        assert_eq!(calls.get(), m::SPEED_TEST_OPEN_TRIES);
+        // and a stop doesn't wait for more tries
+        calls.set(0);
+        assert!(open_connection(&|| true, dead).is_err());
+        assert_eq!(calls.get(), 1);
     }
 
     #[test]
