@@ -76,7 +76,7 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     // shown General first; `settings_tab` keeps its ids (0 Widgets, 1 Tools,
     // 2 General, 3 AI Usage, 4 AI Check, 5 Cat) so links and Edit widgets… land on the right tab
     let labels: Vec<&str> = TAB_ORDER.iter().map(|&t| TAB_NAMES[t]).collect();
-    let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, 28.0));
+    let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, sp::HEADER_CONTROL_H));
     let shown = TAB_ORDER.iter().position(|&t| t == app.settings_tab).unwrap_or(0);
     if let Some(k) = segmented(ui, tabs, ui.scope_id().with("settings-tabs"), &labels, shown) {
         app.settings_tab = TAB_ORDER[k];
@@ -652,7 +652,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let row_h = sp::SETTINGS_ROW_H;
     let sw_in = |r: Rect| Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
     let title = |y: &mut f32, t: &str| {
-        p.text(Pos2::new(x, *y), Align2::LEFT_TOP, t, bold(15.0), TEXT());
+        crate::kit::glass::card_title(&p, Pos2::new(x, *y), t);
         *y += 28.0;
     };
 
@@ -791,7 +791,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         }
     }
     y = card.bottom() + 28.0;
-    p.text(Pos2::new(x, y), Align2::LEFT_TOP, "Permissions", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x, y), "Permissions");
     y += 28.0;
     let list = super::onboard::rows(app);
     {
@@ -803,24 +803,24 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     y += used + 16.0;
     let label = "Run setup again";
     let bw = button_width(&p, label, BTN_SECONDARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, 30.0)), label, BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, sp::HEADER_CONTROL_H)), label, BTN_SECONDARY, true).clicked() {
         app.open_setup();
     }
     // the panel has no menu of its own: Quit lives here
     let quit = "Quit Cmd+Meow";
     let qw = button_width(&p, quit, BTN_SECONDARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(x + bw + sp::S, y), Vec2::new(qw, 30.0)), quit, BTN_SECONDARY, true).clicked() && !app.demo {
+    if pill_button(ui, Rect::from_min_size(Pos2::new(x + bw + sp::S, y), Vec2::new(qw, sp::HEADER_CONTROL_H)), quit, BTN_SECONDARY, true).clicked() && !app.demo {
         let ctx = ui.ctx().clone();
         app.quit(&ctx);
     }
     let failed = remove_button(app, ui, Pos2::new(x + bw + sp::S + qw + sp::S, y));
-    p.text(Pos2::new(x + w, y + 15.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
+    p.text(Pos2::new(x + w, y + sp::HEADER_CONTROL_H / 2.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
     // why Remove failed, on its own line under the row (clear of the version)
     if let Some(e) = failed {
-        text_fit(&p, Pos2::new(x, y + 30.0 + sp::S), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w);
+        text_fit(&p, Pos2::new(x, y + sp::HEADER_CONTROL_H + sp::S), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w);
     }
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
-    y + 30.0 + 24.0
+    y + sp::HEADER_CONTROL_H + 24.0
 }
 
 /// Settings › Cat: what the cat reacts to (see [`crate::kit::cat`]), a
@@ -899,7 +899,7 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
     };
     let p = ui.painter().clone();
     let bw = button_width(&p, label, BTN_DANGER);
-    let r = Rect::from_min_size(at, Vec2::new(bw, 30.0));
+    let r = Rect::from_min_size(at, Vec2::new(bw, sp::HEADER_CONTROL_H));
     if pill_button(ui, r, label, BTN_DANGER, run != Run::Working).clicked() && !app.demo {
         if armed {
             ctx.data_mut(|d| {

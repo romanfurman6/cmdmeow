@@ -2125,8 +2125,8 @@ fn permissions_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64) {
     let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 56.0), body.max);
     // rows at their smallest; past that the list scrolls (it never runs
     // under the Back / Continue bar)
-    let head = if list.iter().any(|r| r.optional) { 26.0 } else { 0.0 };
-    let need = list.len() as f32 * (38.0 + 6.0) + head;
+    let head = if list.iter().any(|r| r.optional) { PERM_HEAD } else { 0.0 };
+    let need = list.len() as f32 * 40.0 + head;
     if need <= area.height() {
         perm_list(app, ui, area, &list, t, now);
     } else {
@@ -2171,33 +2171,55 @@ fn ring_ears(p: &egui::Painter, c: Pos2, z: f32, col: Color32) {
 }
 
 /// The permission rows (setup and Settings › General). Returns the height used.
+/// The "Optional" title between the two permission cards: 16, title, 12.
+const PERM_HEAD: f32 = sp::L + 14.0 + sp::M;
+
 pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, now: f64) -> f32 {
     let p = ui.painter().clone();
     let mut y = area.top();
     let mut opt_head = false;
     // rows shrink a little when the list wouldn't fit (8 permissions + Optional)
     let n = list.len().max(1) as f32;
-    let head = if list.iter().any(|r| r.optional) { 26.0 } else { 0.0 };
-    let row_h = ((area.height() - head - 6.0 * n) / n).clamp(38.0, 46.0);
+    let head = if list.iter().any(|r| r.optional) { PERM_HEAD } else { 0.0 };
+    let row_h = ((area.height() - head) / n).clamp(40.0, sp::ROW_H);
+    // one card per group, full-bleed rows with hairlines between (S4)
+    let n_req = list.iter().filter(|r| !r.optional).count();
+    let a0 = ease(t / 0.4);
+    let mut cy = y;
+    for (rows, gap) in [(n_req, 0.0), (list.len() - n_req, if n_req > 0 { head } else { 0.0 })] {
+        cy += gap;
+        if rows > 0 {
+            let card = Rect::from_min_size(Pos2::new(area.left(), cy), Vec2::new(area.width(), rows as f32 * row_h));
+            p.rect_filled(card, R_CARD, CARD().gamma_multiply(a0));
+            cy = card.bottom();
+        }
+    }
     let mut ask: Option<Perm> = None;
+    let mut first_in_group = true;
     for (k, r) in list.iter().enumerate() {
         if r.optional && !opt_head {
             opt_head = true;
-            // a section title like the others (26 in all: 4 above, the title, 7 below)
-            y += sp::XS;
-            p.text(Pos2::new(area.left() + 4.0, y), Align2::LEFT_TOP, "Optional", ty::section(), white(150));
-            y += 22.0;
+            first_in_group = true;
+            if k > 0 {
+                // a section title like the others: 16 above, 12 below (R11)
+                y += sp::L;
+                p.text(Pos2::new(area.left(), y), Align2::LEFT_TOP, "Optional", ty::section(), white(150));
+                y += PERM_HEAD - sp::L;
+            }
         }
         let a = ease((t - 0.05 * k as f32) / 0.4);
-        let rr = Rect::from_min_size(Pos2::new(area.left(), y - (1.0 - a) * 10.0), Vec2::new(area.width(), row_h));
+        let rr = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), row_h));
+        if !first_in_group {
+            hairline(&p, Pos2::new(rr.left() + 16.0, rr.top()), Pos2::new(rr.right() - 16.0, rr.top()));
+        }
+        first_in_group = false;
         let st = app.perm_watch.status(r.perm);
         let waiting = app.perm_watch.waiting(r.perm, now);
         let ok = st == Status::Allowed;
-        p.rect_filled(rr, 10.0, CARD().gamma_multiply(a));
         // just allowed: the row flashes green once and its check draws itself
         let since = app.perm_watch.allowed_at.get(&r.perm).map(|t0| (now - t0) as f32).unwrap_or(10.0);
         if since < 0.8 {
-            p.rect_filled(rr, 10.0, with_alpha(GREEN(), 0.2 * (1.0 - ease(since / 0.8))));
+            p.rect_filled(rr.shrink2(Vec2::new(0.0, 0.5)), 0.0, with_alpha(GREEN(), 0.2 * (1.0 - ease(since / 0.8))));
         }
         let ib = Rect::from_min_size(Pos2::new(rr.left() + 12.0, rr.center().y - 15.0), Vec2::splat(30.0));
         let tint = match st {
@@ -2251,7 +2273,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
                 (r.perm.ask_label(), BTN_SECONDARY)
             };
             let w = button_width(&p, label, kind);
-            let b = Rect::from_min_size(Pos2::new(right - w, rr.center().y - 13.0), Vec2::new(w, 26.0));
+            let b = Rect::from_min_size(Pos2::new(right - w, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(w, sp::CONTROL_H));
             if let Some(e) = err {
                 text_fit(&p, Pos2::new(b.left() - 10.0, rr.center().y), Align2::RIGHT_CENTER, e, font(12.0), RED(), 260.0);
             }
@@ -2259,7 +2281,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
                 ask = Some(r.perm);
             }
         }
-        y += row_h + 6.0;
+        y += row_h;
     }
     if let Some(perm) = ask {
         match perm {

@@ -759,7 +759,7 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
         .filter(|(r, _)| *r != Row::Clicks || clicks)
         .collect();
     let x0 = col.left();
-    p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "Screen recording", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Screen recording");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), rows.len());
     let id = ui.scope_id().with("rec-options");
     let mut s = c.settings.rec.clone();
@@ -843,7 +843,7 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
     use super::share::VIDEO_ACCOUNT;
     let x0 = col.left();
     let id = ui.scope_id().with(("share", shots));
-    p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "Sharing", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Sharing");
     let mut s = if shots { c.settings.shot_share.clone() } else { c.settings.share.clone() };
     let labels = [if shots { "Upload each screenshot" } else { "Upload each recording" }, "Copy the link when done", "Storage"];
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), labels.len());
@@ -906,7 +906,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let mut s = c.settings.share.clone();
     let mut shot = c.settings.shot_share.clone();
     let mut y = body.top() + 16.0;
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Storage", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Storage");
     // R2 (the default) needs its public URL for Public links; Region only
     // for storages it can't be read from (MinIO…) or when already typed
     let host = s.endpoint.trim().to_lowercase();
@@ -977,7 +977,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         s.link = if i == 1 { LinkKind::Week } else { LinkKind::Public };
     }
     y = card.bottom() + 24.0;
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Folders", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Folders");
     let fcard = card_rows(&p, x0, y + 28.0, colw, 2);
     for (k, (ico, l)) in [(Icon::Crop, "Screenshots"), (Icon::Camera, "Videos")].into_iter().enumerate() {
         let ry = row_y(fcard, k);
@@ -996,7 +996,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let rx = x0 + colw + gap;
     let rw = body.right() - 24.0 - rx;
     let ty = body.top() + 16.0;
-    p.text(Pos2::new(rx, ty), Align2::LEFT_TOP, "Shared", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(rx, ty), "Shared");
     let list = Rect::from_min_max(Pos2::new(rx, ty + 28.0), Pos2::new(rx + rw, body.bottom() - 16.0));
     if shared.is_empty() {
         let er = Rect::from_min_size(list.min, Vec2::new(rw, 90.0));
@@ -1104,7 +1104,7 @@ fn record_keys(c: &mut Capture, ui: &mut Ui, cx: &mut Cx) {
 /// Returns the bottom of what it drew.
 fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &[Command]) -> f32 {
     let x0 = col.left();
-    p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "Keyboard shortcuts", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Keyboard shortcuts");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), list.len());
     for (k, cmd) in list.iter().enumerate() {
         let y = row_y(card, k);
@@ -1175,7 +1175,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     let mut y = col.top();
 
     // after a capture
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "After a capture", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "After a capture");
     let card = card_rows(p, x0, y + 28.0, w, 5);
     let ry = row_y(card, 0);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Then", font(13.0), TEXT());
@@ -1223,7 +1223,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     y = card.bottom() + 16.0;
 
     // saving
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Saving", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Saving");
     let card = card_rows(p, x0, y + 28.0, w, 4);
     let ry = row_y(card, 0);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Folder", font(13.0), TEXT());
@@ -1281,7 +1281,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     y = card.bottom() + 16.0;
 
     // permission
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Permission", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Permission");
     let card = Rect::from_min_size(Pos2::new(x0, y + 28.0), Vec2::new(w, 56.0));
     glass_card(p, card, R_CARD, 0.0, false);
     let ok = mac::can_record_screen();

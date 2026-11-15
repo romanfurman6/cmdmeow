@@ -757,7 +757,7 @@ fn left_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let mut changed = false;
     let y = col.top();
 
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "History", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "History");
     let card = card_rows(p, x0, y + 28.0, w, 5);
     // keep N
     label(p, card, 0, "Keep the last");
@@ -832,7 +832,7 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let mut changed = false;
     let mut y = col.top();
 
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Privacy", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Privacy");
     let card = card_rows(p, x0, y + 28.0, w, 4);
     let switches = [
         ("Record passwords (until quit)", c.settings.record_concealed),
@@ -877,7 +877,7 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     y = card.bottom() + 16.0;
 
     // excluded apps
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Never record from", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Never record from");
     let aw = button_width(p, "Add app…", BTN_SECONDARY) - 6.0;
     let ar = Rect::from_min_max(Pos2::new(col.right() - aw, y - 3.0), Pos2::new(col.right(), y + 21.0));
     if pill_button(ui, ar, "Add app…", BTN_SECONDARY, true).clicked() {

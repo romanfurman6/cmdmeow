@@ -273,80 +273,90 @@ pub enum PageAction {
     Forget(String),
 }
 
-const ROW_GAP: f32 = 8.0;
 const SWITCH_H: f32 = sp::SETTINGS_ROW_H;
 const LINE_H: f32 = 44.0;
 const LINE_GAP: f32 = 6.0;
 
 /// Height of the monitoring settings.
 pub fn settings_height(s: &Snapshot) -> f32 {
-    let hidden = if s.hidden_devices.is_empty() { 0.0 } else { 26.0 + s.hidden_devices.len() as f32 * (44.0 + ROW_GAP) + 18.0 };
-    26.0 + 8.0 + 3.0 * SWITCH_H + hidden + 18.0 + 30.0
+    let hidden = if s.hidden_devices.is_empty() { 0.0 } else { sp::XL + TITLE_H + s.hidden_devices.len() as f32 * sp::ROW_H };
+    TITLE_H + 4.0 * SWITCH_H + hidden
 }
 
-/// Mac Health settings: device alerts and the menu bar, hidden devices,
-/// and the way to Bluetooth settings.
+/// A card title and the 12 under it (R2).
+const TITLE_H: f32 = 14.0 + sp::M;
+
+/// Mac Health settings: device alerts and the menu bar, the way to
+/// Bluetooth settings, and hidden devices. One card per list (S4).
 pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
     let p = ui.painter().clone();
     let mut out = None;
     let mut y = r.top();
-    p.text(Pos2::new(r.left() + 4.0, y + 10.0), Align2::LEFT_CENTER, "Bluetooth devices", bold(12.0), TEXT_DIM());
-    y += 26.0;
+    crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), "Bluetooth devices");
+    y += TITLE_H;
     let prefs = &s.bt_prefs;
-    let card = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 8.0 + 3.0 * SWITCH_H));
+    let card = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 4.0 * SWITCH_H));
     glass_card(&p, card, R_CARD, 0.0, false);
     let rows: [(&str, bool, PageAction); 3] = [
         ("Low battery alerts", crate::kit::notify::shown(prefs.alerts), PageAction::ToggleAlerts),
         ("Charged alert", crate::kit::notify::shown(prefs.charged), PageAction::ToggleCharged),
         ("Show in menu bar", prefs.menu_bar, PageAction::ToggleMenuBar),
     ];
+    let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * SWITCH_H), Vec2::new(card.width(), SWITCH_H));
     for (k, (label, on, act)) in rows.into_iter().enumerate() {
-        let rr = Rect::from_min_size(Pos2::new(card.left(), card.top() + 4.0 + k as f32 * SWITCH_H), Vec2::new(card.width(), SWITCH_H));
+        let rr = row(k);
         if k > 0 {
-            hairline(&p, Pos2::new(rr.left() + 12.0, rr.top()), Pos2::new(rr.right() - 12.0, rr.top()));
+            hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
         }
-        let sr = Rect::from_min_size(Pos2::new(rr.right() - 12.0 - 36.0, rr.center().y - 10.0), Vec2::new(36.0, 20.0));
+        let sr = Rect::from_min_size(Pos2::new(rr.right() - 42.0, rr.center().y - 9.0), Vec2::new(30.0, 18.0));
         if switch(ui, sr, ui.scope_id().with(("dev-switch", label)), on, true).clicked() {
             out = Some(act.clone());
         }
-        let mut tw = sr.left() - rr.left() - 24.0;
+        let mut tw = sr.left() - rr.left() - 2.0 * sp::L;
         if act == PageAction::ToggleCharged && on {
             // at 80, 90 or 100%
             let labels: Vec<String> = CHARGED_CHOICES.iter().map(|c| format!("{c}%")).collect();
             let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
             let sel = CHARGED_CHOICES.iter().position(|c| *c == prefs.charged_at).unwrap_or(CHARGED_CHOICES.len() - 1);
-            let seg = Rect::from_min_size(Pos2::new(sr.left() - 14.0 - 150.0, rr.center().y - 13.0), Vec2::new(150.0, 26.0));
+            let seg = Rect::from_min_size(Pos2::new(sr.left() - sp::M - 150.0, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(150.0, sp::CONTROL_H));
             if let Some(i) = segmented(ui, seg, ui.scope_id().with("dev-charged-at"), &refs, sel) {
                 out = Some(PageAction::ChargedAt(CHARGED_CHOICES[i]));
             }
-            tw = seg.left() - rr.left() - 24.0;
+            tw = seg.left() - rr.left() - 2.0 * sp::L;
         }
-        text_fit(&p, Pos2::new(rr.left() + 12.0, rr.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), tw);
+        text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), tw);
     }
-    y = card.bottom() + 18.0;
+    // the way to macOS's own Bluetooth settings, as the card's last row
+    let rr = row(3);
+    hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
+    p.text(Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Bluetooth Settings", font(13.0), TEXT());
+    let bw = button_width(&p, "Open", BTN_SECONDARY);
+    let br = Rect::from_min_size(Pos2::new(rr.right() - sp::M - bw, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
+    if pill_button(ui, br, "Open", BTN_SECONDARY, true).clicked() {
+        out = Some(PageAction::OpenBluetooth);
+    }
+    y = card.bottom() + sp::XL;
     if !s.hidden_devices.is_empty() {
-        p.text(Pos2::new(r.left() + 4.0, y + 10.0), Align2::LEFT_CENTER, "Hidden devices", bold(12.0), TEXT_DIM());
-        y += 26.0;
-        for d in &s.hidden_devices {
-            let rr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 44.0));
-            glass_card(&p, rr, R_CARD, 0.0, false);
+        crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), "Hidden devices");
+        y += TITLE_H;
+        let list = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), s.hidden_devices.len() as f32 * sp::ROW_H));
+        glass_card(&p, list, R_CARD, 0.0, false);
+        for (k, d) in s.hidden_devices.iter().enumerate() {
+            let rr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), sp::ROW_H));
+            if k > 0 {
+                hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
+            }
             let t = Tone { a: AWAY_ALPHA };
-            device_glyph(&p, d, Rect::from_center_size(Pos2::new(rr.left() + 22.0, rr.center().y), Vec2::splat(18.0)), t.c(TEXT_SOFT()));
+            device_glyph(&p, d, Rect::from_center_size(Pos2::new(rr.left() + 26.0, rr.center().y), Vec2::splat(18.0)), t.c(TEXT_SOFT()));
             let bw = button_width(&p, "Show", BTN_SECONDARY);
-            let br = Rect::from_min_size(Pos2::new(rr.right() - 10.0 - bw, rr.center().y - 13.0), Vec2::new(bw, 26.0));
+            let br = Rect::from_min_size(Pos2::new(rr.right() - sp::M - bw, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
             if pill_button(ui, br, "Show", BTN_SECONDARY, true).clicked() {
                 out = Some(PageAction::Hide(d.key(), false));
             }
-            let vr = p.text(Pos2::new(br.left() - 12.0, rr.center().y), Align2::RIGHT_CENTER, pct_text(d.battery()), bold(12.0), t.c(TEXT_DIM()));
-            text_fit(&p, Pos2::new(rr.left() + 42.0, rr.center().y), Align2::LEFT_CENTER, &d.name, font(13.0), t.c(TEXT()), vr.left() - rr.left() - 54.0);
-            y += 44.0 + ROW_GAP;
+            let vr = p.text(Pos2::new(br.left() - sp::M, rr.center().y), Align2::RIGHT_CENTER, pct_text(d.battery()), bold(12.0), t.c(TEXT_DIM()));
+            text_fit(&p, Pos2::new(rr.left() + 46.0, rr.center().y), Align2::LEFT_CENTER, &d.name, font(13.0), t.c(TEXT()), vr.left() - rr.left() - 58.0);
+            y += sp::ROW_H;
         }
-        y += 18.0 - ROW_GAP;
-    }
-    let bw = button_width(&p, "Bluetooth Settings", BTN_SECONDARY);
-    let br = Rect::from_min_size(Pos2::new(r.right() - bw, y), Vec2::new(bw, 30.0));
-    if pill_button(ui, br, "Bluetooth Settings", BTN_SECONDARY, true).clicked() {
-        out = Some(PageAction::OpenBluetooth);
     }
     out
 }

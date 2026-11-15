@@ -1082,6 +1082,12 @@ pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     cy
 }
 
+/// The title over a settings card ("Providers", "After a capture"):
+/// section 12/600, dim, 12 above the card (R2, R11).
+pub fn card_title(p: &Painter, pos: Pos2, label: impl ToString) -> Rect {
+    p.text(pos, Align2::LEFT_TOP, label.to_string(), ty::section(), white(150))
+}
+
 /// The centre y of a section title in a row starting at `top`.
 pub fn section_title_y(p: &Painter, top: f32) -> f32 {
     top + sp::SECTION_H - sp::M - line_h(p, &ty::section()) / 2.0
