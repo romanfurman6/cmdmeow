@@ -1001,8 +1001,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     if shared.is_empty() {
         let er = Rect::from_min_size(list.min, Vec2::new(rw, 90.0));
         glass_card(&p, er, R_CARD, 0.0, false);
-        p.text(er.center() - Vec2::new(0.0, 9.0), Align2::CENTER_CENTER, "Nothing shared yet", bold(13.0), TEXT_SOFT());
-        p.text(er.center() + Vec2::new(0.0, 12.0), Align2::CENTER_CENTER, "Copy link on a screenshot or recording uploads it", font(12.0), TEXT_FAINT());
+        p.text(er.center(), Align2::CENTER_CENTER, "Nothing shared yet", bold(13.0), TEXT_SOFT());
         return;
     }
     let row_h = 54.0;
@@ -1165,17 +1164,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
             }
         }
     }
-    let ny = card.bottom() + 10.0;
-    icons::draw(p, Ico::Keyboard, Rect::from_min_size(Pos2::new(x0 + 2.0, ny), Vec2::splat(14.0)), TEXT_FAINT());
-    let h = paragraph(
-        p,
-        Pos2::new(x0 + 22.0, ny),
-        "⌘⇧3, ⌘⇧4 and ⌘⇧5 belong to macOS. Pick one of them and you get a warning; turn the macOS one off in System Settings › Keyboard first.",
-        font(12.0),
-        TEXT_DIM(),
-        col.width() - 24.0,
-    );
-    ny + h
+    card.bottom()
 }
 
 fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {

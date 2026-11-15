@@ -159,11 +159,12 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         (g.apps.len(), g.apps.iter().map(|a| a.total()).sum::<u64>(), g.phase, g.orphans.iter().map(|o| o.bytes()).sum::<u64>())
     };
     let sub = match (u.tab, phase) {
-        (Tab::Leftovers, _) => "Data left behind by apps that are no longer installed".to_string(),
+        (Tab::Leftovers, _) if orphan_bytes > 0 => human_bytes(orphan_bytes),
+        (Tab::Leftovers, _) => String::new(),
         (_, Phase::Idle) => String::new(),
         (_, Phase::Listing) => "Looking for apps…".to_string(),
         (_, Phase::Sizing { done, total: t }) => format!("{n_apps} apps · measuring {done} of {t}…"),
-        _ => format!("{n_apps} apps · {} · drop any app on this window to remove it", human_bytes(total)),
+        _ => format!("{n_apps} apps · {}", human_bytes(total)),
     };
     // AI Check: a chip after the title, on Leftovers
     let ai_data = u.tab == Tab::Leftovers && orphan_bytes > 0;
@@ -252,12 +253,10 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     let p = ui.painter().clone();
     let c = area.center() - Vec2::new(0.0, 40.0);
     tool_chip(&p, Rect::from_center_size(c - Vec2::new(0.0, 70.0), Vec2::splat(64.0)), Icon::AppRemove, TINT());
-    p.text(Pos2::new(c.x, c.y - 18.0), Align2::CENTER_CENTER, "Remove apps and what they leave behind", bold(18.0), TEXT());
     let btn = Vec2::new(200.0, 44.0);
-    let br = Rect::from_center_size(Pos2::new(c.x, c.y + 20.0 + sp::XXL), btn);
+    let br = Rect::from_center_size(Pos2::new(c.x, c.y + sp::L), btn);
     let id = ui.scope_id().with("un-fresh-scan");
     let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan for apps", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
-    p.text(Pos2::new(c.x, br.bottom() + 22.0), Align2::CENTER_CENTER, "Or drop an app here", font(12.0), TEXT_FAINT());
     resp.clicked()
 }
 

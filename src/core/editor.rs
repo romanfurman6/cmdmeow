@@ -423,7 +423,6 @@ fn size_bar(app: &mut App, ui: &mut Ui, r: Rect) {
         Some((k, spec, cur))
     });
     let Some((key, spec, cur)) = sel else {
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, "Click a widget to resize it", font(12.0), TEXT_FAINT(), r.width());
         return;
     };
     let ty = r.top() + 8.0;

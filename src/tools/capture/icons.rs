@@ -36,7 +36,6 @@ pub enum Ico {
     History,
     Close,
     Check,
-    Keyboard,
     Record,
     Mic,
     MicOff,
@@ -82,7 +81,6 @@ fn symbol(i: Ico) -> &'static str {
         Ico::History => "clock.arrow.circlepath",
         Ico::Close => "xmark",
         Ico::Check => "checkmark",
-        Ico::Keyboard => "keyboard",
         Ico::Record => "record.circle",
         Ico::Mic => "mic",
         Ico::MicOff => "mic.slash",
@@ -229,13 +227,6 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
             line(&[(18.0, 6.0), (6.0, 18.0)]);
         }
         Ico::Check => line(&[(5.0, 12.0), (10.0, 17.0), (19.0, 7.0)]),
-        Ico::Keyboard => {
-            boxr(3.0, 6.0, 21.0, 18.0);
-            line(&[(7.0, 14.0), (17.0, 14.0)]);
-            for x in [7.0, 11.0, 15.0] {
-                p.circle_filled(pt(x, 10.0), u, color);
-            }
-        }
         Ico::Record => {
             circle(12.0, 12.0, 9.0);
             p.circle_filled(pt(12.0, 12.0), 4.5 * u, color);

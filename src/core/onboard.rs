@@ -2501,7 +2501,6 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let glow = ((t * 3.0).sin() * 0.5 + 0.5) * 0.25 + 0.2;
     p.rect_filled(me, 5.0, with_alpha(ACTION(), glow));
     brand_glyph(&p, me.center(), 15.0, Color32::WHITE);
-    p.text(Pos2::new(bar.left() + 10.0, bar.center().y), Align2::LEFT_CENTER, "Click this icon", font(11.0), TEXT_FAINT());
     // a little caret from the icon to the panel
     let c = Pos2::new(me.center().x, top);
     p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0, 0.5), c + Vec2::new(0.0, -6.0), c + Vec2::new(6.0, 0.5)], BG(), Stroke::NONE));

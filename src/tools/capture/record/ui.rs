@@ -437,7 +437,6 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
             }
         }
         y += 3.0 * ROW + 14.0;
-        p.text(Pos2::new(x0, y + 14.0), Align2::LEFT_CENTER, "Esc to cancel", font(12.0), TEXT_FAINT());
         let gr = Rect::from_min_size(Pos2::new(x1 - 28.0, y), Vec2::splat(28.0));
         if icon_button(ui, gr, id.with("gear"), Ico::Gear, "Recording settings", TEXT_SOFT(), true) {
             todo.push(Do::Settings);
