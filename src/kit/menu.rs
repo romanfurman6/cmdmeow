@@ -90,6 +90,7 @@ fn row(ui: &mut Ui, label: &str, on: bool, has_sub: bool, enabled: bool) -> Resp
     let w = width(ui, label_w(ui, label) + 2.0 * INSET + if on || has_sub { 24.0 } else { 0.0 });
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), sense);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, enabled, label));
     // rows highlight only: no press, no sound (B10)
     let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
     paint_row(ui.painter(), r, label, h, on, has_sub, enabled);
@@ -113,6 +114,7 @@ pub fn item(ui: &mut Ui, label: &str) -> Response {
 pub fn danger(ui: &mut Ui, label: &str, enabled: bool) -> Response {
     let w = width(ui, label_w(ui, label) + 2.0 * INSET);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), if enabled { Sense::click() } else { Sense::hover() });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, enabled, label));
     let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
     if h > 0.0 && enabled {
         ui.painter().rect_filled(r, 0.0, white((ROW_HOVER as f32 * h) as u8));
