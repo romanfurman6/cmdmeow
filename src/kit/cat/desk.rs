@@ -66,7 +66,7 @@ impl Clip {
 pub const CLIPS: [Clip; 17] = [
     Clip { name: "stand", n: 1, cols: 1, w: 436, h: 364, ox: 249.0, oy: 360.1 },
     Clip { name: "scare_in", n: 6, cols: 6, w: 419, h: 376, ox: 232.7, oy: 371.8 },
-    Clip { name: "scare", n: 12, cols: 8, w: 408, h: 378, ox: 228.2, oy: 373.8 },
+    Clip { name: "scare", n: 12, cols: 8, w: 395, h: 378, ox: 228.2, oy: 373.8 },
     Clip { name: "scare_out", n: 10, cols: 8, w: 448, h: 375, ox: 248.3, oy: 371.2 },
     Clip { name: "turn", n: 9, cols: 8, w: 460, h: 376, ox: 241.2, oy: 367.2 },
     Clip { name: "run", n: 19, cols: 8, w: 499, h: 405, ox: 239.8, oy: 392.6 },
