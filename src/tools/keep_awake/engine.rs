@@ -51,8 +51,8 @@ pub enum Via {
 #[serde(default)]
 pub struct Settings {
     /// Auto: awake while an agent works. On (the switch) sits on top of it,
-    /// so turning On off goes back to Auto. A new field (the old "claude"
-    /// switch defaulted to on), so everyone starts at Off.
+    /// so turning On off goes back to Auto. New installs start at Off; a
+    /// saved "Stay awake while Claude works" carries over as Auto.
     pub auto: bool,
     /// System-wide shortcut that turns On on and off.
     pub shortcut: Option<crate::kit::hotkeys::Shortcut>,
@@ -409,7 +409,18 @@ pub fn data_dir() -> PathBuf {
 }
 
 fn load_settings(dir: &Path) -> Settings {
-    crate::kit::fs::load_json::<Settings>(&dir.join("settings.json"))
+    std::fs::read(dir.join("settings.json")).map(|b| settings_from(&b)).unwrap_or_default()
+}
+
+/// settings.json; one saved before Off · Auto · On (no "auto", the agent
+/// switch as "claude") keeps working: its agent switch on becomes Auto.
+fn settings_from(json: &[u8]) -> Settings {
+    let raw: serde_json::Value = serde_json::from_slice(json).unwrap_or_default();
+    let mut s: Settings = serde_json::from_value(raw.clone()).unwrap_or_default();
+    if raw.get("auto").is_none() && raw.get("claude").and_then(|v| v.as_bool()) == Some(true) {
+        s.auto = true;
+    }
+    s
 }
 
 /// When On was turned on, if it's on.
@@ -613,9 +624,12 @@ mod tests {
 
     #[test]
     fn old_files_still_read() {
-        // the old "claude" switch defaulted to on: it doesn't turn Auto on
-        let s: Settings = serde_json::from_str(r#"{"claude": true, "claude_screen": true, "grace_min": 15}"#).unwrap();
-        assert!(!s.auto);
+        // an old agent switch that was on carries over as Auto
+        assert!(settings_from(br#"{"claude": true, "claude_screen": true, "grace_min": 15}"#).auto);
+        assert!(!settings_from(br#"{"claude": false}"#).auto);
+        // once saved in the new form, "auto" wins
+        assert!(!settings_from(br#"{"claude": true, "auto": false}"#).auto);
+        assert!(!settings_from(b"").auto);
         let v: Vec<Span> = serde_json::from_str(r#"[{"start":1,"end":2,"claude":true},{"start":3,"end":4,"claude":true,"by":"codex"},{"start":5,"end":6,"claude":false}]"#).unwrap();
         let who: Vec<_> = v.iter().map(Span::agents).collect();
         assert_eq!(who, vec![vec![Source::Claude], vec![Source::Codex], vec![]]);
