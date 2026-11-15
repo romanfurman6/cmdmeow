@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 pub const STORAGE_KEY: &str = "sounds_on";
 
 /// Bump when a sound changes, so the cached WAVs are written again.
-const VERSION: u32 = 3;
+const VERSION: u32 = 4;
 const RATE: u32 = 44_100;
 /// Loudest sample of any cue (full scale is 1.0): quiet next to system sounds.
 const PEAK: f32 = 0.32;
@@ -34,6 +34,9 @@ const PEAK: f32 = 0.32;
 const CLICK_MASTER_DB: f32 = 0.0;
 /// The quiet click every cue opens with, in dB under the cue.
 const CUE_TICK_DB: f32 = -12.0;
+/// Button clicks are off for now (Roman 2026-11-15: he doesn't like them).
+/// Buttons still press; cues still play. Flip to bring clicks back.
+const CLICKS: bool = false;
 /// Clicks closer together than this play once (fast clicking through a
 /// list of checkboxes shouldn't machine-gun).
 const CLICK_GAP_MS: u64 = 100;
@@ -205,7 +208,7 @@ fn next_take() -> usize {
 /// Play the click of `kind`. Called by kit helpers on mouse down, never
 /// for a disabled or busy control, never for a click the user didn't make.
 pub fn click(kind: Click) {
-    if !allowed() || !pace(&LAST_CLICK, CLICK_GAP_MS) {
+    if !CLICKS || !allowed() || !pace(&LAST_CLICK, CLICK_GAP_MS) {
         return;
     }
     let take = next_take();
@@ -278,7 +281,7 @@ pub fn prewarm() {
     #[cfg(target_os = "macos")]
     std::thread::spawn(|| {
         super::activity::low_priority();
-        for v in 0..VOICES.len() {
+        for v in 0..VOICES.len() * usize::from(CLICKS) {
             for t in 0..TAKES.len() {
                 mac::load(&click_name(v, t), true, || render_click(v, t));
             }
@@ -394,40 +397,48 @@ fn resample(src: &[f32], factor: f32) -> Vec<f32> {
         .collect()
 }
 
-/// The samples of a 16-bit mono PCM WAV (other chunks skipped).
+/// The samples of a 16-bit PCM WAV, mono or the first channel of stereo
+/// (other chunks skipped).
 pub fn decode(bytes: &[u8]) -> Vec<f32> {
+    let mut channels = 1usize;
     let mut i = 12;
     while i + 8 <= bytes.len() {
         let id = &bytes[i..i + 4];
         let size = u32::from_le_bytes(bytes[i + 4..i + 8].try_into().unwrap_or([0; 4])) as usize;
         let body = i + 8;
+        if id == b"fmt " && body + 4 <= bytes.len() {
+            channels = (u16::from_le_bytes([bytes[body + 2], bytes[body + 3]]) as usize).max(1);
+        }
         if id == b"data" {
             let end = (body + size).min(bytes.len());
-            return bytes[body..end].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect();
+            return bytes[body..end].chunks_exact(2 * channels).map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0).collect();
         }
         i = body + size + (size & 1);
     }
     Vec::new()
 }
 
-/// 16-bit mono PCM WAV bytes.
+/// 16-bit stereo PCM WAV bytes, the same samples in both channels. A
+/// mono file played as a system sound comes out of the left side only.
 pub fn wav(samples: &[f32]) -> Vec<u8> {
-    let data = (samples.len() * 2) as u32;
+    let data = (samples.len() * 4) as u32;
     let mut b = Vec::with_capacity(44 + data as usize);
     b.extend_from_slice(b"RIFF");
     b.extend_from_slice(&(36 + data).to_le_bytes());
     b.extend_from_slice(b"WAVEfmt ");
     b.extend_from_slice(&16u32.to_le_bytes());
     b.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    b.extend_from_slice(&1u16.to_le_bytes()); // mono
+    b.extend_from_slice(&2u16.to_le_bytes()); // stereo
     b.extend_from_slice(&RATE.to_le_bytes());
-    b.extend_from_slice(&(RATE * 2).to_le_bytes());
-    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&(RATE * 4).to_le_bytes()); // bytes per second
+    b.extend_from_slice(&4u16.to_le_bytes()); // bytes per frame
     b.extend_from_slice(&16u16.to_le_bytes());
     b.extend_from_slice(b"data");
     b.extend_from_slice(&data.to_le_bytes());
     for s in samples {
-        b.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+        let v = ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes();
+        b.extend_from_slice(&v);
+        b.extend_from_slice(&v);
     }
     b
 }
@@ -573,8 +584,11 @@ mod tests {
         let b = wav(&s);
         assert_eq!(&b[0..4], b"RIFF");
         assert_eq!(&b[8..16], b"WAVEfmt ");
-        assert_eq!(u32::from_le_bytes(b[40..44].try_into().unwrap()) as usize, s.len() * 2);
-        assert_eq!(b.len(), 44 + s.len() * 2);
+        // stereo, both channels the same, so it plays centred
+        assert_eq!(u16::from_le_bytes(b[22..24].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(b[40..44].try_into().unwrap()) as usize, s.len() * 4);
+        assert_eq!(b.len(), 44 + s.len() * 4);
+        assert!(b[44..].chunks_exact(4).all(|f| f[0..2] == f[2..4]));
         let back = decode(&b);
         assert_eq!(back.len(), s.len());
         assert!(back.iter().zip(&s).all(|(a, b)| (a - b).abs() < 1e-3));

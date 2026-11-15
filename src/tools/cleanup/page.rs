@@ -106,7 +106,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("cleanup-group", k)), Sense::hover());
         if resp.hovered() {
-            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, ROW_HOVER());
+            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
         }
         if k > 0 || sizes.is_some() {
             hairline(&p, rr.left_top(), rr.right_top());

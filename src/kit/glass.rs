@@ -53,9 +53,6 @@ pub fn BG() -> Color32 { pick(hex(0x0E1B0D), hex(0xE6F0DA)) }
 /// Card surface.
 #[allow(non_snake_case)]
 pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
-/// The one hover fill for rows (H1): lists, rails, popovers, start lists.
-#[allow(non_snake_case)]
-pub fn ROW_HOVER() -> Color32 { white(10) }
 /// Card edge.
 #[allow(non_snake_case)]
 pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 20), Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
@@ -286,8 +283,8 @@ pub const R_BUTTON: f32 = 10.0;
 pub const R_SMALL: f32 = 7.0;
 pub const HAIRLINE: u8 = 15; // white at ~6%
 pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
-/// A popover list row under the pointer: the whole row, edge to edge (the
-/// popover's corners round the last one).
+/// The one hover fill for rows (H1): lists, rails, popovers, start lists,
+/// as `white(ROW_HOVER)`. In a popover the whole row, edge to edge.
 pub const ROW_HOVER: u8 = 10;
 
 /// "Show where": the ring on the item an AI Check suggestion points at.
