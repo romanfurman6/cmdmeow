@@ -16,6 +16,13 @@ const HEADER_H: f32 = 57.0;
 const INFO_H: f32 = 28.0;
 
 pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    view(app, ui, r, cx);
+    // every frame, whatever the page shows: a frame without the card would
+    // drop a click on Stop (a rescan after the trash switches views)
+    trash_loader(app, ui, r, cx);
+}
+
+fn view(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let shared = app.lens.clone();
     let now = ui.ctx().input(|i| i.time);
     let running = shared.running.load(Ordering::SeqCst);
@@ -56,7 +63,6 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 if app.lens_review {
                     review(app, ui, r, cx);
                 }
-                trash_loader(app, ui, r, cx);
                 return;
             }
             app.lens_peek = false;
@@ -131,7 +137,6 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         _ if app.lens_review => review(app, ui, r, cx),
         _ => {}
     }
-    trash_loader(app, ui, r, cx);
 }
 
 #[derive(PartialEq)]

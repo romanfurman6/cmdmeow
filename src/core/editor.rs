@@ -814,8 +814,12 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         let ctx = ui.ctx().clone();
         app.quit(&ctx);
     }
-    remove_button(app, ui, Pos2::new(x + bw + sp::S + qw + sp::S, y));
+    let failed = remove_button(app, ui, Pos2::new(x + bw + sp::S + qw + sp::S, y));
     p.text(Pos2::new(x + w, y + 15.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
+    // why Remove failed, on its own line under the row (clear of the version)
+    if let Some(e) = failed {
+        text_fit(&p, Pos2::new(x, y + 30.0 + sp::S), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w);
+    }
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
     y + 30.0 + 24.0
 }
@@ -880,7 +884,8 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
 
 /// "Remove Cmd+Meow": a second click within a few seconds removes the app
 /// and everything it keeps (see [`crate::kit::remove`]), then quits.
-fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) {
+/// Remove Cmd+Meow (click twice). Returns why the last try failed.
+fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
     use crate::kit::remove::{self, Run};
     let ctx = ui.ctx().clone();
     let now = ctx.input(|i| i.time);
@@ -911,20 +916,18 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) {
     if armed {
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
-    if let Run::Failed(e) = &run {
-        text_fit(&p, Pos2::new(r.right() + 10.0, r.center().y), Align2::LEFT_CENTER, e, font(12.0), AMBER(), 260.0);
-    }
     // the loader while it runs; on success the app quits under it
     if ctx.data(|d| d.get_temp::<bool>(loading_id)).unwrap_or(false) {
         use crate::kit::loader::{self, Count, Status};
         let status = match &run {
-            Run::Failed(e) => Status::Finished { title: "Cmd+Meow couldn't be removed".into(), sub: String::new(), problem: Some(e.clone()), put_back: false },
+            Run::Failed(e) => Status::Failed { title: "Cmd+Meow couldn't be removed".into(), problem: e.clone() },
             _ => Status::Working { title: "Removing Cmd+Meow…".into(), count: Count::Unknown, current: String::new(), can_stop: false },
         };
         if loader::show(ui, ctx.content_rect(), "remove-app", &status).is_some() {
             ctx.data_mut(|d| d.remove::<bool>(loading_id));
         }
     }
+    if let Run::Failed(e) = run { Some(e) } else { None }
 }
 
 #[cfg(test)]

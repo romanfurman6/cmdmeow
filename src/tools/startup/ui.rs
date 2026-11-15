@@ -707,7 +707,7 @@ fn trash_loader(s: &mut Startup, ui: &mut Ui, r: Rect) {
     let status = match res {
         None => Status::Working { title: format!("Removing {name}…"), count: Count::Unknown, current: file, can_stop: false },
         Some(Ok(())) => Status::Finished { title: format!("Removed {name}"), sub: "Moved to the Trash".into(), problem: None, put_back: false },
-        Some(Err(e)) => Status::Finished { title: format!("{name} couldn't be removed"), sub: String::new(), problem: Some(e), put_back: false },
+        Some(Err(e)) => Status::Failed { title: format!("{name} couldn't be removed"), problem: e },
     };
     if let Some(Click::Done | Click::Ended | Click::PutBack) = loader::show(ui, r, "startup-trash", &status) {
         s.state().trashing = None;

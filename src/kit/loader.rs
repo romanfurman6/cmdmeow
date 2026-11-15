@@ -81,6 +81,8 @@ pub enum Status {
     Finished { title: String, sub: String, problem: Option<String>, put_back: bool },
     /// Stopped by the person: what was done until then.
     Stopped { sub: String },
+    /// Nothing was removed: the empty mark (no ✓), the reason in amber.
+    Failed { title: String, problem: String },
 }
 
 /// What the person clicked.
@@ -276,8 +278,9 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
             },
             Status::Stopped { .. } => (stopped_frac(ctx, key), MarkState::Filling),
             Status::Finished { .. } => (1.0, MarkState::Done),
+            Status::Failed { .. } => (0.0, MarkState::Filling),
         };
-        if !matches!(s, Status::Stopped { .. }) {
+        if !matches!(s, Status::Stopped { .. } | Status::Failed { .. }) {
             remember_frac(ctx, key, frac, state);
         }
         crate::kit::spin::mark(&p, &format!("loader-{key}"), mark, frac, state, ACTION(), track(), POPOVER());
@@ -292,6 +295,7 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
             Status::Working { title, count, current, .. } => (title.clone(), count.line(), short(current), false),
             Status::Finished { title, sub, problem, .. } => (title.clone(), sub.clone(), problem.clone().unwrap_or_default(), problem.is_some()),
             Status::Stopped { sub } => ("Stopped".to_string(), sub.clone(), String::new(), false),
+            Status::Failed { title, problem } => (title.clone(), String::new(), problem.clone(), true),
         };
         line(y, &title, ty::lead(), TEXT());
         y += TITLE_H + sp::LINE_GAP;
@@ -309,7 +313,7 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
                 vec![("Stop", BTN_SECONDARY, Click::Stop)]
             }
             Status::Finished { put_back: true, .. } => vec![("Put back", BTN_SECONDARY, Click::PutBack), ("Done", BTN_PRIMARY, Click::Done)],
-            Status::Finished { .. } | Status::Stopped { .. } => {
+            Status::Finished { .. } | Status::Stopped { .. } | Status::Failed { .. } => {
                 vec![("Done", BTN_PRIMARY, Click::Done)]
             }
             _ => vec![],
@@ -325,7 +329,7 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
             x += bw + sp::S;
         }
         // Return closes a finished card
-        if matches!(s, Status::Finished { .. } | Status::Stopped { .. }) && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+        if matches!(s, Status::Finished { .. } | Status::Stopped { .. } | Status::Failed { .. }) && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             click = Some(Click::Done);
         }
     });

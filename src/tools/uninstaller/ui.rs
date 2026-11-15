@@ -747,10 +747,11 @@ pub fn loader_result(rep: &super::remove::Report) -> crate::kit::loader::Status 
         ns => format!("{} apps", ns.len()),
     };
     let (_, detail) = rep.summary();
+    if rep.moved.is_empty() {
+        return crate::kit::loader::Status::Failed { title: format!("{who} couldn't be removed"), problem: detail.unwrap_or_default() };
+    }
     let gone = rep.apps.len().saturating_sub(rep.kept.len());
-    let (title, sub) = if rep.moved.is_empty() {
-        (format!("{who} couldn't be removed"), String::new())
-    } else if rep.reset {
+    let (title, sub) = if rep.reset {
         (format!("Reset {who}"), format!("{size} moved to the Trash"))
     } else if rep.apps.is_empty() {
         (format!("Moved {size} to the Trash"), format!("From {who}"))
