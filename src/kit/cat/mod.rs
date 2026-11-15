@@ -116,9 +116,23 @@ pub struct Prefs {
     pub seen: Vec<String>,
 }
 
+/// The cat starts switched off: each reaction is turned on in Settings.
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { purr: true, hiss: true, meow: true, eat: true, greet: true, watch: false, show: Show::FirstTime, seen: Vec::new() }
+        Prefs { purr: false, hiss: false, meow: false, eat: false, greet: false, watch: false, show: Show::FirstTime, seen: Vec::new() }
+    }
+}
+
+impl Prefs {
+    /// Every reaction on (the pointer is not one): what a demo shows.
+    pub fn all_on() -> Prefs {
+        Prefs { purr: true, hiss: true, meow: true, eat: true, greet: true, ..Prefs::default() }
+    }
+
+    /// Something is switched on. With everything off the cat is not there:
+    /// the menu bar icon is the plain mark and links do nothing.
+    pub fn awake(&self) -> bool {
+        self.purr || self.hiss || self.meow || self.eat || self.greet || self.watch
     }
 }
 
@@ -184,18 +198,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn watching_the_pointer_starts_off() {
+    fn the_cat_starts_switched_off() {
         let p = Prefs::default();
-        assert!(p.purr && p.hiss && p.meow && p.eat && p.greet);
-        assert!(!p.watch);
+        assert!(!(p.purr || p.hiss || p.meow || p.eat || p.greet || p.watch));
+        assert!(!p.awake());
         assert_eq!(p.show, Show::FirstTime);
+        let p = Prefs::all_on();
+        assert!(p.purr && p.hiss && p.meow && p.eat && p.greet && !p.watch && p.awake());
+        assert!(Prefs { watch: true, ..Prefs::default() }.awake());
     }
 
     #[test]
     fn older_saves_keep_working() {
         // a save from before a switch existed: the missing ones take their defaults
-        let p: Prefs = serde_json::from_str(r#"{"purr":false,"show":"Always"}"#).unwrap();
-        assert!(!p.purr && p.hiss && !p.watch);
+        let p: Prefs = serde_json::from_str(r#"{"purr":true,"show":"Always"}"#).unwrap();
+        assert!(p.purr && !p.hiss && !p.watch);
         assert_eq!(p.show, Show::Always);
     }
 

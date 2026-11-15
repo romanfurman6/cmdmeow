@@ -386,7 +386,7 @@ impl App {
                 self.mode = Mode::FdaHelp;
                 return;
             }
-            "customize" | "settings-tools" | "settings-general" | "settings-ai" | "settings-ai-check" => {
+            "customize" | "settings-tools" | "settings-general" | "settings-ai" | "settings-ai-check" | "settings-cat" => {
                 self.mode = Mode::Window;
                 self.settings_open = true;
                 self.settings_tab = match view {
@@ -394,6 +394,7 @@ impl App {
                     "settings-tools" => 1,
                     "settings-ai" => 3,
                     "settings-ai-check" => 4,
+                    "settings-cat" => 5,
                     _ => 2,
                 };
                 return;

@@ -231,7 +231,11 @@ impl Engine {
                 self.target = look;
                 self.near = near;
             }
-            Event::Sim(kind) => self.begin(now, kind, Why::Asked, &mut out),
+            Event::Sim(kind) => {
+                if self.prefs.awake() {
+                    self.begin(now, kind, Why::Asked, &mut out);
+                }
+            }
             Event::Prefs(p) => {
                 self.prefs = p;
                 if !self.prefs.purr {
@@ -370,6 +374,8 @@ impl Engine {
         match self.act {
             Some(a) => (a.kind.mood(), (now - a.since) as f32),
             None if self.watching() => (Mood::Watch, (now - self.rest) as f32),
+            // switched off: the plain mark, no ear moves
+            None if !self.prefs.awake() => (Mood::Idle, 0.0),
             None => (Mood::Idle, (now - self.rest) as f32),
         }
     }
@@ -388,6 +394,9 @@ impl Engine {
     /// Seconds from `now` until the cat next has something to do: 0 while
     /// it moves, None when only news can move it.
     pub fn sleep(&self, now: f64) -> Option<f64> {
+        if self.act.is_none() && !self.prefs.awake() {
+            return None;
+        }
         let (mood, t) = self.mood(now);
         let mut s = face::still_for(mood, t).map(f64::from);
         let mut by = |d: f64| s = Some(s.map_or(d, |x| x.min(d)).max(0.0));
@@ -416,7 +425,7 @@ mod tests {
     use super::*;
 
     fn cat() -> Engine {
-        Engine::new(Prefs::default(), 7)
+        Engine::new(Prefs::all_on(), 7)
     }
 
     /// A hand lying on the trackpad from `from` to `to`, a sign every 0.2 s.
@@ -478,13 +487,13 @@ mod tests {
 
     #[test]
     fn show_always_and_off() {
-        let mut e = Engine::new(Prefs { show: Show::Always, ..Prefs::default() }, 7);
+        let mut e = Engine::new(Prefs { show: Show::Always, ..Prefs::all_on() }, 7);
         for t in [1.0, 5.0] {
             let c = e.handle(t, Event::Slap);
             assert!(c.contains(&Cmd::Big(true)) && !c.iter().any(|c| matches!(c, Cmd::Keep(_))));
             e.tick(t + 2.0);
         }
-        let mut e = Engine::new(Prefs { show: Show::Off, ..Prefs::default() }, 7);
+        let mut e = Engine::new(Prefs { show: Show::Off, ..Prefs::all_on() }, 7);
         assert_eq!(sounds(&e.handle(1.0, Event::Slap)), [Kind::Hiss]);
         assert!(!e.big());
         assert!(!e.handle(4.0, Event::Sim(Kind::Hello)).contains(&Cmd::Big(true)));
@@ -578,9 +587,27 @@ mod tests {
         assert_eq!(sounds(&e.tick(61.0)), [Kind::Hello]);
 
         // switched off
-        let mut e = Engine::new(Prefs { greet: false, ..Prefs::default() }, 7);
+        let mut e = Engine::new(Prefs { greet: false, ..Prefs::all_on() }, 7);
         e.handle(20.0, Event::LidOpen);
         assert!(e.tick(30.0).is_empty());
+    }
+
+    #[test]
+    fn switched_off_the_cat_is_not_there() {
+        let mut e = Engine::new(Prefs::default(), 7);
+        assert_eq!(e.sleep(0.0), None);
+        assert_eq!(e.sleep(500.0), None);
+        // the plain mark at any time: no ear flicks
+        assert_eq!(e.pose(40.0), e.pose(0.0));
+        assert!(e.handle(1.0, Event::Sim(Kind::Hiss)).is_empty());
+        assert!(e.handle(2.0, Event::Slap).is_empty());
+        e.handle(3.0, Event::LidOpen);
+        assert!(e.tick(10.0).is_empty());
+        assert_eq!(e.sleep(10.0), None);
+        // one switch on: it is there again
+        e.handle(11.0, Event::Prefs(Prefs { hiss: true, ..Prefs::default() }));
+        assert!(e.sleep(11.0).is_some());
+        assert_eq!(sounds(&e.handle(12.0, Event::Sim(Kind::Purr))), [Kind::Purr]);
     }
 
     #[test]
@@ -599,7 +626,8 @@ mod tests {
 
     #[test]
     fn switched_off_reactions_stay_quiet_but_links_work() {
-        let off = Prefs { purr: false, hiss: false, meow: false, eat: false, greet: false, ..Prefs::default() };
+        // only the pointer is watched: every reaction is off
+        let off = Prefs { watch: true, ..Prefs::default() };
         let mut e = Engine::new(off, 7);
         assert!(pet(&mut e, 1.0, 3.0).is_empty());
         assert!(e.handle(4.0, Event::Slap).is_empty());
@@ -626,7 +654,7 @@ mod tests {
 
     #[test]
     fn the_same_sound_never_plays_twice_in_a_row() {
-        let mut e = Engine::new(Prefs { show: Show::Off, ..Prefs::default() }, 12345);
+        let mut e = Engine::new(Prefs { show: Show::Off, ..Prefs::all_on() }, 12345);
         let mut last = 0;
         let mut heard = [false; 4];
         for i in 0..60 {
@@ -662,7 +690,7 @@ mod tests {
         let mut e = cat();
         e.handle(1.0, Event::Pointer { look: (120.0, 30.0), near: true });
         assert_eq!(e.pose(1.0).mood, Mood::Idle, "watching is off until switched on");
-        e.handle(1.0, Event::Prefs(Prefs { watch: true, ..Prefs::default() }));
+        e.handle(1.0, Event::Prefs(Prefs { watch: true, ..Prefs::all_on() }));
         e.tick(1.0);
         let p = e.pose(1.0);
         assert_eq!((p.mood, p.look), (Mood::Watch, (120.0, 32.0)), "the eyes open where the pointer is");
