@@ -775,6 +775,9 @@ fn bubbles(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node, here: &str, free: 
         } else {
             bp.circle_filled(c, rad, with_alpha(base, (if hot || linked { 0.34 } else { 0.2 }) * alpha));
             crate::kit::glass::stroke_circle(&bp, c, rad, Stroke::new(if on { 2.0 } else { 1.0 }, if on { Color32::WHITE } else { with_alpha(base, 0.6 * alpha) }));
+            if let Some(kd) = kid {
+                reveal::circle(&bp, c, rad, app.ai.ring(&ctx, &kd.path.to_string_lossy()) * alpha);
+            }
         }
         // label by room: icon, name and size; icon only; nothing
         let txt = with_alpha(TEXT(), alpha);
@@ -1014,6 +1017,19 @@ fn rings(app: &mut App, ui: &mut Ui, pa: Rect, root: &Node, node: &Node, here: &
             let n = (((s.a1 - s.a0) / 0.02).ceil() as usize).max(2);
             let pts: Vec<Pos2> = (0..=n).map(|j| c + Vec2::angled(s.a0 + (s.a1 - s.a0) * j as f32 / n as f32) * r1).collect();
             p.add(egui::Shape::line(pts, Stroke::new(2.5, Color32::WHITE)));
+        }
+    }
+    // the slice an AI Check tip was clicked for: a ring around it that fades
+    if let Some((key, kr)) = app.ai.revealed(&ctx) {
+        for s in segs.iter().filter(|s| s.path.as_ref().is_some_and(|sp| sp.to_string_lossy() == key)) {
+            let r0 = r_in + ring_w * s.level as f32 + gap_px;
+            let r1 = r_in + ring_w * (s.level + 1) as f32 - gap_px;
+            let ga = gap_px / r1.max(1.0);
+            let (a0, a1) = (s.a0 + ga, s.a1 - ga);
+            let n = (((a1 - a0) / 0.02).ceil() as usize).max(2);
+            let mut pts: Vec<Pos2> = (0..=n).map(|j| c + Vec2::angled(a0 + (a1 - a0) * j as f32 / n as f32) * r1).collect();
+            pts.extend((0..=n).rev().map(|j| c + Vec2::angled(a0 + (a1 - a0) * j as f32 / n as f32) * r0));
+            p.add(egui::Shape::closed_line(pts, Stroke::new(reveal::RING_W, with_alpha(AI(), kr))));
         }
     }
     // names on the slices that have room
@@ -1456,6 +1472,12 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
                 }
                 app.ai.done(&rec);
             }
+            // show where it is: the map opens the folder that holds it (the
+            // ring marks it there), or the item itself when that's the top
+            Some(Event::Show(rec)) => {
+                let path = PathBuf::from(&rec.key);
+                ai_go = path.parent().filter(|q| q.starts_with(&root.path) && scan::find(root, q).is_some()).map(Path::to_path_buf).or(Some(path).filter(|q| scan::find(root, q).is_some()));
+            }
             None => {}
         }
     }
@@ -1546,6 +1568,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         }
         if cursor == Some(i) {
             lp.rect_stroke(rr, R_SMALL, Stroke::new(1.0, with_alpha(ACCENT(), 0.6)), StrokeKind::Inside);
+        }
+        if !previewing {
+            reveal::rect(&lp, rr, R_SMALL, app.ai.ring(&ctx, &k.path.to_string_lossy()));
         }
         if resp.hovered() {
             hover_path = Some(k.path.clone());
@@ -2007,7 +2032,7 @@ fn ai_action<'a>(action: &'a str, p: &Path) -> &'a str {
     match action {
         "open" | "reveal" => action,
         _ if can_trash(p) => "trash",
-        _ => "open",
+        _ => "reveal",
     }
 }
 
@@ -2021,7 +2046,7 @@ fn map_ask(root: &Node) -> aicheck::Ask {
             let top: Vec<String> = kids.iter().take(4).map(|k| format!("{} {}", k.name, human_bytes(k.bytes))).collect();
             aicheck::Item {
                 key: n.path.display().to_string(),
-                line: format!("{} · {} · {} items · biggest inside: {}{}", n.path.display(), human_bytes(n.bytes), n.items, top.join(", "), if can_trash(&n.path) { "" } else { " · system folder: open or reveal only, never trash" }),
+                line: format!("{} · {} · {} items · biggest inside: {}{}", n.path.display(), human_bytes(n.bytes), n.items, top.join(", "), if can_trash(&n.path) { "" } else { " · system folder: show in Finder only, never trash" }),
                 icon: None,
                 name: n.name.clone(),
             }
@@ -2035,8 +2060,7 @@ fn map_ask(root: &Node) -> aicheck::Ask {
         task: "This is Disk Map: the biggest folders on this Mac. Point out the few biggest wins: what is safe to remove or can be made smaller (caches, old simulators, VM and container disks, downloads, duplicates), and say how. Skip system folders and the user's own documents unless clearly stale.".into(),
         actions: vec![
             ("trash", "put it in the remove list (the user reviews and confirms before anything moves to the Trash)", "Remove"),
-            ("open", "open that folder on the map to look inside", "Open"),
-            ("reveal", "show it in Finder", "Show in Finder"),
+            ("reveal", "show it in Finder (for what shouldn't be removed here, such as a Photos library or a system folder; the user sees every item on the map by clicking the tip)", "Show in Finder"),
         ],
         items,
         facts,
@@ -2054,8 +2078,8 @@ mod tests {
 
     #[test]
     fn ai_check_never_trashes_essential_folders() {
-        assert_eq!(ai_action("trash", Path::new("/Applications")), "open");
-        assert_eq!(ai_action("trash", Path::new("/System/Library")), "open");
+        assert_eq!(ai_action("trash", Path::new("/Applications")), "reveal");
+        assert_eq!(ai_action("trash", Path::new("/System/Library")), "reveal");
         assert_eq!(ai_action("trash", Path::new("/Applications/Foo.app")), "trash");
         assert_eq!(ai_action("reveal", Path::new("/Applications")), "reveal");
         // the agent is told which folders are open/reveal only

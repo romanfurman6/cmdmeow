@@ -13,6 +13,8 @@ const CHIP_H: f32 = 26.0;
 const POP_W: f32 = 560.0;
 const POP_HEAD_H: f32 = 44.0;
 const POP_SEC_H: f32 = 28.0;
+/// Seconds the popover takes to fade out after a click in it.
+const POP_FADE: f64 = 0.16;
 
 /// What the person pressed.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +23,9 @@ pub enum Event {
     Start,
     /// A recommendation's button.
     Act(Rec),
+    /// The recommendation itself was clicked: show its item on the page
+    /// ([`Check::locate`]). The ring and the scroll are already set.
+    Show(Rec),
 }
 
 /// Not on a locked page (a missing permission disables it), and only once the
@@ -83,7 +88,7 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     }
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    let ai = tint::HEALTH();
+    let ai = AI();
     let phase = c.phase();
     let w = chip_width(c, ui, has_data);
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(w, CHIP_H));
@@ -119,19 +124,30 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
         }
     }
     if c.open && matches!(phase, Phase::Done | Phase::Failed(_)) {
-        if let Some(e) = popover(c, ui, r) {
+        if let Some(e) = popover(c, ui, r, 1.0) {
             ev = Some(e);
         }
     } else {
         c.open = false;
         c.hovered = None;
+        // after a click in it the popover fades out instead of vanishing
+        if let Some(t0) = c.closing {
+            let t = ((ctx.input(|i| i.time) - t0) / POP_FADE) as f32;
+            if t < 1.0 && matches!(phase, Phase::Done) {
+                popover(c, ui, r, 1.0 - t);
+                ctx.request_repaint();
+            } else {
+                c.closing = None;
+            }
+        }
     }
     ev
 }
 
 /// The recommendations under the chip, above the page. Closes on a click
-/// outside it or Escape.
-fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
+/// outside it or Escape. Below full `alpha` it is fading out: drawn only.
+fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> {
+    let live = alpha >= 1.0;
     let ctx = ui.ctx().clone();
     let screen = ctx.content_rect();
     let phase = c.phase();
@@ -160,8 +176,11 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
     let rect = Rect::from_min_size(Pos2::new(x, chip.bottom() + 6.0), Vec2::new(w, h));
     let mut ev = None;
     // the page under the popover stays still while it's open
-    crate::kit::modal::shield(&ctx);
-    let area = egui::Area::new(ui.scope_id().with(("ai-pop", c.tool))).order(egui::Order::Foreground).fixed_pos(rect.min).show(&ctx, |ui| {
+    if live {
+        crate::kit::modal::shield(&ctx);
+    }
+    let area = egui::Area::new(ui.scope_id().with(("ai-pop", c.tool))).order(egui::Order::Foreground).fixed_pos(rect.min).interactable(live).show(&ctx, |ui| {
+        ui.multiply_opacity(alpha);
         let (rr, _) = ui.allocate_exact_size(rect.size(), Sense::click());
         let p = ui.painter().clone();
         crate::kit::glass::float_shadow(&p, rr, 12.0, 1.0);
@@ -169,7 +188,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
         p.rect_stroke(rr, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
         // header: sparkle, AI Check, Check again; the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
-        sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, tint::HEALTH());
+        sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, AI());
         p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, "AI Check", ty::title(), TEXT());
         let again = if matches!(phase, Phase::Failed(_)) { "Try again" } else { "Check again" };
         let aw = p.layout_no_wrap(again.into(), ty::body(), TEXT()).size().x;
@@ -183,6 +202,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
         let mut k = 0;
         // what waited on the user first, under its own label; then the rest
         let groups: [(&str, &Vec<Rec>); 2] = [("Needs your OK", &answers), ("Also", &others)];
+        let n_rows = row_hs.len();
         for (label, list) in groups {
             if list.is_empty() {
                 continue;
@@ -195,7 +215,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
             }
             for r in list.iter() {
                 let row = Rect::from_min_size(Pos2::new(rr.left(), y), Vec2::new(rr.width(), row_hs[k]));
-                if let Some(e) = rec_row(c, ui, row, r, btn_w) {
+                if let Some(e) = rec_row(c, ui, row, r, btn_w, k + 1 == n_rows) {
                     ev = Some(e);
                 }
                 y += row_hs[k];
@@ -203,14 +223,23 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect) -> Option<Event> {
             }
         }
     });
+    if !live {
+        c.hovered = None;
+        return None;
+    }
     // close on a click elsewhere (the chip too: it sits under the cover) or Escape
     let clicked_out = ctx.input(|i| i.pointer.any_pressed()) && ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !area.response.rect.contains(pos));
     if clicked_out || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         c.open = false;
         c.hovered = None;
     }
-    if let Some(Event::Act(_)) = ev {
+    if let Some(Event::Act(_) | Event::Show(_)) = ev {
         c.open = false;
+        c.hovered = None;
+        c.closing = Some(ctx.input(|i| i.time));
+    }
+    if let Some(Event::Show(r)) = &ev {
+        c.show(&r.key, ctx.input(|i| i.time));
     }
     ev
 }
@@ -224,7 +253,7 @@ pub fn agent_button_width(ui: &Ui, label: &str) -> f32 {
 /// thing, its left edge centred on `at`: "Ask Claude to set up".
 pub fn agent_button(ui: &mut Ui, at: Pos2, id: egui::Id, a: Agent, label: &str) -> egui::Response {
     let p = ui.painter().clone();
-    let ai = tint::HEALTH();
+    let ai = AI();
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(agent_button_width(ui, label), CHIP_H));
     let k = crate::kit::key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
     let look = crate::kit::key::Look {
@@ -311,14 +340,23 @@ fn rec_height(p: &egui::Painter, r: &Rec, w: f32, bw: f32) -> f32 {
 }
 
 /// One recommendation under a hairline: icon, title and value, why under
-/// them (both wrap), then its button and Skip.
-fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32) -> Option<Event> {
+/// them (both wrap), then its button and Skip. Clicking the row itself (not
+/// a button) shows its item on the page, where the tool can.
+fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool) -> Option<Event> {
     let p = ui.painter().clone();
     let cy = rr.center().y;
-    hairline(&p, rr.left_top(), rr.right_top());
-    if ui.rect_contains_pointer(rr) {
+    // first, so the buttons drawn after it take their own clicks
+    let row = ui.interact(rr, ui.scope_id().with(("ai-row", &r.key)), if c.locate { Sense::click() } else { Sense::hover() });
+    if row.hovered() || ui.rect_contains_pointer(rr) {
         c.hovered = Some(r.key.clone());
-        p.rect_filled(rr.shrink2(Vec2::new(4.0, 2.0)), R_SMALL, white(7));
+        // edge to edge; the last row takes the popover's bottom corners
+        let k = R_CARD as u8;
+        let corners = if last { egui::CornerRadius { nw: 0, ne: 0, sw: k, se: k } } else { egui::CornerRadius::ZERO };
+        p.rect_filled(rr, corners, white(ROW_HOVER));
+    }
+    hairline(&p, rr.left_top(), rr.right_top());
+    if c.locate && row.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let ic = Rect::from_center_size(Pos2::new(rr.left() + 14.0 + 12.0, cy), Vec2::splat(24.0));
     rec_icon(c, ui.ctx(), &p, ic, r);
@@ -344,6 +382,9 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32) -> Option<
     if pill_button(ui, br, &r.label, BTN_PRIMARY, true).clicked() {
         ev = Some(Event::Act(r.clone()));
     }
+    if ev.is_none() && c.locate && row.clicked() {
+        ev = Some(Event::Show(r.clone()));
+    }
     let (tx, tw) = rec_text_span(rr.width(), btn_w);
     let tx = rr.left() + tx;
     let vw = if r.value.is_empty() { 0.0 } else { p.layout_no_wrap(r.value.clone(), ty::title(), TEXT()).size().x + sp::M };
@@ -352,7 +393,7 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32) -> Option<
     let top = cy - (th + if wh > 0.0 { sp::LINE_GAP + wh } else { 0.0 }) / 2.0;
     let t = text_wrap(&p, Pos2::new(tx, top), Align2::LEFT_TOP, &r.title, ty::title(), TEXT(), tw - vw, 2);
     if !r.value.is_empty() {
-        p.text(Pos2::new(tx + tw, top), Align2::RIGHT_TOP, &r.value, ty::title(), tint::HEALTH());
+        p.text(Pos2::new(tx + tw, top), Align2::RIGHT_TOP, &r.value, ty::title(), AI());
     }
     if wh > 0.0 {
         text_wrap(&p, Pos2::new(tx, t.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, &r.why, ty::label(), TEXT_DIM(), tw, 3);

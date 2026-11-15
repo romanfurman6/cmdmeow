@@ -119,6 +119,15 @@ pub struct Check {
     /// The tool shows the answers and tips on its own page (Cleanup: the
     /// answer on each card); the chip then only says it checked.
     pub inline: bool,
+    /// Clicking a suggestion shows its item on the page ([`ui::Event::Show`]).
+    /// Off where the page doesn't list the items (Mac Health's processes).
+    pub locate: bool,
+    /// The item shown last and when (its ring fades, [`crate::kit::glass::reveal`]).
+    reveal: Option<(String, f64)>,
+    /// The list still has to scroll to that item.
+    scroll: bool,
+    /// When the popover started to fade out after a click in it.
+    pub(crate) closing: Option<f64>,
 }
 
 impl Check {
@@ -136,7 +145,48 @@ impl Check {
             answer: Default::default(),
             actions: Vec::new(),
             inline: false,
+            locate: false,
+            reveal: None,
+            scroll: false,
+            closing: None,
         }
+    }
+
+    /// Show `key` on the page: the list scrolls to it, a ring marks it.
+    pub fn show(&mut self, key: &str, now: f64) {
+        self.reveal = Some((key.to_string(), now));
+        self.scroll = true;
+    }
+
+    /// The item being shown and its ring's strength (1 → 0), asking for
+    /// frames only while the ring fades.
+    pub fn revealed(&mut self, ctx: &egui::Context) -> Option<(String, f32)> {
+        let (key, at) = self.reveal.clone()?;
+        // screenshots hold the ring
+        let k = if self.demo { 1.0 } else { crate::kit::glass::reveal::strength(ctx.input(|i| i.time) - at) };
+        if k <= 0.0 {
+            self.reveal = None;
+            return None;
+        }
+        ctx.request_repaint();
+        Some((key, k))
+    }
+
+    /// The ring's strength on `key` (0 when it isn't the item shown).
+    pub fn ring(&mut self, ctx: &egui::Context, key: &str) -> f32 {
+        match self.revealed(ctx) {
+            Some((k, a)) if k == key => a,
+            _ => 0.0,
+        }
+    }
+
+    /// True once, when the list should scroll to `key` now.
+    pub fn take_scroll(&mut self, key: &str) -> bool {
+        if self.scroll && self.reveal.as_ref().is_some_and(|(k, _)| k == key) {
+            self.scroll = false;
+            return true;
+        }
+        false
     }
 
     pub fn phase(&self) -> Phase {
@@ -283,6 +333,17 @@ impl Check {
     /// A sample recommendation for screenshots.
     pub fn demo_rec(action: &str, label: &str, title: &str, value: &str, why: &str, name: &str) -> Rec {
         Rec { key: title.into(), action: action.into(), label: label.into(), title: title.into(), value: value.into(), why: why.into(), icon: None, name: name.into() }
+    }
+
+    /// A sample recommendation about the item `key`, for screenshots.
+    pub fn demo_rec_for(key: &str, action: &str, label: &str, title: &str, value: &str, why: &str, name: &str) -> Rec {
+        Rec { key: key.into(), ..Self::demo_rec(action, label, title, value, why, name) }
+    }
+
+    /// The popover closed after a click on the tip about `key`, for screenshots.
+    pub fn demo_show(&mut self, key: &str) {
+        self.open = false;
+        self.show(key, 0.0);
     }
 
     /// A check in progress, for screenshots.
