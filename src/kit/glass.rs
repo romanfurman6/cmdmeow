@@ -55,7 +55,7 @@ pub fn BG() -> Color32 { pick(hex(0x0E1B0D), hex(0xE6F0DA)) }
 pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
 /// Card edge.
 #[allow(non_snake_case)]
-pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 20), Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
+pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 20), Color32::from_rgba_unmultiplied(20, 24, 26, 31)) }
 /// Hovered card, quick-action tiles and selected rows.
 #[allow(non_snake_case)]
 pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 28), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
@@ -88,7 +88,7 @@ pub fn TEXT_DIM() -> Color32 { ink(0.68) }
 pub fn TEXT_FAINT() -> Color32 { ink(0.56) }
 /// Chevrons, drag handles.
 #[allow(non_snake_case)]
-pub fn TEXT_MUTED() -> Color32 { ink(0.40) }
+pub fn TEXT_MUTED() -> Color32 { ink(if is_light() { 0.50 } else { 0.40 }) }
 
 /// The action colour (lime): primary buttons, selection, checkboxes,
 /// switches, the active sidebar icon. Only for what you press or select,
@@ -268,7 +268,7 @@ pub mod ty {
     /// 11/400: captions, in [`caption_color`].
     pub fn caption() -> FontId { font(11.0) }
     /// White at 50%: the caption colour.
-    pub fn caption_color() -> Color32 { white(128) }
+    pub fn caption_color() -> Color32 { white(if super::is_light() { 153 } else { 128 }) }
 }
 
 /// Status chip colours: (background, text).
@@ -877,6 +877,8 @@ fn next_beat(now: f64, fps: f64) -> f64 {
 /// used to pass the clock).
 #[track_caller]
 pub fn spinner(painter: &Painter, center: Pos2, radius: f32, _t: f64, color: Color32) {
+    // the lime fill is too pale for a thin arc on a light card
+    let color = if is_light() { lift(color) } else { color };
     crate::kit::spin::arc_at(painter, center, radius, color, std::panic::Location::caller());
 }
 
@@ -990,7 +992,7 @@ pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) ->
     // the overshoot runs the way the knob is going
     let t = if on { key::ease_back(raw) } else { 1.0 - key::ease_back(1.0 - raw) };
     let look = key::Look {
-        fill: lerp_color(key::ink(0.16), ACTION(), raw),
+        fill: lerp_color(pick(key::ink(0.16), key::ink(0.22)), ACTION(), raw),
         fill_hover: lerp_color(key::ink(0.22), lerp_color(ACTION(), Color32::WHITE, 0.26), raw),
         base: key::ink(0.10),
         depth: 1.0,
@@ -1193,7 +1195,7 @@ pub fn page_header_room(p: &Painter, r: Rect, title: &str, sub: &str, sub_col: C
         }
         parts.pop();
     }
-    p.line_segment([Pos2::new(r.left(), r.top() + PAGE_HEADER_H), Pos2::new(r.right(), r.top() + PAGE_HEADER_H)], Stroke::new(1.0, Color32::from_black_alpha(115)));
+    p.line_segment([Pos2::new(r.left(), r.top() + PAGE_HEADER_H), Pos2::new(r.right(), r.top() + PAGE_HEADER_H)], Stroke::new(1.0, pick(Color32::from_black_alpha(115), white(HAIRLINE_STRONG))));
     let h = sp::HEADER_CONTROL_H / 2.0;
     (Rect::from_min_max(Pos2::new(r.right() - sp::PAGE_EDGE, cy - h), Pos2::new(r.right() - sp::PAGE_EDGE, cy + h)), at)
 }

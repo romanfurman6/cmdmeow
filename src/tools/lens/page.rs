@@ -1573,7 +1573,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let fw = rr.width() * f;
         if fw >= 3.0 {
             let fr = Rect::from_min_size(rr.min + Vec2::new(0.0, 2.0), Vec2::new(fw, rr.height() - 4.0));
-            lp.rect_filled(fr, fw.min(R_SMALL * 2.0) / 2.0, with_alpha(ACCENT(), 0.10));
+            lp.rect_filled(fr, fw.min(R_SMALL * 2.0) / 2.0, with_alpha(ACCENT(), if is_light() { 0.14 } else { 0.10 }));
         }
         let lit = !previewing && app.lens_hover.as_ref().is_some_and(|h| h.starts_with(&k.path));
         if resp.hovered() || lit || cursor == Some(i) {
