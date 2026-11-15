@@ -1396,6 +1396,8 @@ pub enum Icon {
     Sun,
     Speaker,
     SpeakerOff,
+    /// A plus: add something.
+    Plus,
 }
 
 /// The SF Symbol behind each icon (outline variants: icons are monochrome strokes).
@@ -1451,6 +1453,7 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Home => "house",
         Icon::Window => "macwindow",
         Icon::Close => "xmark",
+        Icon::Plus => "plus",
         Icon::Refresh => "arrow.clockwise",
         Icon::Search => "magnifyingglass",
         Icon::Grip => "circle.grid.2x3.fill",
@@ -1724,6 +1727,10 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
         Icon::Close => {
             open(&[(6.0, 6.0), (18.0, 18.0)]);
             open(&[(18.0, 6.0), (6.0, 18.0)]);
+        }
+        Icon::Plus => {
+            open(&[(12.0, 5.0), (12.0, 19.0)]);
+            open(&[(5.0, 12.0), (19.0, 12.0)]);
         }
         Icon::Refresh => {
             arc(12.0, 12.0, 8.0, -PI * 0.25, PI * 1.6);

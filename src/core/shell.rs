@@ -308,6 +308,17 @@ impl App {
             self.perm_watch.demo = Some(Perm::SYSTEM.into_iter().map(|p| (p, if matches!(p, Perm::Screen | Perm::FullDisk | Perm::Accessibility) { Status::NotAsked } else { Status::Allowed })).collect());
             return self.apply_view(rest);
         }
+        // "tools-off-<view>": the same view with Clipboard, Keep Awake and
+        // AI Usage off (as after a setup that skipped them)
+        if let Some(rest) = view.strip_prefix("tools-off-") {
+            use crate::tools::{claude, clipboard, keep_awake};
+            for i in 0..self.tools.len() {
+                if [clipboard::ID, keep_awake::ID, claude::ID].contains(&self.tools[i].id()) {
+                    self.set_tool_on(i, false);
+                }
+            }
+            return self.apply_view(rest);
+        }
         match view {
             "panel" => return,
             // the widget editor, with a widget selected / a search typed

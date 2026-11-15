@@ -57,8 +57,10 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         v.dedup();
         v.len() + usize::from(!planned.is_empty())
     };
+    // some tools are off: a quiet row into Settings › Tools under the list
+    let add = (0..app.tools.len()).any(|i| app.tools[i].has_page() && !app.tool_on(i));
     let n_rows = pages.len() + planned.len();
-    let need = |gap: f32, head: f32, step: f32| n_sections as f32 * (gap + head) + n_rows as f32 * step;
+    let need = |gap: f32, head: f32, step: f32| n_sections as f32 * (gap + head) + f32::from(u8::from(add)) * (gap + 22.0) + n_rows as f32 * step;
     let (gap, head, step) = if need(12.0, 18.0, SIDEBAR_ROW_H + 2.0) <= list.height() { (12.0, 18.0, SIDEBAR_ROW_H + 2.0) } else { (6.0, 16.0, SIDEBAR_ROW_H) };
     let overflow = (need(gap, head, step) + 4.0 - list.height()).max(0.0);
     let scroll_id = ui.scope_id().with("sidebar-scroll");
@@ -113,7 +115,24 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
             y += step;
         }
     }
-    let _ = y;
+    if add {
+        // smaller and quieter than a tool row
+        y += gap;
+        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 22.0));
+        let id = ui.scope_id().with("nav-more-tools");
+        let resp = ui.interact(r, id, Sense::click());
+        let hov = ctx.animate_bool(id.with("h"), resp.hovered());
+        if hov > 0.0 {
+            p.rect_filled(r, 6.0, white((12.0 * hov) as u8));
+        }
+        let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
+        icon(&p, Icon::Plus, Rect::from_center_size(Pos2::new(r.left() + 16.0, r.center().y), Vec2::splat(12.0)), col);
+        p.text(Pos2::new(r.left() + 33.0, r.center().y), Align2::LEFT_CENTER, "More tools", font(12.0), col);
+        if resp.clicked() {
+            app.settings_open = true;
+            app.settings_tab = super::editor::TAB_TOOLS;
+        }
+    }
     // back to the whole window for Settings and the page
     let ui = &mut *outer;
     let p = ui.painter().clone();

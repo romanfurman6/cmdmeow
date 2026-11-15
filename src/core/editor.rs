@@ -65,6 +65,8 @@ const TAB_NAMES: [&str; 6] = ["Widgets", "Tools", "General", "AI Usage", "AI Che
 const TAB_ORDER: [usize; 6] = [2, 1, 3, 4, 5, 0];
 /// The tab Settings opens on from the sidebar.
 pub const TAB_GENERAL: usize = 2;
+/// Settings › Tools.
+pub const TAB_TOOLS: usize = 1;
 
 pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
