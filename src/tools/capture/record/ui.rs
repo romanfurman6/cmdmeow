@@ -374,9 +374,9 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         p.text(Pos2::new(card.center().x, y + 8.0), Align2::CENTER_CENTER, format!("{w} × {h} · {} fps", s.fps.min(d.fps)), font(12.0), TEXT_DIM());
         y += 28.0;
 
-        // the kit hero button (B2: 44), the Enter key as its cap
+        // the kit hero button (B2: 44), the Enter key as its cap (SF has no ↩)
         let start = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + crate::kit::empty::HERO_H));
-        let sr = crate::kit::empty::hero_button(ui, start.center(), id.with("start"), "Start recording", Some("↩"), crate::kit::empty::Lead::Dot(LIVE), Some(ACTION()), true, start.width());
+        let sr = crate::kit::empty::hero_button(ui, start.center(), id.with("start"), "Start recording", Some("Enter"), crate::kit::empty::Lead::Dot(LIVE), Some(ACTION()), true, start.width());
         if sr.clicked() {
             todo.push(Do::Start(super::chose_display(d, s)));
         }
