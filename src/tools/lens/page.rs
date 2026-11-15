@@ -2118,6 +2118,66 @@ mod tests {
         assert_eq!(names, ["p3", "p6", "p5", "p4", "p2"]);
     }
 
+    fn press(at: Pos2, down: bool) -> egui::Event {
+        egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: down, modifiers: Default::default() }
+    }
+
+    /// A folder is mapped, then "Macintosh HD" is picked in the switcher:
+    /// the page goes back to the disk. It used to freeze for good, clearing
+    /// the map while the page still held the map's lock.
+    #[test]
+    fn switching_from_a_folder_back_to_the_disk_does_not_freeze() {
+        use std::sync::mpsc::{channel, RecvTimeoutError};
+        let (done, wait) = channel::<()>();
+        std::thread::spawn(move || {
+            if let Err(RecvTimeoutError::Timeout) = wait.recv_timeout(std::time::Duration::from_secs(60)) {
+                eprintln!("Disk Map froze switching from a folder back to the disk");
+                std::process::exit(1);
+            }
+        });
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = App::new(&crate::core::tool::ToolEnv { ctx: ctx.clone(), demo: true });
+        // a mapped folder, not the disk
+        demo_tree(&mut app);
+        app.lens_selected.clear();
+        assert_ne!(app.lens_root, Path::new("/"));
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0));
+        let r = Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 720.0));
+        let mut t = 0.0;
+        let mut pass = |app: &mut App, events: Vec<egui::Event>| {
+            t += 0.1;
+            let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ui| {
+                let mut cx = Cx::new(None);
+                page(app, ui, r, &mut cx);
+            });
+            out.textures_delta.clear();
+            out.platform_output.accesskit_update
+        };
+        // open the switcher (the folder's name, top left)
+        let switcher = Pos2::new(r.left() + 84.0 + 24.0, r.top() + HEADER_H / 2.0);
+        pass(&mut app, vec![]);
+        pass(&mut app, vec![egui::Event::PointerMoved(switcher)]);
+        pass(&mut app, vec![press(switcher, true)]);
+        pass(&mut app, vec![press(switcher, false)]);
+        let mut disk = None;
+        for _ in 0..3 {
+            let Some(tree) = pass(&mut app, vec![]) else { continue };
+            disk = tree.nodes.iter().find(|(_, n)| n.label() == Some("Macintosh HD")).and_then(|(_, n)| n.bounds()).map(|b| Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32));
+            if disk.is_some() {
+                break;
+            }
+        }
+        let disk = disk.expect("the switcher's menu lists Macintosh HD");
+        pass(&mut app, vec![egui::Event::PointerMoved(disk)]);
+        pass(&mut app, vec![press(disk, true)]);
+        pass(&mut app, vec![press(disk, false)]);
+        done.send(()).unwrap();
+        // the disk's last map opens next (none here: the folder's is gone)
+        assert_eq!(app.lens_root, Path::new("/"));
+        assert!(app.lens.result.lock_ok().is_none());
+    }
+
     #[test]
     fn picking_a_folder_replaces_what_is_inside() {
         let mut app = App::new(&crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true });
