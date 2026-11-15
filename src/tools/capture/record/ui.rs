@@ -139,7 +139,7 @@ fn small_switch(ui: &mut Ui, r: Rect, id: egui::Id, on: bool) -> bool {
     let resp = ui.interact(r, id, Sense::click());
     let t = ui.ctx().animate_bool(id.with("t"), on);
     let p = ui.painter();
-    p.rect_filled(r, r.height() / 2.0, lerp_color(white(41), BLUE(), t));
+    p.rect_filled(r, r.height() / 2.0, lerp_color(white(41), ACTION(), t));
     let d = r.height() - 4.0;
     let x = r.left() + 2.0 + d / 2.0 + (r.width() - 4.0 - d) * t;
     p.circle_filled(Pos2::new(x, r.center().y), d / 2.0, Color32::WHITE);
@@ -206,7 +206,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         match pick.source {
             Source::Display => {
                 p.rect_filled(r, 0.0, DIM);
-                p.rect_stroke(r, 0.0, Stroke::new(3.0, BLUE()), StrokeKind::Inside);
+                p.rect_stroke(r, 0.0, Stroke::new(3.0, ACTION()), StrokeKind::Inside);
                 let card = Rect::from_center_size(r.center(), Vec2::new(440.0, 464.0));
                 display_card(ui, &p, card, &d, &s, many, &cam_name, &mic_name, &devs, &mut todo);
                 if devs.menu.is_none() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -220,14 +220,14 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                     Some(w) => {
                         let wr = to_local(w.frame).intersect(r);
                         dim_around(&p, r, wr);
-                        p.rect_stroke(wr, 6.0, Stroke::new(3.0, BLUE()), StrokeKind::Outside);
+                        p.rect_stroke(wr, 6.0, Stroke::new(3.0, ACTION()), StrokeKind::Outside);
                         let label = format!("{} · {} × {}", w.label(), w.frame.width().round(), w.frame.height().round());
                         let g = p.layout_no_wrap(label, bold(12.0), TEXT());
                         let lr = Rect::from_center_size(wr.center() - Vec2::new(0.0, 14.0), g.size() + Vec2::new(20.0, 10.0));
                         p.rect_filled(lr, lr.height() / 2.0, CARD());
                         p.galley(lr.center() - g.size() / 2.0, g, TEXT());
                         let hr = Rect::from_center_size(wr.center() + Vec2::new(0.0, 16.0), Vec2::new(110.0, 22.0));
-                        p.rect_filled(hr, 11.0, BLUE());
+                        p.rect_filled(hr, 11.0, ACTION());
                         p.text(hr.center(), Align2::CENTER_CENTER, "Click to record", bold(11.0), ON_ACTION);
                     }
                     None => {
@@ -282,7 +282,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                                 p.rect_stroke(tr, 20.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
                                 let sb = tr.shrink(5.0);
                                 let sr = ui.interact(sb, ui.scope_id().with("area-start"), Sense::click());
-                                p.rect_filled(sb, sb.height() / 2.0, if sr.hovered() { lerp_color(BLUE(), Color32::WHITE, 0.15) } else { BLUE() });
+                                p.rect_filled(sb, sb.height() / 2.0, if sr.hovered() { lerp_color(ACTION(), Color32::WHITE, 0.15) } else { ACTION() });
                                 p.text(sb.center(), Align2::CENTER_CENTER, "Start  Enter", bold(13.0), ON_ACTION);
                                 if sr.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     todo.push(Do::Start(ch));
@@ -377,7 +377,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         let start = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 56.0));
         let sr = ui.interact(start, id.with("start"), Sense::click());
         // the action colour with dark text, like every primary button
-        p.rect_filled(start, 12.0, if sr.hovered() { lerp_color(BLUE(), Color32::WHITE, 0.15) } else { BLUE() });
+        p.rect_filled(start, 12.0, if sr.hovered() { lerp_color(ACTION(), Color32::WHITE, 0.15) } else { ACTION() });
         let dot = Pos2::new(start.left() + 30.0, start.center().y);
         p.circle_filled(dot, 13.0, ON_ACTION);
         p.circle_filled(dot, 6.0, LIVE);
@@ -464,7 +464,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
             let b = Rect::from_min_size(Pos2::new(x, br.top() + 8.0), Vec2::splat(32.0));
             let color = if on { ON_ACTION } else { TEXT_FAINT() };
             if on {
-                p.circle_filled(b.center(), 16.0, BLUE());
+                p.circle_filled(b.center(), 16.0, ACTION());
             }
             if k == 1 {
                 if let Some(l) = devs.level {
@@ -550,11 +550,11 @@ fn countdown(c: &mut Capture, ctx: &egui::Context) {
         let frac = (left / total.max(0.1)).clamp(0.0, 1.0);
         // macOS animates the ring itself, smooth whatever our frame rate;
         // elsewhere (and before its window is up) egui draws it
-        let [r0, g0, b0, _] = BLUE().to_array();
+        let [r0, g0, b0, _] = ACTION().to_array();
         native_ring = sys::countdown_ring(title, 66.0, 5.0, [r0, g0, b0], frac as f64, left as f64);
         if !native_ring {
             let a0 = -std::f32::consts::FRAC_PI_2;
-            p.add(egui::epaint::PathShape::line(arc_points(c0, 66.0, a0, a0 + frac * std::f32::consts::TAU, 64), egui::epaint::PathStroke::new(5.0, BLUE())));
+            p.add(egui::epaint::PathShape::line(arc_points(c0, 66.0, a0, a0 + frac * std::f32::consts::TAU, 64), egui::epaint::PathStroke::new(5.0, ACTION())));
         }
         p.text(c0, Align2::CENTER_CENTER, format!("{}", left.ceil().max(1.0) as u32), bold(52.0), TEXT());
         if ui.interact(r, ui.scope_id().with("skip"), Sense::click()).on_hover_text("Click to start now · Esc to cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {

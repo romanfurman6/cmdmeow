@@ -657,7 +657,7 @@ fn shortcut_row(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut Ke
     let br = Rect::from_min_max(Pos2::new(r.right() - 12.0 - bw, r.center().y - 12.0), Pos2::new(r.right() - 12.0, r.center().y + 12.0));
     let resp = ui.interact(br, id, Sense::click());
     if rec {
-        p.rect_filled(br, 6.0, with_alpha(BLUE(), 0.22));
+        p.rect_filled(br, 6.0, with_alpha(ACTION(), 0.22));
         p.rect_stroke(br, 6.0, Stroke::new(1.0, ACCENT()), egui::StrokeKind::Inside);
     } else if cur.is_some() {
         p.rect_filled(br, 6.0, white(if resp.hovered() { 30 } else { 20 }));

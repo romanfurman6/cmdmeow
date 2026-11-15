@@ -38,15 +38,10 @@ pub fn ago(e: &Entry) -> String {
     }
 }
 
-/// A small mark for an app (we draw no app icons): a rounded square in a
-/// color picked from its name.
-pub fn app_color(app: &str) -> Color32 {
-    // greens from the theme ramp and one neutral (no rainbow)
-    let h = super::store::hash(&[app.as_bytes()]);
-    match h % 5 {
-        4 => PURPLE(),
-        k => junk_ramp(2 + k as usize),
-    }
+/// A small mark for an app (we draw no app icons): one neutral square for
+/// every app (C9); the app's name sits next to it.
+pub fn app_color(_app: &str) -> Color32 {
+    white(41)
 }
 
 /// The kind's glyph, drawn with strokes in `r`.
@@ -350,7 +345,7 @@ pub fn chips(ui: &mut Ui, p: &egui::Painter, x: f32, y: f32, cur: &mut Filter, s
         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 26.0));
         let resp = ui.interact(r, ui.scope_id().with((salt, i)), Sense::click());
         let on = *cur == *f;
-        p.rect_filled(r, 13.0, if on { with_alpha(BLUE(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
+        p.rect_filled(r, 13.0, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
         p.rect_stroke(r, 13.0, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
         let mut tx = r.left() + 11.0;
         if let Filter::Kind(k) = f {
@@ -504,7 +499,7 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     let resp = ui.interact(r, ui.scope_id().with(("clip-row", e.id)), Sense::click());
                     let sel = c.selected == Some(e.id);
                     if sel {
-                        p.rect_filled(r, 7.0, with_alpha(BLUE(), 0.30));
+                        p.rect_filled(r, 7.0, with_alpha(ACTION(), 0.30));
                         p.rect_stroke(r, 7.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.55)), StrokeKind::Inside);
                     } else if resp.hovered() {
                         p.rect_filled(r, 7.0, white(10));
@@ -690,11 +685,9 @@ pub fn preview(c: &mut Clipboard, _ui: &mut Ui, p: &egui::Painter, r: Rect, e: &
             let t = e.text.trim();
             let host = t.trim_start_matches("https://").trim_start_matches("http://").split('/').next().unwrap_or(t).to_string();
             let band = Rect::from_min_max(r.min, Pos2::new(r.right(), r.top() + r.height() * 0.48));
-            clip.rect_filled(band, egui::CornerRadius { nw: radius as u8, ne: radius as u8, sw: 0, se: 0 }, lerp_color(POPOVER(), BLUE(), 0.15));
-            let letter = host.trim_start_matches("www.").chars().next().map(|c| c.to_ascii_uppercase().to_string()).unwrap_or_default();
+            clip.rect_filled(band, egui::CornerRadius { nw: radius as u8, ne: radius as u8, sw: 0, se: 0 }, lerp_color(POPOVER(), ACTION(), 0.15));
             let chip = Rect::from_center_size(band.center(), Vec2::splat(44.0));
-            clip.rect_filled(chip, 12.0, app_color(&host));
-            clip.text(chip.center(), Align2::CENTER_CENTER, letter, bold(22.0), Color32::WHITE);
+            letter_tile(&clip, chip, host.trim_start_matches("www."), 1.0);
             text_fit(&clip, Pos2::new(inner.left(), band.bottom() + 12.0), Align2::LEFT_TOP, &host, bold(13.0), TEXT(), inner.width());
             paragraph(&clip, Pos2::new(inner.left(), band.bottom() + 34.0), t, font(12.0), ACCENT(), inner.width());
         }
@@ -976,9 +969,7 @@ impl Clipboard {
         if let Some(Some(t)) = self.icons.get(&key) {
             p.image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
         } else {
-            p.rect_filled(r.shrink(1.0), 5.0, app_color(&ig.name));
-            let l: String = ig.name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
-            p.text(r.center(), Align2::CENTER_CENTER, l, bold(11.0), Color32::WHITE);
+            letter_tile(&p, r.shrink(1.0), &ig.name, 1.0);
         }
     }
 }

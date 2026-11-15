@@ -49,8 +49,6 @@ fn level_color(l: Level) -> Color32 {
     }
 }
 
-/// The free-space track colour in legends.
-const FREE: Color32 = Color32::from_rgba_premultiplied(41, 41, 41, 41);
 
 struct Fact {
     label: String,
@@ -74,8 +72,14 @@ fn leg(color: Color32, label: &str, value: impl Into<String>) -> Legend {
     Legend { color, label: label.into(), value: value.into(), value_col: TEXT() }
 }
 
+/// A legend row with no colour square: nothing on the sheet is drawn in its
+/// colour (C7).
+fn leg_plain(label: &str, value: impl Into<String>, value_col: Color32) -> Legend {
+    Legend { color: Color32::TRANSPARENT, label: label.into(), value: value.into(), value_col }
+}
+
 fn leg_dim(label: &str, value: impl Into<String>) -> Legend {
-    Legend { color: FREE, label: label.into(), value: value.into(), value_col: TEXT_DIM() }
+    Legend { color: TRACK(), label: label.into(), value: value.into(), value_col: TEXT_DIM() }
 }
 
 /// Everything one sheet shows, filled per kind and drawn by one template.
@@ -124,16 +128,17 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             let used = s.disk_total.saturating_sub(s.disk_free);
             let (n, u) = split_num(&human_bytes(s.disk_free));
             sp.hero = Some((n, u, format!("free of {}", human_bytes(s.disk_total))));
-            let colors = [tint::HEALTH(), AMBER(), tint::KEEP_AWAKE(), GREEN()];
-            let cat_sum: u64 = s.categories.iter().map(|c| c.1).sum();
-            let other = used.saturating_sub(cat_sum);
-            for (i, (label, b)) in s.categories.iter().enumerate() {
-                let c = colors[i % colors.len()];
+            // three coloured series at most; the rest joins Other (C5)
+            let shown = &s.categories[..s.categories.len().min(3)];
+            let shown_sum: u64 = shown.iter().map(|c| c.1).sum();
+            let other = used.saturating_sub(shown_sum);
+            for (i, (label, b)) in shown.iter().enumerate() {
+                let c = series::monitor(i);
                 sp.segs.push((*b as f32 / total, c));
                 sp.legend.push(leg(c, label, human_bytes(*b)));
             }
-            sp.segs.push((other as f32 / total, PURPLE()));
-            sp.legend.push(leg(PURPLE(), "Other", human_bytes(other)));
+            sp.segs.push((other as f32 / total, OTHER()));
+            sp.legend.push(leg(OTHER(), "Other", human_bytes(other)));
             sp.legend.push(leg_dim("Free", human_bytes(s.disk_free)));
             let (hv, hc, hh) = if s.smart_status.is_empty() {
                 ("—".to_string(), TEXT(), "macOS didn't report the drive's health.")
@@ -159,11 +164,11 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             let total = s.mem_total.max(1) as f32;
             let (n, u) = split_num(&human_bytes(s.mem_available));
             sp.hero = Some((n, u, "available".into()));
-            sp.segs = vec![(s.mem_active as f32 / total, tint::HEALTH()), (s.mem_wired as f32 / total, AMBER()), (s.mem_compressed as f32 / total, PURPLE())];
+            sp.segs = vec![(s.mem_active as f32 / total, series::monitor(0)), (s.mem_wired as f32 / total, series::monitor(1)), (s.mem_compressed as f32 / total, series::monitor(2))];
             sp.legend = vec![
-                leg(tint::HEALTH(), "Apps (active)", human_bytes(s.mem_active)),
-                leg(AMBER(), "Wired", human_bytes(s.mem_wired)),
-                leg(PURPLE(), "Compressed", human_bytes(s.mem_compressed)),
+                leg(series::monitor(0), "Apps (active)", human_bytes(s.mem_active)),
+                leg(series::monitor(1), "Wired", human_bytes(s.mem_wired)),
+                leg(series::monitor(2), "Compressed", human_bytes(s.mem_compressed)),
                 leg_dim("Available", human_bytes(s.mem_available)),
             ];
             let l = s.mem_level();
@@ -256,13 +261,14 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             sp.hero = Some((format!("{:.0}", s.cpu_load), "%".into(), "load".into()));
             sp.spark = s.cpu_history.clone();
             sp.legend = vec![
-                leg(tint::HEALTH(), "User", format!("{:.0}%", s.cpu_user)),
-                leg(AMBER(), "System", format!("{:.0}%", s.cpu_system)),
-                leg_dim("Idle", format!("{:.0}%", (100.0 - s.cpu_load).max(0.0))),
+                // only the total load is drawn, so the rows carry no squares
+                leg_plain("User", format!("{:.0}%", s.cpu_user), TEXT()),
+                leg_plain("System", format!("{:.0}%", s.cpu_system), TEXT()),
+                leg_plain("Idle", format!("{:.0}%", (100.0 - s.cpu_load).max(0.0)), TEXT_DIM()),
             ];
             if let Some(pw) = &s.power {
-                for (label, u, c) in [("E-cores", pw.ecpu, GREEN()), ("P-cores", pw.pcpu, tint::HEALTH()), ("GPU", pw.gpu, PURPLE())] {
-                    sp.legend.push(leg(c, label, usage_text(u)));
+                for (label, u) in [("E-cores", pw.ecpu), ("P-cores", pw.pcpu), ("GPU", pw.gpu)] {
+                    sp.legend.push(leg_plain(label, usage_text(u), TEXT()));
                 }
             }
             let (th, tc) = match s.thermal {

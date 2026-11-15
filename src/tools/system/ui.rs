@@ -63,7 +63,7 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
     let (glyph, label, (big, unit), caption, bar_) = match id {
         "storage" => {
             let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
-            let c = if s.disk_level() == Level::Good { TEAL() } else { level_color(s.disk_level()) };
+            let c = if s.disk_level() == Level::Good { tint::HEALTH() } else { level_color(s.disk_level()) };
             (Icon::Disk, s.volume_name_or(), split_num(&human_bytes(s.disk_free)), "free".to_string(), Some((used.clamp(0.01, 1.0), c)))
         }
         "memory" => {

@@ -134,7 +134,7 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
         let cr = Rect::from_min_size(Pos2::new(r0.right() - 16.0 - (THRESHOLDS.len() - k) as f32 * (cw + 6.0) + 6.0, r0.center().y - 13.0), Vec2::new(cw, 26.0));
         let on = set.notify_at.contains(t);
         let resp = ui.interact(cr, ui.scope_id().with(("ai-th", *t)), egui::Sense::click());
-        p.rect_filled(cr, R_SMALL, if on { with_alpha(BLUE(), 0.22) } else { white(15) });
+        p.rect_filled(cr, R_SMALL, if on { with_alpha(ACTION(), 0.22) } else { white(15) });
         p.text(cr.center(), Align2::CENTER_CENTER, format!("{t}%"), font(12.0), if on { ACCENT() } else { TEXT_DIM() });
         if resp.clicked() {
             let t = *t;
