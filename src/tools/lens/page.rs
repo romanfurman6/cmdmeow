@@ -1978,6 +1978,7 @@ impl TrashJob {
                     g.current = path.display().to_string();
                 }
                 ctx.request_repaint();
+                crate::kit::loader::test_pause();
                 let skip = !can_trash(&path);
                 let ok = !skip && crate::kit::fs::move_to_trash(&path).is_ok();
                 let mut g = j.lock_ok();

@@ -458,6 +458,7 @@ impl Startup {
             crate::kit::loader::reset(&self.ctx, "startup-trash");
         }
         self.work(format!("Moving {} to the Trash…", j.name), move |st| {
+            crate::kit::loader::test_pause();
             let res = if demo { Ok(()) } else { items::trash_job(&j) };
             {
                 let mut g = st.lock_ok();

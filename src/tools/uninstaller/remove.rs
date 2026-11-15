@@ -257,6 +257,7 @@ fn trash_dest(trash: &Path, name: &str) -> PathBuf {
 /// the removal loader's "x of y".
 pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std::sync::atomic::AtomicU64, mut progress: impl FnMut(String)) -> Report {
     let tick = |b: u64| {
+        crate::kit::loader::test_pause();
         done.fetch_add(b, std::sync::atomic::Ordering::Relaxed);
     };
     let mut rep = Report { reset: targets.iter().all(|t| t.reset), ..Default::default() };

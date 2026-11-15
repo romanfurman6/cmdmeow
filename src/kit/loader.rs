@@ -183,6 +183,16 @@ pub fn show(ui: &mut Ui, page: Rect, key: &str, status: &Status) -> Option<Click
     click
 }
 
+/// Test hook: `CMDMEOW_SLOW_REMOVE=<ms>` waits that long before each item a
+/// loader job removes, so the loader can be checked on a few test files.
+pub fn test_pause() {
+    static MS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let ms = *MS.get_or_init(|| std::env::var("CMDMEOW_SLOW_REMOVE").ok().and_then(|v| v.parse().ok()).unwrap_or(0));
+    if ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
 /// A job with no counter, run on a worker thread: "Removing x…" until the
 /// closure returns the finished state.
 pub struct Task {
@@ -197,6 +207,7 @@ impl Task {
         let out = std::sync::Arc::new(std::sync::Mutex::new(None));
         let (o, c) = (out.clone(), ctx.clone());
         std::thread::spawn(move || {
+            test_pause();
             let s = job();
             *o.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
             c.request_repaint();

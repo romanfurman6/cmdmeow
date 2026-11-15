@@ -54,7 +54,10 @@ fn clean_loader(app: &mut App, ui: &mut Ui, r: Rect) {
 fn clean_status(g: &cleanup::State) -> crate::kit::loader::Status {
     use crate::kit::loader::{Count, Status};
     if g.phase == Phase::Cleaning {
-        return Status::Working { title: "Cleaning…".into(), count: Count::Bytes { done: g.clean_done, total: g.clean_total }, current: g.current.clone(), can_stop: true };
+        // Stop pressed: a deletion stops at the next file, a Trash move or command finishes first
+        let stopping = g.cancel.load(std::sync::atomic::Ordering::SeqCst);
+        let title = if stopping { "Stopping…" } else { "Cleaning…" };
+        return Status::Working { title: title.into(), count: Count::Bytes { done: g.clean_done, total: g.clean_total }, current: g.current.clone(), can_stop: !stopping };
     }
     let freed = g.cleaned_bytes.saturating_sub(g.trashed_bytes);
     let what = if g.trashed_bytes == 0 {

@@ -57,6 +57,13 @@ pub fn start(ctx: egui::Context) {
         *r = Run::Working;
     }
     std::thread::spawn(move || {
+        // test hook: the loader's working and failed states, nothing removed
+        if std::env::var_os("CMDMEOW_REMOVE_DRY").is_some() {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            *RUN.lock().unwrap_or_else(|e| e.into_inner()) = Run::Failed("Dry run: nothing was removed".into());
+            ctx.request_repaint();
+            return;
+        }
         match everything() {
             Ok(()) => std::process::exit(0),
             Err(e) => *RUN.lock().unwrap_or_else(|e| e.into_inner()) = Run::Failed(e),
