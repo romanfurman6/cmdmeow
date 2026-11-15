@@ -232,7 +232,8 @@ impl Startup {
     pub fn new(env: &ToolEnv) -> Self {
         let user_library = crate::kit::fs::home().join("Library");
         let st: Shared = Arc::new(Mutex::new(State::default()));
-        let me = Startup { st: st.clone(), ctx: env.ctx.clone(), demo: env.demo, user_library: user_library.clone(), filter: Filter::All, search: String::new(), apps_requested: false, icons: Default::default(), events: (crate::kit::perms::Status::NotAsked, None), ai: crate::kit::aicheck::Check::new(ID, env.demo) };
+        let mut me = Startup { st: st.clone(), ctx: env.ctx.clone(), demo: env.demo, user_library: user_library.clone(), filter: Filter::All, search: String::new(), apps_requested: false, icons: Default::default(), events: (crate::kit::perms::Status::NotAsked, None), ai: crate::kit::aicheck::Check::new(ID, env.demo) };
+        me.ai.locate = true;
         if env.demo {
             demo(&mut st.lock_ok(), false);
             return me;
@@ -869,7 +870,7 @@ impl Tool for Startup {
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
         match view {
-            "startup" | "startup-done" | "startup-suggested" | "startup-flagged" => {
+            "startup" | "startup-done" | "startup-suggested" | "startup-flagged" | "startup-ai-shown" => {
                 let mut g = self.state();
                 *g = State::default();
                 demo(&mut g, view == "startup-done");
@@ -881,9 +882,15 @@ impl Tool for Startup {
                 };
                 use crate::kit::aicheck::Check;
                 self.ai.set_demo(
-                    "Mostly lean; one updater you don't need",
-                    vec![Check::demo_rec("off", "Turn off", "Stop Ollama updater at login", "", "Only checks for updates; Ollama still updates when you open it", "Ollama")],
+                    "Mostly lean; two updaters you don't need",
+                    vec![
+                        Check::demo_rec_for("com.google.GoogleUpdater.wake", "off", "Turn off", "Stop Google Updater at login", "", "Chrome still updates when you open it", "Google Updater"),
+                        Check::demo_rec_for("com.microsoft.autoupdate.helper", "off", "Turn off", "Stop Microsoft AutoUpdate at login", "", "Word and Excel still update when you open them", "Microsoft AutoUpdate"),
+                    ],
                 );
+                if view == "startup-ai-shown" {
+                    self.ai.demo_show("com.microsoft.autoupdate.helper");
+                }
                 Some(View::Page)
             }
             _ => None,

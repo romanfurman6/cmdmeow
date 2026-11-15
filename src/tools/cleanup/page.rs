@@ -403,7 +403,8 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
                 }
                 app.ai.done(&rec);
             }
-            None => {}
+            // Cleanup shows its tips on the items themselves (no locate)
+            Some(Event::Show(_)) | None => {}
         }
     }
 

@@ -275,6 +275,55 @@ pub const R_BUTTON: f32 = 10.0;
 pub const R_SMALL: f32 = 7.0;
 pub const HAIRLINE: u8 = 15; // white at ~6%
 pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
+/// A popover list row under the pointer: the whole row, edge to edge (the
+/// popover's corners round the last one).
+pub const ROW_HOVER: u8 = 10;
+
+/// "Show where": the ring on the item an AI Check suggestion points at.
+/// It holds, then fades out; nothing repaints once it's gone.
+pub mod reveal {
+    use super::*;
+    /// Ring width.
+    pub const RING_W: f32 = 2.0;
+    /// Fill under the ring, as a share of the AI tint.
+    pub const FILL: f32 = 0.14;
+    /// Seconds at full strength, then seconds to fade out.
+    pub const HOLD: f64 = 1.8;
+    pub const FADE: f64 = 1.4;
+
+    /// Strength (1 → 0) `since` seconds after the reveal; 0 when it's over.
+    pub fn strength(since: f64) -> f32 {
+        if !(0.0..HOLD + FADE).contains(&since) {
+            0.0
+        } else if since < HOLD {
+            1.0
+        } else {
+            let t = ((since - HOLD) / FADE) as f32;
+            1.0 - t * t * (3.0 - 2.0 * t)
+        }
+    }
+
+    /// The ring around a row or card `r` with corner `radius`.
+    pub fn rect(p: &Painter, r: Rect, radius: f32, k: f32) {
+        if k <= 0.0 {
+            return;
+        }
+        let ai = AI();
+        p.rect_filled(r, radius, with_alpha(ai, FILL * k));
+        p.rect_stroke(r, radius, Stroke::new(RING_W, with_alpha(ai, k)), egui::StrokeKind::Inside);
+    }
+
+    /// The ring around a circle (a Disk Map bubble).
+    pub fn circle(p: &Painter, c: Pos2, rad: f32, k: f32) {
+        if k <= 0.0 {
+            return;
+        }
+        let ai = AI();
+        p.circle_filled(c, rad, with_alpha(ai, FILL * k));
+        stroke_circle(p, c, rad, Stroke::new(RING_W, with_alpha(ai, k)));
+        stroke_circle(p, c, rad + 4.0, Stroke::new(3.0, with_alpha(ai, 0.18 * k)));
+    }
+}
 
 /// An overlay at alpha `a`: white in dark mode, ink in light mode.
 pub fn white(a: u8) -> Color32 {
