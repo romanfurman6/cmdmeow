@@ -103,6 +103,12 @@ pub fn small_ring_at(rect: Rect) -> (Pos2, f32) {
 /// stacked on the right.
 #[allow(clippy::too_many_arguments)]
 pub fn wide(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, bar_or_caption: Result<(f32, Color32), &str>, selected: bool) -> Response {
+    wide_col(ui, rect, id, glyph, color, label, value, bar_or_caption, ty::caption_color(), selected)
+}
+
+/// [`wide`] with the caption in `caption_col` (a temperature in its state colour).
+#[allow(clippy::too_many_arguments)]
+pub fn wide_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, bar_or_caption: Result<(f32, Color32), &str>, caption_col: Color32, selected: bool) -> Response {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let cy = rect.center().y;
@@ -122,7 +128,7 @@ pub fn wide(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, 
     };
     let x0 = c.x + rr + sp::M;
     let w = rect.right() - PAD - x0;
-    stack_lines(p, x0, cy, &[(label, ty::caption(), ty::caption_color()), (value, ty::title(), TEXT()), (caption, ty::caption(), ty::caption_color())], w);
+    stack_lines(p, x0, cy, &[(label, ty::caption(), ty::caption_color()), (value, ty::title(), TEXT()), (caption, ty::caption(), caption_col)], w);
     resp
 }
 
@@ -143,6 +149,13 @@ pub fn row_split(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Colo
 /// [`row_split`] with the left part `ratio` of the width.
 #[allow(clippy::too_many_arguments)]
 pub fn row_split_at(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, selected: bool, ratio: f32) -> (Response, Rect) {
+    row_split_col(ui, rect, id, glyph, color, label, value, caption, ty::caption_color(), selected, ratio)
+}
+
+/// [`row_split_at`] with the caption in `caption_col` (a temperature in its
+/// state colour).
+#[allow(clippy::too_many_arguments)]
+pub fn row_split_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool, ratio: f32) -> (Response, Rect) {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let chip = row_chip(rect);
@@ -153,7 +166,7 @@ pub fn row_split_at(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     let cy = rect.center().y;
     // the value shrinks a step before it gets cut
     let f = if p.layout_no_wrap(value.to_string(), ty::number(), TEXT()).size().x <= x1 - x0 { ty::number() } else { ty::lead() };
-    stack_lines(p, x0, cy, &[(label, ty::caption(), ty::caption_color()), (value, f, TEXT()), (caption, ty::caption(), ty::caption_color())], x1 - x0);
+    stack_lines(p, x0, cy, &[(label, ty::caption(), ty::caption_color()), (value, f, TEXT()), (caption, ty::caption(), caption_col)], x1 - x0);
     p.line_segment([Pos2::new(split, rect.top() + 16.0), Pos2::new(split, rect.bottom() - 16.0)], Stroke::new(1.0, white(15)));
     (resp, Rect::from_min_max(Pos2::new(split + sp::M, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
 }

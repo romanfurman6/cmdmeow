@@ -146,6 +146,11 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     };
     let frac = s.avg_frac().unwrap_or(0.0);
     let hot = hottest_text(s).map(|(g, c)| format!("{g} {c:.0} °C")).unwrap_or_default();
+    // a warm part's caption takes its state colour (C12); a calm one stays a caption
+    let hot_col = match s.hottest() {
+        Some((_, c)) if c >= super::data::WARM_C => heat_text(c),
+        _ => ty::caption_color(),
+    };
     let resp = match size {
         Size::S11 => {
             let resp = tile::card(ui, rect, id, sel);
@@ -157,11 +162,11 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 9.0), Align2::CENTER_BOTTOM, &value, font(11.0), TEXT_SOFT(), rect.width() - 10.0);
             resp
         }
-        Size::S12 => tile::wide(ui, rect, id, Icon::Fan, tint::FAN(), "Fans", &value, if rpm.is_some() { Ok((frac.max(0.02), LINE())) } else { Err(hot.as_str()) }, sel),
+        Size::S12 => tile::wide_col(ui, rect, id, Icon::Fan, tint::FAN(), "Fans", &value, if rpm.is_some() { Ok((frac.max(0.02), LINE())) } else { Err(hot.as_str()) }, hot_col, sel),
         _ => {
             // the hottest part is a line on the right; the left says how hard the fans work
             let load = hot.clone();
-            let (resp, right) = tile::row_split(ui, rect, id, Icon::Fan, tint::FAN(), "Fans", &value, &load, sel);
+            let (resp, right) = tile::row_split_col(ui, rect, id, Icon::Fan, tint::FAN(), "Fans", &value, &load, hot_col, sel, 0.47);
             let mut lines: Vec<(String, Option<(f32, Color32)>, String)> = s.fans.iter().take(2).enumerate().map(|(i, f)| (fan_name(i, s.fans.len()), Some((f.frac().max(0.02), LINE())), format!("{} rpm", rpm_text(f.rpm)))).collect();
             if let Some((g, c)) = hottest_text(s) {
                 lines.push((g, None, format!("{c:.0} °C")));
