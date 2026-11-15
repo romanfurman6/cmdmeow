@@ -1,11 +1,13 @@
 //! The Mac behaves like a cat. It purrs while a hand lies on the trackpad,
 //! hisses when slapped, meows when the battery is low, eats when put on the
 //! charger and says hello when the lid opens. The menu bar icon is its
-//! face; a big cat shows in the middle of the screen with each reaction.
+//! face; a drawn cat at the bottom of the screen acts out each reaction.
 //!
 //! - `face`: what the cat looks like in each mood, as plain drawing.
 //! - `engine`: which mood it is in and what it does next, as plain rules.
-//! - `mac`: the menu bar icon, the big cat, the sounds and what the Mac
+//! - `desk`: what the desktop cat does for each reaction, frame by frame.
+//! - `screen`: the desktop cat's window, played with Core Animation.
+//! - `mac`: the menu bar icon, the desktop cat, the sounds and what the Mac
 //!   feels (trackpad, power, wake, lid, pointer).
 //! - `slap`: which jolts of the body are slaps, and the sensor that feels
 //!   them.
@@ -15,10 +17,13 @@
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
+mod desk;
 mod engine;
 pub mod face;
 #[cfg(target_os = "macos")]
 mod mac;
+#[cfg(target_os = "macos")]
+mod screen;
 mod slap;
 
 use serde::{Deserialize, Serialize};

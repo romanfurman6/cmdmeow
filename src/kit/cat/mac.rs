@@ -1,5 +1,5 @@
-//! The cat on a Mac: its face in the menu bar icon, the big cat in the
-//! middle of the screen, its voice, and what the Mac feels (a hand on the
+//! The cat on a Mac: its face in the menu bar icon, the desktop cat at the
+//! bottom of the screen (`screen`),//! middle of the screen, its voice, and what the Mac feels (a hand on the
 //! trackpad, the charger, the lid, the pointer).
 //!
 //! The cat's own thread decides and draws; everything that touches AppKit
@@ -7,12 +7,13 @@
 //! resting cat costs nothing.
 
 use super::engine::{Cmd, Engine, Event};
-use super::{face, Kind, Prefs};
+use super::screen::{self, Desk};
+use super::{desk, face, Kind, Prefs};
 use dispatch2::{DispatchQueue, DispatchTime};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{class, msg_send, MainThreadMarker};
-use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+use objc2_app_kit::NSWindow;
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr};
@@ -25,12 +26,9 @@ use std::time::{Duration, Instant};
 /// The menu bar icon: 18 pt at 2x.
 const ICON_PX: u32 = 36;
 const ICON_PT: f64 = 18.0;
-/// Frames a second while only the icon moves, and while the big cat shows
-/// (each of its frames is a 400 px picture: 60 would cost twice as much
-/// for a cat on screen for two or three seconds).
+/// Frames a second while the icon moves.
 const ICON_FPS: f64 = 30.0;
-const BIG_FPS: f64 = 30.0;
-/// The big cat fades in and out over this long.
+/// The desktop cat fades in and out over this long.
 const FADE: f64 = 0.15;
 /// The purr fades out in this many steps of this long.
 const HUSH_STEPS: u8 = 6;
@@ -58,8 +56,6 @@ const LOOK_MAX: (f32, f32) = (150.0, 70.0);
 const NEAR_SHARE: f64 = 0.6;
 
 static TX: Mutex<Option<Sender<Event>>> = Mutex::new(None);
-/// Pixels a point on the screen the big cat shows on, as `f32` bits.
-static BIG_SCALE: AtomicU32 = AtomicU32::new(0x4000_0000);
 static LOG: OnceLock<bool> = OnceLock::new();
 
 /// `CMDMEOW_CAT_LOG=1` prints what the cat feels and does.
@@ -96,10 +92,8 @@ struct Main {
     /// The menu bar icon (`NSStatusItem`).
     item: Retained<AnyObject>,
     over: Option<Over>,
-    big: Option<Big>,
-    /// Counts the big cat's comings and goings, so a late "take it off
-    /// screen" knows it is out of date.
-    big_turn: u32,
+    /// The desktop cat (made the first time it shows).
+    desk: Option<Desk>,
     /// The sound that plays (`NSSound`) and whether it is the looping purr.
     voice: Option<(Retained<AnyObject>, bool)>,
     /// The purr that is fading out.
@@ -131,15 +125,6 @@ struct Over {
     /// screen as they are, not converted every frame.
     space: *mut c_void,
     on: bool,
-}
-
-struct Big {
-    window: Retained<NSWindow>,
-    /// The card, drawn once for each screen scale, and the cat over it,
-    /// drawn every frame.
-    card: Retained<AnyObject>,
-    card_scale: f32,
-    layer: Retained<AnyObject>,
 }
 
 thread_local! {
@@ -224,28 +209,15 @@ fn cg_image_in(rgba: &[u8], px: u32, space: *mut c_void) -> Option<*mut c_void> 
     }
 }
 
-/// One drawn moment: the icon (and whether it is the mark at rest), and
-/// the big cat when it shows.
+/// One drawn moment of the icon (and whether it is the mark at rest).
 struct Frame {
     icon: Option<(Vec<u8>, bool)>,
-    big: Option<(Vec<u8>, u32)>,
 }
 
 impl Main {
     fn show(&mut self, f: Frame) {
         if let Some((px, rest)) = f.icon {
             self.set_icon(&px, rest);
-        }
-        if let (Some((px, n)), Some(big)) = (f.big, &self.big) {
-            if let Some(image) = cg_image(&px, n, true) {
-                unsafe {
-                    let _: () = msg_send![class!(CATransaction), begin];
-                    let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-                    let _: () = msg_send![&*big.layer, setContents: image as *mut AnyObject];
-                    let _: () = msg_send![class!(CATransaction), commit];
-                    CGImageRelease(image);
-                }
-            }
         }
     }
 
@@ -306,47 +278,44 @@ impl Main {
         }
     }
 
-    /// The big cat comes (in the middle of the screen in use) or goes.
-    fn set_big(&mut self, on: bool) {
+    /// The desktop cat acts out `kind` with `frames` (decoded on the cat's thread).
+    fn desk_play(&mut self, kind: Kind, frames: screen::Frames) {
         let Some(mtm) = MainThreadMarker::new() else { return };
-        self.big_turn = self.big_turn.wrapping_add(1);
-        if on {
-            if self.big.is_none() {
-                self.big = big_window(mtm);
+        if self.desk.is_none() {
+            self.desk = Desk::new(mtm);
+        }
+        let Some(d) = &mut self.desk else { return };
+        let ends = d.play(mtm, kind, frames);
+        fade(d.window(), 1.0);
+        if let Some(secs) = ends {
+            self.desk_go(secs);
+        }
+    }
+
+    /// The reaction is over: a held act (the purr) plays its way out and goes.
+    fn desk_end(&mut self) {
+        if let Some(secs) = self.desk.as_mut().and_then(|d| d.end()) {
+            self.desk_go(secs);
+        }
+    }
+
+    /// Fade out in `secs`, unless another act starts first.
+    fn desk_go(&mut self, secs: f64) {
+        let Some(turn) = self.desk.as_ref().map(|d| d.turn) else { return };
+        later(Duration::from_secs_f64(secs), move |m| {
+            let Some(d) = &m.desk else { return };
+            if d.turn != turn {
+                return;
             }
-            let Some(big) = &mut self.big else { return };
-            if let Some(screen) = NSScreen::mainScreen(mtm) {
-                let f = screen.frame();
-                let side = face::BEZEL_PT as f64;
-                big.window.setFrameOrigin(NSPoint::new(f.origin.x + (f.size.width - side) / 2.0, f.origin.y + (f.size.height - side) / 2.0));
-                let scale = screen.backingScaleFactor() as f32;
-                BIG_SCALE.store(scale.to_bits(), Ordering::Relaxed);
-                if scale != big.card_scale {
-                    if let Some(image) = cg_image(&face::card(scale), face::bezel_px(scale), true) {
-                        unsafe {
-                            let _: () = msg_send![class!(CATransaction), begin];
-                            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-                            let _: () = msg_send![&*big.card, setContents: image as *mut AnyObject];
-                            let _: () = msg_send![class!(CATransaction), commit];
-                            CGImageRelease(image);
-                        }
-                        big.card_scale = scale;
-                    }
-                }
-            }
-            big.window.orderFrontRegardless();
-            fade(&big.window, 1.0);
-        } else if let Some(big) = &self.big {
-            fade(&big.window, 0.0);
-            let turn = self.big_turn;
+            fade(d.window(), 0.0);
             later(Duration::from_secs_f64(FADE + 0.05), move |m| {
-                if m.big_turn == turn {
-                    if let Some(big) = &m.big {
-                        big.window.orderOut(None);
+                if let Some(d) = &mut m.desk {
+                    if d.turn == turn {
+                        d.clear();
                     }
                 }
             });
-        }
+        });
     }
 
     /// Play `kind`'s sound `n`, unless the Mac should be quiet now.
@@ -580,38 +549,6 @@ fn tint(rgba: &[u8], ink: [f32; 4]) -> Vec<u8> {
         out.extend([(ink[0] * a) as u8, (ink[1] * a) as u8, (ink[2] * a) as u8, a as u8]);
     }
     out
-}
-
-/// The big cat's window: clear, above everything, on every Space, and
-/// clicks go through it.
-fn big_window(mtm: MainThreadMarker) -> Option<Big> {
-    let side = face::BEZEL_PT as f64;
-    let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(side, side));
-    let window = unsafe { NSWindow::initWithContentRect_styleMask_backing_defer(mtm.alloc(), rect, NSWindowStyleMask::Borderless, NSBackingStoreType::Buffered, false) };
-    unsafe { window.setReleasedWhenClosed(false) };
-    window.setOpaque(false);
-    window.setBackgroundColor(Some(&NSColor::clearColor()));
-    window.setHasShadow(false);
-    window.setIgnoresMouseEvents(true);
-    window.setLevel(25);
-    // the pictures are sRGB: drawn into an sRGB window they go in as they
-    // are, and the screen converts the whole window once, on its own
-    unsafe {
-        let srgb: Retained<AnyObject> = msg_send![class!(NSColorSpace), sRGBColorSpace];
-        let _: () = msg_send![&*window, setColorSpace: &*srgb];
-    }
-    window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
-    window.setAlphaValue(0.0);
-    let view = window.contentView()?;
-    view.setWantsLayer(true);
-    let root = view.layer()?;
-    let [card, layer] = [(); 2].map(|_| unsafe {
-        let layer: Retained<AnyObject> = msg_send![class!(CALayer), layer];
-        let _: () = msg_send![&*layer, setFrame: rect];
-        let _: () = msg_send![&*root, addSublayer: &*layer];
-        layer
-    });
-    Some(Big { window, card, card_scale: 0.0, layer })
 }
 
 /// Fade a window to `alpha`.
@@ -1003,7 +940,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let Some(item) = (unsafe { Retained::retain(status_item as *mut AnyObject) }) else { return };
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
-    let mut main = Main { item, over: None, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
+    let mut main = Main { item, over: None, desk: None, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
     if !prefs.hiss {
         super::slap::tidy();
     }
@@ -1058,7 +995,7 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
     let mut seen = None;
     loop {
         let now = clock();
-        let frame = 1.0 / if cat.big() { BIG_FPS } else { ICON_FPS };
+        let frame = 1.0 / ICON_FPS;
         let due = (last_draw + frame - now).max(0.0);
         // a face that differs from the one on screen is drawn at the next frame
         let stale = cat.pose(now) != drawn || cat.big() != drawn_big;
@@ -1108,7 +1045,9 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
             }
         }
         cmds.extend(cat.tick(now));
-        let big_comes = cmds.contains(&Cmd::Big(true));
+        // a reaction began (each one starts with its sound): the desktop cat
+        // acts it out when it is to show
+        let began = cmds.iter().rev().find_map(|c| if let Cmd::Sound { kind, .. } = c { Some(*kind) } else { None });
         for cmd in cmds {
             if log() {
                 eprintln!("[cat] → {cmd:?}");
@@ -1117,19 +1056,26 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
                 Cmd::Sound { kind, n } => on_main(move |m| m.play(kind, n)),
                 Cmd::Hush => on_main(|m| m.hush()),
                 Cmd::Buzz(on) => on_main(move |m| m.buzz(on)),
-                // it comes with its first picture, below
                 Cmd::Big(true) => {}
-                Cmd::Big(false) => on_main(|m| m.set_big(false)),
+                Cmd::Big(false) => on_main(|m| m.desk_end()),
                 Cmd::Keep(p) => {
                     super::keep(p);
                 }
             }
         }
+        if let Some(kind) = began.filter(|_| cat.big()) {
+            // decoding the sheets takes tens of milliseconds: here, not on the main thread
+            if let Some(frames) = screen::load(&desk::script(kind, 1000.0)) {
+                on_main(move |m| m.desk_play(kind, frames));
+            } else if log() {
+                eprintln!("[cat] no sprites for {}", kind.slug());
+            }
+        }
         let (pose, big) = (cat.pose(now), cat.big());
         let changed = pose != drawn || big != drawn_big;
-        if changed && (big_comes || now - last_draw >= frame - 0.002) {
+        if changed && now - last_draw >= frame - 0.002 {
             // a move too small to change a pixel is not sent
-            let icon = (pose != drawn || !big).then(|| face::icon(&pose, ICON_PX)).filter(|px| *px != shown);
+            let icon = (pose != drawn).then(|| face::icon(&pose, ICON_PX)).filter(|px| *px != shown);
             if let Some(px) = &icon {
                 shown.clone_from(px);
             }
@@ -1137,17 +1083,8 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
                 let at_rest = px == rest;
                 (px, at_rest)
             });
-            let picture = big.then(|| {
-                let scale = f32::from_bits(BIG_SCALE.load(Ordering::Relaxed)).clamp(1.0, 3.0);
-                (face::bezel_cat(&pose, scale), face::bezel_px(scale))
-            });
-            if big_comes || icon.is_some() || picture.is_some() {
-                on_main(move |m| {
-                    if big_comes {
-                        m.set_big(true);
-                    }
-                    m.show(Frame { icon, big: picture });
-                });
+            if icon.is_some() {
+                on_main(move |m| m.show(Frame { icon }));
             }
             drawn = pose;
             drawn_big = big;
