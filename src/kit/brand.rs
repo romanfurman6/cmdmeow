@@ -6,28 +6,70 @@
 
 use tiny_skia::{BlendMode, FillRule, LineCap, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
+/// One piece of an outline in the 1024 box.
+#[derive(Clone, Copy, Debug)]
+pub enum Seg {
+    M(f32, f32),
+    L(f32, f32),
+    C(f32, f32, f32, f32, f32, f32),
+}
+
+/// Keycap with ears, as one closed outline (the loader's native layers
+/// draw the same pieces).
+pub const OUTLINE: &[Seg] = &[
+    // top edge between the ears
+    Seg::M(330.0, 200.0),
+    Seg::L(692.0, 200.0),
+    // right ear: inner edge up to the tip, outer edge down
+    Seg::C(760.0, 110.0, 830.0, 44.0, 862.0, 44.0),
+    Seg::C(905.0, 44.0, 940.0, 200.0, 940.0, 300.0),
+    // right side of the keycap
+    Seg::C(955.0, 350.0, 958.0, 400.0, 958.0, 450.0),
+    Seg::L(958.0, 840.0),
+    Seg::C(958.0, 930.0, 895.0, 992.0, 805.0, 992.0),
+    // bottom
+    Seg::L(218.0, 992.0),
+    Seg::C(128.0, 992.0, 65.0, 930.0, 65.0, 840.0),
+    // left side
+    Seg::L(65.0, 450.0),
+    Seg::C(65.0, 400.0, 68.0, 350.0, 84.0, 300.0),
+    // left ear: outer edge up to the tip, inner edge down
+    Seg::C(84.0, 200.0, 118.0, 44.0, 161.0, 44.0),
+    Seg::C(193.0, 44.0, 263.0, 110.0, 330.0, 200.0),
+];
+
+/// The mark's own small offset inside its square (1024 box).
+pub const NUDGE: (f32, f32) = (0.5, -6.0);
+
+/// The ⌘'s four loops: centre, radius, start and end angle (radians, y down).
+pub const CMD_LOOPS: [(f32, f32, f32, f32, f32); 4] = {
+    use std::f32::consts::PI;
+    let (l, r, t, b, rad) = (347.5, 670.5, 433.5, 757.5, 87.5);
+    [
+        (l, t, rad, 0.0, -1.5 * PI),       // top left: east, over the top, to south
+        (r, t, rad, PI, 2.5 * PI),         // top right: west, over the top, to south
+        (l, b, rad, -0.5 * PI, -2.0 * PI), // bottom left: north, round the left, to east
+        (r, b, rad, 1.5 * PI, 3.0 * PI),   // bottom right: north, round the right, to west
+    ]
+};
+/// The ⌘'s bars, two each way: (x0, y0, x1, y1).
+pub const CMD_BARS: [(f32, f32, f32, f32); 4] = [(435.0, 433.5, 435.0, 757.5), (583.0, 433.5, 583.0, 757.5), (347.5, 521.0, 670.5, 521.0), (347.5, 670.0, 670.5, 670.0)];
+/// Width of the ⌘ cut.
+pub const CMD_WIDTH: f32 = 59.0;
+/// The ✓ that replaces the ⌘ when a job is done, and its width (round ends).
+pub const CHECK: [(f32, f32); 3] = [(318.0, 610.0), (452.0, 744.0), (712.0, 484.0)];
+pub const CHECK_WIDTH: f32 = 78.0;
+
 /// Keycap with ears, as one closed outline.
 fn outline() -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
-    // top edge between the ears
-    pb.move_to(330.0, 200.0);
-    pb.line_to(692.0, 200.0);
-    // right ear: inner edge up to the tip, outer edge down
-    pb.cubic_to(760.0, 110.0, 830.0, 44.0, 862.0, 44.0);
-    pb.cubic_to(905.0, 44.0, 940.0, 200.0, 940.0, 300.0);
-    // right side of the keycap
-    pb.cubic_to(955.0, 350.0, 958.0, 400.0, 958.0, 450.0);
-    pb.line_to(958.0, 840.0);
-    pb.cubic_to(958.0, 930.0, 895.0, 992.0, 805.0, 992.0);
-    // bottom
-    pb.line_to(218.0, 992.0);
-    pb.cubic_to(128.0, 992.0, 65.0, 930.0, 65.0, 840.0);
-    // left side
-    pb.line_to(65.0, 450.0);
-    pb.cubic_to(65.0, 400.0, 68.0, 350.0, 84.0, 300.0);
-    // left ear: outer edge up to the tip, inner edge down
-    pb.cubic_to(84.0, 200.0, 118.0, 44.0, 161.0, 44.0);
-    pb.cubic_to(193.0, 44.0, 263.0, 110.0, 330.0, 200.0);
+    for s in OUTLINE {
+        match *s {
+            Seg::M(x, y) => pb.move_to(x, y),
+            Seg::L(x, y) => pb.line_to(x, y),
+            Seg::C(a, b, c, d, x, y) => pb.cubic_to(a, b, c, d, x, y),
+        }
+    }
     pb.close();
     pb.finish()
 }
@@ -51,14 +93,11 @@ fn arc(pb: &mut PathBuilder, cx: f32, cy: f32, r: f32, a0: f32, a1: f32) {
 
 /// The ⌘ as a centerline: four 3/4 loops joined by two bars each way.
 pub(crate) fn command() -> Option<tiny_skia::Path> {
-    use std::f32::consts::PI;
-    let (l, r, t, b, rad) = (347.5, 670.5, 433.5, 757.5, 87.5);
     let mut pb = PathBuilder::new();
-    arc(&mut pb, l, t, rad, 0.0, -1.5 * PI); // top left: east, over the top, to south
-    arc(&mut pb, r, t, rad, PI, 2.5 * PI); // top right: west, over the top, to south
-    arc(&mut pb, l, b, rad, -0.5 * PI, -2.0 * PI); // bottom left: north, round the left, to east
-    arc(&mut pb, r, b, rad, 1.5 * PI, 3.0 * PI); // bottom right: north, round the right, to west
-    for (x0, y0, x1, y1) in [(l + rad, t, l + rad, b), (r - rad, t, r - rad, b), (l, t + rad, r, t + rad), (l, b - rad, r, b - rad)] {
+    for (cx, cy, r, a0, a1) in CMD_LOOPS {
+        arc(&mut pb, cx, cy, r, a0, a1);
+    }
+    for (x0, y0, x1, y1) in CMD_BARS {
         pb.move_to(x0, y0);
         pb.line_to(x1, y1);
     }
@@ -240,6 +279,48 @@ pub fn glyph(ctx: &egui::Context) -> egui::TextureHandle {
     t
 }
 
+/// The keycap and ears with nothing cut out, as straight white RGBA
+/// (alpha = coverage) in a `px` square: the loader fills it and cuts the
+/// ⌘ or the ✓ out on top.
+pub fn keycap_rgba(px: u32) -> Vec<u8> {
+    let Some(mut pm) = Pixmap::new(px, px) else {
+        return vec![0; (px * px * 4) as usize];
+    };
+    let scale = px as f32 / 1024.0;
+    let t = Transform::from_scale(scale, scale).pre_translate(NUDGE.0, NUDGE.1);
+    let mut ink = Paint::default();
+    ink.set_color_rgba8(255, 255, 255, 255);
+    ink.anti_alias = true;
+    if let Some(p) = outline() {
+        pm.fill_path(&p, &ink, FillRule::Winding, t, None);
+    }
+    let mut v = pm.take();
+    for c in v.chunks_exact_mut(4) {
+        if c[3] > 0 {
+            c[..3].fill(255);
+        }
+    }
+    v
+}
+
+/// [`keycap_rgba`] as a white texture (tint it when drawing), made once per context.
+pub fn keycap(ctx: &egui::Context) -> egui::TextureHandle {
+    let id = egui::Id::NULL.with("cmdmeow-keycap");
+    if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return t;
+    }
+    let n = 256;
+    let ci = egui::ColorImage::from_rgba_unmultiplied([n as usize, n as usize], &keycap_rgba(n));
+    let t = ctx.load_texture("cmdmeow-keycap", ci, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, t.clone()));
+    t
+}
+
+/// A point of the 1024 box drawn into `rect` (with the mark's nudge).
+pub fn at(rect: egui::Rect, x: f32, y: f32) -> egui::Pos2 {
+    rect.min + egui::Vec2::new((x + NUDGE.0) / 1024.0 * rect.width(), (y + NUDGE.1) / 1024.0 * rect.height())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,6 +368,17 @@ mod tests {
         assert_eq!(alpha(&ear_l, n, 850.0, 90.0), 0, "left layer has only the left ear");
         assert_eq!(alpha(&body, n, 435.0, 600.0), 0, "⌘ cut out of the body");
         assert_eq!(body[(128 * n as usize + 40) * 4], 255, "white ink");
+    }
+
+    #[test]
+    fn keycap_is_the_mark_without_the_cut() {
+        let n = 256;
+        let (cap, mark) = (keycap_rgba(n), glyph_rgba(n));
+        assert_eq!(alpha(&cap, n, 435.0, 600.0), 255, "no ⌘ cut");
+        assert_eq!(alpha(&mark, n, 435.0, 600.0), 0);
+        assert_eq!(alpha(&cap, n, 165.0, 90.0), 255, "ears");
+        assert_eq!(alpha(&cap, n, 512.0, 100.0), 0, "gap between the ears");
+        assert_eq!(alpha(&cap, n, 150.0, 600.0), alpha(&mark, n, 150.0, 600.0));
     }
 
     #[test]

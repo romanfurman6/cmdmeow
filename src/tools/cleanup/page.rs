@@ -20,10 +20,57 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let phase = app.clean.lock_ok().phase.clone();
     match phase {
         Phase::Intro => intro(app, ui, r, cx),
-        Phase::Scanning | Phase::Judging | Phase::Cleaning => working(app, ui, r, phase),
+        Phase::Scanning | Phase::Judging => working(app, ui, r, phase),
         Phase::Results => results(app, ui, r),
-        Phase::Done => done(app, ui, r),
+        // the results stay under the loader; rows leave as they go
+        Phase::Cleaning => {
+            results(app, ui, r);
+            clean_loader(app, ui, r);
+        }
+        Phase::Done => {
+            done(app, ui, r);
+            if app.clean_loading {
+                clean_loader(app, ui, r);
+            }
+        }
     }
+}
+
+/// The removal loader over the window while cleaning, and its result.
+fn clean_loader(app: &mut App, ui: &mut Ui, r: Rect) {
+    use crate::kit::loader::{self, Click};
+    let status = {
+        let g = app.clean.lock_ok();
+        clean_status(&g)
+    };
+    match loader::show(ui, r, "cleanup", &status) {
+        Some(Click::Stop) => cleanup::stop_clean(&app.clean),
+        Some(Click::Done | Click::PutBack | Click::Ended) => app.clean_loading = false,
+        None => {}
+    }
+}
+
+/// What the loader says for the clean as it stands.
+fn clean_status(g: &cleanup::State) -> crate::kit::loader::Status {
+    use crate::kit::loader::{Count, Status};
+    if g.phase == Phase::Cleaning {
+        return Status::Working { title: "Cleaning…".into(), count: Count::Bytes { done: g.clean_done, total: g.clean_total }, current: g.current.clone(), can_stop: true };
+    }
+    let freed = g.cleaned_bytes.saturating_sub(g.trashed_bytes);
+    let what = if g.trashed_bytes == 0 {
+        format!("Deleted {}", human_bytes(g.cleaned_bytes))
+    } else if freed == 0 {
+        format!("Moved {} to the Trash", human_bytes(g.trashed_bytes))
+    } else {
+        format!("Cleaned {}", human_bytes(g.cleaned_bytes))
+    };
+    if g.stopped {
+        return Status::Stopped { sub: what };
+    }
+    let n = g.failed.len();
+    let problem = (n > 0).then(|| format!("{n} item{} couldn't be removed", if n == 1 { "" } else { "s" }));
+    let items = format!("{} item{}", crate::kit::loader::grouped(g.cleaned_count), if g.cleaned_count == 1 { "" } else { "s" });
+    Status::Finished { title: what, sub: items, problem, put_back: false }
 }
 
 /// Whether Claude can judge paths now (always in the demo).
@@ -1277,6 +1324,8 @@ fn start(app: &mut App, ctx: egui::Context) {
     app.clean_confirm = false;
     app.quit_then_clean = false;
     app.quit.clear();
+    app.clean_loading = true;
+    crate::kit::loader::reset(&ctx, "cleanup");
     cleanup::start_clean(app.clean.clone(), ctx, app.delete_now);
 }
 

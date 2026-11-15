@@ -885,6 +885,7 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) {
     let ctx = ui.ctx().clone();
     let now = ctx.input(|i| i.time);
     let armed_id = ui.scope_id().with("remove-armed");
+    let loading_id = ui.scope_id().with("remove-loading");
     let armed = ctx.data(|d| d.get_temp::<f64>(armed_id)).is_some_and(|t| now - t < 4.0);
     let run = if app.demo { Run::Idle } else { remove::run_state() };
     let label = match (&run, armed) {
@@ -897,7 +898,11 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) {
     let r = Rect::from_min_size(at, Vec2::new(bw, 30.0));
     if pill_button(ui, r, label, BTN_DANGER, run != Run::Working).clicked() && !app.demo {
         if armed {
-            ctx.data_mut(|d| d.remove::<f64>(armed_id));
+            ctx.data_mut(|d| {
+                d.remove::<f64>(armed_id);
+                d.insert_temp(loading_id, true);
+            });
+            crate::kit::loader::reset(&ctx, "remove-app");
             remove::start(ctx.clone());
         } else {
             ctx.data_mut(|d| d.insert_temp(armed_id, now));
@@ -908,6 +913,17 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) {
     }
     if let Run::Failed(e) = &run {
         text_fit(&p, Pos2::new(r.right() + 10.0, r.center().y), Align2::LEFT_CENTER, e, font(12.0), AMBER(), 260.0);
+    }
+    // the loader while it runs; on success the app quits under it
+    if ctx.data(|d| d.get_temp::<bool>(loading_id)).unwrap_or(false) {
+        use crate::kit::loader::{self, Count, Status};
+        let status = match &run {
+            Run::Failed(e) => Status::Finished { title: "Cmd+Meow couldn't be removed".into(), sub: String::new(), problem: Some(e.clone()), put_back: false },
+            _ => Status::Working { title: "Removing Cmd+Meow…".into(), count: Count::Unknown, current: String::new(), can_stop: false },
+        };
+        if loader::show(ui, ctx.content_rect(), "remove-app", &status).is_some() {
+            ctx.data_mut(|d| d.remove::<bool>(loading_id));
+        }
     }
 }
 

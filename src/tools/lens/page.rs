@@ -56,6 +56,7 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 if app.lens_review {
                     review(app, ui, r, cx);
                 }
+                trash_loader(app, ui, r, cx);
                 return;
             }
             app.lens_peek = false;
@@ -130,6 +131,7 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         _ if app.lens_review => review(app, ui, r, cx),
         _ => {}
     }
+    trash_loader(app, ui, r, cx);
 }
 
 #[derive(PartialEq)]
@@ -1934,34 +1936,113 @@ fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         app.lens_confirm = true;
     } else if go {
         app.lens_confirm = false;
-        let mut removed = vec![];
-        let mut failed = 0;
-        let mut freed = 0;
-        for (path, b) in app.lens_selected.drain(..) {
-            if !can_trash(&path) {
-                failed += 1;
-                continue;
-            }
-            match crate::kit::fs::move_to_trash(&path) {
-                Ok(()) => {
-                    freed += b;
-                    removed.push(path)
-                }
-                Err(_) => failed += 1,
-            }
-        }
-        match app.lens.result.write_ok().as_mut() {
-            Some(root) => {
-                scan::prune(root, &removed);
-            }
-            // still mapping: taken off the map once it's done
-            None => app.lens_trashed.extend(removed.iter().cloned()),
-        }
-        scan::save_later(&app.lens);
         app.lens_review = false;
-        app.lens_freed += freed;
-        let msg = if failed == 0 { format!("Moved {} to the Trash", human_bytes(freed)) } else { format!("Moved {} to the Trash · {failed} items couldn't be removed", human_bytes(freed)) };
-        cx.toast(msg);
+        let items: Vec<(PathBuf, u64)> = app.lens_selected.drain(..).collect();
+        crate::kit::loader::reset(ui.ctx(), LOADER_KEY);
+        app.lens_trash = Some(TrashJob::start(items, ui.ctx().clone()));
+    }
+    let _ = cx;
+}
+
+const LOADER_KEY: &str = "diskmap-trash";
+
+/// Picked items going to the Trash, one by one, off the UI thread (a big
+/// folder on a slow disk takes seconds).
+#[derive(Default)]
+pub(crate) struct TrashJob {
+    total: u64,
+    done: u64,
+    current: String,
+    removed: Vec<PathBuf>,
+    failed: usize,
+    freed: u64,
+    finished: bool,
+    stopped: bool,
+    /// The map and the counters took the result.
+    applied: bool,
+    cancel: bool,
+}
+
+impl TrashJob {
+    fn start(items: Vec<(PathBuf, u64)>, ctx: egui::Context) -> std::sync::Arc<std::sync::Mutex<TrashJob>> {
+        let job = std::sync::Arc::new(std::sync::Mutex::new(TrashJob { total: items.iter().map(|x| x.1).sum(), ..Default::default() }));
+        let j = job.clone();
+        std::thread::spawn(move || {
+            for (path, b) in items {
+                {
+                    let mut g = j.lock_ok();
+                    if g.cancel {
+                        g.stopped = true;
+                        break;
+                    }
+                    g.current = path.display().to_string();
+                }
+                ctx.request_repaint();
+                let skip = !can_trash(&path);
+                let ok = !skip && crate::kit::fs::move_to_trash(&path).is_ok();
+                let mut g = j.lock_ok();
+                g.done += b;
+                if ok {
+                    g.freed += b;
+                    g.removed.push(path);
+                } else {
+                    g.failed += 1;
+                }
+            }
+            j.lock_ok().finished = true;
+            ctx.request_repaint();
+        });
+        job
+    }
+
+    fn status(&self) -> crate::kit::loader::Status {
+        use crate::kit::loader::{grouped, Count, Status};
+        let moved = format!("Moved {} to the Trash", human_bytes(self.freed));
+        if !self.finished {
+            Status::Working { title: "Moving to Trash…".into(), count: Count::Bytes { done: self.done, total: self.total }, current: self.current.clone(), can_stop: true }
+        } else if self.stopped {
+            Status::Stopped { sub: moved }
+        } else {
+            let n = self.removed.len();
+            let problem = (self.failed > 0).then(|| format!("{} item{} couldn't be moved", self.failed, if self.failed == 1 { "" } else { "s" }));
+            Status::Finished { title: moved, sub: format!("{} item{}", grouped(n), if n == 1 { "" } else { "s" }), problem, put_back: false }
+        }
+    }
+}
+
+/// The loader while picked items go to the Trash; the map drops them once done.
+fn trash_loader(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    let Some(job) = app.lens_trash.clone() else {
+        return;
+    };
+    let (status, toast) = {
+        let mut g = job.lock_ok();
+        if g.finished && !g.applied {
+            g.applied = true;
+            match app.lens.result.write_ok().as_mut() {
+                Some(root) => {
+                    scan::prune(root, &g.removed);
+                }
+                // still mapping: taken off the map once it's done
+                None => app.lens_trashed.extend(g.removed.iter().cloned()),
+            }
+            scan::save_later(&app.lens);
+            app.lens_freed += g.freed;
+        }
+        let toast =
+            if g.failed == 0 { format!("Moved {} to the Trash", human_bytes(g.freed)) } else { format!("Moved {} to the Trash · {} items couldn't be removed", human_bytes(g.freed), g.failed) };
+        (g.status(), toast)
+    };
+    use crate::kit::loader::Click;
+    match crate::kit::loader::show(ui, r, LOADER_KEY, &status) {
+        Some(Click::Stop) => job.lock_ok().cancel = true,
+        Some(Click::Done | Click::PutBack) => app.lens_trash = None,
+        // quick: the toast, as before
+        Some(Click::Ended) => {
+            cx.toast(toast);
+            app.lens_trash = None;
+        }
+        None => {}
     }
 }
 

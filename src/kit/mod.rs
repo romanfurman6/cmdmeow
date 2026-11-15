@@ -19,6 +19,7 @@ pub mod glass;
 pub mod ioreport;
 pub mod helper;
 pub mod hotkeys;
+pub mod loader;
 pub mod login;
 pub mod macos;
 pub mod mechanics;

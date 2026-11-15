@@ -230,8 +230,12 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     if u.review.is_some() {
         review(u, ui, r);
     }
-    working(u, ui, r);
-    result_bar(u, ui, r);
+    if u.st.lock_ok().loader {
+        removal_loader(u, ui, r);
+    } else {
+        working(u, ui, r);
+        result_bar(u, ui, r);
+    }
     if hovering {
         let pr = r.shrink(16.0);
         p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, Color32::from_black_alpha(140));
@@ -701,6 +705,62 @@ fn visible_items(t: &Target) -> Vec<&Item> {
 }
 
 // ---------------------------------------------------------------- progress and result
+
+/// The removal loader over the window while apps or leftovers go, then the
+/// result with Put back. A removal over before the loader showed leaves the
+/// result to the bar, as before.
+fn removal_loader(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
+    use crate::kit::loader::{self, Click, Count, Status};
+    let status = {
+        let g = u.st.lock_ok();
+        match (&g.working, &g.last) {
+            (Some(line), _) => Status::Working {
+                title: g.work_title.clone(),
+                count: Count::Bytes { done: g.work_done.load(std::sync::atomic::Ordering::Relaxed), total: g.work_total },
+                current: line.clone(),
+                can_stop: false,
+            },
+            (None, Some((rep, _))) => loader_result(rep),
+            (None, None) => Status::Finished { title: g.work_title.trim_end_matches('…').to_string(), sub: String::new(), problem: None, put_back: false },
+        }
+    };
+    match loader::show(ui, r, "uninstaller", &status) {
+        Some(Click::PutBack) => u.undo(),
+        Some(Click::Done) => {
+            let mut g = u.st.lock_ok();
+            g.loader = false;
+            // the bar stays only to offer Try again
+            if g.last.as_ref().is_some_and(|(rep, _)| rep.retry.is_empty()) {
+                g.last = None;
+            }
+        }
+        Some(Click::Ended) => u.st.lock_ok().loader = false,
+        Some(Click::Stop) | None => {}
+    }
+}
+
+/// The loader's last card for a removal.
+pub fn loader_result(rep: &super::remove::Report) -> crate::kit::loader::Status {
+    let size = human_bytes(rep.bytes());
+    let who = match rep.names.as_slice() {
+        [n] => n.clone(),
+        ns => format!("{} apps", ns.len()),
+    };
+    let (_, detail) = rep.summary();
+    let gone = rep.apps.len().saturating_sub(rep.kept.len());
+    let (title, sub) = if rep.moved.is_empty() {
+        (format!("{who} couldn't be removed"), String::new())
+    } else if rep.reset {
+        (format!("Reset {who}"), format!("{size} moved to the Trash"))
+    } else if rep.apps.is_empty() {
+        (format!("Moved {size} to the Trash"), format!("From {who}"))
+    } else if gone == rep.apps.len() {
+        (format!("Removed {who}"), format!("{size} moved to the Trash"))
+    } else {
+        (format!("Removed {gone} of {} apps", rep.apps.len()), format!("{size} moved to the Trash"))
+    };
+    crate::kit::loader::Status::Finished { title, sub, problem: detail, put_back: !rep.moved.is_empty() }
+}
 
 fn working(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     if u.st.lock_ok().working.is_some() {

@@ -22,6 +22,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
 
+pub use crate::kit::loader::MarkState;
+
 /// What a request draws.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Look {
@@ -31,6 +33,9 @@ enum Look {
     Arc,
     /// A bar filled to `frac` on a faint track.
     Bar { frac: f32 },
+    /// The removal loader's mark (kit::loader): the keycap in `track`, lime
+    /// up to `frac` with a wave on top, the ⌘ or ✓ cut out in `bg`.
+    Mark { frac: f32, state: MarkState, track: Color32, bg: Color32 },
 }
 
 struct Request {
@@ -124,6 +129,14 @@ pub fn bar(p: &Painter, key: &str, rect: Rect, frac: f32, color: Color32) {
     push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Bar { frac: frac.clamp(0.0, 1.0) }, tps: 0.0, always: false });
 }
 
+/// The removal loader's mark in `rect`: lime (`color`) filled to `frac`,
+/// moving as `state` says; natively the fill eases, the wave runs and the
+/// ⌘ turns into a ✓ without any egui frames.
+#[allow(clippy::too_many_arguments)]
+pub fn mark(p: &Painter, key: &str, rect: Rect, frac: f32, state: MarkState, color: Color32, track: Color32, bg: Color32) {
+    push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Mark { frac: frac.clamp(0.0, 1.0), state, track, bg }, tps: 0.0, always: false });
+}
+
 /// Draw blades with egui this pass (the widget editor: its widgets jiggle
 /// and get dragged around).
 pub fn suspend(ctx: &egui::Context) {
@@ -160,6 +173,7 @@ fn draw_req(req: &Request, angle: f32) {
             p.add(egui::epaint::PathShape::line(crate::kit::glass::arc_points(c, r, angle, angle + ARC_SPAN, 40), egui::epaint::PathStroke::new(ARC_WIDTH, req.color)));
         }
         Look::Bar { frac } => crate::kit::glass::bar(p, req.rect, frac, req.color),
+        Look::Mark { frac, state, track, bg } => crate::kit::loader::draw_mark(p, req.rect, frac, state, req.color, track, bg),
     }
 }
 
@@ -295,7 +309,7 @@ fn clock() -> f64 {
 
 #[cfg(target_os = "macos")]
 mod native {
-    use super::{Look, Turn};
+    use super::{Look, MarkState, Turn};
     use egui::{Color32, Pos2, Rect};
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
@@ -313,6 +327,8 @@ mod native {
         fn CGPathCreateMutable() -> *mut c_void;
         fn CGPathMoveToPoint(path: *mut c_void, m: *const c_void, x: f64, y: f64);
         fn CGPathAddLineToPoint(path: *mut c_void, m: *const c_void, x: f64, y: f64);
+        fn CGPathAddCurveToPoint(path: *mut c_void, m: *const c_void, cx1: f64, cy1: f64, cx2: f64, cy2: f64, x: f64, y: f64);
+        fn CGPathAddQuadCurveToPoint(path: *mut c_void, m: *const c_void, cx: f64, cy: f64, x: f64, y: f64);
         fn CGPathAddArc(path: *mut c_void, m: *const c_void, x: f64, y: f64, radius: f64, start: f64, end: f64, clockwise: bool);
         fn CGPathCloseSubpath(path: *mut c_void);
         fn CGPathAddEllipseInRect(path: *mut c_void, m: *const c_void, rect: NSRect);
@@ -340,6 +356,10 @@ mod native {
         turn: Option<Turn>,
         frac: Option<f64>,
         hidden: bool,
+        /// The mark's other layers: level, wave, mask, ⌘ cut, ✓ cut.
+        extra: Vec<Retained<AnyObject>>,
+        /// The mark's fill and state as last set.
+        mark: Option<(f32, MarkState)>,
     }
 
     thread_local! {
@@ -494,6 +514,7 @@ mod native {
             Look::Blades { .. } => 0,
             Look::Arc => 1,
             Look::Bar { .. } => 2,
+            Look::Mark { .. } => 3,
         }
     }
 
@@ -521,7 +542,22 @@ mod native {
                         let _: () = msg_send![&*container, addSublayer: &*b];
                         let _: () = msg_send![&*root, addSublayer: &*container];
                     }
-                    all.push(Layers { viewport: id, key: key.to_string(), root: root_ptr, container, a, b, frame: None, shape: None, colors: None, turn: None, frac: None, hidden: false });
+                    all.push(Layers {
+                        viewport: id,
+                        key: key.to_string(),
+                        root: root_ptr,
+                        container,
+                        a,
+                        b,
+                        frame: None,
+                        shape: None,
+                        colors: None,
+                        turn: None,
+                        frac: None,
+                        hidden: false,
+                        extra: Vec::new(),
+                        mark: None,
+                    });
                     all.len() - 1
                 }
             };
@@ -536,9 +572,11 @@ mod native {
                 Look::Blades { hub } => (Some(hub), crate::kit::glass::white(46)),
                 Look::Arc => (None, Color32::TRANSPARENT),
                 Look::Bar { .. } => (None, super::track()),
+                Look::Mark { track, bg, .. } => (Some(bg), track),
             };
             let settled = match look {
                 Look::Bar { frac } => l.frac == Some(super::stroke_end(rect.width(), rect.height(), frac)),
+                Look::Mark { frac, state, .. } => l.mark == Some((frac, state)),
                 _ => l.turn == Some(turn),
             };
             // nothing to change: no transaction at all (this runs every pass,
@@ -570,6 +608,10 @@ mod native {
                         let _: () = msg_send![&**s, setBounds: ns_rect(0.0, 0.0, rect.width() as f64, rect.height() as f64)];
                         let _: () = msg_send![&**s, setPosition: mid];
                     }
+                    if let Look::Mark { .. } = look {
+                        mark_layers(l, scale);
+                        place_mark(l, rect, mid);
+                    }
                     l.frame = Some(frame);
                 }
                 if l.shape != Some((k, size)) {
@@ -586,6 +628,12 @@ mod native {
                             let _: () = msg_send![&*l.a, setLineWidth: super::ARC_WIDTH as f64];
                             let _: () = msg_send![&*l.a, setLineCap: &*NSString::from_str("round")];
                             let _: () = msg_send![&*l.b, setHidden: true];
+                        }
+                        Look::Mark { .. } => {
+                            mark_layers(l, scale);
+                            mark_paths(l, w);
+                            let _: () = msg_send![&*l.b, setHidden: false];
+                            l.mark = None;
                         }
                         Look::Bar { .. } => {
                             for s in [&l.a, &l.b] {
@@ -613,6 +661,17 @@ mod native {
                             set_color(&l.a, false, None, sp);
                             set_color(&l.a, true, Some(color), sp);
                         }
+                        Look::Mark { bg, track, .. } => {
+                            set_color(&l.a, false, Some(track), sp);
+                            set_color(&l.b, false, None, sp);
+                            // extra: [level, wave, mask, ⌘, ✓]
+                            set_color(&l.extra[1], false, Some(color), sp);
+                            set_color(&l.extra[2], false, Some(Color32::BLACK), sp);
+                            for c in [&l.extra[3], &l.extra[4]] {
+                                set_color(c, false, None, sp);
+                                set_color(c, true, Some(bg), sp);
+                            }
+                        }
                         Look::Bar { .. } => {
                             set_color(&l.a, false, None, sp);
                             set_color(&l.a, true, Some(edge), sp);
@@ -623,6 +682,12 @@ mod native {
                     l.colors = Some((color, second, edge, space_ptr));
                 }
                 match look {
+                    Look::Mark { frac, state, .. } => {
+                        if l.mark != Some((frac, state)) {
+                            set_mark(l, rect.width(), frac, state, l.mark.filter(|_| !moved));
+                            l.mark = Some((frac, state));
+                        }
+                    }
                     Look::Bar { frac } => {
                         let end = super::stroke_end(rect.width(), rect.height(), frac);
                         if l.frac != Some(end) {
@@ -656,6 +721,214 @@ mod native {
             }
             Some(!moved)
         })
+    }
+
+    /// The mark's own layers, made once: the fill holder (`b`) gets a mask
+    /// of the keycap and a level layer holding the wave; the ⌘ and ✓ cuts
+    /// sit on top. `a` is the keycap's track.
+    unsafe fn mark_layers(l: &mut Layers, scale: f64) {
+        if !l.extra.is_empty() {
+            return;
+        }
+        let level = new_layer("plain", scale);
+        let wave = new_layer("shape", scale);
+        let mask = new_layer("shape", scale);
+        let cmd = new_layer("shape", scale);
+        let chk = new_layer("shape", scale);
+        let zero = NSPoint::new(0.0, 0.0);
+        let _: () = msg_send![&*level, setAnchorPoint: zero];
+        let _: () = msg_send![&*wave, setAnchorPoint: zero];
+        let _: () = msg_send![&*level, addSublayer: &*wave];
+        let _: () = msg_send![&*l.b, addSublayer: &*level];
+        let _: () = msg_send![&*l.b, setMask: &*mask];
+        let _: () = msg_send![&*l.container, addSublayer: &*cmd];
+        let _: () = msg_send![&*l.container, addSublayer: &*chk];
+        let _: () = msg_send![&*chk, setOpacity: 0.0f32];
+        l.extra = vec![level, wave, mask, cmd, chk];
+    }
+
+    /// Size and place the mark's extra layers like `a` and `b`.
+    unsafe fn place_mark(l: &Layers, rect: Rect, mid: NSPoint) {
+        let (w, h) = (rect.width() as f64, rect.height() as f64);
+        let b = ns_rect(0.0, 0.0, w, h);
+        for s in [&l.extra[2], &l.extra[3], &l.extra[4]] {
+            let _: () = msg_send![&**s, setBounds: b];
+        }
+        let _: () = msg_send![&*l.extra[2], setPosition: NSPoint::new(w / 2.0, h / 2.0)];
+        for s in [&l.extra[3], &l.extra[4]] {
+            let _: () = msg_send![&**s, setPosition: mid];
+        }
+        let _: () = msg_send![&*l.extra[0], setBounds: b];
+        let _: () = msg_send![&*l.extra[1], setBounds: b];
+        let _: () = msg_send![&*l.extra[1], setPosition: NSPoint::new(0.0, 0.0)];
+    }
+
+    /// The keycap outline in a `w` square (y down).
+    fn outline_path(w: f32) -> *mut c_void {
+        use crate::kit::brand::{Seg, NUDGE, OUTLINE};
+        let s = w as f64 / 1024.0;
+        let x = |v: f32| (v + NUDGE.0) as f64 * s;
+        let y = |v: f32| (v + NUDGE.1) as f64 * s;
+        unsafe {
+            let path = CGPathCreateMutable();
+            for seg in OUTLINE {
+                match *seg {
+                    Seg::M(a, b) => CGPathMoveToPoint(path, std::ptr::null(), x(a), y(b)),
+                    Seg::L(a, b) => CGPathAddLineToPoint(path, std::ptr::null(), x(a), y(b)),
+                    Seg::C(a, b, c, d, e, f) => CGPathAddCurveToPoint(path, std::ptr::null(), x(a), y(b), x(c), y(d), x(e), y(f)),
+                }
+            }
+            CGPathCloseSubpath(path);
+            path
+        }
+    }
+
+    /// The ⌘'s centerline in a `w` square.
+    fn command_path(w: f32) -> *mut c_void {
+        use crate::kit::brand::{CMD_BARS, CMD_LOOPS, NUDGE};
+        let s = w as f64 / 1024.0;
+        let x = |v: f32| (v + NUDGE.0) as f64 * s;
+        let y = |v: f32| (v + NUDGE.1) as f64 * s;
+        unsafe {
+            let path = CGPathCreateMutable();
+            for (cx, cy, r, a0, a1) in CMD_LOOPS {
+                CGPathMoveToPoint(path, std::ptr::null(), x(cx + r * a0.cos()), y(cy + r * a0.sin()));
+                // in this y-down space "not clockwise" is the way angles grow
+                CGPathAddArc(path, std::ptr::null(), x(cx), y(cy), r as f64 * s, a0 as f64, a1 as f64, a1 < a0);
+            }
+            for (x0, y0, x1, y1) in CMD_BARS {
+                CGPathMoveToPoint(path, std::ptr::null(), x(x0), y(y0));
+                CGPathAddLineToPoint(path, std::ptr::null(), x(x1), y(y1));
+            }
+            path
+        }
+    }
+
+    /// The ✓ in a `w` square.
+    fn check_path(w: f32) -> *mut c_void {
+        use crate::kit::brand::{CHECK, NUDGE};
+        let s = w as f64 / 1024.0;
+        unsafe {
+            let path = CGPathCreateMutable();
+            for (i, (a, b)) in CHECK.iter().enumerate() {
+                let (px, py) = ((a + NUDGE.0) as f64 * s, (b + NUDGE.1) as f64 * s);
+                if i == 0 {
+                    CGPathMoveToPoint(path, std::ptr::null(), px, py);
+                } else {
+                    CGPathAddLineToPoint(path, std::ptr::null(), px, py);
+                }
+            }
+            path
+        }
+    }
+
+    /// The fill's top: a wave from -w to 2w along y = 0, filled down to 2w.
+    /// Sliding it left by one wave length repeats seamlessly.
+    fn wave_path(w: f32) -> *mut c_void {
+        use crate::kit::loader::{WAVE_A, WAVE_P};
+        let s = w as f64 / 1024.0;
+        let (half, a) = (WAVE_P as f64 / 2.0 * s, WAVE_A as f64 * s);
+        let (x0, x1) = (-(w as f64), 2.0 * w as f64);
+        unsafe {
+            let path = CGPathCreateMutable();
+            CGPathMoveToPoint(path, std::ptr::null(), x0, 0.0);
+            let mut x = x0;
+            let mut up = true;
+            while x < x1 {
+                CGPathAddQuadCurveToPoint(path, std::ptr::null(), x + half / 2.0, if up { -a * 2.0 } else { a * 2.0 }, x + half, 0.0);
+                x += half;
+                up = !up;
+            }
+            CGPathAddLineToPoint(path, std::ptr::null(), x, 2.0 * w as f64);
+            CGPathAddLineToPoint(path, std::ptr::null(), x0, 2.0 * w as f64);
+            CGPathCloseSubpath(path);
+            path
+        }
+    }
+
+    /// Paths of the mark's layers for a `w` square.
+    unsafe fn mark_paths(l: &Layers, w: f32) {
+        set_path(&l.a, outline_path(w));
+        set_path(&l.extra[2], outline_path(w));
+        set_path(&l.extra[1], wave_path(w));
+        let s = w as f64 / 1024.0;
+        set_path(&l.extra[3], command_path(w));
+        let _: () = msg_send![&*l.extra[3], setLineWidth: crate::kit::brand::CMD_WIDTH as f64 * s];
+        let _: () = msg_send![&*l.extra[3], setLineCap: &*NSString::from_str("butt")];
+        set_path(&l.extra[4], check_path(w));
+        let _: () = msg_send![&*l.extra[4], setLineWidth: crate::kit::brand::CHECK_WIDTH as f64 * s];
+        let _: () = msg_send![&*l.extra[4], setLineCap: &*NSString::from_str("round")];
+        let _: () = msg_send![&*l.extra[4], setLineJoin: &*NSString::from_str("round")];
+        // the wave runs for as long as the layer lives
+        let x = NSString::from_str("position.x");
+        let anim: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*x];
+        let _: () = msg_send![&*anim, setFromValue: &*NSNumber::new_f64(0.0)];
+        let _: () = msg_send![&*anim, setToValue: &*NSNumber::new_f64(-(crate::kit::loader::WAVE_P as f64) * s)];
+        let _: () = msg_send![&*anim, setDuration: 1.6f64];
+        let _: () = msg_send![&*anim, setRepeatCount: f32::INFINITY];
+        let _: () = msg_send![&*l.extra[1], addAnimation: &*anim, forKey: &*NSString::from_str("cmdmeow-wave")];
+    }
+
+    /// Move the mark to `frac`/`state` from `was` (None: just set it).
+    unsafe fn set_mark(l: &Layers, w: f32, frac: f32, state: MarkState, was: Option<(f32, MarkState)>) {
+        let s = w as f64 / 1024.0;
+        let y = |f: f32| (crate::kit::loader::level(f) + crate::kit::brand::NUDGE.1) as f64 * s;
+        let level = &l.extra[0];
+        let sweep = NSString::from_str("cmdmeow-sweep");
+        let _: () = msg_send![&**level, removeAnimationForKey: &*sweep];
+        let target = match state {
+            MarkState::Filling => frac,
+            MarkState::Sweeping => 0.0,
+            MarkState::Done => 1.06,
+        };
+        let ease = was.is_some();
+        if ease {
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: false];
+            let _: () = msg_send![class!(CATransaction), setAnimationDuration: 0.6f64];
+        }
+        let _: () = msg_send![&**level, setPosition: NSPoint::new(0.0, y(target))];
+        if ease {
+            let _: () = msg_send![class!(CATransaction), commit];
+        }
+        if state == MarkState::Sweeping {
+            let key = NSString::from_str("position.y");
+            let anim: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
+            let _: () = msg_send![&*anim, setFromValue: &*NSNumber::new_f64(y(0.0))];
+            let _: () = msg_send![&*anim, setToValue: &*NSNumber::new_f64(y(1.06))];
+            let _: () = msg_send![&*anim, setDuration: 1.4f64];
+            let _: () = msg_send![&*anim, setRepeatCount: f32::INFINITY];
+            let tf: Retained<AnyObject> = msg_send![class!(CAMediaTimingFunction), functionWithName: &*NSString::from_str("easeInEaseOut")];
+            let _: () = msg_send![&*anim, setTimingFunction: &*tf];
+            let _: () = msg_send![&**level, addAnimation: &*anim, forKey: &*sweep];
+        }
+        // ⌘ → ✓, and one hop, when it turns done
+        let done = state == MarkState::Done;
+        let was_done = was.is_some_and(|(_, st)| st == MarkState::Done);
+        if done != was_done || was.is_none() {
+            if ease {
+                let _: () = msg_send![class!(CATransaction), begin];
+                let _: () = msg_send![class!(CATransaction), setDisableActions: false];
+                let _: () = msg_send![class!(CATransaction), setAnimationDuration: 0.25f64];
+            }
+            let _: () = msg_send![&*l.extra[3], setOpacity: if done { 0.0f32 } else { 1.0f32 }];
+            let _: () = msg_send![&*l.extra[4], setOpacity: if done { 1.0f32 } else { 0.0f32 }];
+            if ease {
+                let _: () = msg_send![class!(CATransaction), commit];
+            }
+            if done && ease {
+                for (path, vals) in [("transform.scale.x", [1.0, 1.08, 0.97, 1.0]), ("transform.scale.y", [1.0, 0.94, 1.04, 1.0])] {
+                    let nums: Vec<Retained<NSNumber>> = vals.iter().map(|v| NSNumber::new_f64(*v)).collect();
+                    let arr = objc2_foundation::NSArray::from_retained_slice(&nums);
+                    for layer in [&l.a, &l.b, &l.extra[3], &l.extra[4]] {
+                        let anim: Retained<AnyObject> = msg_send![class!(CAKeyframeAnimation), animationWithKeyPath: &*NSString::from_str(path)];
+                        let _: () = msg_send![&*anim, setValues: &*arr];
+                        let _: () = msg_send![&*anim, setDuration: 0.46f64];
+                        let _: () = msg_send![&**layer, addAnimation: &*anim, forKey: &*NSString::from_str(path)];
+                    }
+                }
+            }
+        }
     }
 
     /// Point the layer along `turn`: a still angle, plus a repeating full

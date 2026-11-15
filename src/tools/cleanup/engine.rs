@@ -158,6 +158,12 @@ pub struct State {
     /// once it's emptied).
     pub trashed_bytes: u64,
     pub cleaned_count: usize,
+    /// While cleaning: bytes of everything planned, and of what was gone
+    /// through so far (removed or skipped), for the loader's "x of y".
+    pub clean_total: u64,
+    pub clean_done: u64,
+    /// The clean was stopped before the end.
+    pub stopped: bool,
     /// Group and size of each item removed (they leave `items`).
     pub cleaned: Vec<(Group, u64)>,
     pub failed: Vec<(String, String)>,
@@ -598,6 +604,14 @@ pub fn stop_scan(shared: &Shared) {
     let mut g = shared.lock_ok();
     g.cancel.store(true, Ordering::SeqCst);
     *g = State::default();
+}
+
+/// Stop a clean after the item in hand (what's done stays done).
+pub fn stop_clean(shared: &Shared) {
+    let g = shared.lock_ok();
+    if g.phase == Phase::Cleaning {
+        g.cancel.store(true, Ordering::SeqCst);
+    }
 }
 
 /// Stop the AI check: the results show now, judged by the built-in rules
@@ -1180,8 +1194,14 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         g.log.clear();
         g.trashed_bytes = 0;
         g.cleaned.clear();
-        plan_clean(&g.items, delete_now)
+        g.stopped = false;
+        g.clean_done = 0;
+        g.cancel = Arc::new(AtomicBool::new(false));
+        let plan = plan_clean(&g.items, delete_now);
+        g.clean_total = plan.iter().map(|(it, _)| it.bytes).sum();
+        plan
     };
+    let cancel = shared.lock_ok().cancel.clone();
     std::thread::spawn(move || {
         let n = plan.len().max(1);
         // minutes may have passed since the scan: an app opened since then keeps its cache
@@ -1190,10 +1210,18 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         let open = if plan.iter().any(|(it, _)| it.action == Action::Files && live_kind(it.kind)) { super::inuse::OpenFiles::snapshot() } else { None };
         let mut journal = super::journal::Entry::now();
         for (k, (it, how)) in plan.iter().enumerate() {
+            // Stop: the item in hand finishes, the rest stay
+            if cancel.load(Ordering::SeqCst) {
+                shared.lock_ok().stopped = true;
+                break;
+            }
             {
                 let mut g = shared.lock_ok();
                 g.current = it.path.display().to_string();
                 g.progress = k as f32 / n as f32;
+                if k > 0 {
+                    g.clean_done += plan[k - 1].0.bytes;
+                }
             }
             ctx.request_repaint();
             let skip = |why: String, shared: &Shared, journal: &mut super::journal::Entry| {
@@ -1257,6 +1285,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         }
         let mut g = shared.lock_ok();
         g.progress = 1.0;
+        g.clean_done = g.clean_total;
         g.phase = Phase::Done;
         if g.cleaned_bytes > 0 {
             record_clean(g.cleaned_bytes);
