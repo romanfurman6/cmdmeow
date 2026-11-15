@@ -1479,6 +1479,7 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let off = ctx.animate_value_with_time(off_id.with("anim"), target, 0.35);
     let panel = Rect::from_min_size(room.min, Vec2::new(room.width(), h));
     let panel = panel.translate(Vec2::new(0.0, (1.0 - a) * -10.0));
+    crate::kit::glass::float_shadow(&p, panel, 12.0, a);
     p.rect_filled(panel, 12.0, BG().gamma_multiply(a));
     p.rect_stroke(panel, 12.0, Stroke::new(1.0, CARD_EDGE().gamma_multiply(a)), StrokeKind::Inside);
     if placed.is_empty() {
@@ -2401,6 +2402,7 @@ fn tool_hint(ui: &Ui, r: Rect, id: egui::Id, name: &str) {
     let above = r.top() - 6.0 - size.y;
     let y = if above >= screen.top() + sp::S { above + (1.0 - a) * 4.0 } else { r.bottom() + 6.0 - (1.0 - a) * 4.0 };
     let box_ = Rect::from_min_size(Pos2::new(x, y), size);
+    crate::kit::glass::float_shadow(&p, box_, 8.0, a);
     p.rect_filled(box_, 8.0, POPOVER().gamma_multiply(a));
     p.rect_stroke(box_, 8.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE().gamma_multiply(a)), StrokeKind::Inside);
     let tl = box_.min + Vec2::new(sp::M, sp::S);

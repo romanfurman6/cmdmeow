@@ -502,6 +502,7 @@ impl Editor {
             if at.elapsed().as_secs_f32() < 2.5 {
                 let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
                 let r = Rect::from_center_size(Pos2::new(canvas.center().x, canvas.bottom() - 30.0), g.size() + Vec2::new(28.0, 16.0));
+                crate::kit::glass::float_shadow(&p, r, r.height() / 2.0, 1.0);
                 p.rect_filled(r, r.height() / 2.0, POPOVER());
                 p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
                 p.galley(r.center() - g.size() / 2.0, g, TEXT());
@@ -1012,6 +1013,7 @@ impl Editor {
         let top = top.clamp(bounds.top() + sp::S, (bounds.bottom() - sp::S - BAR_H).max(bounds.top() + sp::S));
         let left = (anchor.center().x - w / 2.0).clamp(bounds.left() + sp::S, (bounds.right() - sp::S - w).max(bounds.left() + sp::S));
         let r = Rect::from_min_size(Pos2::new(left, top), Vec2::new(w, BAR_H));
+        crate::kit::glass::float_shadow(&p, r, 12.0, 1.0);
         p.rect_filled(r, 12.0, POPOVER());
         p.rect_stroke(r, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
         // the canvas under the bar takes no clicks

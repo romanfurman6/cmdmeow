@@ -99,6 +99,7 @@ fn device_menu(ui: &mut Ui, p: &egui::Painter, at: Pos2, w: f32, m: Media, devs:
     let (list, cur) = devs.of(m);
     let rows = list.len().max(1);
     let r = Rect::from_min_size(at, Vec2::new(w, rows as f32 * MENU_ROW + 8.0));
+    crate::kit::glass::float_shadow(&p, r, 10.0, 1.0);
     p.rect_filled(r, 10.0, CARD());
     p.rect_stroke(r, 10.0, Stroke::new(1.0, white(36)), StrokeKind::Inside);
     let id = ui.scope_id().with(("dev-menu", m == Media::Mic));

@@ -134,6 +134,7 @@ fn scrim(ui: &mut Ui, r: Rect, salt: &str) {
 
 fn modal_card(p: &egui::Painter, m: Rect) {
     // opaque: nothing of the page behind may show through
+    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
     p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
 }
@@ -790,6 +791,7 @@ fn result_bar(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let w = 560.0f32.min(r.width() - 48.0);
     let bar = Rect::from_center_size(Pos2::new(r.center().x, r.bottom() - 46.0), Vec2::new(w, 48.0));
+    crate::kit::glass::float_shadow(&p, bar, 12.0, 1.0);
     p.rect_filled(bar, 12.0, POPOVER());
     p.rect_stroke(bar, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     let c = Pos2::new(bar.left() + 25.0, bar.center().y);

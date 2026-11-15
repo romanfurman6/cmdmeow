@@ -997,6 +997,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     let bw = 440.0 - 44.0;
     let body_h = p.layout(body.clone(), font(13.0), TEXT_SOFT(), bw).size().y;
     let m = Rect::from_center_size(r.center(), Vec2::new(440.0, 22.0 + 22.0 + 14.0 + body_h + 18.0 + 30.0 + 22.0));
+    crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
     p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     p.text(m.min + Vec2::new(22.0, 22.0), Align2::LEFT_TOP, format!("Clean {} items ({})?", n, human_bytes(bytes)), bold(15.0), TEXT());

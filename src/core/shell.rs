@@ -939,6 +939,7 @@ impl eframe::App for App {
                 let p = ui.painter();
                 let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
                 let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), g.size() + Vec2::new(28.0, 16.0));
+                crate::kit::glass::float_shadow(&p, r, r.height() / 2.0, 1.0);
                 p.rect_filled(r, r.height() / 2.0, POPOVER());
                 p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), egui::StrokeKind::Inside);
                 p.galley(r.center() - g.size() / 2.0, g, TEXT());
@@ -1310,9 +1311,9 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.all_styles_mut(|s| {
         s.visuals.panel_fill = Color32::TRANSPARENT;
         s.visuals.window_fill = glass::BG();
-        // flat menus, tips and windows: no drop shadow anywhere
-        s.visuals.window_shadow = egui::epaint::Shadow::NONE;
-        s.visuals.popup_shadow = egui::epaint::Shadow::NONE;
+        // menus and tips float with the one shared shadow
+        s.visuals.window_shadow = glass::float_shadow_egui();
+        s.visuals.popup_shadow = glass::float_shadow_egui();
         s.visuals.window_stroke = egui::Stroke::new(1.0, glass::POPOVER_EDGE());
         // one scroll bar everywhere: slim, floating, in a gutter the content
         // leaves free, so even hovered it never sits on a row or button
