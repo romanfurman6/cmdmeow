@@ -19,7 +19,7 @@ Contents: 1 Tokens · 2 Colour · 3 Type · 4 Spacing and layout · 5 Surfaces �
 |---|---|---|
 | Surfaces | `BG` `CARD` `CARD_EDGE` `RAISED` `POPOVER` `SIDEBAR` `FOOTER` | glass.rs |
 | Text | `TEXT` `TEXT_SOFT` .84 · `TEXT_DIM` .68 · `TEXT_FAINT` .56 · `TEXT_MUTED` .40 · `ty::caption_color` | glass.rs |
-| Action | `ACTION` (lime fill; was `BLUE`) · `ON_ACTION` · `ACCENT` (lime as text) | glass.rs |
+| Action | `ACTION` (lime fill; was `BLUE`) · `DANGER` (destructive button fill) · `ON_ACTION` · `ACCENT` (lime as text) | glass.rs |
 | State | `GREEN` `AMBER` `RED` · `CHIP_ASK` `CHIP_RISK` | glass.rs |
 | Group tints | `tint::CLEANUP` `HEALTH` `CAPTURE` `KEEP_AWAKE` `NEUTRAL` | glass.rs |
 | Neutral | `GRAY` (`OTHER` alias) · `series::monitor(i)`, `series::clean(i)` · `letter_tile()` · `white(a)` ink overlay · `HAIRLINE` 15 · `HAIRLINE_STRONG` 26 | glass.rs |
@@ -100,24 +100,25 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 | S5 | No drop shadows on anything floating (menus, tooltips, popovers, dialogs, sheets, toasts, drag tags). Native window shadows and the screenshot frame "Shadow" option stay. | ✅ |
 | S6 | Group tile (tool icon): group colour 12% fill, 28% edge, glyph in group colour. Neutral tools: `white(18)`. | ✅ |
 
-## 6. Buttons and controls
+## 6. Buttons and controls ✅
 
-Canvas: https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34
+Approved by Roman for the base system on 2026-11-15. Canvas: https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34 · source spec: `/mnt/project-files/button-press/button-rules.md`.
 
-| # | Rule | Status |
-|---|------|---|
-| B1 | Kinds: Hero (44, lime, one per empty or first-visit screen) · Primary (lime, one per view or dialog) · Danger (red, destructive confirm only) · Secondary (ink 4% fill, 1 pt ink 14% edge) · Text / link (no fill) · Icon 30 square · Round 26 (sheet close, refresh) · AI chip 26. | ⏳ |
-| B2 | Push buttons have three heights: 44 hero, 32 (page header, footer, dialogs), 28 (inside cards and rows). | ⏳ conflict K4 |
-| B3 | Radius `R_BUTTON` 10 (capped at h/2). Chips h/2. Segmented `R_SMALL` 7 with a 6 thumb. | ✅ |
-| B4 | Buttons look raised, the same way for every kind: a darker base under the face. Lime primary and hero buttons also keep their glow (lime 25%, offset 6, blur 18). | ✅ glow (Roman 2026-11-15) · ⏳ base per kind |
-| B5 | Press "key": the face sinks into a darker base and springs back. Lime and red: base 3, drop 2. Quiet kinds: base 2, drop 1. Text: drops 1, no base. | ✅ feel · ⏳ numbers |
-| B6 | Hover changes colour only (lime and red lighten 12%). Disabled: alpha .45 (.62 light, L6), no press, no sound. | ⏳ |
-| B7 | Controls: segmented 32 header / 28 card, switch 30×18, checkbox and radio 16, filter chips 26 through one shared helper. | ⏳ |
-| B8 | Rows, sidebar items and cards highlight only: no press, no sound. | ⏳ |
-| B10 | States for every kind: default, hover (colour only), pressed (B5), focus (2 pt `ACCENT` ring set 3 pt out), disabled (L6 alpha, no hover, press or sound), loading (push buttons only: a spinner before the label, width locked), on/selected for choices. | ⏳ |
-| B9 | Only `kit` helpers draw buttons; no plain `egui::Button` and no hand-drawn capsules. | ⏳ |
+| # | Rule |
+|---|------|
+| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, 30 square), Round (`round_button`, 26, sheet close and refresh), AI chip (`agent_button`, 26). |
+| B2 | **Heights:** 44 hero, 32 (page header, footer, dialogs, side, toggle chips), 28 (inside cards and rows). Nothing else: 30, 34, 36 → 32; 24, 26 → 28. |
+| B3 | **Shape:** `R_BUTTON` 10, capped at h/2. Chips h/2. Segmented `R_SMALL` 7, thumb 6, 2 pt gap between segments. |
+| B4 | **Raised-key look, one language for every pressable:** fill, a 1 pt top highlight (white 38% on lime/red; quiet: white 75% light, 8% dark), a darker base under the face. Lime/red base 3 pt (tint mixed 62% to black). Quiet kinds base 2 pt ink 14%, plus a 1 pt hairline ink 10% (18% on hover). |
+| B5 | **Glow** on lime and red only: `0 6 18 -5`, lime 70%, red 65%; smaller while pressed, none when disabled. |
+| B6 | **Danger colour** is `DANGER()`: #F04438 dark, #D92D20 light, white text. Destructive buttons only; `RED()` stays the state colour (C4). |
+| B7 | **Press:** lime/red face drops 2 pt, quiet 1 pt, text drops 1 pt with no base. Down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)`. Pressing never darkens the fill. Switch knob widens 4 pt while held; checkbox check pops .5→1. Content a caller draws on a pill moves with the face (the helper returns the offset). |
+| B8 | **States.** Hover: colour only, no movement (lime and lime-on fills mix 26% to white, red 22%; quiet fills ink 10–15% with full-ink text, secondary hairline 24%; ghost text gets an ink 7% backdrop; links lighten and underline; AI chip 12% cyan tint, 60% edge; unchecked check/radio edge 70% + 8% fill). Focus (keyboard only): 1 pt ring 2 pt outside, following the radius, in the button colour (lime, danger red, or ink). Disabled: alpha from one shared helper (L6), no hover, press or sound; the base stays. Loading: push buttons only, a 13 pt Core Animation spinner before the label, width locked, no press or sound. On/selected: segmented thumb; switch lime, knob right; check and radio lime; toggle and filter chips, recording shortcut field: lime tint + `ACCENT` edge. |
+| B9 | **Choices:** segmented 32 header / 28 card, switch 30×18, checkbox and radio 16, filter chips 28 through one shared helper, tool toggle 28, shortcut recorder 28, action tile 40–44 (icon over label). |
+| B10 | Rows, sidebar items and cards highlight only: no press, no sound. |
+| B11 | Only `kit` helpers draw buttons: no plain `egui::Button`, no hand-drawn capsules. Every helper plays its own click; callers never do. |
 
-Planned consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET` 1, `PRESS_IN` .05, `PRESS_OUT` .16.
+Consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET` 1, `PRESS_IN` .05, `PRESS_OUT` .16.
 
 ## 7. Popups and modals
 
@@ -147,16 +148,22 @@ Planned consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET`
 |---|------|---|
 | M1 | Decorative and looping animation runs on Core Animation layers (`kit::spin`). egui never repaints in a loop for it; it redraws on state change only. | ✅ |
 | M2 | Every animation is finite or tied to visible work, and stops repainting when done. | ✅ |
-| M3 | Press: down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)`. Hover fades via `animate_bool`. | ⏳ |
+| M3 | Press: down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)` (B7). Hover fades via `animate_bool`. | ✅ |
 | M4 | Loader: fill eases 0.6 s, wave loops 1.6 s linear, ⌘→✓ crossfade 0.25 s plus one 0.46 s hop. | ✅ |
 
-## 10. Sound
+## 10. Sound ✅
 
-| # | Rule | Status |
-|---|------|---|
-| N1 | Pressables play one mechanical-key take on mouse down; never the same take twice, ±3% pitch. Each kind has its own rate and gain (hero .9/1.0 … text 1.25/.4). Rows: silent. | ⏳ |
-| N2 | Muted by Settings › Sounds and by macOS "Play user interface sound effects". Off while recording and in screenshot mode. | ⏳ |
-| N3 | Played through AudioToolbox system sounds (low latency), not afplay. Sound files are synthesized or Magnific-generated, owned, fine for the public repo. | ⏳ |
+Approved for the base on 2026-11-15; fine-tuning later (files are swappable, levels live in code). One tonal family for clicks and cues.
+
+| # | Rule |
+|---|------|
+| N1 | **Click:** plastic "higher" (~57 ms, 400 Hz high-pass), three takes, source `/mnt/project-files/button-press/clicks/final/7-higher-1..3.wav`. Played on mouse down, always with the visual press, never alone. |
+| N2 | **Three levels, not one per kind:** Emphasized (hero, primary, danger) 0 dB; Standard (secondary, side, icon, round, tool) −3 dB; Subtle (chips, segment, filter, switch, shortcut, check, radio, text) −6 dB; none for rows, sidebar, cards, hover. Relative to `CLICK_MASTER`, which sits under the cues; set by ear on the M1. |
+| N3 | **Pitch per kind in whole intervals:** hero −2, primary 0, danger −3 semitones; standard +2/+3; subtle +2…+5. |
+| N4 | **Variation:** ±3% pitch, ±6% level, never the same take twice, at most one click per 100 ms. |
+| N5 | **Silent when:** disabled or busy, Settings › Sounds off (`sounds_on`), macOS "Play user interface sound effects" off, recording, screenshot mode, launch, any click the user didn't make. |
+| N6 | **Playback:** `kit::sound::click(Click)` through AudioToolbox system sounds (low latency), never afplay. Files: WAV mono 44.1 kHz 16-bit, peak −1 dBFS, owned (Magnific / synthesized). |
+| N7 | **Cues** in A major (A4 C#5 E5 A5), each opening with a soft plastic tick at −12 dB: Ready C#5→E5→A5 400 ms; Done A4 C#5 E5 A5 arpeggio 600 ms; Oops A4→G#4→E4 450 ms (not an alarm); Awake / Asleep E5→A5 / A5→E5 350 ms at −3 dB. |
 
 ## 11. Screen patterns
 
@@ -221,7 +228,6 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 |---|------|---|
 | K1 | Dim under dialogs in light mode: dialogs use black 45% in both themes; the loader uses ink 24% in light. | One `SCRIM()`: black 45% dark, ink 24% light. |
 | K2 | Row hover is `white(10)` on Cleanup start, `white(12)` on the group rail and sidebar, `white(13)` r8 inset on Keep Awake, a 4 pt inset pill in popovers. | One `ROW_HOVER` = `white(10)` (already in PR #211, the value Roman saw in hover A), edge to edge in lists and popovers (H2); inset r8 only in the sidebar and rail. |
-| K4 | Button heights: B2 says 44/32/28, but side buttons and toggle chips are 34, action tiles 40–44. | Side and toggle chips go to 32; action tiles are tiles, not push buttons. |
 | K5 | AI uses Monitor cyan, so AI marks look like Monitor data on Clean screens (C3). | Keep cyan as the AI colour (C15) under its own name, `AI()`. |
 | K6 | Esc closes the Uninstaller confirm but not Disk Map or Cleanup confirms. | Esc closes every dialog except while work runs. |
 | K7 | Keep Awake's chart stacks On in `GREEN` and Auto in lavender: a state colour used as a series (C4). | On = lavender, Auto = a second lavender step (`series::util(1)`). |
