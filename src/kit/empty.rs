@@ -130,13 +130,13 @@ pub fn hero_button(ui: &mut Ui, center: Pos2, id: Id, label: &str, keys: Option<
     resp
 }
 
-/// A quiet 34 pt button with a glyph, a label and the shortcut after it
+/// A quiet 32 pt button with a glyph, a label and the shortcut after it
 /// (Window and Screen under Capture area). `glyph` draws the icon in the
 /// square it's given. Returns the response and the width used.
 pub fn side_button(ui: &mut Ui, left: Pos2, id: Id, label: &str, keys: Option<&str>, enabled: bool, glyph: impl FnOnce(&egui::Painter, Rect)) -> (Response, f32) {
     let p = ui.painter().clone();
     let w = side_width(&p, label, keys);
-    let r = Rect::from_min_size(Pos2::new(left.x, left.y - 17.0), Vec2::new(w, 34.0));
+    let r = Rect::from_min_size(Pos2::new(left.x, left.y - 16.0), Vec2::new(w, 32.0));
     let resp = ui.interact(r, id, if enabled { Sense::click() } else { Sense::hover() });
     let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered() && enabled);
     liquid_capsule(&p, r, None, if resp.is_pointer_button_down_on() && enabled { 1.6 } else { hov }, if enabled { 1.0 } else { 0.45 });
@@ -164,12 +164,12 @@ pub fn side_width(p: &egui::Painter, label: &str, keys: Option<&str>) -> f32 {
 pub fn toggle_chip(ui: &mut Ui, left: Pos2, id: Id, label: &str, on: bool, glyph: impl FnOnce(&egui::Painter, Rect, Color32)) -> (Response, f32) {
     let p = ui.painter().clone();
     let w = toggle_width(&p, label);
-    let r = Rect::from_min_size(Pos2::new(left.x, left.y - 17.0), Vec2::new(w, 34.0));
+    let r = Rect::from_min_size(Pos2::new(left.x, left.y - 16.0), Vec2::new(w, 32.0));
     let resp = ui.interact(r, id, Sense::click());
     let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
     let (fill, edge, ink) = if on { (with_alpha(ACTION(), 0.16 + 0.06 * hov), with_alpha(ACTION(), 0.45), ACCENT()) } else { (white((8.0 + 10.0 * hov) as u8), white(32), TEXT_DIM()) };
-    p.rect_filled(r, 17.0, fill);
-    p.rect_stroke(r, 17.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+    p.rect_filled(r, 16.0, fill);
+    p.rect_stroke(r, 16.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     let cy = r.center().y;
     glyph(&p, Rect::from_center_size(Pos2::new(r.left() + 12.0 + 7.5, cy), Vec2::splat(15.0)), ink);
     p.text(Pos2::new(r.left() + 12.0 + 15.0 + sp::S, cy), Align2::LEFT_CENTER, label, font(13.0), ink);

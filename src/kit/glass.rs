@@ -521,8 +521,19 @@ pub fn liquid_capsule(p: &Painter, rect: Rect, tint: Option<Color32>, hover: f32
     }
 }
 
-/// A 30 pt square icon button (panel header, sheet actions).
+/// Legal button heights (B2): 44 hero, 32 headers/footers/dialogs, 28 in
+/// cards and rows. A square or round button snaps to 32 or 28 around the
+/// centre of the rect its caller gives.
+pub const BTN_H: f32 = 32.0;
+pub const BTN_H_ROW: f32 = 28.0;
+fn snap_square(rect: Rect) -> Rect {
+    let s = if rect.height() >= 30.0 { BTN_H } else { BTN_H_ROW };
+    Rect::from_center_size(rect.center(), Vec2::splat(s))
+}
+
+/// A square icon button: 32 in headers, 28 in rows (B1).
 pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
+    let rect = snap_square(rect);
     let id = ui.scope_id().with(("icon-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let resp = ui.interact(rect, id, Sense::click());
     let h = ui.ctx().animate_bool(id, resp.hovered());
@@ -535,8 +546,9 @@ pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
     resp.on_hover_text(tip)
 }
 
-/// The round 26 pt close / refresh button used in sheet headers.
+/// The round 28 pt close / refresh button used in sheet headers (B1).
 pub fn round_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
+    let rect = Rect::from_center_size(rect.center(), Vec2::splat(BTN_H_ROW));
     let id = ui.scope_id().with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let resp = ui.interact(rect, id, Sense::click());
     let h = ui.ctx().animate_bool(id, resp.hovered());
@@ -910,17 +922,22 @@ pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str)
 
 /// A window sidebar row: tint chip (or dashed chip when `planned`), label and
 /// a small right-aligned `meta` text. Selected rows get the blue fill.
-pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, meta: &str, selected: bool, planned: bool) -> Response {
+/// `indent`: how far the icon moves right to sit under its section title
+/// (H6); 0 for rows with no section, [`SIDEBAR_INDENT`] under a dotted one.
+pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, meta: &str, selected: bool, planned: bool, indent: f32) -> Response {
     let resp = ui.interact(rect, id, if planned { Sense::hover() } else { Sense::click() });
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !planned);
     let p = ui.painter();
     let active_text = ACCENT();
     if selected {
-        p.rect_filled(rect, 8.0, pick(Color32::from_rgba_unmultiplied(200, 240, 90, 41), Color32::from_rgba_unmultiplied(125, 181, 25, 41)));
+        // H3: lime at 16%, radius 8, text ACCENT
+        p.rect_filled(rect, 8.0, with_alpha(BLUE(), 0.16));
     } else if h > 0.0 {
-        p.rect_filled(rect, 6.0, white((12.0 * h) as u8));
+        // H1: ROW_HOVER, inset radius 8 in the sidebar
+        p.rect_filled(rect, 8.0, white((10.0 * h) as u8));
     }
-    let chip_r = Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.center().y - 8.0), Vec2::splat(16.0));
+    // H6: one 16 box for every glyph, so the label never shifts
+    let chip_r = Rect::from_min_size(Pos2::new(rect.left() + 8.0 + indent, rect.center().y - 8.0), Vec2::splat(16.0));
     let glyph_col = if planned {
         TEXT_MUTED()
     } else if selected {
@@ -941,6 +958,10 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     }
     resp
 }
+
+/// How far a sidebar item under a dotted section title moves its icon, so
+/// the icon starts under the title text (H6).
+pub const SIDEBAR_INDENT: f32 = 12.0;
 
 /// Height of a [`sidebar_item`] row.
 pub const SIDEBAR_ROW_H: f32 = 28.0;
@@ -1913,4 +1934,51 @@ pub fn search_field(ui: &mut Ui, r: Rect, text: &mut String, hint: &str, focus: 
 pub fn stroke_circle(p: &Painter, c: Pos2, r: f32, stroke: impl Into<Stroke>) {
     let s: Stroke = stroke.into();
     p.circle_stroke(c, (r - s.width / 2.0).max(0.0), s);
+}
+
+/// Filter chip height (B2: 28, inside cards and rows).
+pub const FILTER_CHIP_H: f32 = 28.0;
+
+/// One filter chip, top-left at `at`: label 12, optional coloured dot.
+/// On: lime 22% fill, ACCENT edge. Off: hairline, ROW_HOVER on hover.
+pub fn filter_chip(ui: &mut Ui, p: &Painter, at: Pos2, id: egui::Id, label: &str, on: bool, dot: Option<Color32>) -> Response {
+    let g = p.layout_no_wrap(label.to_owned(), font(12.0), TEXT());
+    let w = g.size().x + 22.0 + if dot.is_some() { 12.0 } else { 0.0 };
+    let r = Rect::from_min_size(at, Vec2::new(w, FILTER_CHIP_H));
+    let resp = ui.interact(r, id, Sense::click());
+    let rr = r.height() / 2.0;
+    p.rect_filled(r, rr, if on { with_alpha(BLUE(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
+    p.rect_stroke(r, rr, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
+    let mut tx = r.left() + 11.0;
+    if let Some(c) = dot {
+        p.circle_filled(Pos2::new(tx + 3.5, r.center().y), 3.5, c);
+        tx += 12.0;
+    }
+    p.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, label, font(12.0), if on { TEXT() } else { TEXT_DIM() });
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// A row of [`filter_chip`]s from `x`, 6 apart; a click picks one.
+/// Returns the right edge.
+pub fn filter_chips<T: PartialEq + Copy>(ui: &mut Ui, p: &Painter, x: f32, y: f32, items: &[(&str, T)], cur: &mut T, salt: &str, dot: impl Fn(&T) -> Option<Color32>) -> f32 {
+    let mut x = x;
+    for (i, (label, f)) in items.iter().enumerate() {
+        let resp = filter_chip(ui, p, Pos2::new(x, y), ui.scope_id().with((salt, i)), label, *cur == *f, dot(f));
+        if resp.clicked() {
+            *cur = *f;
+        }
+        x = resp.rect.right() + 6.0;
+    }
+    x
+}
+
+/// A quiet text tag (no box): meta, not a button.
+pub fn tag(p: &Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {
+    let g = p.layout_no_wrap(label.to_string(), font(11.0), col);
+    let r = align.anchor_size(pos, g.size() + Vec2::new(10.0, 2.0));
+    p.galley(r.center() - g.size() / 2.0, g, col);
+    r
 }

@@ -9,7 +9,7 @@ use crate::kit::agent::Agent;
 use crate::kit::glass::*;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-const CHIP_H: f32 = 26.0;
+const CHIP_H: f32 = 28.0;
 const POP_W: f32 = 560.0;
 const POP_HEAD_H: f32 = 44.0;
 const POP_SEC_H: f32 = 28.0;
