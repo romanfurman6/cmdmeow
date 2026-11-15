@@ -90,7 +90,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let fr = p.text(Pos2::new(right, cy), Align2::RIGHT_CENTER, &free_s, ty::body(), TEXT_SOFT());
     let bar_r = Rect::from_min_max(Pos2::new(name.right() + sp::L, cy - 3.0), Pos2::new(fr.left() - sp::L, cy + 3.0));
     if bar_r.width() > 40.0 {
-        bar(&p, bar_r, used, BLUE());
+        bar(&p, bar_r, used, ACTION());
     }
 
     // a note when Claude is missing, at the bottom
@@ -208,13 +208,8 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
         text_fit(&p, Pos2::new(c.x, c.y + 40.0), Align2::CENTER_CENTER, g.title(), ty::body(), TEXT_SOFT(), cell - 8.0);
     }
     let br = Rect::from_center_size(Pos2::new(area.center().x, top + rows as f32 * cell_h + sp::XXL + btn.y / 2.0), btn);
-    let resp = ui.interact(br, ui.scope_id().with("fresh-scan"), Sense::click());
-    let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
-    liquid_capsule(&p, br, Some(BLUE()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
-    p.text(br.center(), Align2::CENTER_CENTER, "Scan", bold(16.0), on_color(BLUE()));
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
+    let id = ui.scope_id().with("fresh-scan");
+    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     resp.clicked()
 }
 
@@ -277,14 +272,14 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     // progress bar (an indeterminate sweep while the scan can't count)
     let track = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(x1 - x0, 6.0));
     if st.progress >= 0.0 {
-        bar(&p, track, st.progress, BLUE());
+        bar(&p, track, st.progress, ACTION());
     } else {
         p.rect_filled(track, 3.0, white(20));
         let w = track.width() * 0.25;
         let f = ((t * 0.6).fract() as f32) * (track.width() + w) - w;
         let seg = Rect::from_min_size(Pos2::new(track.left() + f, track.top()), Vec2::new(w, 6.0)).intersect(track);
         if seg.width() > 0.0 {
-            p.rect_filled(seg, 3.0, BLUE());
+            p.rect_filled(seg, 3.0, ACTION());
         }
     }
     y += 16.0;
@@ -321,7 +316,7 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
         };
         let mark = Pos2::new(cols[0] + 8.0, row.center().y);
         if !finished {
-            spinner(&p, mark, 7.0, t, BLUE());
+            spinner(&p, mark, 7.0, t, ACTION());
         } else if n > 0 {
             p.circle_filled(mark, 8.0, tint::HEALTH());
             icon(&p, Icon::Check, Rect::from_center_size(mark, Vec2::splat(11.0)), ON_ACTION);
@@ -441,8 +436,8 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let resp = ui.interact(tr, id, Sense::click());
         let hv = ctx.animate_bool(id, resp.hovered());
         if sel {
-            p.rect_filled(tr, R_BUTTON, with_alpha(BLUE(), 0.16));
-            p.rect_stroke(tr, R_BUTTON, Stroke::new(1.0, with_alpha(BLUE(), 0.45)), StrokeKind::Inside);
+            p.rect_filled(tr, R_BUTTON, with_alpha(ACTION(), 0.16));
+            p.rect_stroke(tr, R_BUTTON, Stroke::new(1.0, with_alpha(ACTION(), 0.45)), StrokeKind::Inside);
         } else {
             p.rect_filled(tr, R_BUTTON, lerp_color(CARD(), RAISED(), hv));
             p.rect_stroke(tr, R_BUTTON, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);

@@ -4,7 +4,7 @@
 //! button under it, with the shortcut on keycaps inside the button.
 
 use crate::kit::glass::*;
-use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Response, Sense, Ui, Vec2};
+use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Response, Ui, Vec2};
 
 /// The big button's height.
 pub const HERO_H: f32 = 44.0;
@@ -94,19 +94,18 @@ pub fn hero_button(ui: &mut Ui, center: Pos2, id: Id, label: &str, keys: Option<
     let p = ui.painter().clone();
     let w = hero_width(&p, label, keys, lead).max(min_w);
     let r = Rect::from_center_size(center, Vec2::new(w, HERO_H));
-    let resp = ui.interact(r, id, if enabled { Sense::click() } else { Sense::hover() });
-    let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered() && enabled);
-    let a = if enabled { 1.0 } else { 0.45 };
-    liquid_capsule(&p, r, tint, if resp.is_pointer_button_down_on() && enabled { 1.6 } else { hov }, a);
+    let k = crate::kit::key::press(ui, r, id, enabled, Some(crate::kit::sound::Click::Hero));
+    let face = crate::kit::key::paint(&p, r, &crate::kit::glass::capsule_look(tint), &k);
     let ink = tint.map(on_color).unwrap_or(TEXT());
-    let ink = if enabled { ink } else { with_alpha(ink, 0.5) };
+    let ink = if enabled { ink } else { with_alpha(ink, crate::kit::key::disabled_alpha()) };
+    let resp = k.resp;
     // the content is centred as one row: lead, label, keys
     let text = p.layout_no_wrap(label.to_owned(), bold(16.0), ink);
-    let k = keys.filter(|k| !k.is_empty());
-    let kw = k.map(|k| sp::M + keycaps_width(&p, k, 12.0)).unwrap_or(0.0);
+    let caps_of = keys.filter(|k| !k.is_empty());
+    let kw = caps_of.map(|k| sp::M + keycaps_width(&p, k, 12.0)).unwrap_or(0.0);
     let total = lead_w(lead) + text.size().x + kw;
-    let mut x = r.center().x - total / 2.0;
-    let cy = r.center().y;
+    let mut x = face.center().x - total / 2.0;
+    let cy = face.center().y;
     match lead {
         Lead::None => {}
         Lead::Icon(ic) => icon(&p, ic, Rect::from_center_size(Pos2::new(x + 9.0, cy), Vec2::splat(18.0)), ink),
@@ -121,36 +120,33 @@ pub fn hero_button(ui: &mut Ui, center: Pos2, id: Id, label: &str, keys: Option<
     let tw = text.size().x;
     p.galley(Pos2::new(x, cy - text.size().y / 2.0), text, ink);
     x += tw;
-    if let Some(k) = k {
+    if let Some(k) = caps_of {
         keycaps(&p, Pos2::new(x + sp::M, cy), k, 12.0, tint);
-    }
-    if enabled && resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     resp
 }
 
-/// A quiet 34 pt button with a glyph, a label and the shortcut after it
+/// A quiet 32 pt button with a glyph, a label and the shortcut after it
 /// (Window and Screen under Capture area). `glyph` draws the icon in the
 /// square it's given. Returns the response and the width used.
 pub fn side_button(ui: &mut Ui, left: Pos2, id: Id, label: &str, keys: Option<&str>, enabled: bool, glyph: impl FnOnce(&egui::Painter, Rect)) -> (Response, f32) {
     let p = ui.painter().clone();
     let w = side_width(&p, label, keys);
-    let r = Rect::from_min_size(Pos2::new(left.x, left.y - 17.0), Vec2::new(w, 34.0));
-    let resp = ui.interact(r, id, if enabled { Sense::click() } else { Sense::hover() });
-    let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered() && enabled);
-    liquid_capsule(&p, r, None, if resp.is_pointer_button_down_on() && enabled { 1.6 } else { hov }, if enabled { 1.0 } else { 0.45 });
-    let cy = r.center().y;
-    glyph(&p, Rect::from_center_size(Pos2::new(r.left() + 12.0 + 7.5, cy), Vec2::splat(15.0)));
-    let lr = p.text(Pos2::new(r.left() + 12.0 + 15.0 + sp::S, cy), Align2::LEFT_CENTER, label, font(13.0), TEXT_SOFT());
-    if let Some(k) = keys.filter(|k| !k.is_empty()) {
-        keycaps(&p, Pos2::new(lr.right() + sp::S, cy), k, 11.0, None);
+    let r = Rect::from_min_size(Pos2::new(left.x, left.y - SIDE_H / 2.0), Vec2::new(w, SIDE_H));
+    let k = crate::kit::key::press(ui, r, id, enabled, Some(crate::kit::sound::Click::Side));
+    let face = crate::kit::key::paint(&p, r, &crate::kit::key::Look::quiet(0.04, 0.11), &k);
+    let cy = face.center().y;
+    glyph(&p, Rect::from_center_size(Pos2::new(face.left() + 12.0 + 7.5, cy), Vec2::splat(15.0)));
+    let ink = crate::kit::glass::lerp_color(TEXT_SOFT(), TEXT(), k.hover);
+    let lr = p.text(Pos2::new(face.left() + 12.0 + 15.0 + sp::S, cy), Align2::LEFT_CENTER, label, font(13.0), ink);
+    if let Some(caps) = keys.filter(|k| !k.is_empty()) {
+        keycaps(&p, Pos2::new(lr.right() + sp::S, cy), caps, 11.0, None);
     }
-    if enabled && resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    (resp, w)
+    (k.resp, w)
 }
+
+/// Height of a [`side_button`] and a [`toggle_chip`].
+pub const SIDE_H: f32 = 32.0;
 
 /// How wide a [`side_button`] is.
 pub fn side_width(p: &egui::Painter, label: &str, keys: Option<&str>) -> f32 {
@@ -159,24 +155,33 @@ pub fn side_width(p: &egui::Painter, label: &str, keys: Option<&str>) -> f32 {
     12.0 + 15.0 + sp::S + text + k + 12.0
 }
 
-/// A round on/off chip with a glyph and a label (System audio, Microphone).
-/// Returns the response and its width.
+/// A round on/off chip with a glyph and a label (System audio, Microphone),
+/// 32 pt. On: a lime tint with a lime edge. Returns the response and its width.
 pub fn toggle_chip(ui: &mut Ui, left: Pos2, id: Id, label: &str, on: bool, glyph: impl FnOnce(&egui::Painter, Rect, Color32)) -> (Response, f32) {
+    use crate::kit::glass::ACTION;
+    use crate::kit::key::{self, Look};
     let p = ui.painter().clone();
     let w = toggle_width(&p, label);
-    let r = Rect::from_min_size(Pos2::new(left.x, left.y - 17.0), Vec2::new(w, 34.0));
-    let resp = ui.interact(r, id, Sense::click());
-    let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
-    let (fill, edge, ink) = if on { (with_alpha(BLUE(), 0.16 + 0.06 * hov), with_alpha(BLUE(), 0.45), ACCENT()) } else { (white((8.0 + 10.0 * hov) as u8), white(32), TEXT_DIM()) };
-    p.rect_filled(r, 17.0, fill);
-    p.rect_stroke(r, 17.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
-    let cy = r.center().y;
-    glyph(&p, Rect::from_center_size(Pos2::new(r.left() + 12.0 + 7.5, cy), Vec2::splat(15.0)), ink);
-    p.text(Pos2::new(r.left() + 12.0 + 15.0 + sp::S, cy), Align2::LEFT_CENTER, label, font(13.0), ink);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    (resp, w)
+    let r = Rect::from_min_size(Pos2::new(left.x, left.y - SIDE_H / 2.0), Vec2::new(w, SIDE_H));
+    let k = key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
+    let look = if on {
+        Look {
+            fill: with_alpha(ACTION(), 0.16),
+            fill_hover: with_alpha(ACTION(), 0.22),
+            base: with_alpha(ACTION(), 0.30),
+            edge: Some((with_alpha(ACCENT(), 0.45), with_alpha(ACCENT(), 0.60))),
+            ring: ACTION(),
+            ..Look::quiet(0.0, 0.0)
+        }
+    } else {
+        Look { base: key::ink(0.12), ..Look::quiet(0.03, 0.09) }
+    };
+    let face = key::paint(&p, r, &look.radius(SIDE_H / 2.0), &k);
+    let ink = if on { ACCENT() } else { crate::kit::glass::lerp_color(TEXT_DIM(), TEXT(), k.hover) };
+    let cy = face.center().y;
+    glyph(&p, Rect::from_center_size(Pos2::new(face.left() + 12.0 + 7.5, cy), Vec2::splat(15.0)), ink);
+    p.text(Pos2::new(face.left() + 12.0 + 15.0 + sp::S, cy), Align2::LEFT_CENTER, label, font(13.0), ink);
+    (k.resp, w)
 }
 
 /// How wide a [`toggle_chip`] is.

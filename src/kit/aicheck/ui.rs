@@ -226,17 +226,21 @@ pub fn agent_button(ui: &mut Ui, at: Pos2, id: egui::Id, a: Agent, label: &str) 
     let p = ui.painter().clone();
     let ai = tint::HEALTH();
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(agent_button_width(ui, label), CHIP_H));
-    let resp = ui.interact(r, id, Sense::click());
-    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
-    p.rect_filled(r, CHIP_H / 2.0, white((8.0 * h) as u8));
-    p.rect_stroke(r, CHIP_H / 2.0, Stroke::new(1.0, with_alpha(ai, 0.3 + 0.15 * h)), StrokeKind::Inside);
-    let gx = r.left() + 10.0 + 7.0;
-    agent_mark(&p, Rect::from_center_size(Pos2::new(gx, r.center().y), Vec2::splat(12.0)), a, None);
-    p.text(Pos2::new(gx + 7.0 + 6.0, r.center().y), Align2::LEFT_CENTER, label, bold(12.0), TEXT());
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp
+    let k = crate::kit::key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
+    let look = crate::kit::key::Look {
+        fill: Color32::TRANSPARENT,
+        fill_hover: with_alpha(ai, 0.12),
+        base: with_alpha(ai, 0.25),
+        depth: 1.5,
+        edge: Some((with_alpha(ai, 0.35), with_alpha(ai, 0.60))),
+        ring: ai,
+        ..crate::kit::key::Look::quiet(0.0, 0.0)
+    };
+    let face = crate::kit::key::paint(&p, r, &look.radius(CHIP_H / 2.0), &k);
+    let gx = face.left() + 10.0 + 7.0;
+    agent_mark(&p, Rect::from_center_size(Pos2::new(gx, face.center().y), Vec2::splat(12.0)), a, None);
+    p.text(Pos2::new(gx + 7.0 + 6.0, face.center().y), Align2::LEFT_CENTER, label, bold(12.0), TEXT());
+    k.resp
 }
 
 /// The agent's mark: Claude's orange burst, Codex's prompt square.
@@ -266,13 +270,7 @@ fn sparkle(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
 
 /// Text-only button: dim, brighter on hover. True when clicked.
 fn ghost(ui: &mut Ui, r: Rect, label: &str) -> bool {
-    let resp = ui.interact(r, ui.scope_id().with(("ai-ghost", label, r.min.x as i32, r.min.y as i32)), Sense::click());
-    let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
-    ui.painter().text(Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, label, ty::body(), col);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp.clicked()
+    crate::kit::glass::ghost_button(ui, r, label, ty::body(), Align2::LEFT_CENTER).clicked()
 }
 
 /// Height of `text` wrapped to `w` on at most `rows` lines.
@@ -374,20 +372,6 @@ fn rec_icon(c: &mut Check, ctx: &egui::Context, p: &egui::Painter, r: Rect, rec:
         }
     }
     let name = if rec.name.is_empty() { &rec.title } else { &rec.name };
-    p.rect_filled(r, 7.0, letter_color(name));
-    let l: String = name.chars().next().map(|ch| ch.to_uppercase().collect()).unwrap_or_default();
-    p.text(r.center(), Align2::CENTER_CENTER, l, bold(14.0), Color32::WHITE);
+    letter_tile(p, r, name, 1.0);
 }
 
-fn letter_color(name: &str) -> Color32 {
-    const PALETTE: [Color32; 6] = [
-        Color32::from_rgb(0x4C, 0x8B, 0xF5),
-        Color32::from_rgb(0x2E, 0xA0, 0x6B),
-        Color32::from_rgb(0xC0, 0x60, 0x3E),
-        Color32::from_rgb(0x8A, 0x5C, 0xD6),
-        Color32::from_rgb(0x2B, 0x8C, 0xA0),
-        Color32::from_rgb(0xB0, 0x7A, 0x1E),
-    ];
-    let h = name.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
-    PALETTE[(h % PALETTE.len() as u32) as usize]
-}

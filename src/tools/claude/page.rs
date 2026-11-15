@@ -417,7 +417,7 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     }
     let br = Rect::from_min_size(Pos2::new(i.left(), hr.bottom() + sp::M), Vec2::new(i.width(), 8.0));
     let frac = (spent / b) as f32;
-    bar(&p, br, frac.clamp(0.01, 1.0), if frac >= 0.9 { RED() } else if frac >= 0.7 { AMBER() } else { CLAUDE() });
+    bar(&p, br, frac.clamp(0.01, 1.0), if frac >= 0.9 { RED() } else if frac >= 0.7 { AMBER() } else { tint::CLAUDE() });
     let x = br.left() + br.width() * day as f32 / dim as f32;
     p.line_segment([Pos2::new(x, br.top() - 3.0), Pos2::new(x, br.bottom() + 3.0)], egui::Stroke::new(1.5, TEXT()));
     p.text(i.left_bottom(), Align2::LEFT_BOTTOM, format!("Day {day} of {dim}"), ty::label(), TEXT_DIM());
@@ -552,7 +552,7 @@ fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: 
     let mut x = tr.right() + sp::S;
     if menu {
         // this one's limit is the number next to the icon in the menu bar
-        let cr = chip(&p, Pos2::new(x, tr.center().y), Align2::LEFT_CENTER, "In menu bar", (with_alpha(BLUE(), 0.16), ACCENT()));
+        let cr = chip(&p, Pos2::new(x, tr.center().y), Align2::LEFT_CENTER, "In menu bar", (with_alpha(ACTION(), 0.16), ACCENT()));
         ui.interact(cr, ui.scope_id().with(("ai-menu-chip", info.provider)), egui::Sense::hover()).on_hover_text("Its usage is the number shown next to the Cmd+Meow icon in the menu bar. Change it in Settings › AI Usage.");
         x = cr.right() + sp::S;
     }

@@ -352,7 +352,7 @@ fn pop(x: f32) -> f32 {
 /// The mascot's colour: lime on dark, deep green on light (lime on the pale
 /// light backdrop is too faint).
 fn cat_color() -> Color32 {
-    if is_light() { ACCENT() } else { BLUE() }
+    if is_light() { ACCENT() } else { ACTION() }
 }
 
 /// An ear flick starting at `at` (seconds): two quick outward tilts, in radians.
@@ -379,7 +379,7 @@ fn step_dots(p: &egui::Painter, full: Rect, steps: usize, from: usize, step: usi
     let moving = from != step;
     for i in 0..steps {
         let lit = i < step || (i == step && (!moving || k >= 1.0)) || (i <= from && i <= step);
-        p.circle_filled(Pos2::new(x(i), y), D / 2.0, if lit { BLUE() } else { white(46) });
+        p.circle_filled(Pos2::new(x(i), y), D / 2.0, if lit { ACTION() } else { white(46) });
     }
     // the Welcome step has the big cat: back there, the small one hops
     // onto its dot and fades away
@@ -559,13 +559,7 @@ fn all_required(app: &App) -> bool {
 }
 
 fn ghost_button(ui: &mut Ui, r: Rect, label: &str) -> egui::Response {
-    let resp = ui.interact(r, ui.scope_id().with(("ghost", label)), Sense::click());
-    let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, font(13.0), col);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp
+    crate::kit::glass::ghost_button(ui, r, label, font(13.0), Align2::CENTER_CENTER)
 }
 
 /// The app's mark: a dark squircle with the Cmd+Meow glyph, fading in with `sweep`.
@@ -614,7 +608,7 @@ fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let v = t - WELCOME_WAIT - WELCOME_SHAKE;
     let k = ease((v - 1.15) / 0.9);
     if k > 0.0 {
-        p.add(egui::Shape::line(arc_points(c, ring, start, start + std::f32::consts::TAU * k, 128), Stroke::new(2.5, BLUE())));
+        p.add(egui::Shape::line(arc_points(c, ring, start, start + std::f32::consts::TAU * k, 128), Stroke::new(2.5, ACTION())));
     }
     let n = app.tools.len().max(1);
     for (i, tool) in app.tools.iter().enumerate() {
@@ -706,7 +700,7 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         let mark = Rect::from_center_size(c, Vec2::splat(80.0 * z));
         p.rect_filled(mark, 18.0 * z, CARD());
         p.rect_stroke(mark, 18.0 * z, Stroke::new(1.0, white(24)), StrokeKind::Inside);
-        icon(&p, Icon::Shield, mark.shrink(20.0 * z), BLUE());
+        icon(&p, Icon::Shield, mark.shrink(20.0 * z), ACTION());
     }
     let q = p.text(Pos2::new(c.x, c.y + 62.0), Align2::CENTER_TOP, "Send crash reports?", bold(22.0), TEXT());
     // what a report has, and what it never has
@@ -875,9 +869,9 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
         let r = r.translate(Vec2::new(0.0, -hov));
         let now = if app.demo { 2.0 } else { loop_clock(ui.ctx(), id.with("loop"), wall, resp.hovered()) };
-        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(BLUE(), 0.10), s);
+        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(ACTION(), 0.10), s);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(BLUE(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(ACTION(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
         // the goal's tools, as their chips; the check and name sit below,
         // so the space right of the chips is free for the goal's loop
         let inner = r.shrink(14.0);
@@ -904,10 +898,10 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         }
         // check, then name, bottom left
         let cc = Pos2::new(inner.left() + 9.0, ny);
-        p.circle_stroke(cc, 8.5, Stroke::new(1.5, lerp_color(white(40), BLUE(), s)));
+        p.circle_stroke(cc, 8.5, Stroke::new(1.5, lerp_color(white(40), ACTION(), s)));
         if s > 0.01 {
             let z = pop(s);
-            p.circle_filled(cc, 9.0 * z, BLUE());
+            p.circle_filled(cc, 9.0 * z, ACTION());
             check(&p, cc, 7.0 * z, ON_ACTION);
         }
         // what each tool asks macOS for is on the Permissions step, in words
@@ -1420,8 +1414,8 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     let mb = Rect::from_min_size(area.min, Vec2::new(area.width(), 24.0));
     p.rect_filled(mb, 7.0, pick(Color32::from_black_alpha(100), Color32::from_white_alpha(170)).gamma_multiply(a));
     let cat = Rect::from_min_size(Pos2::new(mb.right() - 30.0, mb.top() + 3.0), Vec2::new(22.0, 18.0));
-    p.rect_filled(cat, 5.0, with_alpha(BLUE(), 0.16 * a));
-    brand_glyph(&p, cat.center(), 14.0, BLUE().gamma_multiply(a));
+    p.rect_filled(cat, 5.0, with_alpha(ACTION(), 0.16 * a));
+    brand_glyph(&p, cat.center(), 14.0, ACTION().gamma_multiply(a));
     let mut sx = cat.left() - 12.0;
     for name in ["battery.75percent", "wifi"] {
         let r = Rect::from_min_size(Pos2::new(sx - 14.0, mb.center().y - 7.0), Vec2::splat(14.0));
@@ -1645,7 +1639,7 @@ fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         check_drawn(&p, Pos2::new(right - 13.0, r.center().y), 12.0, GREEN(), ease(((now - since) / 0.35) as f32));
     } else if busy {
         let c = Pos2::new(right - 8.0, r.center().y);
-        spinner(&p, c, 6.0, now, BLUE());
+        spinner(&p, c, 6.0, now, ACTION());
         p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, "Choose Always Allow", font(12.0), TEXT_FAINT());
     } else {
         let label = if st == Status::Denied || !err.is_empty() { "Try again" } else { "Allow" };
@@ -1759,9 +1753,9 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let resp = ui.interact(r, ui.scope_id().with(("setup-ai-tile", r.top() as i32, m.id)), if found[k] { Sense::click() } else { Sense::hover() });
         let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k]);
         let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
-        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(BLUE(), 0.10), s);
+        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(ACTION(), 0.10), s);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(BLUE(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(ACTION(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
         let mr = Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0));
         agent_mark(&p, mr, m.id, !found[k]);
         p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });
@@ -1775,7 +1769,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     };
     // AI Check: one agent
     let mut y = head + 22.0 + sp::XL;
-    let cleanup_chip = app.tool_index(cleanup::ID).map(|i| app.tools[i].badge().color).unwrap_or(BLUE());
+    let cleanup_chip = app.tool_index(cleanup::ID).map(|i| app.tools[i].badge().color).unwrap_or(ACTION());
     y = section(ui, y, Icon::Sparkle, cleanup_chip, "AI Check", "Checks what's safe to remove", &[]);
     for k in 0..n {
         let m = &ai::PROVIDERS[k];
@@ -1786,7 +1780,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let rr = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
         if main && (0.0..1.0).contains(&ping) {
             let e = ease(ping);
-            crate::kit::glass::stroke_circle(&p, rr.center(), 8.0 + 13.0 * e, Stroke::new(1.5, with_alpha(BLUE(), 0.7 * (1.0 - e))));
+            crate::kit::glass::stroke_circle(&p, rr.center(), 8.0 + 13.0 * e, Stroke::new(1.5, with_alpha(ACTION(), 0.7 * (1.0 - e))));
             ui.ctx().request_repaint();
         }
         let dot = if found[k] { radio(ui, rr, ui.scope_id().with(("setup-main", m.id)), main, true).clicked() } else { false };
@@ -1804,7 +1798,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let usage_on = app.demo || app.tool_index(claude::ID).is_some_and(|i| app.tool_on(i));
     if usage_on {
         y += tile_h + sp::XL + sp::M;
-        let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, BLUE()));
+        let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, ACTION()));
         y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
         for k in 0..n {
             let m = &ai::PROVIDERS[k];
@@ -1885,7 +1879,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
         p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, format!("{} checked", ROWS.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
     } else if !done {
         let t = p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, "Checking", font(12.0), TEXT_DIM().gamma_multiply(a));
-        spinner(p, Pos2::new(t.left() - sp::S - 5.0, hy), 5.0, now, BLUE());
+        spinner(p, Pos2::new(t.left() - sp::S - 5.0, hy), 5.0, now, ACTION());
     }
     let mut y = r.top() + sp::XS + head_h;
     p.hline(r.left()..=r.right(), y, Stroke::new(1.0, white(15).gamma_multiply(a)));
@@ -1901,7 +1895,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
         if glow > 0.0 {
             // the last row keeps the card's round bottom corners
             let rr = if k + 1 == ROWS.len() { CornerRadius { sw: R_CARD as u8, se: R_CARD as u8, ..Default::default() } } else { CornerRadius::ZERO };
-            p.rect_filled(row, rr, with_alpha(BLUE(), 0.06 * glow * a));
+            p.rect_filled(row, rr, with_alpha(ACTION(), 0.06 * glow * a));
         }
         let v = shown(answer);
         icon(p, Icon::Broom, Rect::from_center_size(Pos2::new(x0 + 9.0, row.center().y), Vec2::splat(18.0)), TEXT_FAINT().gamma_multiply(a));
@@ -1922,7 +1916,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
         let cr = Rect::from_min_size(Pos2::new(x1 - chip_w, row.center().y - 10.0), Vec2::new(chip_w, 20.0));
         p.text(Pos2::new(cr.left() - sp::L, row.center().y), Align2::RIGHT_CENTER, *size, ty::body(), TEXT_DIM().gamma_multiply(a));
         if v > 0.0 {
-            let (bg, fg, label) = if why.is_some() { (AMBER(), AMBER(), "Needs your OK") } else { (BLUE(), ACCENT(), "Safe") };
+            let (bg, fg, label) = if why.is_some() { (AMBER(), AMBER(), "Needs your OK") } else { (ACTION(), ACCENT(), "Safe") };
             p.rect_filled(cr, 6.0, with_alpha(bg, 0.16 * v * a));
             p.text(cr.center(), Align2::CENTER_CENTER, label, bold(11.0), fg.gamma_multiply(v * a));
         }
@@ -2022,12 +2016,12 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 // the bar fills smoothly between progress reports, at the
                 // decorative pace (egui's own easing asked for every frame)
                 let f = glide(ui.ctx(), ui.scope_id().with(("setup-model", m.id)), f, 0.25);
-                p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 3.0, BLUE());
+                p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 3.0, ACTION());
                 p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, format!("{} of {} · {:.0}%", human_bytes(*done), human_bytes(total), f * 100.0), font(12.0), TEXT_DIM());
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
             }
             ModelState::Unpacking => {
-                p.rect_filled(bar, 3.0, BLUE());
+                p.rect_filled(bar, 3.0, ACTION());
                 p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "Unpacking", font(12.0), TEXT_DIM());
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
             }
@@ -2095,7 +2089,7 @@ fn permissions_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64) {
     let full = done == req.len();
     if shown > 0.005 {
         let a0 = -std::f32::consts::FRAC_PI_2;
-        p.add(egui::Shape::line(arc_points(c, 18.0, a0, a0 + std::f32::consts::TAU * shown, 48), Stroke::new(4.0, if full { GREEN() } else { BLUE() })));
+        p.add(egui::Shape::line(arc_points(c, 18.0, a0, a0 + std::f32::consts::TAU * shown, 48), Stroke::new(4.0, if full { GREEN() } else { ACTION() })));
     }
     // all required ones allowed: the count turns into a check and the ring
     // grows soft cat ears (it was full already when the step opened: no show)
@@ -2233,7 +2227,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
             check_drawn(&p, c, 12.0, GREEN(), ease(since / 0.35));
         } else if waiting {
             let c = Pos2::new(right - 8.0, rr.center().y);
-            spinner(&p, c, 6.0, now, BLUE());
+            spinner(&p, c, 6.0, now, ACTION());
             // a tool's own step (an admin prompt, a download) isn't in System Settings
             let hint = match r.perm {
                 Perm::FullDisk => "Switch it on in System Settings",
@@ -2328,7 +2322,7 @@ fn celebrate(app: &App, p: &egui::Painter, feet: Pos2, t: f32) {
     // a ring pushed out by the burst
     let u = (t - burst) / 0.45;
     if (0.0..1.0).contains(&u) {
-        crate::kit::glass::stroke_circle(p, c, 24.0 + 52.0 * ease(u), Stroke::new(2.0, with_alpha(BLUE(), 0.6 * (1.0 - u))));
+        crate::kit::glass::stroke_circle(p, c, 24.0 + 52.0 * ease(u), Stroke::new(2.0, with_alpha(ACTION(), 0.6 * (1.0 - u))));
     }
     let perk = if t > burst { 0.35 * (1.0 - ease((t - burst) / 0.5)) } else { 0.0 };
     if z > 0.0 {
@@ -2351,7 +2345,7 @@ fn celebrate(app: &App, p: &egui::Painter, feet: Pos2, t: f32) {
         let fade = 1.0 - ((fly - 0.55) / 0.45).clamp(0.0, 1.0);
         let lime = k % 2 == 0;
         let r = 12.0 * s;
-        p.circle_filled(at, r, (if lime { BLUE() } else { POPOVER() }).gamma_multiply(fade));
+        p.circle_filled(at, r, (if lime { ACTION() } else { POPOVER() }).gamma_multiply(fade));
         if !lime {
             crate::kit::glass::stroke_circle(p, at, r, Stroke::new(1.0, white(36).gamma_multiply(fade)));
         }
@@ -2501,7 +2495,7 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     }
     let me = Rect::from_center_size(Pos2::new(bx - 8.0, bar.center().y), Vec2::new(26.0, 20.0));
     let glow = ((t * 3.0).sin() * 0.5 + 0.5) * 0.25 + 0.2;
-    p.rect_filled(me, 5.0, with_alpha(BLUE(), glow));
+    p.rect_filled(me, 5.0, with_alpha(ACTION(), glow));
     brand_glyph(&p, me.center(), 15.0, Color32::WHITE);
     p.text(Pos2::new(bar.left() + 10.0, bar.center().y), Align2::LEFT_CENTER, "Click this icon", font(11.0), TEXT_FAINT());
     // a little caret from the icon to the panel
@@ -2523,7 +2517,7 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
             continue;
         }
         let blue = false;
-        p.rect_filled(r, 9.0, (if blue { BLUE() } else { SIDEBAR() }).gamma_multiply(a.min(1.0)));
+        p.rect_filled(r, 9.0, (if blue { ACTION() } else { SIDEBAR() }).gamma_multiply(a.min(1.0)));
         let fg = if blue { ON_ACTION } else { TEXT_SOFT() };
         // the whole name (R10): on two lines when one is too narrow, the icon moves up
         let name = app.tools[i].name();
@@ -2608,7 +2602,7 @@ pub fn help_card(ui: &mut Ui, full: Rect, now: f64, perm: Perm) -> bool {
     let cycle = (now % 2.4) as f32 / 2.4;
     let on = ease(((cycle - 0.25) / 0.25).clamp(0.0, 1.0)) * (1.0 - ease(((cycle - 0.85) / 0.15).clamp(0.0, 1.0)));
     let sw = Rect::from_min_size(Pos2::new(row.right() - 50.0, row.center().y - 11.0), Vec2::new(38.0, 22.0));
-    p.rect_filled(sw, 11.0, lerp_color(white(46), BLUE(), on));
+    p.rect_filled(sw, 11.0, lerp_color(white(46), ACTION(), on));
     p.circle_filled(Pos2::new(sw.left() + 11.0 + 16.0 * on, sw.center().y), 9.0, Color32::WHITE);
     // a pointer that clicks the switch
     let tip = sw.center() + Vec2::new(4.0, 6.0) + Vec2::new(14.0, 12.0) * (1.0 - ease((cycle / 0.25).clamp(0.0, 1.0)));

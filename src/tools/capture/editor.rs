@@ -563,12 +563,12 @@ impl Editor {
             let label = label.as_str();
             let resp = if lay.icons_only {
                 let resp = pill_button(ui, r, "", kind, true);
-                icons::draw(ui.painter(), ic, Rect::from_center_size(r.center(), Vec2::splat(14.0)), if kind == BTN_PRIMARY { on_color(BLUE()) } else { TEXT() });
+                icons::draw(ui.painter(), ic, Rect::from_center_size(r.center(), Vec2::splat(14.0)), if kind == BTN_PRIMARY { on_color(ACTION()) } else { TEXT() });
                 resp
             } else if matches!(ic, Ico::Pin | Ico::Link) {
                 let resp = pill_button(ui, r, "", kind, true);
-                icons::draw(ui.painter(), ic, Rect::from_center_size(Pos2::new(r.left() + 16.0, y), Vec2::splat(14.0)), if kind == BTN_PRIMARY { on_color(BLUE()) } else { TEXT() });
-                ui.painter().text(Pos2::new(r.left() + 28.0, y), Align2::LEFT_CENTER, label, font(12.0), if kind == BTN_PRIMARY { on_color(BLUE()) } else { TEXT() });
+                icons::draw(ui.painter(), ic, Rect::from_center_size(Pos2::new(r.left() + 16.0, y), Vec2::splat(14.0)), if kind == BTN_PRIMARY { on_color(ACTION()) } else { TEXT() });
+                ui.painter().text(Pos2::new(r.left() + 28.0, y), Align2::LEFT_CENTER, label, font(12.0), if kind == BTN_PRIMARY { on_color(ACTION()) } else { TEXT() });
                 resp
             } else {
                 pill_button(ui, r, label, kind, true)
@@ -576,7 +576,7 @@ impl Editor {
             if let Some(f) = uploading {
                 // the button fills up as the upload goes
                 let done = Rect::from_min_max(r.min, Pos2::new(r.left() + r.width() * f.clamp(0.02, 1.0), r.bottom()));
-                ui.painter().with_clip_rect(done).rect_filled(r, r.height() / 2.0, with_alpha(BLUE(), 0.35));
+                ui.painter().with_clip_rect(done).rect_filled(r, r.height() / 2.0, with_alpha(ACTION(), 0.35));
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                 continue;
             }
@@ -675,7 +675,7 @@ impl Editor {
                 Some(f) => f.bg + 1 == k,
             };
             if on {
-                crate::kit::glass::stroke_circle(&p, r.center(), 11.5, Stroke::new(2.0, BLUE()));
+                crate::kit::glass::stroke_circle(&p, r.center(), 11.5, Stroke::new(2.0, ACTION()));
             }
             if k == 0 {
                 crate::kit::glass::stroke_circle(&p, r.center(), 8.5, Stroke::new(1.5, TEXT_SOFT()));
@@ -873,7 +873,7 @@ impl Editor {
                     let resp = ui.interact(r.expand(3.0), id.with(("color", k)), Sense::click()).on_hover_text(*cname);
                     let on = cur == Some(k);
                     if on {
-                        crate::kit::glass::stroke_circle(&p, r.center(), 11.5, Stroke::new(2.0, BLUE()));
+                        crate::kit::glass::stroke_circle(&p, r.center(), 11.5, Stroke::new(2.0, ACTION()));
                     }
                     p.circle_filled(r.center(), 9.0, Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]));
                     crate::kit::glass::stroke_circle(&p, r.center(), 9.0, Stroke::new(1.0, if on { Color32::WHITE } else { white(64) }));
@@ -984,7 +984,7 @@ impl Editor {
                 let resp = ui.interact(r, id.with(("act", label)), Sense::click());
                 let primary = a == AreaAct::Crop;
                 let (fill, ink, faint) = if primary {
-                    (BLUE(), on_color(BLUE()), with_alpha(on_color(BLUE()), 0.6))
+                    (ACTION(), on_color(ACTION()), with_alpha(on_color(ACTION()), 0.6))
                 } else {
                     (if resp.hovered() { white(26) } else { Color32::TRANSPARENT }, TEXT(), TEXT_FAINT())
                 };
@@ -1310,7 +1310,7 @@ impl Editor {
         let sr = Rect::from_min_max(to_screen(r.min), to_screen(r.max));
         match self.tool {
             Tool::Blur | Tool::Eraser => {
-                p.rect_filled(sr, 3.0, with_alpha(BLUE(), 0.16));
+                p.rect_filled(sr, 3.0, with_alpha(ACTION(), 0.16));
                 p.extend(egui::Shape::dashed_line(&[sr.left_top(), sr.right_top(), sr.right_bottom(), sr.left_bottom(), sr.left_top()], Stroke::new(1.5, ACCENT()), 5.0, 3.0));
             }
             _ => {
@@ -1743,7 +1743,7 @@ pub(crate) fn gradient_disc(p: &egui::Painter, c: Pos2, radius: f32, c0: Color32
 fn chip(ui: &mut Ui, r: Rect, label: &str, on: bool) -> egui::Response {
     let resp = ui.interact(r, ui.scope_id().with(("chip", label)), Sense::click());
     let p = ui.painter();
-    let fill = if on { BLUE() } else if resp.hovered() { white(26) } else { white(15) };
+    let fill = if on { ACTION() } else if resp.hovered() { white(26) } else { white(15) };
     p.rect_filled(r, R_SMALL, fill);
     p.text(r.center(), Align2::CENTER_CENTER, label, font(12.0), if on { ON_ACTION } else { TEXT_DIM() });
     resp
@@ -1797,7 +1797,7 @@ fn icon_toggle(ui: &mut Ui, r: Rect, ic: Ico, tip: &str, on: bool) -> egui::Resp
     let resp = ui.interact(r, ui.scope_id().with(("tool", tip)), Sense::click());
     let p = ui.painter();
     if on {
-        p.rect_filled(r, 6.0, BLUE());
+        p.rect_filled(r, 6.0, ACTION());
     } else if resp.hovered() {
         p.rect_filled(r, 6.0, white(20));
     }

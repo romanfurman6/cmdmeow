@@ -534,7 +534,7 @@ fn frame_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             Some(x) => x.bg + 1 == k,
         };
         if on {
-            stroke_circle(&p, c, rad + 3.5, Stroke::new(2.0, BLUE()));
+            stroke_circle(&p, c, rad + 3.5, Stroke::new(2.0, ACTION()));
         }
         if k == 0 {
             stroke_circle(&p, c, rad - 0.5, Stroke::new(1.5, TEXT_SOFT()));
@@ -668,7 +668,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 50.0));
             let resp = ui.interact(row, ui.scope_id().with(("model", m.name())), Sense::click());
             let on = m == model;
-            p.rect_filled(row, 8.0, if on { with_alpha(BLUE(), 0.18) } else { white(if resp.hovered() { 14 } else { 8 }) });
+            p.rect_filled(row, 8.0, if on { with_alpha(ACTION(), 0.18) } else { white(if resp.hovered() { 14 } else { 8 }) });
             if on {
                 p.rect_stroke(row, 8.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.7)), StrokeKind::Inside);
             }

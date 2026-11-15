@@ -63,7 +63,7 @@ fn down_color() -> Color32 {
 }
 
 fn up_color() -> Color32 {
-    BLUE()
+    ACTION()
 }
 
 /// Draw the modal while it is open (and while it fades out). Returns true

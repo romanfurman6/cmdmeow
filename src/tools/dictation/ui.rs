@@ -21,7 +21,7 @@ const META_H: f32 = 14.0;
 const GAP: f32 = 6.0;
 const ROW_GAP: f32 = 8.0;
 /// The red of a live mic.
-const LIVE: Color32 = Color32::from_rgb(0xFF, 0x45, 0x3A);
+const LIVE: Color32 = REC;
 
 fn clock(secs: f32) -> String {
     let s = secs.max(0.0) as u64;
@@ -567,17 +567,17 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     match &state {
         Shown::NeedModel { failed } => {
             let label = if failed.is_some() { "Try the download again".to_string() } else { format!("Get speech model · {}", human_bytes(d.settings.engine.bytes())) };
-            if hero_button(ui, bc, id.with("get"), &label, None, Lead::Icon(Icon::Down), Some(BLUE()), true, 220.0).clicked() {
+            if hero_button(ui, bc, id.with("get"), &label, None, Lead::Icon(Icon::Down), Some(ACTION()), true, 220.0).clicked() {
                 d.download_error = None;
                 d.start_download(d.settings.engine);
             }
         }
         Shown::Downloading { frac, done, total, unpacking } => {
             let r = Rect::from_center_size(bc, Vec2::new(260.0, HERO_H));
-            p.rect_filled(r, R_BUTTON, with_alpha(BLUE(), 0.14));
+            p.rect_filled(r, R_BUTTON, with_alpha(ACTION(), 0.14));
             let f = if *unpacking { 1.0 } else { frac.clamp(0.0, 1.0) };
-            p.with_clip_rect(Rect::from_min_max(r.min, Pos2::new(r.left() + r.width() * f, r.bottom()))).rect_filled(r, R_BUTTON, with_alpha(BLUE(), 0.30));
-            p.rect_stroke(r, R_BUTTON, Stroke::new(1.0, with_alpha(BLUE(), 0.30)), StrokeKind::Inside);
+            p.with_clip_rect(Rect::from_min_max(r.min, Pos2::new(r.left() + r.width() * f, r.bottom()))).rect_filled(r, R_BUTTON, with_alpha(ACTION(), 0.30));
+            p.rect_stroke(r, R_BUTTON, Stroke::new(1.0, with_alpha(ACTION(), 0.30)), StrokeKind::Inside);
             let what = if *unpacking { "Unpacking…".to_string() } else { format!("{} of {}", human_bytes(*done), human_bytes(*total)) };
             p.text(r.center(), Align2::CENTER_CENTER, what, bold(15.0), ACCENT());
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -590,7 +590,7 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
                 ui.ctx().copy_text(s.text.clone());
                 cx.toast("Copied");
             }
-            if hero_button(ui, Pos2::new(cx0 + off, bc.y), id.with("done"), "Done", None, Lead::None, Some(BLUE()), true, bw).clicked() && !d.demo {
+            if hero_button(ui, Pos2::new(cx0 + off, bc.y), id.with("done"), "Done", None, Lead::None, Some(ACTION()), true, bw).clicked() && !d.demo {
                 d.finish_try(fr);
             }
         }
@@ -600,10 +600,10 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             hold(d, ui, &resp);
         }
         Shown::Working { .. } if keys.is_none() => {
-            hero_button(ui, bc, id.with("talk"), "Hold to talk", None, Lead::Icon(Icon::Mic), Some(BLUE()), false, 0.0);
+            hero_button(ui, bc, id.with("talk"), "Hold to talk", None, Lead::Icon(Icon::Mic), Some(ACTION()), false, 0.0);
         }
         Shown::Idle | Shown::Problem(_) if keys.is_none() => {
-            let resp = hero_button(ui, bc, id.with("talk"), "Hold to talk", None, Lead::Icon(Icon::Mic), Some(BLUE()), true, 0.0);
+            let resp = hero_button(ui, bc, id.with("talk"), "Hold to talk", None, Lead::Icon(Icon::Mic), Some(ACTION()), true, 0.0);
             hold(d, ui, &resp);
         }
         _ => {}
@@ -721,7 +721,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let br = Rect::from_min_max(Pos2::new(card.right() - 12.0 - bw, y - 12.0), Pos2::new(card.right() - 12.0, y + 12.0));
     let resp = ui.interact(br, id.with("key"), Sense::click());
     if rec {
-        p.rect_filled(br, 6.0, with_alpha(BLUE(), 0.22));
+        p.rect_filled(br, 6.0, with_alpha(ACTION(), 0.22));
         p.rect_stroke(br, 6.0, Stroke::new(1.0, ACCENT()), StrokeKind::Inside);
     } else if cur.is_some() {
         p.rect_filled(br, 6.0, white(if resp.hovered() { 30 } else { 20 }));
@@ -767,7 +767,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
             }
             let what = if unpacking { "Unpacking…".to_string() } else { format!("{}%", (frac * 100.0) as u32) };
             let tr = p.text(Pos2::new(sr.left() - 10.0, y), Align2::RIGHT_CENTER, what, font(12.0), TEXT_DIM());
-            bar(p, Rect::from_min_max(Pos2::new(tr.left() - 120.0, y - 2.0), Pos2::new(tr.left() - 10.0, y + 2.0)), if unpacking { 1.0 } else { frac }, BLUE());
+            bar(p, Rect::from_min_max(Pos2::new(tr.left() - 120.0, y - 2.0), Pos2::new(tr.left() - 10.0, y + 2.0)), if unpacking { 1.0 } else { frac }, ACTION());
         }
         _ if engine.ready() => {
             let rr = link(ui, Pos2::new(right, y), Align2::RIGHT_CENTER, "Remove", 12.0);

@@ -121,6 +121,9 @@ impl App {
         let demo = opts.screenshot.is_some();
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
+        if !demo {
+            crate::kit::sound::prewarm();
+        }
         let tools = crate::tools::all(&ToolEnv { ctx: ctx.clone(), demo });
 
         // the menu bar icon

@@ -2,6 +2,8 @@
 //! little darker than the window, system blue for actions, monochrome tool
 //! icons, one spacing scale ([`sp`]) and one type ramp ([`ty`]).
 
+use super::key;
+use super::sound::Click;
 use egui::{
     epaint::{PathShape, PathStroke},
     Align2, Color32, CornerRadius, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense,
@@ -89,40 +91,80 @@ pub fn TEXT_FAINT() -> Color32 { ink(0.56) }
 pub fn TEXT_MUTED() -> Color32 { ink(0.40) }
 
 /// The action colour (lime): primary buttons, selection, checkboxes,
-/// switches, the active sidebar icon. Text on it is [`ON_ACTION`].
+/// switches, the active sidebar icon. Only for what you press or select,
+/// never data (C2). Text on it is [`ON_ACTION`].
 #[allow(non_snake_case)]
-pub fn BLUE() -> Color32 { pick(hex(0xC8F05A), hex(0xA8D83A)) }
-/// Text and glyphs drawn on [`BLUE`].
+pub fn ACTION() -> Color32 { pick(hex(0xC8F05A), hex(0xA8D83A)) }
+/// The recording dot (dictation, screen recording): macOS's own recording
+/// red, the same in both modes. One of the exceptions in C13.
+pub const REC: Color32 = hex(0xFF453A);
+/// Text and glyphs drawn on [`ACTION`].
 pub const ON_ACTION: Color32 = hex(0x0E1405);
 /// Links and lime text on cards.
 #[allow(non_snake_case)]
 pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x3F6B0A)) }
+/// State: fine. Never a category or chart series (C4).
 #[allow(non_snake_case)]
-pub fn GREEN() -> Color32 { pick(hex(0x94D45A), hex(0x4B8625)) }
-/// Apricot: attention (busy spikes, "suggested", warnings).
+pub fn GREEN() -> Color32 { pick(hex(0x94D45A), hex(0x437A20)) }
+/// State: needs attention (busy spikes, "suggested", warnings).
 #[allow(non_snake_case)]
-pub fn AMBER() -> Color32 { pick(hex(0xF7B267), hex(0xC06A12)) }
-/// Problems and low battery.
+pub fn AMBER() -> Color32 { pick(hex(0xF7B267), hex(0xA65A0E)) }
+/// State: problem, low battery.
 #[allow(non_snake_case)]
 pub fn RED() -> Color32 { pick(hex(0xFF9B7A), hex(0xC2391D)) }
-/// Claude's limit bars and rings: the Monitor cyan.
-#[allow(non_snake_case)]
-pub fn CLAUDE() -> Color32 { tint::HEALTH() }
-/// Second series in charts: a paler step of the Monitor cyan.
-#[allow(non_snake_case)]
-pub fn INDIGO() -> Color32 { pick(hex(0xB4EAF3), hex(0x5AB4C6)) }
-#[allow(non_snake_case)]
-pub fn TEAL() -> Color32 { tint::HEALTH() }
-/// Third series / "other": a neutral step, not a hue.
-#[allow(non_snake_case)]
-pub fn PURPLE() -> Color32 { pick(hex(0x4A5A47), hex(0xA9B5A0)) }
+/// Fill of destructive buttons only; text on it is white. Not for text or
+/// marks: those use [`RED`].
+// callers land with the buttons / AI marks work
+#[allow(non_snake_case, dead_code)]
+pub fn DANGER() -> Color32 { pick(hex(0xF04438), hex(0xD92D20)) }
+/// AI marks (C15): the Monitor cyan.
+// callers land with the buttons / AI marks work
+#[allow(non_snake_case, dead_code)]
+pub fn AI() -> Color32 { tint::HEALTH() }
+/// Neutral marks: You, Other, an app with no icon (C9).
 #[allow(non_snake_case)]
 pub fn GRAY() -> Color32 { pick(hex(0x98A096), hex(0x6E766B)) }
+/// The "Other" series in charts: the rest after the coloured series (C5).
+#[allow(non_snake_case)]
+pub fn OTHER() -> Color32 { GRAY() }
+/// The empty part of a bar or ring: free, idle, available.
+#[allow(non_snake_case)]
+pub fn TRACK() -> Color32 { white(20) }
+
+/// Chart series (C5): the group tint first, then its next steps; at most
+/// three colours, the rest is [`OTHER`]. Same thing, same step everywhere.
+pub mod series {
+    use super::{hex, pick};
+    use egui::Color32;
+    /// Monitor charts (memory, storage): cyan, then pale (dark) / deep
+    /// (light), then the step on the other side.
+    pub fn monitor(i: usize) -> Color32 {
+        const DARK: [u32; 3] = [0x6FD6E8, 0xB4EAF3, 0x4FA9BC];
+        const LIGHT: [u32; 3] = [0x177A8E, 0x0B4652, 0x3A97AB];
+        let i = i.min(2);
+        pick(hex(DARK[i]), hex(LIGHT[i]))
+    }
+    /// Utilities charts (Keep Awake): lavender, then a deeper (dark) /
+    /// deeper-ink (light) step.
+    // Keep Awake's chart uses it (PR #210)
+    #[allow(dead_code)]
+    pub fn util(i: usize) -> Color32 {
+        const DARK: [u32; 2] = [0xE8E1FF, 0xA99BF0];
+        const LIGHT: [u32; 2] = [0x6A5AC8, 0x3F3290];
+        let i = i.min(1);
+        pick(hex(DARK[i]), hex(LIGHT[i]))
+    }
+    /// Clean charts: the junk ramp, lime stepping into green.
+    pub fn clean(i: usize) -> Color32 {
+        super::junk_ramp(i)
+    }
+}
 
 /// Junk ring segments, largest to smallest: lime stepping into green.
+/// Every step is at least 3:1 on a card in both modes.
 pub fn junk_ramp(i: usize) -> Color32 {
-    const DARK: [u32; 7] = [0xC8F05A, 0xAEE35A, 0x94D45A, 0x7CC25A, 0x66AE57, 0x549852, 0x46824B];
-    const LIGHT: [u32; 7] = [0x7DB519, 0x6AA61E, 0x5A9622, 0x4B8625, 0x3E7626, 0x336626, 0x2A5724];
+    const DARK: [u32; 7] = [0xC8F05A, 0xAEE35A, 0x94D45A, 0x7CC25A, 0x66AE57, 0x549852, 0x4F8E4E];
+    const LIGHT: [u32; 7] = [0x5B8A14, 0x507E14, 0x467318, 0x3E6A1A, 0x36601B, 0x2F571C, 0x284F1E];
     let i = i.min(6);
     pick(hex(DARK[i]), hex(LIGHT[i]))
 }
@@ -133,13 +175,13 @@ pub mod tint {
     use super::{hex, pick};
     use egui::Color32;
     #[allow(non_snake_case)]
-    pub fn CLEANUP() -> Color32 { pick(hex(0xC8F05A), hex(0x7DB519)) }
+    pub fn CLEANUP() -> Color32 { pick(hex(0xC8F05A), hex(0x5B8A14)) }
     #[allow(non_snake_case)]
     pub fn DISK_MAP() -> Color32 { CLEANUP() }
     #[allow(non_snake_case)]
     pub fn STARTUP() -> Color32 { CLEANUP() }
     #[allow(non_snake_case)]
-    pub fn HEALTH() -> Color32 { pick(hex(0x6FD6E8), hex(0x1F8AA0)) }
+    pub fn HEALTH() -> Color32 { pick(hex(0x6FD6E8), hex(0x177A8E)) }
     #[allow(non_snake_case)]
     pub fn CLAUDE() -> Color32 { HEALTH() }
     #[allow(non_snake_case)]
@@ -147,7 +189,7 @@ pub mod tint {
     #[allow(non_snake_case)]
     pub fn DISPLAYS() -> Color32 { HEALTH() }
     #[allow(non_snake_case)]
-    pub fn CAPTURE() -> Color32 { pick(hex(0xF7B267), hex(0xC06A12)) }
+    pub fn CAPTURE() -> Color32 { pick(hex(0xF7B267), hex(0xA65A0E)) }
     #[allow(non_snake_case)]
     pub fn KEEP_AWAKE() -> Color32 { pick(hex(0xE8E1FF), hex(0x6A5AC8)) }
     #[allow(non_snake_case)]
@@ -434,7 +476,7 @@ pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: b
     painter.rect_filled(rect, r, lerp_color(CARD(), RAISED(), hover * 0.5));
     painter.rect_stroke(rect, r, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
     if selected {
-        painter.rect_stroke(rect, r, Stroke::new(1.5, BLUE()), StrokeKind::Inside);
+        painter.rect_stroke(rect, r, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
 }
 
@@ -443,32 +485,33 @@ pub const BTN_SECONDARY: u8 = 0;
 pub const BTN_PRIMARY: u8 = 1;
 pub const BTN_DANGER: u8 = 2;
 
-/// Standard push button (28–34 pt tall, radius 8). `kind`: 0 = secondary
-/// (quiet fill + hairline), 1 = primary (blue), 2 = destructive (red).
+/// Standard push button: 32 pt (page header, footer bars, dialogs) or
+/// 28 pt (inside cards and rows). `kind`: 0 = secondary (quiet), 1 =
+/// primary (lime), 2 = destructive ([`DANGER`]). A raised key: it
+/// sinks while held and clicks (see [`key`]).
 pub fn pill_button(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool) -> Response {
+    pill_button_at(ui, rect, label, kind, enabled).0
+}
+
+/// [`pill_button`] that also returns the face rect, for a caller that
+/// draws its own content on an empty label (it moves with the press).
+pub fn pill_button_at(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool) -> (Response, Rect) {
     let id = ui.scope_id().with(("pill", label, rect.min.x as i32, rect.min.y as i32));
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let resp = ui.interact(rect, id, sense);
-    let hover = ui.ctx().animate_bool(id.with("h"), resp.hovered() && enabled);
-    let pressed = resp.is_pointer_button_down_on() && enabled;
+    let (look, click) = match kind {
+        BTN_PRIMARY => (key::Look::lime(), Click::Primary),
+        BTN_DANGER => (key::Look::danger(), Click::Danger),
+        // secondary: its hairline goes a little stronger on hover (24%)
+        _ => (key::Look { edge: Some((key::ink(0.10), key::ink(0.24))), ..key::Look::quiet(0.04, 0.11) }, Click::Secondary),
+    };
+    let k = key::press(ui, rect, id, enabled, Some(click));
     let p = ui.painter();
-    let tint = match kind {
-        BTN_PRIMARY => Some(BLUE()),
-        BTN_DANGER => Some(RED()),
-        _ => None,
-    };
-    let a = if enabled { 1.0 } else { 0.45 };
-    liquid_capsule(p, rect, tint, if pressed { 1.6 } else { hover }, a);
-    let (f, col) = match tint {
-        Some(c) => (bold(13.0), on_color(c)),
-        None => (font(13.0), TEXT()),
-    };
-    let col = if enabled { col } else { with_alpha(col, 0.5) };
-    text_fit(p, rect.center(), Align2::CENTER_CENTER, label, f, col, rect.width() - 12.0);
-    if enabled && resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    let face = key::paint(p, rect, &look, &k);
+    let (f, col) = if kind == BTN_SECONDARY { (font(13.0), TEXT()) } else { (bold(13.0), on_color(look.fill)) };
+    let col = if enabled { col } else { with_alpha(col, key::disabled_alpha()) };
+    if !label.is_empty() {
+        text_fit(p, face.center(), Align2::CENTER_CENTER, label, f, col, rect.width() - 12.0);
     }
-    resp
+    (k.resp, face)
 }
 
 /// Width a [`pill_button`] needs for `label` (14 pt padding each side).
@@ -484,65 +527,83 @@ pub fn button_width(p: &Painter, label: &str, kind: u8) -> f32 {
     p.layout_no_wrap(label.to_owned(), f, TEXT()).size().x + 28.0
 }
 
-/// The body of a standard button: flat tint (or quiet white) with a hairline.
-/// `hover` 0..1 lightens it; values above 1 read as pressed.
+/// The body of a standard button at rest, for a picture of one or a caller
+/// that handles its own input. `tint` None = quiet. `hover` 0..1 lightens
+/// it; values above 1 draw it held. Interactive buttons use [`key`] (or a
+/// kit button) instead, which also animates the press and clicks.
 pub fn liquid_capsule(p: &Painter, rect: Rect, tint: Option<Color32>, hover: f32, alpha: f32) {
-    let r = R_BUTTON.min(rect.height() / 2.0);
+    key::paint_at(p, rect, &capsule_look(tint), hover.min(1.0), if hover > 1.0 { 1.0 } else { 0.0 }, alpha, false);
+}
+
+/// The key look of a button body: lime, red, another tint, or quiet.
+pub fn capsule_look(tint: Option<Color32>) -> key::Look {
     match tint {
-        Some(c) => {
-            let fill = if hover > 1.0 { lerp_color(c, Color32::BLACK, 0.12) } else { lerp_color(c, Color32::WHITE, 0.12 * hover) };
-            // a soft glow of its own colour below, a darker lip inside
-            let glow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: with_alpha(c, 0.25 * alpha) };
-            p.add(glow.as_shape(rect, r));
-            p.rect_filled(rect, r, with_alpha(fill, alpha));
-            let lip = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 2.0), rect.max);
-            p.with_clip_rect(lip).rect_filled(rect, r, Color32::from_black_alpha((46.0 * alpha) as u8));
-        }
-        None => {
-            let a = if hover > 1.0 { 26.0 } else { 10.0 + 10.0 * hover };
-            p.rect_filled(rect, r, white((a * alpha) as u8));
-            p.rect_stroke(rect, r, Stroke::new(1.0, white((36.0 * alpha) as u8)), StrokeKind::Inside);
-        }
+        Some(c) if c == ACTION() => key::Look::lime(),
+        Some(c) if c == DANGER() => key::Look::danger(),
+        Some(c) => key::Look::tint(c, 0.38, 0.26),
+        None => key::Look::quiet(0.04, 0.11),
     }
 }
 
 /// A 30 pt square icon button (panel header, sheet actions).
 pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
     let id = ui.scope_id().with(("icon-btn", tip, rect.min.x as i32, rect.min.y as i32));
-    let resp = ui.interact(rect, id, Sense::click());
-    let h = ui.ctx().animate_bool(id, resp.hovered());
+    let k = key::press(ui, rect, id, true, Some(Click::Icon));
     let p = ui.painter();
-    p.rect_filled(rect, R_BUTTON, white((15.0 + 13.0 * h) as u8));
-    icon(p, ic, Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.53)), TEXT_SOFT());
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp.on_hover_text(tip)
+    let face = key::paint(p, rect, &key::Look::quiet(0.06, 0.15), &k);
+    icon(p, ic, Rect::from_center_size(face.center(), Vec2::splat(rect.height() * 0.53)), lerp_color(TEXT_SOFT(), TEXT(), k.hover));
+    k.resp.on_hover_text(tip)
 }
 
 /// The round 26 pt close / refresh button used in sheet headers.
 pub fn round_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
     let id = ui.scope_id().with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
-    let resp = ui.interact(rect, id, Sense::click());
-    let h = ui.ctx().animate_bool(id, resp.hovered());
+    let k = key::press(ui, rect, id, true, Some(Click::Round));
     let p = ui.painter();
-    p.circle_filled(rect.center(), rect.height() / 2.0, white((20.0 + 18.0 * h) as u8));
-    icon(p, ic, Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.46)), TEXT_SOFT());
-    resp.on_hover_text(tip)
+    let look = key::Look::quiet(0.08, 0.20).radius(rect.height() / 2.0);
+    let face = key::paint(p, rect, &look, &k);
+    icon(p, ic, Rect::from_center_size(face.center(), Vec2::splat(rect.height() * 0.46)), lerp_color(TEXT_SOFT(), TEXT(), k.hover));
+    k.resp.on_hover_text(tip)
 }
 
-/// Text link in the accent blue.
+/// Text link in bold [`ACCENT`]: lighter and underlined on hover, the text
+/// sinks 1 pt while held.
 pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Response {
-    let galley = ui.painter().layout_no_wrap(label.to_owned(), bold(size), ACCENT());
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), bold(size), Color32::PLACEHOLDER);
     let rect = align.anchor_size(pos, galley.size());
     let id = ui.scope_id().with(("link", label, pos.x as i32, pos.y as i32));
-    let resp = ui.interact(rect.expand(4.0), id, Sense::click());
-    let col = if resp.hovered() { Color32::from_rgb(0x7D, 0xBB, 0xFF) } else { ACCENT() };
-    ui.painter().galley(rect.min, galley, col);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    let k = key::press(ui, rect.expand(4.0), id, true, Some(Click::Text));
+    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), k.hover);
+    let at = rect.min + k.offset(1.0);
+    if k.hover > 0.5 {
+        let y = at.y + rect.height() - 1.0;
+        ui.painter().hline(at.x..=at.x + rect.width(), y, Stroke::new(1.0, col));
     }
-    resp
+    ui.painter().galley(at, galley, col);
+    if k.focus {
+        ui.painter().rect_stroke(rect.expand(3.0), 4.0, Stroke::new(1.0, TEXT()), StrokeKind::Middle);
+    }
+    k.resp
+}
+
+/// A text-only button: dim text, full ink on an ink 7% backdrop on hover;
+/// the text sinks 1 pt while held. `align` places the label in `rect`.
+pub fn ghost_button(ui: &mut Ui, rect: Rect, label: &str, f: FontId, align: Align2) -> Response {
+    let id = ui.scope_id().with(("ghost", label, rect.min.x as i32, rect.min.y as i32));
+    let k = key::press(ui, rect, id, true, Some(Click::Text));
+    let p = ui.painter();
+    // a left- or right-aligned label keeps its x; the backdrop reaches past it
+    let back = if align.x() == egui::Align::Center { rect } else { rect.expand2(Vec2::new(6.0, 0.0)) };
+    if k.hover > 0.0 {
+        p.rect_filled(back, R_SMALL, key::ink(0.07 * k.hover));
+    }
+    let face = rect.translate(k.offset(1.0));
+    let at = align.pos_in_rect(&face);
+    p.text(at, align, label, f, lerp_color(TEXT_DIM(), TEXT(), k.hover));
+    if k.focus {
+        p.rect_stroke(back.expand(2.5), R_SMALL + 2.5, Stroke::new(1.0, TEXT()), StrokeKind::Middle);
+    }
+    k.resp
 }
 
 /// Thin flat progress bar on a faint track.
@@ -708,35 +769,51 @@ pub fn spinner(painter: &Painter, center: Pos2, radius: f32, _t: f64, color: Col
     crate::kit::spin::arc_at(painter, center, radius, color, std::panic::Location::caller());
 }
 
+/// A 16 pt checkbox. Checked: lime on a 1 pt base, the check pops in.
+/// Unchecked: an outline that darkens on hover. Sinks 1 pt while held.
 pub fn checkbox(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect.expand(3.0), id, if enabled { Sense::click() } else { Sense::hover() });
-    let p = ui.painter();
-    let r = 4.0;
-    if on && enabled {
-        p.rect_filled(rect, r, BLUE());
-        let a = rect.left_top() + Vec2::new(rect.width() * 0.24, rect.height() * 0.52);
-        let b = rect.left_top() + Vec2::new(rect.width() * 0.43, rect.height() * 0.71);
-        let c = rect.left_top() + Vec2::new(rect.width() * 0.78, rect.height() * 0.31);
-        p.add(PathShape::line(vec![a, b, c], PathStroke::new(2.0, ON_ACTION)));
-    } else {
-        p.rect_stroke(rect, r, Stroke::new(1.5, white(if enabled { 90 } else { 30 })), StrokeKind::Inside);
-    }
-    resp
+    choice_box(ui, rect, id, on, enabled, 4.0, Click::Check, |p, face, pop| {
+        let at = |x: f32, y: f32| face.center() + (Vec2::new(face.width() * x, face.height() * y) - face.size() / 2.0) * pop;
+        p.add(PathShape::line(vec![at(0.24, 0.52), at(0.43, 0.71), at(0.78, 0.31)], PathStroke::new(2.0, ON_ACTION)));
+    })
 }
 
 /// One choice of several (a filled dot when picked), the size of a checkbox.
 pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect.expand(3.0), id, if enabled { Sense::click() } else { Sense::hover() });
-    let p = ui.painter();
-    let c = rect.center();
     let r = rect.width().min(rect.height()) / 2.0;
+    choice_box(ui, rect, id, on, enabled, r, Click::Radio, |p, face, pop| {
+        p.circle_filled(face.center(), r * 0.4 * pop, ON_ACTION);
+    })
+}
+
+/// Shared body of [`checkbox`] and [`radio`]. `mark` draws the check or
+/// dot on the face at a scale (it pops from 0.5 to 1 when turned on).
+#[allow(clippy::too_many_arguments)]
+fn choice_box(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool, radius: f32, click: Click, mark: impl FnOnce(&Painter, Rect, f32)) -> Response {
+    let k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
+    let p = ui.painter();
     if on && enabled {
-        p.circle_filled(c, r, BLUE());
-        p.circle_filled(c, r * 0.4, ON_ACTION);
+        let t = ui.ctx().animate_bool_with_time(id.with("pop"), on, 0.2);
+        let face = key::paint(p, rect, &key::Look::lime_small(1.0).radius(radius), &k);
+        mark(p, face, 0.5 + 0.5 * key::spring(t));
     } else {
-        stroke_circle(p, c, r - 0.75, Stroke::new(1.5, white(if enabled { 90 } else { 30 })));
+        ui.ctx().animate_bool_with_time(id.with("pop"), false, 0.0);
+        let look = key::Look {
+            fill: Color32::TRANSPARENT,
+            fill_hover: key::ink(0.08),
+            base: Color32::TRANSPARENT,
+            depth: 0.0,
+            drop: 1.0,
+            highlight: Color32::TRANSPARENT,
+            edge: Some((key::ink(0.35), key::ink(0.70))),
+            edge_w: 1.5,
+            glow: None,
+            ring: TEXT(),
+            radius,
+        };
+        key::paint(p, rect, &look, &k);
     }
-    resp
+    k.resp
 }
 
 /// A small rounded status chip ("Safe", "Ask", "Kept"). `colors` = (fill, text).
@@ -758,42 +835,71 @@ pub fn badge(p: &Painter, pos: Pos2, align: Align2, label: &str) -> Rect {
     r
 }
 
-/// Two-or-more option segmented control. Returns the index clicked this frame.
+/// Two-or-more option segmented control (32 pt in a header, 28 in a card):
+/// segments 2 pt apart, the picked one is a raised thumb. Returns the
+/// index clicked this frame.
 pub fn segmented(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selected: usize) -> Option<usize> {
     let p = ui.painter().clone();
     p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
-    let w = inner.width() / labels.len().max(1) as f32;
+    let n = labels.len().max(1) as f32;
+    let gap = 2.0;
+    let w = (inner.width() - gap * (n - 1.0)) / n;
     let mut out = None;
     for (i, l) in labels.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(inner.left() + w * i as f32, inner.top()), Vec2::new(w, inner.height()));
-        let resp = ui.interact(r, id.with(i), Sense::click());
-        if i == selected {
-            p.rect_filled(r, 6.0, pick(Color32::from_white_alpha(36), Color32::WHITE));
-        }
-        let col = if i == selected || resp.hovered() { TEXT() } else { TEXT_DIM() };
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, l, font(12.0), col, r.width() - 8.0);
-        if resp.clicked() && i != selected {
+        let r = Rect::from_min_size(Pos2::new(inner.left() + (w + gap) * i as f32, inner.top()), Vec2::new(w, inner.height()));
+        let k = key::press(ui, r, id.with(i), true, Some(Click::Segment));
+        let look = if i == selected {
+            key::Look {
+                fill: pick(Color32::from_white_alpha(36), Color32::WHITE),
+                fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
+                base: key::ink(0.14),
+                depth: 1.0,
+                ..key::Look::quiet(0.0, 0.0)
+            }
+        } else {
+            key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, 0.07) }
+        };
+        let face = key::paint(&p, r, &look.radius(6.0), &k);
+        let col = if i == selected { TEXT() } else { lerp_color(TEXT_DIM(), TEXT(), k.hover) };
+        text_fit(&p, face.center(), Align2::CENTER_CENTER, l, font(12.0), col, r.width() - 8.0);
+        if k.resp.clicked() && i != selected {
             out = Some(i);
         }
     }
     out
 }
 
-/// An on/off switch (30×18).
+/// An on/off switch (30×18): lime when on. While held the knob widens
+/// 4 pt, then it slides across with a small overshoot.
 pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect, id, if enabled { Sense::click() } else { Sense::hover() });
+    let k = key::press(ui, rect, id, enabled, Some(Click::Switch));
     let p = ui.painter();
-    if !enabled {
-        dashed_rect(p, rect, rect.height() / 2.0, white(64));
-        return resp;
-    }
-    let t = ui.ctx().animate_bool(id.with("t"), on);
-    p.rect_filled(rect, rect.height() / 2.0, lerp_color(white(41), BLUE(), t));
+    let raw = ui.ctx().animate_bool_with_time(id.with("t"), on, 0.22);
+    // the overshoot runs the way the knob is going
+    let t = if on { key::ease_back(raw) } else { 1.0 - key::ease_back(1.0 - raw) };
+    let look = key::Look {
+        fill: lerp_color(key::ink(0.16), ACTION(), raw),
+        fill_hover: lerp_color(key::ink(0.22), lerp_color(ACTION(), Color32::WHITE, 0.26), raw),
+        base: key::ink(0.10),
+        depth: 1.0,
+        drop: 0.0,
+        highlight: Color32::TRANSPARENT,
+        edge: None,
+        edge_w: 1.0,
+        glow: None,
+        ring: if on { ACTION() } else { TEXT() },
+        radius: rect.height() / 2.0,
+    };
+    let face = key::paint(p, rect, &look, &k);
     let d = rect.height() - 4.0;
-    let x = rect.left() + 2.0 + d / 2.0 + (rect.width() - 4.0 - d) * t;
-    p.circle_filled(Pos2::new(x, rect.center().y), d / 2.0, Color32::WHITE);
-    resp
+    let grow = 4.0 * k.press.clamp(0.0, 1.0);
+    let travel = rect.width() - 4.0 - d - grow;
+    let x0 = face.left() + 2.0 + travel * t;
+    let knob = Rect::from_min_size(Pos2::new(x0, face.top() + 2.0), Vec2::new(d + grow, d));
+    let a = if enabled { 1.0 } else { key::disabled_alpha() };
+    p.rect_filled(knob, d / 2.0, with_alpha(Color32::WHITE, a));
+    k.resp
 }
 
 /// A dashed rounded outline: the "planned, not built yet" look.
@@ -805,10 +911,10 @@ pub fn dashed_rect(p: &Painter, rect: Rect, r: f32, color: Color32) {
 }
 
 /// One tool's chip: a quiet rounded square with the glyph in `color`
-/// (system blue for every tool; no rainbow of filled squircles).
+/// (the group tint; no rainbow of filled squircles).
 pub fn tool_chip(p: &Painter, rect: Rect, glyph: Icon, color: Color32) {
     let r = (rect.width() * 0.27).round();
-    if color == tint::NEUTRAL() || color == BLUE() {
+    if color == tint::NEUTRAL() || color == ACTION() {
         p.rect_filled(rect, r, white(18));
     } else {
         // a group tile: its colour faint behind, a little stronger as the edge
@@ -818,9 +924,19 @@ pub fn tool_chip(p: &Painter, rect: Rect, glyph: Icon, color: Color32) {
     icon(p, glyph, Rect::from_center_size(rect.center(), rect.size() * 0.6), lift(color));
 }
 
-/// A tint made readable as a glyph or text on a dark card (blue → lighter blue).
+/// An app with no icon: its first letter on one neutral tile, the same for
+/// every app (C10). `alpha` dims it (a disabled row).
+pub fn letter_tile(p: &Painter, rect: Rect, name: &str, alpha: f32) {
+    let r = (rect.width() * 0.27).round();
+    p.rect_filled(rect, r, white((20.0 * alpha) as u8));
+    p.rect_stroke(rect, r, Stroke::new(1.0, white((20.0 * alpha) as u8)), StrokeKind::Inside);
+    let l: String = name.chars().find(|c| c.is_alphanumeric()).map(|c| c.to_uppercase().collect()).unwrap_or_default();
+    p.text(rect.center(), Align2::CENTER_CENTER, l, bold((rect.width() * 0.5).round()), with_alpha(TEXT_DIM(), 0.68 * alpha));
+}
+
+/// A tint made readable as a glyph or text on a card (action lime → ACCENT).
 pub fn lift(c: Color32) -> Color32 {
-    if c == BLUE() { ACCENT() } else { c }
+    if c == ACTION() { ACCENT() } else { c }
 }
 
 /// 1 pt separator line.
@@ -889,7 +1005,7 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     let resp = ui.interact(rect, id, if planned { Sense::hover() } else { Sense::click() });
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !planned);
     let p = ui.painter();
-    let active_text = pick(hex(0xD9F78A), hex(0x3F6B0A));
+    let active_text = ACCENT();
     if selected {
         p.rect_filled(rect, 8.0, pick(Color32::from_rgba_unmultiplied(200, 240, 90, 41), Color32::from_rgba_unmultiplied(125, 181, 25, 41)));
     } else if h > 0.0 {
@@ -986,10 +1102,14 @@ pub fn fact_row(p: &Painter, r: Rect, label: &str, value: &str, value_col: Color
     27.0 + h + 8.0
 }
 
-/// A legend row: colour square, label, value.
+/// A legend row: colour square, label, value. A transparent `color` leaves
+/// the square out (nothing on screen is drawn in it, C7); the label keeps its
+/// column.
 pub fn legend_row(p: &Painter, r: Rect, color: Color32, label: &str, value: &str, value_col: Color32) {
     let c = Pos2::new(r.left() + 16.5, r.center().y);
-    p.rect_filled(Rect::from_center_size(c, Vec2::splat(9.0)), 3.0, color);
+    if color != Color32::TRANSPARENT {
+        p.rect_filled(Rect::from_center_size(c, Vec2::splat(9.0)), 3.0, color);
+    }
     let vr = p.text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, value, font(13.0), value_col);
     text_fit(p, Pos2::new(r.left() + 31.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), (vr.left() - r.left() - 40.0).max(40.0));
 }

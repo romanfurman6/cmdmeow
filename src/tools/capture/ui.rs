@@ -561,7 +561,7 @@ fn history(c: &mut Capture, ui: &mut Ui, body: Rect) {
         let r = Rect::from_min_size(Pos2::new(x, fy), Vec2::new(g.size().x + 24.0, 26.0));
         let resp = ui.interact(r, ui.scope_id().with(("filter", i)), Sense::click());
         let on = c.filter == i;
-        p.rect_filled(r, 13.0, if on { with_alpha(BLUE(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
+        p.rect_filled(r, 13.0, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
         p.rect_stroke(r, 13.0, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
         p.text(r.center(), Align2::CENTER_CENTER, *f, font(12.0), if on { TEXT() } else { TEXT_DIM() });
         if resp.clicked() {
@@ -615,7 +615,7 @@ fn first_capture(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let key = |cmd: Command| c.settings.shortcut(cmd).map(|s| s.display());
     let (area, window, screen) = (key(Command::Area), key(Command::Window), key(Command::Screen));
     let hc = Pos2::new(cx0, tr.bottom() + sp::XXL + HERO_H / 2.0);
-    if hero_button(ui, hc, id.with("area"), "Capture area", area.as_deref(), Lead::None, Some(BLUE()), !c.busy, 200.0).clicked() {
+    if hero_button(ui, hc, id.with("area"), "Capture area", area.as_deref(), Lead::None, Some(ACTION()), !c.busy, 200.0).clicked() {
         c.queue.push((Command::Area, 0));
     }
     let sy = hc.y + HERO_H / 2.0 + sp::L + 17.0;
@@ -661,7 +661,7 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
 
     let key = c.settings.shortcut(Command::Record).map(|s| s.display());
     let hc = Pos2::new(cx0, tr.bottom() + sp::XXL + HERO_H / 2.0);
-    if hero_button(ui, hc, id.with("record"), "Record screen", key.as_deref(), Lead::Dot(RED()), Some(BLUE()), true, 220.0).clicked() {
+    if hero_button(ui, hc, id.with("record"), "Record screen", key.as_deref(), Lead::Dot(RED()), Some(ACTION()), true, 220.0).clicked() {
         c.queue.push((Command::Record, 0));
     }
     // sound: what you hear and your voice
@@ -1120,7 +1120,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
         let br = Rect::from_min_max(Pos2::new(clear.left() - 6.0 - bw, y - 12.0), Pos2::new(clear.left() - 6.0, y + 12.0));
         let resp = ui.interact(br, ui.scope_id().with(("key", *cmd as usize)), Sense::click());
         if rec {
-            p.rect_filled(br, 6.0, with_alpha(BLUE(), 0.22));
+            p.rect_filled(br, 6.0, with_alpha(ACTION(), 0.22));
             p.rect_stroke(br, 6.0, Stroke::new(1.0, ACCENT()), StrokeKind::Inside);
         } else if cur.is_some() {
             p.rect_filled(br, 6.0, white(if resp.hovered() { 30 } else { 20 }));
