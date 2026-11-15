@@ -97,7 +97,7 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. | ✅ |
 | S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
 | S4 | A list is one card with full-bleed rows and hairlines between them. No card per item. | ⏳ |
-| S5 | No drop shadows on anything floating (menus, tooltips, popovers, dialogs, sheets, toasts, drag tags). Native window shadows and the screenshot frame "Shadow" option stay. | ✅ |
+| S5 | Cards and page content have no shadow. Floating surfaces get only the "Whisper" shadow (P2). | ✅ |
 | S6 | Group tile (tool icon): group colour 12% fill, 28% edge, glyph in group colour. Neutral tools: `white(18)`. | ✅ |
 
 ## 6. Buttons and controls ✅
@@ -120,14 +120,16 @@ Approved by Roman for the base system on 2026-11-15. Canvas: https://claude.ai/a
 
 Consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET` 1, `PRESS_IN` .05, `PRESS_OUT` .16.
 
-## 7. Popups and modals
+## 7. Popups and modals ✅
+
+Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 
 | # | Rule | Status |
 |---|------|---|
-| P1 | Surface: `POPOVER` fill, 1 pt inside edge `POPOVER_EDGE` (dark `white(30)`, light ink ~20%, so white popovers stay apart from white cards; covers L7), no shadow. Radius 14 dialogs and sheets, 12 popovers and bars, 10 small menus and tips. | ✅ · ⏳ light edge (PR #209) |
-| P2 | While any menu, popover or dialog is open, nothing under it hovers, shows a tip or takes a click (`kit::modal::shield`). Clicking outside closes a menu or popover. Views that read the pointer use `kit::modal::pointer(ui)`. | ✅ |
-| P3 | Dialogs and sheets dim the page under them: one scrim token for both themes. | ⏳ conflict K1 |
-| P4 | A click on the dim closes a sheet. Destructive confirms close only with Cancel or Esc. | ⏳ conflict K6 |
+| P1 | **Surface:** `POPOVER` fill (egui menus `BG`), 1 pt inside edge `POPOVER_EDGE` (dark `white(30)`, light ink ~20%). Radius: dialogs and sheets 14, popovers and bars 12, hover tip and menus 10, onboarding hint 8, toasts pill. | ✅ |
+| P2 | **Floating shadow "Whisper"**, one token `float_shadow()`: two black layers, key (0,1) blur 2 at .30 dark / .06 light, ambient (0,4) blur 10 at .20 dark / .06 light. egui menus and tooltips: `float_shadow_egui()` one layer (0,3) blur 8 at .32 / .08. Only floating things get it (menus, tooltips, popovers, dialogs, sheets, toasts, floating bars, drag tags); cards, rows and page content never do. Native window shadows and the screenshot "Shadow" option stay. | ✅ |
+| P3 | **Modal cover:** while any menu, popover or dialog is open, nothing under it hovers, shows a tip or takes a click (`kit::modal::shield`, `layer`, `pointer(ui)`). A click on the cover closes a menu or popover. | ✅ |
+| P4 | **Dim** under dialogs and sheets: black 115 (45%) over the page area. A click on the dim closes a sheet; destructive confirms close only with Cancel (Esc where wired). | ✅ · K1, K6 open |
 | P5 | Every removal that can take longer than 0.4 s shows the removal loader (`kit::loader::show`): card 340 wide, padding 24, mark 88, title (lead, verb + "…"), "x of y" (body dim), current path (mono 11 faint, cut in the middle), 28 buttons (Stop where safe; Done, Put back where undo exists). It appears after 0.4 s and stays at least 0.8 s. Scans and measuring keep `spinner()` and the bar. | ✅ |
 | P6 | The loader mark is one shape with the ⌘ cut out; Done turns ⌘ into ✓. | ✅ |
 
