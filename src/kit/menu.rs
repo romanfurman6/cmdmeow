@@ -1,4 +1,4 @@
-//! One menu look for every "⋯" and right-click menu (M1–M6 in
+//! One menu look for every "⋯" and right-click menu (MN1–MN6 in
 //! `docs/ui-rules.md`). Open one with [`popup`] (under its button) or
 //! [`context`] (at the pointer), then add rows with [`item`], [`choice`],
 //! [`sub`], [`note`] and [`separator`]. Never `ui.button` in a menu.
@@ -30,7 +30,7 @@ fn config() -> MenuConfig {
 }
 
 /// A menu that opens `GAP` under the button `resp`, right edges lined up
-/// (M6), flipping above when there's no room.
+/// (MN6), flipping above when there's no room.
 pub fn popup(resp: &Response) -> Popup<'_> {
     Popup::menu(resp).style(style).gap(GAP).align(RectAlign::BOTTOM_END).align_alternatives(&[RectAlign::TOP_END, RectAlign::BOTTOM_START, RectAlign::TOP_START])
 }
@@ -108,7 +108,7 @@ pub fn choice(ui: &mut Ui, label: &str, on: bool) -> Response {
     done(ui, r)
 }
 
-/// A row that opens a submenu `GAP` to its right, top aligned (M5).
+/// A row that opens a submenu `GAP` to its right, top aligned (MN5).
 pub fn sub<R>(ui: &mut Ui, label: &str, content: impl FnOnce(&mut Ui) -> R) -> Option<R> {
     let r = row(ui, label, false, true, true);
     SubMenu::new().config(config()).show(ui, &r, |ui| {
