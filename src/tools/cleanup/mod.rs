@@ -101,7 +101,15 @@ impl Tool for Cleanup {
             engine::Phase::Intro => ("Scan".into(), String::new(), None),
         };
         // before a scan: what past cleans removed (the disk itself is Storage's)
-        let hist = if g.phase == engine::Phase::Intro { engine::history() } else { Vec::new() };
+        let hist = match g.phase {
+            // samples (setup's preview, screenshots): a few past cleans
+            engine::Phase::Intro if self.demo && !self.demo_fresh => {
+                let now = chrono::Utc::now().timestamp();
+                vec![(now - 20 * 86400, 6_100_000_000), (now - 9 * 86400, 4_200_000_000), (now - 3 * 86400, 2_100_000_000)]
+            }
+            engine::Phase::Intro => engine::history(),
+            _ => Vec::new(),
+        };
         let last = hist.last().copied();
         let freed: u64 = hist.iter().map(|h| h.1).sum();
         let intro = g.phase == engine::Phase::Intro;

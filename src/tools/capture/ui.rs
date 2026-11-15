@@ -120,63 +120,79 @@ fn modes(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect,
     }
 }
 
-/// The Medium widget: the delay, four capture buttons and the latest captures.
+/// The Medium widget: the three capture buttons and the latest captures.
 pub fn card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
+    // thumbnails load on other threads: take the finished ones here too, so
+    // a copy of the widget that isn't ticked (setup's preview) shows them
+    c.drain_done();
     let p = ui.painter().clone();
     let id = ui.scope_id().with("capture-card");
     tile::paint_card(&p, rect, 0.0, false);
-    let x0 = rect.left() + 12.0;
-    let x1 = rect.right() - 12.0;
-    let mut y = rect.top() + 10.0;
-    tool_chip(&p, Rect::from_min_size(Pos2::new(x0, y), Vec2::splat(20.0)), Icon::Crop, tint::CAPTURE());
-    p.text(Pos2::new(x0 + 28.0, y + 10.0), Align2::LEFT_CENTER, "Screenshot", bold(13.0), TEXT());
-    let hl = link(ui, Pos2::new(x1, y + 10.0), Align2::RIGHT_CENTER, "History", 12.0);
-    let h_left = hl.rect.left();
-    if hl.clicked() {
+    let (x0, x1, mut y) = card_head(ui, &p, rect, Icon::Crop, "Screenshot");
+    if link(ui, Pos2::new(x1, y - sp::M - 10.0), Align2::RIGHT_CENTER, "History", 12.0).clicked() {
         c.tab = Tab::History;
         cx.open_page(ID, "history");
     }
-    let _ = h_left;
-    y += 30.0;
-
-    let gap = 6.0;
-    let bw = (x1 - x0 - 3.0 * gap) / 4.0;
-    modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 52.0)), &MODES, false);
-    y += 52.0 + 10.0;
-
+    modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + MODE_H)), &MODES, false);
+    y += MODE_H + sp::M;
     // the newest images in the screenshot folder; history when it has none
     c.refresh_files();
-    let items: Vec<Item> = if c.files.is_empty() { c.store.shots.iter().filter(|s| s.kind != Kind::Recording).take(4).map(Item::from_shot).collect() } else { c.files.iter().take(4).map(|f| Item::from_file(c, f)).collect() };
-    // the folder is chosen in Capture's settings; here it's only a label
-    let label = "Recent".to_string();
-    let lr = ui.interact(Rect::from_min_size(Pos2::new(x0, y), Vec2::new(x1 - x0, line_h(&p, &ty::section()))), id.with("recent-label"), Sense::click());
-    text_fit(&p, Pos2::new(x0, y), Align2::LEFT_TOP, &label, ty::section(), if lr.hovered() { TEXT_SOFT() } else { white(150) }, lr.rect.width());
-    if lr.on_hover_text("Open the folder view").clicked() {
-        c.tab = if c.files.is_empty() { Tab::History } else { Tab::Folder };
-        cx.open_page(ID, if c.files.is_empty() { "history" } else { "folder" });
-    }
-    y += line_h(&p, &ty::section()) + sp::S;
-    if items.is_empty() {
-        let r = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 48.0));
-        dashed_rect(&p, r, 6.0, white(40));
-        let hint = match c.settings.shortcut(Command::Area) {
-            Some(s) => format!("Press {} to capture an area", s.display()),
-            None => "No captures yet.".into(),
+    // pictures only: recordings in the same folder are the Video widget's
+    let items: Vec<Item> = if c.files.is_empty() { c.store.shots.iter().filter(|s| s.kind != Kind::Recording).take(4).map(Item::from_shot).collect() } else { c.files.iter().filter(|f| !folder::is_video(&f.path)).take(4).map(|f| Item::from_file(c, f)).collect() };
+    let row = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, rect.bottom() - sp::M));
+    recent_row(c, ui, &p, id, row, &items, 4, Act::Edit, "click to edit");
+}
+
+/// Height of the capture buttons in the Medium widgets.
+const MODE_H: f32 = 36.0;
+
+/// The Medium widgets' header: the tool's chip and name. Returns the
+/// content's left and right edges and where the content starts.
+fn card_head(_ui: &Ui, p: &egui::Painter, rect: Rect, glyph: Icon, name: &str) -> (f32, f32, f32) {
+    let x0 = rect.left() + sp::M;
+    let x1 = rect.right() - sp::M;
+    let y = rect.top() + sp::M;
+    tool_chip(p, Rect::from_min_size(Pos2::new(x0, y), Vec2::splat(20.0)), glyph, tint::CAPTURE());
+    p.text(Pos2::new(x0 + 28.0, y + 10.0), Align2::LEFT_CENTER, name, bold(13.0), TEXT());
+    (x0, x1, y + 20.0 + sp::M)
+}
+
+/// The latest captures in one row of `n` frameless thumbnails filling `r`
+/// (recordings show their length); faint plates when there are none.
+#[allow(clippy::too_many_arguments)]
+fn recent_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect, items: &[Item], n: usize, act: Act, tip: &str) {
+    let gap = sp::S;
+    let bw = (r.width() - (n as f32 - 1.0) * gap) / n as f32;
+    for k in 0..n {
+        let tr = Rect::from_min_size(Pos2::new(r.left() + k as f32 * (bw + gap), r.top()), Vec2::new(bw, r.height()));
+        let Some(it) = items.get(k) else {
+            p.rect_filled(tr, 8.0, white(10));
+            continue;
         };
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, &hint, font(12.0), TEXT_FAINT(), r.width() - 16.0);
-        return;
-    }
-    for (k, it) in items.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(x0 + k as f32 * (bw + gap), y), Vec2::new(bw, 48.0));
-        let resp = ui.interact(r, id.with(("recent", it.key)), Sense::click());
-        let tex = c.thumb_at(it.key, it.path.clone());
-        thumb(&p, r, tex, (it.w, it.h), 6.0);
-        p.rect_stroke(r, 6.0, Stroke::new(if resp.hovered() { 1.5 } else { 1.0 }, if resp.hovered() { ACCENT() } else { white(26) }), StrokeKind::Inside);
+        let resp = ui.interact(tr, id.with(("recent", it.key)), Sense::click());
+        let tex = match it.src {
+            Src::Shot(sid) => c.thumb(sid),
+            Src::File if it.path.as_os_str().is_empty() => None,
+            Src::File => c.thumb_at(it.key, it.path.clone()),
+        };
+        thumb(p, tr, tex, (it.w, it.h), 8.0);
+        if it.video.is_some() || it.meta.starts_with("Video") {
+            // a play mark in the middle and the length in the corner
+            p.circle_filled(tr.center(), 11.0, Color32::from_black_alpha(115));
+            let c0 = tr.center();
+            p.add(egui::Shape::convex_polygon(vec![c0 + Vec2::new(-3.0, -5.0), c0 + Vec2::new(5.5, 0.0), c0 + Vec2::new(-3.0, 5.0)], Color32::WHITE, Stroke::NONE));
+            let len = it.meta.trim_start_matches("Video · ");
+            let g = p.layout_no_wrap(len.to_string(), bold(10.0), Color32::WHITE);
+            let lr = Rect::from_min_size(Pos2::new(tr.right() - 5.0 - g.size().x - 8.0, tr.bottom() - 5.0 - g.size().y - 2.0), g.size() + Vec2::new(8.0, 2.0));
+            p.rect_filled(lr, 4.0, Color32::from_black_alpha(140));
+            p.galley(lr.min + Vec2::new(4.0, 1.0), g, Color32::WHITE);
+        }
         if resp.hovered() {
+            p.rect_stroke(tr, 8.0, Stroke::new(1.5, ACCENT()), StrokeKind::Inside);
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        if resp.on_hover_text(format!("{} · click to edit", it.title)).clicked() {
-            run_act(c, Act::Edit, it);
+        if resp.on_hover_text(format!("{} · {tip}", it.title)).clicked() {
+            run_act(c, act, it);
         }
     }
 }
@@ -1364,49 +1380,42 @@ fn recordings(c: &Capture) -> Vec<Item> {
 
 /// The Medium Video widget: Record and the latest recordings.
 fn video_card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
+    c.drain_done();
     let p = ui.painter().clone();
     let id = ui.scope_id().with("video-card");
     tile::paint_card(&p, rect, 0.0, false);
-    let x0 = rect.left() + 12.0;
-    let x1 = rect.right() - 12.0;
-    let mut y = rect.top() + 10.0;
-    tool_chip(&p, Rect::from_min_size(Pos2::new(x0, y), Vec2::splat(20.0)), Icon::Camera, tint::CAPTURE());
-    p.text(Pos2::new(x0 + 28.0, y + 10.0), Align2::LEFT_CENTER, "Video", bold(13.0), TEXT());
-    if link(ui, Pos2::new(x1, y + 10.0), Align2::RIGHT_CENTER, "Recordings", 12.0).clicked() {
+    let (x0, x1, mut y) = card_head(ui, &p, rect, Icon::Camera, "Video");
+    if link(ui, Pos2::new(x1, y - sp::M - 10.0), Align2::RIGHT_CENTER, "Recordings", 12.0).clicked() {
         c.vtab = VTab::Recordings;
         cx.open_page(VIDEO_ID, "");
     }
-    y += 30.0;
-    modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 52.0)), &[(Command::Record, "Record")], true);
-    y += 52.0 + 10.0;
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Recent", ty::section(), white(150));
-    y += line_h(&p, &ty::section()) + sp::S;
-    let items: Vec<Item> = recordings(c).into_iter().take(4).collect();
-    if items.is_empty() {
-        let r = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, (rect.bottom() - 12.0).min(y + 48.0)));
-        dashed_rect(&p, r, 6.0, white(40));
-        let hint = match c.settings.shortcut(Command::Record) {
-            Some(s) => format!("Press {} to record the screen", s.display()),
-            None => "No recordings yet".into(),
-        };
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, &hint, font(12.0), TEXT_FAINT(), r.width() - 16.0);
-        return;
+    // one wide Record button: the red dot, its name, the shortcut on the right
+    let b = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + MODE_H));
+    let resp = ui.interact(b, id.with("record"), Sense::click());
+    let h = ui.ctx().animate_bool(id.with("record-h"), resp.hovered());
+    p.rect_filled(b, R_BUTTON, white((12.0 + 12.0 * h) as u8));
+    let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
+    let dot = Pos2::new(b.left() + sp::M + 5.0, b.center().y);
+    p.circle_filled(dot, 5.0, RED());
+    let label = match &live {
+        Some(t) => format!("Stop · {t}"),
+        None => "Record screen".to_string(),
+    };
+    p.text(Pos2::new(dot.x + 5.0 + sp::S, b.center().y), Align2::LEFT_CENTER, label, font(12.0), if live.is_some() { RED() } else { TEXT() });
+    let keys = key_label(c, Command::Record);
+    if live.is_none() && !keys.is_empty() {
+        p.text(Pos2::new(b.right() - sp::M, b.center().y), Align2::RIGHT_CENTER, keys, font(12.0), TEXT_FAINT());
     }
-    let gap = 6.0;
-    let bw = (x1 - x0 - 3.0 * gap) / 4.0;
-    for (k, it) in items.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(x0 + k as f32 * (bw + gap), y), Vec2::new(bw, 48.0));
-        let resp = ui.interact(r, id.with(("recent", it.key)), Sense::click());
-        let tex = c.thumb_at(it.key, it.path.clone());
-        thumb(&p, r, tex, (it.w, it.h), 6.0);
-        p.rect_stroke(r, 6.0, Stroke::new(if resp.hovered() { 1.5 } else { 1.0 }, if resp.hovered() { ACCENT() } else { white(26) }), StrokeKind::Inside);
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        if resp.on_hover_text(format!("{} · click to open", it.title)).clicked() {
-            run_act(c, Act::Edit, it);
-        }
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
+    if resp.on_hover_text(if live.is_some() { "Stop and save the recording" } else { "Record the screen" }).clicked() {
+        c.queue.push((Command::Record, 0));
+    }
+    y += MODE_H + sp::M;
+    let items: Vec<Item> = recordings(c).into_iter().take(3).collect();
+    let row = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, rect.bottom() - sp::M));
+    recent_row(c, ui, &p, id, row, &items, 3, Act::Edit, "click to open");
 }
 
 /// The Video page: recordings, or the recording settings.
