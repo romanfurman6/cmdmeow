@@ -114,6 +114,7 @@ Canvas: https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34
 | B6 | Hover changes colour only (lime and red lighten 12%). Disabled: alpha .45 (.62 light, L6), no press, no sound. | ⏳ |
 | B7 | Controls: segmented 32 header / 28 card, switch 30×18, checkbox and radio 16, filter chips 26 through one shared helper. | ⏳ |
 | B8 | Rows, sidebar items and cards highlight only: no press, no sound. | ⏳ |
+| B10 | States for every kind: default, hover (colour only), pressed (B5), focus (2 pt `ACCENT` ring set 3 pt out), disabled (L6 alpha, no hover, press or sound), loading (push buttons only: a spinner before the label, width locked), on/selected for choices. | ⏳ |
 | B9 | Only `kit` helpers draw buttons; no plain `egui::Button` and no hand-drawn capsules. | ⏳ |
 
 Planned consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET` 1, `PRESS_IN` .05, `PRESS_OUT` .16.
