@@ -51,7 +51,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ✅ |
 | C15 | AI (AI Check chip, reveal ring, agent marks) has its own token `AI()`, cyan (today the same value as `tint::HEALTH`). | ✅ |
 
-**Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ⏳
+**Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ✅
 
 | # | Rule |
 |---|------|
@@ -97,7 +97,7 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 | S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. | ✅ |
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. | ✅ |
 | S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
-| S4 | A list is one card with full-bleed rows and hairlines between them. No card per item. | ⏳ |
+| S4 | A list is one card with full-bleed rows and hairlines between them. No card per item. | ✅ |
 | S5 | Cards and page content have no shadow. Floating surfaces get only the "Whisper" shadow (P2). | ✅ |
 | S6 | Group tile (tool icon): group colour 12% fill, 28% edge, glyph in group colour. Neutral tools: `white(18)`. | ✅ |
 
@@ -141,7 +141,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. | ✅ |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
 | H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(ACTION, .16)`), radius 8, text `ACCENT`. | ✅ |
-| H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ⏳ (Roman 2026-11-15 comment) |
+| H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ✅ |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
 
@@ -175,13 +175,13 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 | SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. | ✅ |
 | SP2 | **Disk ring** (`kit`, one function, Cleanup and Disk Map start): 208 across, 12 stroke, track `white(16)`, used arc in the tool tint with a round cap from 12 o'clock clockwise. Centre: free space in hero 28/600 over "free of <total>" in label 12 `TEXT_DIM`. 12 below the ring: a 16 disk icon and the volume name in body `TEXT_SOFT`. Disk Map's own ring (r 64, "X of Y used") goes. | ✅ |
 | SP10 | **Start list rows on the backdrop** (Cleanup groups): a 44 head line with "Last scan 2 days ago" as a 12/600 section title and the total right; rows 44 with a 28 tinted icon circle and the name, hairlines between, `ROW_HOVER` on hover. A group's description shows on hover only. After a scan each row gets a 4 pt bar and a right-aligned size. | ✅ |
-| SP3 | **Group rail** (results): a card 232 wide left of the content, 16 gap, 4 padding, rows 40 with a 24 group chip, name body 13, size right in dim; selection H3. | ⏳ |
-| SP4 | **Bundles**: 3+ alike items fold into one row with an arrow and "N items"; children are 44 rows indented 28. Kept items fold into one "Kept" row. | ⏳ |
+| SP3 | **Group rail** (results): a card 232 wide left of the content, 16 gap, 4 padding, rows 40 with a 24 group chip, name body 13, size right in dim; selection H3. A group shows its item count as a badge (T19), never a colour dot. | ✅ |
+| SP4 | **Bundles**: 3+ alike items fold into one row with an arrow and "N items"; children are 44 rows indented 28. Kept items fold into one "Kept" row. | ✅ |
 | SP5 | **Empty state**: R6. | ✅ |
 | SP6 | **Locked tool**: a permission screen per tool that names what is missing in the words of the fix (T16), not a dimmed page. | ✅ |
-| SP7 | **Big state + control** (Keep Awake): centred scene, title hero 28, detail body dim in a fixed 18 line (kept when empty), then one segmented control 32 tall (Off · Auto · On). The control is the only switch, so state and control never disagree (T17). | ⏳ |
-| SP8 | **Hourly chart**: 24 columns, gap 4, 72 tall, stacked series in lavender steps (On = `tint::KEEP_AWAKE`, Auto = `series::util(1)`; never `GREEN`, C4) (top corners radius 3), dashed `white(26)` guides with 11 faint labels in a 36 right gutter, 00/06/12/18 under it. Hover a column → tooltip plus 1.5 outline, linked to the list below. Legend sits on the section title row (10 swatch, label 12 dim, value bold 12). | ⏳ |
-| SP9 | **Widgets**: 1:1 (scene + one word, tap toggles) and 1:2 (scene + two lines + control) only. | ⏳ |
+| SP7 | **Big state + control** (Keep Awake): centred scene, title hero 28, detail body dim in a fixed 18 line (kept when empty), then one segmented control 32 tall (Off · Auto · On). The control is the only switch, so state and control never disagree (T17). | ✅ |
+| SP8 | **Hourly chart**: 24 columns, gap 4, 72 tall, stacked series in lavender steps (On = `tint::KEEP_AWAKE`, Auto = `series::util(1)`; never `GREEN`, C4) (top corners radius 3), dashed `white(26)` guides with 11 faint labels in a 36 right gutter, 00/06/12/18 under it. Hover a column → tooltip plus 1.5 outline, linked to the list below. Legend sits on the section title row (10 swatch, label 12 dim, value bold 12). | ✅ |
+| SP9 | **Widgets**: 1:1 (scene + one word, tap toggles) and 1:2 (scene + two lines + control) only. | ✅ |
 
 ## 12. Writing text ✅
 
@@ -229,3 +229,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 ## Decisions log
 
 2026-11-15, Roman: K1 one `SCRIM()` (P4) · K2 one `ROW_HOVER` white(10) (H1) · K3 lime glow stays (B5) · K4 heights 44/32/28 (B2) · K5 `AI()` token (C15) · K6 Esc closes every dialog except while work runs (P4) · K7 Keep Awake chart in lavender steps (SP8).
+
+2026-11-15, Roman: whole system approved, including L1–L7, S4, H6, SP3/SP4 (count badge instead of the rail dot) and SP7–SP9. Details get tuned later through this file (G1).
