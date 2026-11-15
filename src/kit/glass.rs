@@ -763,6 +763,7 @@ pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> 
 
 /// Shared body of [`checkbox`] and [`radio`]. `mark` draws the check or
 /// dot on the face at a scale (it pops from 0.5 to 1 when turned on).
+#[allow(clippy::too_many_arguments)]
 fn choice_box(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool, radius: f32, click: Click, mark: impl FnOnce(&Painter, Rect, f32)) -> Response {
     let k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
     let p = ui.painter();
