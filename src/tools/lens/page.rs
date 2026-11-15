@@ -356,6 +356,8 @@ fn show_root(app: &mut App, root: PathBuf) {
     app.lens_morph = None;
     app.lens_hues.clear();
     app.lens_skip = 0;
+    // "freed" counts what was removed from this map only
+    app.lens_freed = 0;
     app.lens_back.clear();
     app.lens_fwd.clear();
     app.lens_peek = false;
@@ -2158,6 +2160,7 @@ mod tests {
         // a mapped folder, not the disk
         demo_tree(&mut app);
         app.lens_selected.clear();
+        app.lens_freed = 41_900_000;
         assert_ne!(app.lens_root, Path::new("/"));
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0));
         let r = Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 720.0));
@@ -2193,6 +2196,8 @@ mod tests {
         // the disk's last map opens next (none here: the folder's is gone)
         assert_eq!(app.lens_root, Path::new("/"));
         assert!(app.lens.result.read_ok().is_none());
+        // what was freed in the folder isn't counted on the disk's map
+        assert_eq!(app.lens_freed, 0);
     }
 
     #[test]
