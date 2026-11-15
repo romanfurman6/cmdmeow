@@ -36,7 +36,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | # | Rule | Status |
 |---|------|---|
 | C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ✅ |
-| C2 | Lime is only for what you press or select. Never data. In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). | ✅ |
+| C2 | Lime is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). | ✅ |
 | C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ✅ |
 | C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. | ✅ |
 | C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ✅ |
@@ -103,11 +103,11 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 
 ## 6. Buttons and controls ✅
 
-Approved by Roman for the base system on 2026-11-15. Canvas: https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34 · source spec: `/mnt/project-files/button-press/button-rules.md`.
+Approved by Roman for the base system on 2026-11-15. Canvas: https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34 · source spec: `button-press/button-rules.md` in the project files (not in the repo).
 
 | # | Rule |
 |---|------|
-| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, 30 square), Round (`round_button`, 26, sheet close and refresh), AI chip (`agent_button`, 26). |
+| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, square: 32 in headers, 28 in cards and rows), Round (`round_button`, 28, sheet close and refresh), AI chip (`agent_button`, 28). Code still has 30 and 26; the code audit moves them. |
 | B2 | **Heights:** 44 hero, 32 (page header, footer, dialogs, side, toggle chips), 28 (inside cards and rows). Nothing else: 30, 34, 36 → 32; 24, 26 → 28. |
 | B3 | **Shape:** `R_BUTTON` 10, capped at h/2. Chips h/2. Segmented `R_SMALL` 7, thumb 6, 2 pt gap between segments. |
 | B4 | **Raised-key look, one language for every pressable:** fill, a 1 pt top highlight (white 38% on lime/red; quiet: white 75% light, 8% dark), a darker base under the face. Lime/red base 3 pt (tint mixed 62% to black). Quiet kinds base 2 pt ink 14%, plus a 1 pt hairline ink 10% (18% on hover). |
@@ -140,7 +140,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 |---|------|---|
 | H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. | ✅ |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
-| H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(BLUE, .16)`), radius 8, text `ACCENT`. | ✅ |
+| H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(ACTION, .16)`), radius 8, text `ACCENT`. | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ⏳ (Roman 2026-11-15 comment) |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
@@ -160,7 +160,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 
 | # | Rule |
 |---|------|
-| N1 | **Click:** plastic "higher" (~57 ms, 400 Hz high-pass), three takes, source `/mnt/project-files/button-press/clicks/final/7-higher-1..3.wav`. Played on mouse down, always with the visual press, never alone. |
+| N1 | **Click:** plastic "higher" (~57 ms, 400 Hz high-pass), three takes, source `button-press/clicks/final/7-higher-1..3.wav` in the project files (not in the repo). Played on mouse down, always with the visual press, never alone. |
 | N2 | **Three levels, not one per kind:** Emphasized (hero, primary, danger) 0 dB; Standard (secondary, side, icon, round, tool) −3 dB; Subtle (chips, segment, filter, switch, shortcut, check, radio, text) −6 dB; none for rows, sidebar, cards, hover. Relative to `CLICK_MASTER`, tuned by ear on the M1 (target ≈ −6 dB under cues; starts at 0 dB). |
 | N3 | **Pitch per kind in whole intervals:** hero −2, primary 0, danger −3 semitones; standard +2/+3; subtle +2…+5. |
 | N4 | **Variation:** ±3% pitch, ±6% level, never the same take twice, at most one click per 100 ms. |
