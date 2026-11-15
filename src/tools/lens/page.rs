@@ -1403,7 +1403,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     // the view switch in the middle of the header, away from the map's state
     let seg_w = 186.0;
     let seg_x = (hr.center().x - seg_w / 2.0).min(hint.left() - 40.0 - seg_w);
-    let seg_r = Rect::from_min_size(Pos2::new(seg_x, hr.center().y - 13.0), Vec2::new(seg_w, 26.0));
+    let seg_r = Rect::from_min_size(Pos2::new(seg_x, hr.center().y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(seg_w, sp::HEADER_CONTROL_H));
     if let Some(i) = segmented(ui, seg_r, ui.scope_id().with("map-view"), &["Bubbles", "Rings", "Files"], app.lens_view as usize) {
         app.lens_view = i as u8;
         super::save_prefs(app);
@@ -1887,7 +1887,7 @@ fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, crate::kit::glass::SCRIM());
     let n = app.lens_selected.len();
     let rows = n.min(8);
-    let h = 22.0 + 46.0 + 14.0 + rows as f32 * 34.0 + 8.0 + 18.0 + 30.0 + 22.0;
+    let h = 22.0 + 20.0 + 14.0 + rows as f32 * 34.0 + 8.0 + 18.0 + 30.0 + 22.0;
     let m = Rect::from_center_size(r.center(), Vec2::new(520.0, h));
     crate::kit::glass::float_shadow(&p, m, 14.0, 1.0);
     p.rect_filled(m, 14.0, POPOVER());
@@ -1895,8 +1895,7 @@ fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let total: u64 = app.lens_selected.iter().map(|x| x.1).sum();
     let title = format!("Move {} item{} ({}) to the Trash?", n, if n == 1 { "" } else { "s" }, human_bytes(total));
     text_fit(&p, m.min + Vec2::new(22.0, 22.0), Align2::LEFT_TOP, &title, bold(15.0), TEXT(), m.width() - 44.0);
-    text_fit(&p, m.min + Vec2::new(22.0, 48.0), Align2::LEFT_TOP, "System folders and code projects are skipped", font(13.0), TEXT_DIM(), m.width() - 44.0);
-    let list = Rect::from_min_size(m.min + Vec2::new(22.0, 82.0), Vec2::new(m.width() - 44.0, rows as f32 * 34.0 + 8.0));
+    let list = Rect::from_min_size(m.min + Vec2::new(22.0, 56.0), Vec2::new(m.width() - 44.0, rows as f32 * 34.0 + 8.0));
     p.rect_filled(list, 10.0, Color32::from_black_alpha(46));
     let mut drop: Option<usize> = None;
     for (i, (path, b)) in app.lens_selected.iter().enumerate().take(rows) {

@@ -522,7 +522,7 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             text_wrap(&p, Pos2::new(inner.left(), inner.top()), Align2::LEFT_TOP, &s.text, font(15.0), TEXT(), inner.width(), 4);
         }
         Shown::Problem(m) => {
-            text_wrap(&p, inner.center(), Align2::CENTER_CENTER, m, font(14.0), AMBER(), inner.width(), 2);
+            text_wrap(&p, inner.center(), Align2::CENTER_CENTER, m, font(13.0), AMBER(), inner.width(), 2);
         }
     }
 
@@ -714,7 +714,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let id = ui.scope_id().with("dict-left");
     let mut changed = false;
     let x0 = col.left();
-    p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "Speaking", bold(15.0), TEXT());
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Speaking");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 4);
 
     // shortcut
@@ -860,9 +860,7 @@ fn words_card_h(p: &egui::Painter, words: &[String], colw: f32) -> f32 {
 fn words_card(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, x0: f32, top: f32, w: f32) -> bool {
     let id = ui.scope_id().with("dict-words");
     let mut changed = false;
-    let tr = p.text(Pos2::new(x0, top), Align2::LEFT_TOP, "Words", bold(15.0), TEXT());
-    // what it's for, beside the title
-    text_fit(p, Pos2::new(tr.right() + 10.0, tr.center().y + 1.0), Align2::LEFT_CENTER, "Names and terms to spell your way: \"клод\" or \"Clode\" becomes \"Claude\"", font(12.0), TEXT_FAINT(), x0 + w - tr.right() - 10.0);
+    crate::kit::glass::card_title(p, Pos2::new(x0, top), "Words");
     let card = Rect::from_min_size(Pos2::new(x0, top + 28.0), Vec2::new(w, words_card_h(p, &d.settings.words, w)));
     glass_card(p, card, R_CARD, 0.0, false);
 
@@ -905,7 +903,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let id = ui.scope_id().with("dict-right");
     let mut changed = false;
     let x0 = col.left();
-    p.text(Pos2::new(x0, col.top()), Align2::LEFT_TOP, "After", bold(15.0), TEXT());
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "After");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 2);
     let rows: [(&str, &mut bool); 2] = [("Restore clipboard", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
     for (k, (l, on)) in rows.into_iter().enumerate() {
@@ -927,7 +925,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     }
 
     let y0 = card.bottom() + 28.0;
-    p.text(Pos2::new(x0, y0), Align2::LEFT_TOP, "Permissions", bold(15.0), TEXT());
+    crate::kit::glass::card_title(p, Pos2::new(x0, y0), "Permissions");
     let card = card_rows(p, x0, y0 + 28.0, col.width(), 2);
     for (k, perm) in [Perm::Microphone, Perm::Accessibility].into_iter().enumerate() {
         let y = row_y(card, k);

@@ -707,10 +707,15 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let facts: [(bool, &str); 3] = [(true, "What went wrong and where in the app"), (true, "App and macOS version"), (false, "Files, names or IP address")];
     let w = 400.0;
     let mut y = q.bottom() + sp::XL;
+    // one card, rows touching (S4)
+    let a0 = ease((t - 0.15) / 0.4);
+    p.rect_filled(Rect::from_min_size(Pos2::new(c.x - w / 2.0, y), Vec2::new(w, facts.len() as f32 * sp::SETTINGS_ROW_H)), R_CARD, CARD().gamma_multiply(a0));
     for (k, (sent, label)) in facts.iter().enumerate() {
         let a = ease((t - 0.15 - 0.08 * k as f32) / 0.4);
-        let row = Rect::from_min_size(Pos2::new(c.x - w / 2.0, y - (1.0 - a) * 8.0), Vec2::new(w, 40.0));
-        p.rect_filled(row, 10.0, CARD().gamma_multiply(a));
+        let row = Rect::from_min_size(Pos2::new(c.x - w / 2.0, y), Vec2::new(w, sp::SETTINGS_ROW_H));
+        if k > 0 {
+            hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
+        }
         let m = Pos2::new(row.left() + 22.0, row.center().y);
         if *sent {
             check(&p, m, 12.0, GREEN().gamma_multiply(a));
@@ -719,7 +724,7 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         }
         let col = if *sent { TEXT() } else { TEXT_MUTED() };
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, *label, font(13.0), col.gamma_multiply(a));
-        y += 48.0;
+        y += sp::SETTINGS_ROW_H;
     }
     // the answer
     let yes = "Send reports";
@@ -727,12 +732,12 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let no_w = 96.0;
     let gap = 12.0;
     let left = c.x - (bw + gap + no_w) / 2.0;
-    let by = y + 14.0;
+    let by = y + sp::XL;
     let mut picked = None;
-    if ghost_button(ui, Rect::from_min_size(Pos2::new(left, by), Vec2::new(no_w, 36.0)), "Don't send").clicked() {
+    if ghost_button(ui, Rect::from_min_size(Pos2::new(left, by), Vec2::new(no_w, sp::HEADER_CONTROL_H)), "Don't send").clicked() {
         picked = Some(false);
     }
-    if pill_button(ui, Rect::from_min_size(Pos2::new(left + no_w + gap, by), Vec2::new(bw, 36.0)), yes, BTN_PRIMARY, true).clicked() {
+    if pill_button(ui, Rect::from_min_size(Pos2::new(left + no_w + gap, by), Vec2::new(bw, sp::HEADER_CONTROL_H)), yes, BTN_PRIMARY, true).clicked() {
         picked = Some(true);
     }
     match picked {
@@ -869,9 +874,10 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
         let r = r.translate(Vec2::new(0.0, -hov));
         let now = if app.demo { 2.0 } else { loop_clock(ui.ctx(), id.with("loop"), wall, resp.hovered()) };
-        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(ACTION(), 0.10), s);
+        // H4: the picked card stays neutral and gets the 1.5 lime ring
+        let fill = lerp_color(CARD(), white(30), hov * 0.15);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(ACTION(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        p.rect_stroke(r, 12.0, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
         // the goal's tools, as their chips; the check and name sit below,
         // so the space right of the chips is free for the goal's loop
         let inner = r.shrink(14.0);
@@ -907,7 +913,7 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         // what each tool asks macOS for is on the Permissions step, in words
         let px = inner.right();
         let nx = inner.left() + 26.0;
-        text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal.name, bold(14.0), TEXT(), px - nx - 6.0);
+        text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal.name, ty::title(), TEXT(), px - nx - 6.0);
         if resp.clicked() {
             flip = Some((idx, !picked));
         }
@@ -1226,7 +1232,7 @@ fn loop_voice(p: &egui::Painter, f: Rect, mic: Rect, now: f32) {
     const SAID: [&str; 3] = ["Ship it today", "Call me at 5", "Sounds good!"];
     let said = SAID[(now / 4.2) as usize % SAID.len()];
     let q = (now / 4.2).fract() * 4.2;
-    let fnt = font(11.5);
+    let fnt = font(12.0);
     let widest = SAID.iter().map(|s| p.layout_no_wrap((*s).into(), fnt.clone(), TEXT()).size().x).fold(0.0, f32::max);
     let n = (((f.width() - 10.0 - widest) / 6.0).floor() as i32).clamp(5, 12) as usize;
     let cy = mic.center().y;
@@ -1757,9 +1763,10 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let resp = ui.interact(r, ui.scope_id().with(("setup-ai-tile", r.top() as i32, m.id)), if found[k] { Sense::click() } else { Sense::hover() });
         let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k]);
         let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
-        let fill = lerp_color(lerp_color(CARD(), white(30), hov * 0.15), with_alpha(ACTION(), 0.10), s);
+        // H4: the picked card stays neutral and gets the 1.5 lime ring
+        let fill = lerp_color(CARD(), white(30), hov * 0.15);
         p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(ACTION(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
+        p.rect_stroke(r, 12.0, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
         let mr = Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0));
         agent_mark(&p, mr, m.id, !found[k]);
         p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });
@@ -2125,8 +2132,8 @@ fn permissions_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64) {
     let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 56.0), body.max);
     // rows at their smallest; past that the list scrolls (it never runs
     // under the Back / Continue bar)
-    let head = if list.iter().any(|r| r.optional) { 26.0 } else { 0.0 };
-    let need = list.len() as f32 * (38.0 + 6.0) + head;
+    let head = if list.iter().any(|r| r.optional) { PERM_HEAD } else { 0.0 };
+    let need = list.len() as f32 * 40.0 + head;
     if need <= area.height() {
         perm_list(app, ui, area, &list, t, now);
     } else {
@@ -2171,33 +2178,55 @@ fn ring_ears(p: &egui::Painter, c: Pos2, z: f32, col: Color32) {
 }
 
 /// The permission rows (setup and Settings › General). Returns the height used.
+/// The "Optional" title between the two permission cards: 16, title, 12.
+const PERM_HEAD: f32 = sp::L + 14.0 + sp::M;
+
 pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, now: f64) -> f32 {
     let p = ui.painter().clone();
     let mut y = area.top();
     let mut opt_head = false;
     // rows shrink a little when the list wouldn't fit (8 permissions + Optional)
     let n = list.len().max(1) as f32;
-    let head = if list.iter().any(|r| r.optional) { 26.0 } else { 0.0 };
-    let row_h = ((area.height() - head - 6.0 * n) / n).clamp(38.0, 46.0);
+    let head = if list.iter().any(|r| r.optional) { PERM_HEAD } else { 0.0 };
+    let row_h = ((area.height() - head) / n).clamp(40.0, sp::ROW_H);
+    // one card per group, full-bleed rows with hairlines between (S4)
+    let n_req = list.iter().filter(|r| !r.optional).count();
+    let a0 = ease(t / 0.4);
+    let mut cy = y;
+    for (rows, gap) in [(n_req, 0.0), (list.len() - n_req, if n_req > 0 { head } else { 0.0 })] {
+        cy += gap;
+        if rows > 0 {
+            let card = Rect::from_min_size(Pos2::new(area.left(), cy), Vec2::new(area.width(), rows as f32 * row_h));
+            p.rect_filled(card, R_CARD, CARD().gamma_multiply(a0));
+            cy = card.bottom();
+        }
+    }
     let mut ask: Option<Perm> = None;
+    let mut first_in_group = true;
     for (k, r) in list.iter().enumerate() {
         if r.optional && !opt_head {
             opt_head = true;
-            // a section title like the others (26 in all: 4 above, the title, 7 below)
-            y += sp::XS;
-            p.text(Pos2::new(area.left() + 4.0, y), Align2::LEFT_TOP, "Optional", ty::section(), white(150));
-            y += 22.0;
+            first_in_group = true;
+            if k > 0 {
+                // a section title like the others: 16 above, 12 below (R11)
+                y += sp::L;
+                p.text(Pos2::new(area.left(), y), Align2::LEFT_TOP, "Optional", ty::section(), white(150));
+                y += PERM_HEAD - sp::L;
+            }
         }
         let a = ease((t - 0.05 * k as f32) / 0.4);
-        let rr = Rect::from_min_size(Pos2::new(area.left(), y - (1.0 - a) * 10.0), Vec2::new(area.width(), row_h));
+        let rr = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), row_h));
+        if !first_in_group {
+            hairline(&p, Pos2::new(rr.left() + 16.0, rr.top()), Pos2::new(rr.right() - 16.0, rr.top()));
+        }
+        first_in_group = false;
         let st = app.perm_watch.status(r.perm);
         let waiting = app.perm_watch.waiting(r.perm, now);
         let ok = st == Status::Allowed;
-        p.rect_filled(rr, 10.0, CARD().gamma_multiply(a));
         // just allowed: the row flashes green once and its check draws itself
         let since = app.perm_watch.allowed_at.get(&r.perm).map(|t0| (now - t0) as f32).unwrap_or(10.0);
         if since < 0.8 {
-            p.rect_filled(rr, 10.0, with_alpha(GREEN(), 0.2 * (1.0 - ease(since / 0.8))));
+            p.rect_filled(rr.shrink2(Vec2::new(0.0, 0.5)), 0.0, with_alpha(GREEN(), 0.2 * (1.0 - ease(since / 0.8))));
         }
         let ib = Rect::from_min_size(Pos2::new(rr.left() + 12.0, rr.center().y - 15.0), Vec2::splat(30.0));
         let tint = match st {
@@ -2251,7 +2280,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
                 (r.perm.ask_label(), BTN_SECONDARY)
             };
             let w = button_width(&p, label, kind);
-            let b = Rect::from_min_size(Pos2::new(right - w, rr.center().y - 13.0), Vec2::new(w, 26.0));
+            let b = Rect::from_min_size(Pos2::new(right - w, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(w, sp::CONTROL_H));
             if let Some(e) = err {
                 text_fit(&p, Pos2::new(b.left() - 10.0, rr.center().y), Align2::RIGHT_CENTER, e, font(12.0), RED(), 260.0);
             }
@@ -2259,7 +2288,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
                 ask = Some(r.perm);
             }
         }
-        y += row_h + 6.0;
+        y += row_h;
     }
     if let Some(perm) = ask {
         match perm {
@@ -2427,38 +2456,40 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let rows_top = y;
     // open at login: as tall as the shortcut rows under it
     let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
-    p.rect_filled(row, 10.0, CARD());
+    // one card under every row (S4), drawn first
+    let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
+        let ic = app.tools[i].badge().icon;
+        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l.starts_with("Record") { Icon::ScreenRec } else { ic }, l, k))
+    }).collect();
+    let n_rows = 1 + keys.len() + needs_restart(app) as usize;
+    p.rect_filled(Rect::from_min_size(row.min, Vec2::new(row.width(), n_rows as f32 * sp::ROW_H)), R_CARD, CARD());
     icon(&p, Icon::Power, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT());
     p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Open at login", bold(13.0), TEXT());
     let now = ui.ctx().input(|i| i.time);
     // on by default; registered when setup finishes
     let on = crate::kit::login::default_pending() || app.perm_watch.login_on(app.demo, now);
-    let sw = Rect::from_min_size(Pos2::new(row.right() - 50.0, row.center().y - 11.0), Vec2::new(38.0, 22.0));
+    let sw = Rect::from_min_size(Pos2::new(row.right() - 42.0, row.center().y - 9.0), Vec2::new(30.0, 18.0));
     if switch(ui, sw, ui.scope_id().with("setup-login"), on, true).clicked() && !app.demo {
         app.perm_watch.set_login(!on);
     }
-    y += sp::ROW_H + sp::S;
+    y += sp::ROW_H;
     // shortcuts of the enabled tools
-    let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
-        let ic = app.tools[i].badge().icon;
-        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l.starts_with("Record") { Icon::ScreenRec } else { ic }, l, k))
-    }).collect();
     for (k, (ic, label, keys)) in keys.iter().enumerate() {
         let a = ease((t - 0.08 * (k + 1) as f32) / 0.4);
-        let row = Rect::from_min_size(Pos2::new(left.left(), y - (1.0 - a) * 8.0), Vec2::new(left.width(), sp::ROW_H));
-        p.rect_filled(row, 10.0, CARD().gamma_multiply(a));
+        let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
+        hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
         icon(&p, *ic, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT().gamma_multiply(a));
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, *label, font(13.0), TEXT().gamma_multiply(a));
         keycaps(&p, Pos2::new(row.right() - 12.0, row.center().y), keys);
-        y += sp::ROW_H + sp::S;
+        y += sp::ROW_H;
     }
     if needs_restart(app) {
         let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
-        p.rect_filled(row, 10.0, CARD());
+        hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
         icon(&p, Icon::ScreenRec, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), AMBER());
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Screen Recording needs a restart", font(13.0), TEXT());
         let bw = button_width(&p, "Restart", BTN_PRIMARY);
-        let br = Rect::from_min_size(Pos2::new(row.right() - 10.0 - bw, row.center().y - 13.0), Vec2::new(bw, 26.0));
+        let br = Rect::from_min_size(Pos2::new(row.right() - sp::M - bw, row.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
         if pill_button(ui, br, "Restart", BTN_PRIMARY, true).clicked() {
             restart = true;
         }
@@ -2501,7 +2532,6 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let glow = ((t * 3.0).sin() * 0.5 + 0.5) * 0.25 + 0.2;
     p.rect_filled(me, 5.0, with_alpha(ACTION(), glow));
     brand_glyph(&p, me.center(), 15.0, Color32::WHITE);
-    p.text(Pos2::new(bar.left() + 10.0, bar.center().y), Align2::LEFT_CENTER, "Click this icon", font(11.0), TEXT_FAINT());
     // a little caret from the icon to the panel
     let c = Pos2::new(me.center().x, top);
     p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-6.0, 0.5), c + Vec2::new(0.0, -6.0), c + Vec2::new(6.0, 0.5)], BG(), Stroke::NONE));

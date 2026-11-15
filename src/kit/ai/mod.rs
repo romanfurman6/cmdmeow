@@ -599,7 +599,7 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
         v
     };
     l.models = merge_same(rank(models, |m| if m.is_empty() { "Other".into() } else { price::display_name(m) }));
-    l.projects = rank(projects, |p| if p.is_empty() { "Unknown folder".into() } else { p.to_string() });
+    l.projects = rank(projects, |p| match p { "" => "Unknown folder".into(), "~" => "Home".into(), _ => p.to_string() });
     l
 }
 

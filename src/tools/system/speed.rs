@@ -212,16 +212,17 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
         }
     }
     // the number in the middle
-    let big = FontId::new(46.0, FontFamily::Name("hero".into()));
+    // the speed dial number: the one 52 in the type ramp
+    let big = FontId::new(52.0, FontFamily::Name("hero".into()));
     let num = match s.phase {
         SpeedPhase::Ping => s.latency_ms.map(|l| format!("{l:.0}")).unwrap_or_else(|| "—".into()),
         SpeedPhase::Idle => "—".into(),
         SpeedPhase::Done if s.down_mbps.is_none() => "—".into(),
         _ => mbps_text(shown.max(0.0)),
     };
-    p.text(c + Vec2::new(0.0, -8.0), Align2::CENTER_CENTER, num, big, TEXT());
+    p.text(c + Vec2::new(0.0, -10.0), Align2::CENTER_CENTER, num, big, TEXT());
     let unit = if s.phase == SpeedPhase::Ping { "ms" } else { "Mbps" };
-    p.text(c + Vec2::new(0.0, 24.0), Align2::CENTER_CENTER, unit, ty::body(), TEXT_DIM());
+    p.text(c + Vec2::new(0.0, 28.0), Align2::CENTER_CENTER, unit, ty::body(), TEXT_DIM());
     let (glyph, label, lcol) = match s.phase {
         SpeedPhase::Ping => (None, "Ping", TEXT_DIM()),
         SpeedPhase::Download => (Some(Icon::Down), "Download", down_color()),

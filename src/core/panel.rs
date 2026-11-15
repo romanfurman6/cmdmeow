@@ -229,21 +229,18 @@ fn widgets(app: &mut App, ui: &mut Ui, origin: Rect, cx: &mut Cx) {
 /// a newly picked size.
 pub fn size_chips(ui: &mut Ui, rect: Rect, id: Id, offered: &[Size], cur: Size) -> Option<Size> {
     let p = ui.painter().clone();
-    p.rect_filled(rect, 9.0, white(18));
+    // the kit segmented look (B rules): quiet track, raised thumb
+    p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
     let w = inner.width() / Size::ALL.len() as f32;
     let mut out = None;
     for (i, z) in Size::ALL.into_iter().enumerate() {
         let r = Rect::from_min_size(Pos2::new(inner.left() + w * i as f32, inner.top()), Vec2::new(w, inner.height())).shrink2(Vec2::new(1.0, 0.0));
         let ok = offered.contains(&z);
-        let resp = ui.interact(r, id.with(i), if ok { Sense::click() } else { Sense::hover() });
-        if z == cur {
-            p.rect_filled(r, 7.0, ACTION());
-        } else if ok && resp.hovered() {
-            p.rect_filled(r, 7.0, white(20));
-        }
-        let col = if z == cur { ON_ACTION } else if ok { TEXT_SOFT() } else { white(60) };
-        let g = p.text(r.center(), Align2::CENTER_CENTER, z.label(), if z == cur { bold(12.0) } else { font(12.0) }, col);
+        let (k, face) = crate::kit::glass::segment(ui, &p, r, id.with(i), z == cur, ok);
+        let resp = k.resp;
+        let col = if z == cur { TEXT() } else if ok { lerp_color(TEXT_DIM(), TEXT(), k.hover) } else { white(60) };
+        let g = p.text(face.center(), Align2::CENTER_CENTER, z.label(), font(12.0), col);
         if !ok {
             p.line_segment([g.left_center(), g.right_center()], Stroke::new(1.0, white(60)));
         }

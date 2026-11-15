@@ -76,7 +76,7 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     // shown General first; `settings_tab` keeps its ids (0 Widgets, 1 Tools,
     // 2 General, 3 AI Usage, 4 AI Check, 5 Cat) so links and Edit widgets… land on the right tab
     let labels: Vec<&str> = TAB_ORDER.iter().map(|&t| TAB_NAMES[t]).collect();
-    let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, 28.0));
+    let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, sp::HEADER_CONTROL_H));
     let shown = TAB_ORDER.iter().position(|&t| t == app.settings_tab).unwrap_or(0);
     if let Some(k) = segmented(ui, tabs, ui.scope_id().with("settings-tabs"), &labels, shown) {
         app.settings_tab = TAB_ORDER[k];
@@ -197,17 +197,17 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
                 let resp = ui.interact(rr, ui.scope_id().with(("gl", &it.title, &it.key)), Sense::click());
                 let sel = it.key.is_some() && it.key == app.gallery_pick;
                 if sel {
-                    p.rect_filled(rr, 7.0, ACTION());
+                    crate::kit::glass::selected_fill(&p, rr, 7.0);
                 } else if resp.hovered() {
-                    p.rect_filled(rr, 7.0, white(12));
+                    p.rect_filled(rr, 7.0, white(ROW_HOVER));
                 }
-                icon(&p, it.glyph, Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(14.0)), if sel { ON_ACTION } else { lift(it.color) });
+                icon(&p, it.glyph, Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(14.0)), if sel { ACCENT() } else { lift(it.color) });
                 let mut right = rr.right() - 8.0;
                 if it.added {
                     p.circle_filled(Pos2::new(right - 3.0, rr.center().y), 3.0, GREEN());
                     right -= 12.0;
                 }
-                text_fit(&p, Pos2::new(rr.left() + 32.0, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), if sel { ON_ACTION } else { TEXT() }, right - rr.left() - 36.0);
+                text_fit(&p, Pos2::new(rr.left() + 32.0, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), if sel { ACCENT() } else { TEXT() }, right - rr.left() - 36.0);
                 if resp.clicked() {
                     app.gallery_pick = it.key.clone();
                 }
@@ -376,7 +376,7 @@ fn variants(app: &mut App, ui: &mut Ui, r: Rect, key: &str) -> Option<Size> {
                 panel::draw_at(app, ui, owner, spec.id, *z, wr, None, &mut quiet);
                 let resp = ui.interact(wr, ui.scope_id().with(("var", key, z.label())), Sense::click_and_drag());
                 if here {
-                    p.rect_stroke(wr.expand(2.0), R_CARD + 2.0, Stroke::new(2.0, ACCENT()), StrokeKind::Outside);
+                    p.rect_stroke(wr.expand(2.0), R_CARD + 2.0, Stroke::new(1.5, ACCENT()), StrokeKind::Outside);
                 } else if resp.hovered() && !dragging {
                     p.rect_stroke(wr, R_CARD, Stroke::new(1.0, white(46)), StrokeKind::Inside);
                 }
@@ -423,7 +423,6 @@ fn size_bar(app: &mut App, ui: &mut Ui, r: Rect) {
         Some((k, spec, cur))
     });
     let Some((key, spec, cur)) = sel else {
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, "Click a widget to resize it", font(12.0), TEXT_FAINT(), r.width());
         return;
     };
     let ty = r.top() + 8.0;
@@ -476,7 +475,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
         if dragged.as_deref() == Some(key.as_str()) {
             p.rect_filled(base, R_CARD, with_alpha(BG(), 0.7));
         } else if selected {
-            p.rect_stroke(base.expand(2.0), R_CARD + 2.0, Stroke::new(2.0, ACCENT()), StrokeKind::Outside);
+            p.rect_stroke(base.expand(2.0), R_CARD + 2.0, Stroke::new(1.5, ACCENT()), StrokeKind::Outside);
         } else if resp.hovered() && app.drag.is_none() {
             p.rect_stroke(base, R_CARD, Stroke::new(1.0, white(46)), StrokeKind::Inside);
         }
@@ -653,7 +652,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let row_h = sp::SETTINGS_ROW_H;
     let sw_in = |r: Rect| Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
     let title = |y: &mut f32, t: &str| {
-        p.text(Pos2::new(x, *y), Align2::LEFT_TOP, t, bold(15.0), TEXT());
+        crate::kit::glass::card_title(&p, Pos2::new(x, *y), t);
         *y += 28.0;
     };
 
@@ -667,9 +666,6 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         let resp = ui.interact(r, ui.scope_id().with(("ai-check-agent", k)), Sense::click());
         let hv = ui.ctx().animate_bool(resp.id, resp.hovered());
         glass_card(&p, r, R_CARD, hv, on);
-        if on {
-            p.rect_stroke(r, R_CARD, Stroke::new(1.0, with_alpha(ACTION(), 0.6)), StrokeKind::Inside);
-        }
         let m = Rect::from_center_size(Pos2::new(r.left() + 16.0 + 10.0, r.center().y), Vec2::splat(20.0));
         aicheck::ui::agent_mark(&p, m, a, None);
         let ready = demo || a.ready();
@@ -792,7 +788,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         }
     }
     y = card.bottom() + 28.0;
-    p.text(Pos2::new(x, y), Align2::LEFT_TOP, "Permissions", bold(15.0), TEXT());
+    crate::kit::glass::card_title(&p, Pos2::new(x, y), "Permissions");
     y += 28.0;
     let list = super::onboard::rows(app);
     {
@@ -804,24 +800,24 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     y += used + 16.0;
     let label = "Run setup again";
     let bw = button_width(&p, label, BTN_SECONDARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, 30.0)), label, BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, sp::HEADER_CONTROL_H)), label, BTN_SECONDARY, true).clicked() {
         app.open_setup();
     }
     // the panel has no menu of its own: Quit lives here
     let quit = "Quit Cmd+Meow";
     let qw = button_width(&p, quit, BTN_SECONDARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(x + bw + sp::S, y), Vec2::new(qw, 30.0)), quit, BTN_SECONDARY, true).clicked() && !app.demo {
+    if pill_button(ui, Rect::from_min_size(Pos2::new(x + bw + sp::S, y), Vec2::new(qw, sp::HEADER_CONTROL_H)), quit, BTN_SECONDARY, true).clicked() && !app.demo {
         let ctx = ui.ctx().clone();
         app.quit(&ctx);
     }
     let failed = remove_button(app, ui, Pos2::new(x + bw + sp::S + qw + sp::S, y));
-    p.text(Pos2::new(x + w, y + 15.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
+    p.text(Pos2::new(x + w, y + sp::HEADER_CONTROL_H / 2.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
     // why Remove failed, on its own line under the row (clear of the version)
     if let Some(e) = failed {
-        text_fit(&p, Pos2::new(x, y + 30.0 + sp::S), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w);
+        text_fit(&p, Pos2::new(x, y + sp::HEADER_CONTROL_H + sp::S), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w);
     }
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
-    y + 30.0 + 24.0
+    y + sp::HEADER_CONTROL_H + 24.0
 }
 
 /// Settings › Cat: what the cat reacts to (see [`crate::kit::cat`]), a
@@ -900,7 +896,7 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
     };
     let p = ui.painter().clone();
     let bw = button_width(&p, label, BTN_DANGER);
-    let r = Rect::from_min_size(at, Vec2::new(bw, 30.0));
+    let r = Rect::from_min_size(at, Vec2::new(bw, sp::HEADER_CONTROL_H));
     if pill_button(ui, r, label, BTN_DANGER, run != Run::Working).clicked() && !app.demo {
         if armed {
             ctx.data_mut(|d| {

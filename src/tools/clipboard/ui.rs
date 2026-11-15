@@ -274,7 +274,7 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             right -= 16.0;
         }
         let tx = th.right() + 9.0;
-        let title_font = if e.kind == Kind::Code { mono(11.5) } else { font(12.0) };
+        let title_font = if e.kind == Kind::Code { mono(11.0) } else { font(12.0) };
         text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &e.title(), title_font, TEXT(), right - tx - 4.0);
         if resp.on_hover_text("Click to copy").clicked() && c.copy(e.id, false) {
             cx.toast("Copied");
@@ -478,10 +478,9 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     let resp = ui.interact(r, ui.scope_id().with(("clip-row", e.id)), Sense::click());
                     let sel = c.selected == Some(e.id);
                     if sel {
-                        p.rect_filled(r, 7.0, with_alpha(ACTION(), 0.30));
-                        p.rect_stroke(r, 7.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.55)), StrokeKind::Inside);
+                        crate::kit::glass::selected_fill(&p, r, 7.0);
                     } else if resp.hovered() {
-                        p.rect_filled(r, 7.0, white(10));
+                        p.rect_filled(r, 7.0, white(ROW_HOVER));
                     }
                     let th = Rect::from_min_size(Pos2::new(r.left() + 10.0, r.center().y - 12.0), Vec2::splat(24.0));
                     entry_thumb(c, &p, th, &e, 6.0);
@@ -497,7 +496,7 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     let tx = th.right() + 10.0;
                     let f = if e.kind == Kind::Code { mono(12.0) } else { font(13.0) };
                     if marks.is_empty() {
-                        text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, title, f, TEXT(), right - tx);
+                        text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, title, f, if sel { ACCENT() } else { TEXT() }, right - tx);
                     } else {
                         marked_fit(&p, Pos2::new(tx, r.center().y), title, marks, f, right - tx);
                     }
@@ -757,7 +756,7 @@ fn left_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let mut changed = false;
     let y = col.top();
 
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "History", bold(15.0), TEXT());
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "History");
     let card = card_rows(p, x0, y + 28.0, w, 5);
     // keep N
     label(p, card, 0, "Keep the last");
@@ -832,7 +831,7 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let mut changed = false;
     let mut y = col.top();
 
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Privacy", bold(15.0), TEXT());
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Privacy");
     let card = card_rows(p, x0, y + 28.0, w, 4);
     let switches = [
         ("Record passwords (until quit)", c.settings.record_concealed),
@@ -877,7 +876,7 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     y = card.bottom() + 16.0;
 
     // excluded apps
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Never record from", bold(15.0), TEXT());
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Never record from");
     let aw = button_width(p, "Add app…", BTN_SECONDARY) - 6.0;
     let ar = Rect::from_min_max(Pos2::new(col.right() - aw, y - 3.0), Pos2::new(col.right(), y + 21.0));
     if pill_button(ui, ar, "Add app…", BTN_SECONDARY, true).clicked() {

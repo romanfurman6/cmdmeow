@@ -327,7 +327,7 @@ fn saved_card(p: &egui::Painter, r: Rect, cl: &UsageInfo) {
     let saved = api - plan;
     p.text(i.left_top(), Align2::LEFT_TOP, "Saved · 30 days", ty::title(), TEXT());
     let hero = if saved > 0.0 { parts::usd(saved) } else { "$0".into() };
-    let hr = text_fit(p, Pos2::new(i.left(), i.top() + 16.0 + sp::M), Align2::LEFT_TOP, &hero, ty::hero(), if saved > 0.0 { GREEN() } else { TEXT() }, i.width());
+    let hr = text_fit(p, Pos2::new(i.left(), i.top() + 16.0 + sp::M), Align2::LEFT_TOP, &hero, ty::hero(), TEXT(), i.width());
     if plan > 0.0 {
         text_fit(p, Pos2::new(hr.right() + sp::S, hr.bottom() - 4.0), Align2::LEFT_BOTTOM, &format!("{:.1}× plan", api / plan), ty::label(), TEXT_DIM(), i.right() - hr.right());
     }
@@ -480,7 +480,7 @@ fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, de
 /// Every provider that's on, side by side, and the dollars of all of them.
 fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     // tools that aren't installed get no card, only a line at the bottom
-    let (infos, missing): (Vec<_>, Vec<_>) = backend::enabled(all).into_iter().partition(|i| i.unavailable() != Some(Availability::NotInstalled));
+    let infos: Vec<_> = backend::enabled(all).into_iter().filter(|i| i.unavailable() != Some(Availability::NotInstalled)).collect();
     let p = ui.painter().clone();
     let show_usd = settings::get().show_cost;
     let today: f64 = infos.iter().map(|i| i.local.usd_today).sum();
@@ -504,11 +504,6 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         provider_card(ui, cr, info, menu == Some(info.provider), show_usd);
     }
     y += infos.len().div_ceil(cols) as f32 * (ch + GAP);
-    if !missing.is_empty() {
-        let names: Vec<&str> = missing.iter().map(|i| ai::meta(i.provider).name).collect();
-        text_fit(&p, Pos2::new(x0, y - GAP + sp::M), Align2::LEFT_TOP, &format!("Not installed on this Mac: {}. Their cards show up once they're used here.", names.join(", ")), ty::label(), TEXT_FAINT(), x1 - x0);
-        y += sp::M + 16.0;
-    }
     // dollars of every provider per day
     let bottom = r.bottom() - sp::L;
     if bottom - y < 120.0 || !show_usd {

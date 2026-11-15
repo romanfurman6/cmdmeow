@@ -72,7 +72,7 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     p.circle_filled(lc, 13.0, RAISED());
     icon(&p, Icon::Lock, Rect::from_center_size(lc, Vec2::splat(12.0)), TEXT_SOFT());
     let mut y = tile.bottom() + sp::XL;
-    p.text(Pos2::new(cx, y), Align2::CENTER_TOP, hero.name(), bold(17.0), TEXT());
+    p.text(Pos2::new(cx, y), Align2::CENTER_TOP, hero.name(), ty::lead(), TEXT());
     y += 20.0 + sp::M;
     p.text(Pos2::new(cx, y), Align2::CENTER_TOP, hero.why(), font(13.0), TEXT_DIM());
     y += 16.0 + sp::XL + HERO_H / 2.0;

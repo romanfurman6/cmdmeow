@@ -14,7 +14,8 @@ use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Ui, UiBuilder, Vec2};
 use std::path::{Path, PathBuf};
 
 const ROW_H: f32 = sp::ROW2_H;
-const ROW_GAP: f32 = sp::ROW_GAP;
+/// Rows of a list touch: one card per list, hairlines between (S4).
+const ROW_GAP: f32 = 0.0;
 const HEAD_H: f32 = sp::SECTION_H;
 /// The suggestion / Undo card above the list.
 const TOP_CARD_H: f32 = 64.0;
@@ -345,7 +346,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 let c = Pos2::new(cr.left() + 30.0, cr.center().y);
                 p.circle_filled(c, 17.0, with_alpha(GREEN(), 0.16));
                 icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(18.0)), GREEN());
-                let br = Rect::from_min_size(Pos2::new(cr.right() - 14.0 - 76.0, cr.center().y - 15.0), Vec2::new(76.0, 30.0));
+                let br = Rect::from_min_size(Pos2::new(cr.right() - 14.0 - 76.0, cr.center().y - sp::CONTROL_H / 2.0), Vec2::new(76.0, sp::CONTROL_H));
                 if pill_button(ui, br, "Undo", BTN_SECONDARY, true).clicked() {
                     do_undo = true;
                 }
@@ -356,7 +357,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 tool_chip(&p, Rect::from_center_size(Pos2::new(cr.left() + 30.0, cr.center().y), Vec2::splat(34.0)), Icon::Power, tint::STARTUP());
                 let label = format!("Turn off {}", suggested.len());
                 let bw = button_width(&p, &label, BTN_PRIMARY);
-                let br = Rect::from_min_size(Pos2::new(cr.right() - 14.0 - bw, cr.center().y - 15.0), Vec2::new(bw, 30.0));
+                let br = Rect::from_min_size(Pos2::new(cr.right() - 14.0 - bw, cr.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
                 if pill_button(ui, br, &label, BTN_PRIMARY, true).clicked() {
                     turn_off_all = true;
                 }
@@ -367,7 +368,39 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             y += top_h;
         }
 
+        // one card behind each run of item rows (S4)
+        {
+            let mut yy = y;
+            let mut run: Option<f32> = None;
+            for row in rows.iter().map(Some).chain(std::iter::once(None)) {
+                let item = matches!(row, Some(Row::App(_) | Row::Job(_) | Row::Cron(_) | Row::Ext(_) | Row::Btm(_) | Row::Gone(_)));
+                match (item, run) {
+                    (true, None) => run = Some(yy),
+                    (false, Some(top)) => {
+                        glass_card(&p, Rect::from_min_max(Pos2::new(a.left(), top), Pos2::new(a.right(), yy)), R_CARD, 0.0, false);
+                        run = None;
+                    }
+                    _ => {}
+                }
+                yy += match row {
+                    Some(Row::Head(..)) => HEAD_H,
+                    Some(Row::Note(_)) => 40.0,
+                    Some(Row::Allow) => 62.0,
+                    Some(_) => ROW_H + ROW_GAP,
+                    None => 0.0,
+                };
+            }
+        }
+        let mut prev_item = false;
         for row in &rows {
+            let item = matches!(row, Row::App(_) | Row::Job(_) | Row::Cron(_) | Row::Ext(_) | Row::Btm(_) | Row::Gone(_));
+            let first = !prev_item;
+            prev_item = item;
+            let row_line = |r: Rect| {
+                if !first {
+                    hairline(&p, Pos2::new(r.left() + sp::L, r.top()), Pos2::new(r.right() - sp::L, r.top()));
+                }
+            };
             match row {
                 Row::Head(t, l) => {
                     let cy = section_title(&p, a.left() + 4.0, y, t);
@@ -390,9 +423,9 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 Row::Cron(c) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
                     let fl = c.flags();
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    row_line(r);
                     if fl.iter().any(|f| f.strong()) {
-                        p.rect_filled(r, 10.0, red_wash(0.05));
+                        p.rect_filled(r, 0.0, red_wash(0.05));
                     }
                     let cols = columns(&p, r, true);
                     let name = c.name();
@@ -424,7 +457,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Ext(x) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    row_line(r);
                     let cols = columns(&p, r, false);
                     app_icon(s, &ctx, &p, cols.icon, None, &x.name, !x.on, &mut budget);
                     name_line(&p, &cols, &x.name, if x.on { TEXT() } else { TEXT_DIM() }, &[]);
@@ -447,7 +480,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Btm(b) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    row_line(r);
                     let cols = columns(&p, r, false);
                     let icon_path = b.path.as_deref().filter(|p| p.extension().is_some_and(|e| e == "app")).or(b.program.as_deref().and_then(|p| owner_of(p)));
                     app_icon(s, &ctx, &p, cols.icon, icon_path, &b.name, !b.on, &mut budget);
@@ -473,7 +506,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Gone(g) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    row_line(r);
                     let cols = columns(&p, r, false);
                     app_icon(s, &ctx, &p, cols.icon, None, &g.name, true, &mut budget);
                     name_line(&p, &cols, &g.name, TEXT_DIM(), &[]);
@@ -522,7 +555,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     if s.ai.take_scroll(&key) {
                         ui.scroll_to_rect(r, Some(egui::Align::Center));
                     }
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    row_line(r);
                     reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &key));
                     let cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, Some(&la.path), &la.name, !la.on, &mut budget);
@@ -546,9 +579,9 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     if s.ai.take_scroll(&j.label) {
                         ui.scroll_to_rect(r, Some(egui::Align::Center));
                     }
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    row_line(r);
                     if why.is_some() || fl.iter().any(|f| f.strong()) {
-                        p.rect_filled(r, 10.0, red_wash(0.05));
+                        p.rect_filled(r, 0.0, red_wash(0.05));
                     }
                     reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &j.label));
                     let mut cols = columns(&p, r, true);
@@ -649,11 +682,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             }
         }
 
-        // the notification switch
-        y += 10.0;
-        let nr = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), 40.0));
-        p.text(Pos2::new(nr.left() + 4.0, nr.center().y), Align2::LEFT_CENTER, "Tell me when an app adds itself to startup", font(13.0), TEXT_SOFT());
-        let sw = Rect::from_center_size(Pos2::new(nr.right() - 30.0, nr.center().y), Vec2::new(36.0, 20.0));
+        // the notification switch, a settings row in its own card
+        y += sp::L;
+        let nr = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), sp::SETTINGS_ROW_H));
+        glass_card(&p, nr, R_CARD, 0.0, false);
+        p.text(Pos2::new(nr.left() + sp::L, nr.center().y), Align2::LEFT_CENTER, "Tell me when an app adds itself to startup", font(13.0), TEXT());
+        let sw = Rect::from_min_size(Pos2::new(nr.right() - 42.0, nr.center().y - 9.0), Vec2::new(30.0, 18.0));
         if switch(ui, sw, ui.scope_id().with("su-notify"), crate::kit::notify::shown(notify), true).clicked() {
             let mut v = notify;
             crate::kit::notify::flip(&mut v);
