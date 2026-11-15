@@ -377,9 +377,6 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
             finish(Some("No internet connection".into()));
             return;
         }
-        if stopped() {
-            return;
-        }
 
         // download
         set(&|s| s.phase = SpeedPhase::Download);
