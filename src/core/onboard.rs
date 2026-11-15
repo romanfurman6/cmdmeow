@@ -559,13 +559,7 @@ fn all_required(app: &App) -> bool {
 }
 
 fn ghost_button(ui: &mut Ui, r: Rect, label: &str) -> egui::Response {
-    let resp = ui.interact(r, ui.scope_id().with(("ghost", label)), Sense::click());
-    let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, font(13.0), col);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp
+    crate::kit::glass::ghost_button(ui, r, label, font(13.0), Align2::CENTER_CENTER)
 }
 
 /// The app's mark: a dark squircle with the Cmd+Meow glyph, fading in with `sweep`.

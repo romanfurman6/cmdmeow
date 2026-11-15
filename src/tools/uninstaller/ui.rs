@@ -252,13 +252,8 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     p.text(Pos2::new(c.x, c.y - 18.0), Align2::CENTER_CENTER, "Remove apps and what they leave behind", bold(18.0), TEXT());
     let btn = Vec2::new(200.0, 44.0);
     let br = Rect::from_center_size(Pos2::new(c.x, c.y + 20.0 + sp::XXL), btn);
-    let resp = ui.interact(br, ui.scope_id().with("un-fresh-scan"), Sense::click());
-    let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
-    liquid_capsule(&p, br, Some(ACTION()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
-    p.text(br.center(), Align2::CENTER_CENTER, "Scan for apps", bold(16.0), on_color(ACTION()));
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
+    let id = ui.scope_id().with("un-fresh-scan");
+    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan for apps", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     p.text(Pos2::new(c.x, br.bottom() + 22.0), Align2::CENTER_CENTER, "Or drop an app here", font(12.0), TEXT_FAINT());
     resp.clicked()
 }
@@ -824,15 +819,14 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
                     if r.action == "remove" {
                         u.review = Some(Review { targets: vec![o.target()], open: [0].into() });
                     } else {
-                        let mut g = u.st.lock_ok();
-                        for x in g.orphans.iter_mut() {
-                            x.selected = x.id == o.id;
-                        }
+                        // an older answer's "review": show the row instead
+                        u.ai.show(&o.id, ui.ctx().input(|i| i.time));
                     }
                 }
                 u.ai.done(&r);
             }
-            None => {}
+            // the list scrolls to the row and rings it (below)
+            Some(Event::Show(_)) | None => {}
         }
     }
     let x0 = body.left() + 24.0;
@@ -919,6 +913,10 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
         let p = ui.painter().clone();
         for (k, o) in orphans.iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(area.left(), area.top() + k as f32 * sp::ROW2_H), Vec2::new(area.width(), sp::ROW2_H));
+            // an AI Check tip was clicked for this row: bring it into view
+            if u.ai.take_scroll(&o.id) {
+                ui.scroll_to_rect(r, Some(egui::Align::Center));
+            }
             // only rows in view: each one joins its paths for the tooltip
             if !ui.is_rect_visible(r) {
                 continue;
@@ -927,6 +925,7 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
             if resp.hovered() {
                 p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, white(8));
             }
+            reveal::rect(&p, r.shrink2(Vec2::new(4.0, 1.0)), 7.0, u.ai.ring(ui.ctx(), &o.id));
             let cb = Rect::from_center_size(Pos2::new(r.left() + 14.0 + 8.0, r.center().y), Vec2::splat(15.0));
             if checkbox(ui, cb, ui.scope_id().with(("un-ocheck", &o.id)), o.selected, true).clicked() || resp.clicked() {
                 let mut g = u.st.lock_ok();
@@ -975,8 +974,7 @@ fn leftovers_ask(now: i64, orphans: &[super::Orphan]) -> aicheck::Ask {
     aicheck::Ask {
         task: "This is the Uninstaller's Leftovers list: data left behind by apps that are no longer installed. Point out what is worth removing (big, old, clearly orphaned) and anything that needs a look first, such as documents, recordings or data another installed app may share.".into(),
         actions: vec![
-            ("remove", "move that app's leftovers to the Trash (the user confirms in a review sheet first)", "Remove"),
-            ("review", "select it in the list so the user can look at its files first", "Review"),
+            ("remove", "move that app's leftovers to the Trash (the user confirms in a review sheet first, and sees the row in the list by clicking the tip)", "Remove"),
         ],
         items,
         facts: Vec::new(),
@@ -1342,16 +1340,22 @@ pub mod demo {
         u.selected = Some(PathBuf::from("/Applications/Docker.app"));
         match view {
             "uninstaller" | "uninstaller-apps" => {}
-            "uninstaller-leftovers" => {
+            "uninstaller-leftovers" | "uninstaller-leftovers-shown" => {
                 u.tab = Tab::Leftovers;
                 use crate::kit::aicheck::Check;
+                let ids: Vec<String> = u.st.lock_ok().orphans.iter().map(|o| o.id.clone()).collect();
+                let id = |k: usize| ids.get(k).cloned().unwrap_or_default();
+                let last = ids.len().saturating_sub(1);
                 u.ai.set_demo(
                     "Leftovers of 2 removed apps",
                     vec![
-                        Check::demo_rec("remove", "Remove", "Remove Zoom leftovers", "412 MB", "Zoom was removed in March; nothing else uses these", "Zoom"),
-                        Check::demo_rec("review", "Review", "Review Docker data", "6.8 GB", "Holds images and volumes; check before removing", "Docker"),
+                        Check::demo_rec_for(&id(last), "remove", "Remove", "Remove TeamViewer leftovers", "1.00 MB", "TeamViewer was removed in March; nothing else uses these", "TeamViewer"),
+                        Check::demo_rec_for(&id(0), "remove", "Remove", "Remove Parallels data", "4.10 GB", "Holds virtual machine settings; check the files first", "Parallels"),
                     ],
                 );
+                if view == "uninstaller-leftovers-shown" {
+                    u.ai.demo_show(&id(last));
+                }
             }
             "uninstaller-review" => {
                 u.filter = Filter::Unused;

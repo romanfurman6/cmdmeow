@@ -186,6 +186,11 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 s.ai.done(&rec);
             }
+            // the row may be behind a tab or the search: show the whole list
+            Some(Event::Show(_)) => {
+                s.filter = Filter::All;
+                s.search.clear();
+            }
             None => {}
         }
     }
@@ -514,7 +519,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::App(la) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
+                    let key = format!("app:{}", la.name);
+                    if s.ai.take_scroll(&key) {
+                        ui.scroll_to_rect(r, Some(egui::Align::Center));
+                    }
                     glass_card(&p, r, 10.0, 0.0, false);
+                    reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &key));
                     let cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, Some(&la.path), &la.name, !la.on, &mut budget);
                     name_line(&p, &cols, &la.name, if la.on { TEXT() } else { TEXT_DIM() }, &[]);
@@ -534,10 +544,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     let trusted_now = is_trusted(j);
                     let why = j.why().filter(|_| j.on && !trusted_now);
                     let fl = flags_of(j);
+                    if s.ai.take_scroll(&j.label) {
+                        ui.scroll_to_rect(r, Some(egui::Align::Center));
+                    }
                     glass_card(&p, r, 10.0, 0.0, false);
                     if why.is_some() || fl.iter().any(|f| f.strong()) {
                         p.rect_filled(r, 10.0, red_wash(0.05));
                     }
+                    reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &j.label));
                     let mut cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, j.owner.as_deref(), &j.name, !j.on, &mut budget);
                     let (sw, more) = (cols.sw, cols.more);

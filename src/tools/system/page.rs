@@ -89,7 +89,8 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
                 }
                 ai.done(&rec);
             }
-            None => {}
+            // the page doesn't list processes: nothing to show (no locate)
+            Some(Event::Show(_)) | None => {}
         }
     }
     let mut action = SheetAction::None;

@@ -312,7 +312,11 @@ impl Uninstaller {
             want_page: false,
             done_until: None,
             on: true,
-            ai: crate::kit::aicheck::Check::new(ID, env.demo),
+            ai: {
+                let mut c = crate::kit::aicheck::Check::new(ID, env.demo);
+                c.locate = true;
+                c
+            },
             drag_watch: None,
         };
         if env.demo {
