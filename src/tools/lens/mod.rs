@@ -93,7 +93,15 @@ fn prefs_path() -> PathBuf {
 }
 
 pub(crate) fn save_prefs(app: &Lens) {
-    crate::kit::fs::save_json_later(&prefs_path(), &Prefs { rings: app.lens_view == 1, view: Some(app.lens_view), recent: app.lens_recent.clone() }, false);
+    crate::kit::fs::save_json_later(
+        &prefs_path(),
+        &Prefs {
+            rings: app.lens_view == 1,
+            view: Some(app.lens_view),
+            recent: app.lens_recent.clone(),
+        },
+        false,
+    );
 }
 
 impl Lens {
@@ -125,7 +133,11 @@ impl Lens {
             lens_pick: Default::default(),
             lens_trashed: vec![],
             lens_other: false,
-            ai: crate::kit::aicheck::Check::new(ID, env.demo),
+            ai: {
+                let mut c = crate::kit::aicheck::Check::new(ID, env.demo);
+                c.locate = true;
+                c
+            },
             lens_cursor: None,
             lens_freed: 0,
             lens_confirm: false,
@@ -147,10 +159,14 @@ impl Tool for Lens {
         "Shows which folders and files take up your disk"
     }
     fn busy(&self) -> bool {
-        self.lens.running.load(std::sync::atomic::Ordering::SeqCst) || self.ai.phase() == crate::kit::aicheck::Phase::Running
+        self.lens.running.load(std::sync::atomic::Ordering::SeqCst)
+            || self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
     fn badge(&self) -> Badge {
-        Badge { icon: Icon::Map, color: tint::DISK_MAP() }
+        Badge {
+            icon: Icon::Map,
+            color: tint::DISK_MAP(),
+        }
     }
     fn needs(&self) -> Vec<crate::kit::perms::Need> {
         use crate::kit::perms::{Need, Perm};
@@ -167,17 +183,52 @@ impl Tool for Lens {
         page::page(self, ui, rect, cx);
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
-        if view == "lens" || view == "sizes" || view == "lens-rings" || view == "lens-files" {
+        if view == "lens"
+            || view == "sizes"
+            || view == "lens-rings"
+            || view == "lens-files"
+            || view == "lens-ai-shown"
+        {
             page::demo_tree(self);
             {
                 use crate::kit::aicheck::Check;
                 self.ai.set_demo(
-                    "Two big folders you can drop",
+                    "Two big items you can drop",
                     vec![
-                        Check::demo_rec("remove", "Remove", "Remove old iOS simulators", "18.4 GB", "Runtimes for iOS versions you no longer build for", "Xcode"),
-                        Check::demo_rec("open", "Open", "Look at Movies/Exports", "9.1 GB", "Rendered videos; the projects are still there", "Movies"),
+                        Check::demo_rec_for(
+                            "/Users/me/Library/Caches",
+                            "remove",
+                            "Remove",
+                            "Clear app caches",
+                            "34.0 GB",
+                            "Apps make them again when they need them",
+                            "Caches",
+                        ),
+                        Check::demo_rec_for(
+                            "/Users/me/Downloads/old-movies.zip",
+                            "remove",
+                            "Remove",
+                            "Remove old-movies.zip",
+                            "9.4 GB",
+                            "The same videos are in Movies",
+                            "Downloads",
+                        ),
+                        Check::demo_rec_for(
+                            "/Users/me/Pictures/Photos Library",
+                            "reveal",
+                            "Show in Finder",
+                            "Optimize Photos storage",
+                            "21.0 GB",
+                            "Originals stay in iCloud",
+                            "Photos",
+                        ),
                     ],
                 );
+            }
+            if view == "lens-ai-shown" {
+                self.lens_path = self.lens_root.join("Library");
+                self.lens_focus = None;
+                self.ai.demo_show("/Users/me/Library/Caches");
             }
             self.lens_view = match view {
                 "lens-rings" => 1,
@@ -192,7 +243,9 @@ impl Tool for Lens {
             Some(View::Page)
         } else if view == "lens-partial" {
             page::demo_tree(self);
-            self.lens.partial.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.lens
+                .partial
+                .store(true, std::sync::atomic::Ordering::SeqCst);
             self.lens_selected.clear();
             Some(View::Page)
         } else if view == "lens-none" {

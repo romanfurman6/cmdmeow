@@ -13,7 +13,9 @@ const SPREAD: usize = 3;
 /// Lower case, one char for one char, so positions in the folded text are
 /// positions in the original.
 pub fn fold(s: &str) -> Vec<char> {
-    s.chars().map(|c| c.to_lowercase().next().unwrap_or(c)).collect()
+    s.chars()
+        .map(|c| c.to_lowercase().next().unwrap_or(c))
+        .collect()
 }
 
 /// The search box, split into folded words.
@@ -24,7 +26,9 @@ pub struct Query {
 
 impl Query {
     pub fn new(q: &str) -> Query {
-        Query { words: q.split_whitespace().map(fold).collect() }
+        Query {
+            words: q.split_whitespace().map(fold).collect(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -151,7 +155,10 @@ mod tests {
         assert!(fuzzy(&h, &Query::new("gthb")).is_some());
         assert!(fuzzy(&h, &Query::new("cmdmw")).is_some());
         assert!(fuzzy(&h, &Query::new("bhtg")).is_none(), "order matters");
-        assert!(fuzzy(&h, &Query::new("gw")).is_none(), "short words only as typed");
+        assert!(
+            fuzzy(&h, &Query::new("gw")).is_none(),
+            "short words only as typed"
+        );
     }
 
     #[test]
@@ -186,8 +193,14 @@ mod tests {
     #[test]
     fn marks_merge_and_fall_back_to_fuzzy() {
         assert_eq!(marks("aaa", &Query::new("aa")), vec![(0, 2)]);
-        assert_eq!(marks("Clipboard clip", &Query::new("clip board")), vec![(0, 9), (10, 14)]);
-        assert_eq!(marks("github", &Query::new("gthb")), vec![(0, 1), (2, 4), (5, 6)]);
+        assert_eq!(
+            marks("Clipboard clip", &Query::new("clip board")),
+            vec![(0, 9), (10, 14)]
+        );
+        assert_eq!(
+            marks("github", &Query::new("gthb")),
+            vec![(0, 1), (2, 4), (5, 6)]
+        );
         assert!(marks("nothing", &Query::new("zzz")).is_empty());
     }
 }

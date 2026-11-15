@@ -4,8 +4,8 @@
 
 use egui::{
     epaint::{PathShape, PathStroke},
-    Align2, Color32, CornerRadius, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense,
-    Shape, Stroke, StrokeKind, Ui, Vec2,
+    Align2, Color32, CornerRadius, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense, Shape,
+    Stroke, StrokeKind, Ui, Vec2,
 };
 use std::f32::consts::{PI, TAU};
 
@@ -30,7 +30,11 @@ pub fn set_light(light: bool) -> bool {
 
 /// `dark` in dark mode, `light` in light mode.
 pub fn pick(dark: Color32, light: Color32) -> Color32 {
-    if is_light() { light } else { dark }
+    if is_light() {
+        light
+    } else {
+        dark
+    }
 }
 
 const fn hex(v: u32) -> Color32 {
@@ -41,80 +45,147 @@ const fn hex(v: u32) -> Color32 {
 const INK_LIGHT: (u8, u8, u8) = (0x14, 0x18, 0x1A);
 
 fn ink(a: f32) -> Color32 {
-    let (r, g, b) = if is_light() { INK_LIGHT } else { (255, 255, 255) };
+    let (r, g, b) = if is_light() {
+        INK_LIGHT
+    } else {
+        (255, 255, 255)
+    };
     Color32::from_rgba_unmultiplied(r, g, b, (a * 255.0) as u8)
 }
 
 /// Solid window colour (the middle of the backdrop gradient).
 #[allow(non_snake_case)]
-pub fn BG() -> Color32 { pick(hex(0x0E1B0D), hex(0xE6F0DA)) }
+pub fn BG() -> Color32 {
+    pick(hex(0x0E1B0D), hex(0xE6F0DA))
+}
 /// Card surface.
 #[allow(non_snake_case)]
-pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
+pub fn CARD() -> Color32 {
+    pick(
+        Color32::from_rgba_unmultiplied(255, 255, 255, 14),
+        Color32::from_rgba_unmultiplied(255, 255, 255, 191),
+    )
+}
 /// Card edge.
 #[allow(non_snake_case)]
-pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 20), Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
+pub fn CARD_EDGE() -> Color32 {
+    pick(
+        Color32::from_rgba_unmultiplied(255, 255, 255, 20),
+        Color32::from_rgba_unmultiplied(20, 24, 26, 20),
+    )
+}
 /// Hovered card, quick-action tiles and selected rows.
 #[allow(non_snake_case)]
-pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 28), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
+pub fn RAISED() -> Color32 {
+    pick(
+        Color32::from_rgba_unmultiplied(255, 255, 255, 28),
+        Color32::from_rgba_unmultiplied(255, 255, 255, 242),
+    )
+}
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
-pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
+pub fn POPOVER() -> Color32 {
+    pick(hex(0x1A2818), hex(0xFFFFFF))
+}
 /// Window sidebar.
 #[allow(non_snake_case)]
-pub fn SIDEBAR() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128)) }
+pub fn SIDEBAR() -> Color32 {
+    pick(
+        Color32::from_rgba_unmultiplied(3, 8, 3, 128),
+        Color32::from_rgba_unmultiplied(255, 255, 255, 128),
+    )
+}
 /// Window footer strip.
 #[allow(non_snake_case)]
-pub fn FOOTER() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 90), Color32::from_rgba_unmultiplied(255, 255, 255, 110)) }
+pub fn FOOTER() -> Color32 {
+    pick(
+        Color32::from_rgba_unmultiplied(3, 8, 3, 90),
+        Color32::from_rgba_unmultiplied(255, 255, 255, 110),
+    )
+}
 
 #[allow(non_snake_case)]
-pub fn TEXT() -> Color32 { ink(1.0) }
+pub fn TEXT() -> Color32 {
+    ink(1.0)
+}
 /// Secondary text.
 #[allow(non_snake_case)]
-pub fn TEXT_SOFT() -> Color32 { ink(0.84) }
+pub fn TEXT_SOFT() -> Color32 {
+    ink(0.84)
+}
 #[allow(non_snake_case)]
-pub fn TEXT_DIM() -> Color32 { ink(0.68) }
+pub fn TEXT_DIM() -> Color32 {
+    ink(0.68)
+}
 #[allow(non_snake_case)]
-pub fn TEXT_FAINT() -> Color32 { ink(0.56) }
+pub fn TEXT_FAINT() -> Color32 {
+    ink(0.56)
+}
 /// Chevrons, drag handles.
 #[allow(non_snake_case)]
-pub fn TEXT_MUTED() -> Color32 { ink(0.40) }
+pub fn TEXT_MUTED() -> Color32 {
+    ink(0.40)
+}
 
 /// The action colour (lime): primary buttons, selection, checkboxes,
 /// switches, the active sidebar icon. Text on it is [`ON_ACTION`].
 #[allow(non_snake_case)]
-pub fn BLUE() -> Color32 { pick(hex(0xC8F05A), hex(0xA8D83A)) }
+pub fn BLUE() -> Color32 {
+    pick(hex(0xC8F05A), hex(0xA8D83A))
+}
 /// Text and glyphs drawn on [`BLUE`].
 pub const ON_ACTION: Color32 = hex(0x0E1405);
 /// Links and lime text on cards.
 #[allow(non_snake_case)]
-pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x3F6B0A)) }
+pub fn ACCENT() -> Color32 {
+    pick(hex(0xD9F78A), hex(0x3F6B0A))
+}
 #[allow(non_snake_case)]
-pub fn GREEN() -> Color32 { pick(hex(0x94D45A), hex(0x4B8625)) }
+pub fn GREEN() -> Color32 {
+    pick(hex(0x94D45A), hex(0x4B8625))
+}
 /// Apricot: attention (busy spikes, "suggested", warnings).
 #[allow(non_snake_case)]
-pub fn AMBER() -> Color32 { pick(hex(0xF7B267), hex(0xC06A12)) }
+pub fn AMBER() -> Color32 {
+    pick(hex(0xF7B267), hex(0xC06A12))
+}
 /// Problems and low battery.
 #[allow(non_snake_case)]
-pub fn RED() -> Color32 { pick(hex(0xFF9B7A), hex(0xC2391D)) }
+pub fn RED() -> Color32 {
+    pick(hex(0xFF9B7A), hex(0xC2391D))
+}
 /// Claude's limit bars and rings: the Monitor cyan.
 #[allow(non_snake_case)]
-pub fn CLAUDE() -> Color32 { tint::HEALTH() }
+pub fn CLAUDE() -> Color32 {
+    tint::HEALTH()
+}
 /// Second series in charts: a paler step of the Monitor cyan.
 #[allow(non_snake_case)]
-pub fn INDIGO() -> Color32 { pick(hex(0xB4EAF3), hex(0x5AB4C6)) }
+pub fn INDIGO() -> Color32 {
+    pick(hex(0xB4EAF3), hex(0x5AB4C6))
+}
 #[allow(non_snake_case)]
-pub fn TEAL() -> Color32 { tint::HEALTH() }
+pub fn TEAL() -> Color32 {
+    tint::HEALTH()
+}
 /// Third series / "other": a neutral step, not a hue.
 #[allow(non_snake_case)]
-pub fn PURPLE() -> Color32 { pick(hex(0x4A5A47), hex(0xA9B5A0)) }
+pub fn PURPLE() -> Color32 {
+    pick(hex(0x4A5A47), hex(0xA9B5A0))
+}
 #[allow(non_snake_case)]
-pub fn GRAY() -> Color32 { pick(hex(0x98A096), hex(0x6E766B)) }
+pub fn GRAY() -> Color32 {
+    pick(hex(0x98A096), hex(0x6E766B))
+}
 
 /// Junk ring segments, largest to smallest: lime stepping into green.
 pub fn junk_ramp(i: usize) -> Color32 {
-    const DARK: [u32; 7] = [0xC8F05A, 0xAEE35A, 0x94D45A, 0x7CC25A, 0x66AE57, 0x549852, 0x46824B];
-    const LIGHT: [u32; 7] = [0x7DB519, 0x6AA61E, 0x5A9622, 0x4B8625, 0x3E7626, 0x336626, 0x2A5724];
+    const DARK: [u32; 7] = [
+        0xC8F05A, 0xAEE35A, 0x94D45A, 0x7CC25A, 0x66AE57, 0x549852, 0x46824B,
+    ];
+    const LIGHT: [u32; 7] = [
+        0x7DB519, 0x6AA61E, 0x5A9622, 0x4B8625, 0x3E7626, 0x336626, 0x2A5724,
+    ];
     let i = i.min(6);
     pick(hex(DARK[i]), hex(LIGHT[i]))
 }
@@ -125,25 +196,45 @@ pub mod tint {
     use super::{hex, pick};
     use egui::Color32;
     #[allow(non_snake_case)]
-    pub fn CLEANUP() -> Color32 { pick(hex(0xC8F05A), hex(0x7DB519)) }
+    pub fn CLEANUP() -> Color32 {
+        pick(hex(0xC8F05A), hex(0x7DB519))
+    }
     #[allow(non_snake_case)]
-    pub fn DISK_MAP() -> Color32 { CLEANUP() }
+    pub fn DISK_MAP() -> Color32 {
+        CLEANUP()
+    }
     #[allow(non_snake_case)]
-    pub fn STARTUP() -> Color32 { CLEANUP() }
+    pub fn STARTUP() -> Color32 {
+        CLEANUP()
+    }
     #[allow(non_snake_case)]
-    pub fn HEALTH() -> Color32 { pick(hex(0x6FD6E8), hex(0x1F8AA0)) }
+    pub fn HEALTH() -> Color32 {
+        pick(hex(0x6FD6E8), hex(0x1F8AA0))
+    }
     #[allow(non_snake_case)]
-    pub fn CLAUDE() -> Color32 { HEALTH() }
+    pub fn CLAUDE() -> Color32 {
+        HEALTH()
+    }
     #[allow(non_snake_case)]
-    pub fn FAN() -> Color32 { HEALTH() }
+    pub fn FAN() -> Color32 {
+        HEALTH()
+    }
     #[allow(non_snake_case)]
-    pub fn DISPLAYS() -> Color32 { HEALTH() }
+    pub fn DISPLAYS() -> Color32 {
+        HEALTH()
+    }
     #[allow(non_snake_case)]
-    pub fn CAPTURE() -> Color32 { pick(hex(0xF7B267), hex(0xC06A12)) }
+    pub fn CAPTURE() -> Color32 {
+        pick(hex(0xF7B267), hex(0xC06A12))
+    }
     #[allow(non_snake_case)]
-    pub fn KEEP_AWAKE() -> Color32 { pick(hex(0xE8E1FF), hex(0x6A5AC8)) }
+    pub fn KEEP_AWAKE() -> Color32 {
+        pick(hex(0xE8E1FF), hex(0x6A5AC8))
+    }
     #[allow(non_snake_case)]
-    pub fn NEUTRAL() -> Color32 { super::TEXT_FAINT() }
+    pub fn NEUTRAL() -> Color32 {
+        super::TEXT_FAINT()
+    }
 }
 
 /// The spacing scale. Only these six values; nothing in between.
@@ -202,30 +293,52 @@ pub mod ty {
     use super::{bold, font, white};
     use egui::{Color32, FontId};
     /// 28/600: one per card at most ("4.2 GB").
-    pub fn hero() -> FontId { FontId::new(28.0, egui::FontFamily::Name("hero".into())) }
+    pub fn hero() -> FontId {
+        FontId::new(28.0, egui::FontFamily::Name("hero".into()))
+    }
     /// 22/600: secondary numbers ("3.2 MB/s").
-    pub fn number() -> FontId { FontId::new(22.0, egui::FontFamily::Name("hero".into())) }
+    pub fn number() -> FontId {
+        FontId::new(22.0, egui::FontFamily::Name("hero".into()))
+    }
     /// 15/600: page titles and lead lines ("Clean Up finished").
-    pub fn lead() -> FontId { bold(15.0) }
+    pub fn lead() -> FontId {
+        bold(15.0)
+    }
     /// 13/600: card titles.
-    pub fn title() -> FontId { bold(13.0) }
+    pub fn title() -> FontId {
+        bold(13.0)
+    }
     /// 13/400: body text and list rows.
-    pub fn body() -> FontId { font(13.0) }
+    pub fn body() -> FontId {
+        font(13.0)
+    }
     /// 12/400: labels and legends.
-    pub fn label() -> FontId { font(12.0) }
+    pub fn label() -> FontId {
+        font(12.0)
+    }
     /// 12/600: section titles of a list ("Open at login").
-    pub fn section() -> FontId { bold(12.0) }
+    pub fn section() -> FontId {
+        bold(12.0)
+    }
     /// 11/400: captions, in [`caption_color`].
-    pub fn caption() -> FontId { font(11.0) }
+    pub fn caption() -> FontId {
+        font(11.0)
+    }
     /// White at 50%: the caption colour.
-    pub fn caption_color() -> Color32 { white(128) }
+    pub fn caption_color() -> Color32 {
+        white(128)
+    }
 }
 
 /// Status chip colours: (background, text).
 #[allow(non_snake_case)]
-pub fn CHIP_ASK() -> (Color32, Color32) { (with_alpha(AMBER(), 0.16), AMBER()) }
+pub fn CHIP_ASK() -> (Color32, Color32) {
+    (with_alpha(AMBER(), 0.16), AMBER())
+}
 #[allow(non_snake_case)]
-pub fn CHIP_RISK() -> (Color32, Color32) { (with_alpha(RED(), 0.16), RED()) }
+pub fn CHIP_RISK() -> (Color32, Color32) {
+    (with_alpha(RED(), 0.16), RED())
+}
 
 /// Radii and spacing on the 8 pt grid.
 pub const R_CARD: f32 = 12.0;
@@ -233,6 +346,60 @@ pub const R_BUTTON: f32 = 10.0;
 pub const R_SMALL: f32 = 7.0;
 pub const HAIRLINE: u8 = 15; // white at ~6%
 pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
+/// A popover list row under the pointer: the whole row, edge to edge (the
+/// popover's corners round the last one).
+pub const ROW_HOVER: u8 = 10;
+
+/// "Show where": the ring on the item an AI Check suggestion points at.
+/// It holds, then fades out; nothing repaints once it's gone.
+pub mod reveal {
+    use super::*;
+    /// Ring width.
+    pub const RING_W: f32 = 2.0;
+    /// Fill under the ring, as a share of the AI tint.
+    pub const FILL: f32 = 0.14;
+    /// Seconds at full strength, then seconds to fade out.
+    pub const HOLD: f64 = 1.8;
+    pub const FADE: f64 = 1.4;
+
+    /// Strength (1 → 0) `since` seconds after the reveal; 0 when it's over.
+    pub fn strength(since: f64) -> f32 {
+        if !(0.0..HOLD + FADE).contains(&since) {
+            0.0
+        } else if since < HOLD {
+            1.0
+        } else {
+            let t = ((since - HOLD) / FADE) as f32;
+            1.0 - t * t * (3.0 - 2.0 * t)
+        }
+    }
+
+    /// The ring around a row or card `r` with corner `radius`.
+    pub fn rect(p: &Painter, r: Rect, radius: f32, k: f32) {
+        if k <= 0.0 {
+            return;
+        }
+        let ai = tint::HEALTH();
+        p.rect_filled(r, radius, with_alpha(ai, FILL * k));
+        p.rect_stroke(
+            r,
+            radius,
+            Stroke::new(RING_W, with_alpha(ai, k)),
+            egui::StrokeKind::Inside,
+        );
+    }
+
+    /// The ring around a circle (a Disk Map bubble).
+    pub fn circle(p: &Painter, c: Pos2, rad: f32, k: f32) {
+        if k <= 0.0 {
+            return;
+        }
+        let ai = tint::HEALTH();
+        p.circle_filled(c, rad, with_alpha(ai, FILL * k));
+        stroke_circle(p, c, rad, Stroke::new(RING_W, with_alpha(ai, k)));
+        stroke_circle(p, c, rad + 4.0, Stroke::new(3.0, with_alpha(ai, 0.18 * k)));
+    }
+}
 
 /// An overlay at alpha `a`: white in dark mode, ink in light mode.
 pub fn white(a: u8) -> Color32 {
@@ -302,8 +469,19 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
     // the mesh only changes with the window's size and the theme: build it
     // once, not every frame (it's ~1.4k vertices of gradient math)
     type Key = ([u32; 5], bool, u32);
-    static CACHE: std::sync::Mutex<Vec<(Key, std::sync::Arc<egui::epaint::Mesh>)>> = std::sync::Mutex::new(Vec::new());
-    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits());
+    static CACHE: std::sync::Mutex<Vec<(Key, std::sync::Arc<egui::epaint::Mesh>)>> =
+        std::sync::Mutex::new(Vec::new());
+    let key: Key = (
+        [
+            rect.min.x.to_bits(),
+            rect.min.y.to_bits(),
+            rect.max.x.to_bits(),
+            rect.max.y.to_bits(),
+            radius.to_bits(),
+        ],
+        light,
+        alpha.to_bits(),
+    );
     let mesh = {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(i) = cache.iter().position(|(k, _)| *k == key) {
@@ -322,21 +500,41 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
         }
     };
     painter.add(Shape::Mesh(mesh));
-    painter.rect_stroke(rect, radius, Stroke::new(1.0, white(HAIRLINE_STRONG)), StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        radius,
+        Stroke::new(1.0, white(HAIRLINE_STRONG)),
+        StrokeKind::Inside,
+    );
 }
 
 fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epaint::Mesh {
     let stops: &[(f32, Color32)] = if light {
-        &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
+        &[
+            (0.0, hex(0xFFFFFF)),
+            (0.55, hex(0xEAF2DF)),
+            (1.0, hex(0xD9E8C8)),
+        ]
     } else {
-        &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
+        &[
+            (0.0, hex(0x22401D)),
+            (0.35, hex(0x132610)),
+            (0.7, hex(0x0A150A)),
+            (1.0, hex(0x070D07)),
+        ]
     };
     let glow = Pos2::new(rect.center().x, rect.top());
     // the glow is an ellipse: wide across, reaching the bottom edge
     let (rx, ry) = (rect.width() * 0.75, rect.height() * 1.05);
     let color_at = |q: Pos2| {
-        let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
-        let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
+        let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2))
+            .sqrt()
+            .min(1.0);
+        let k = stops
+            .iter()
+            .position(|(t, _)| *t >= d)
+            .unwrap_or(stops.len() - 1)
+            .max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
         with_alpha(lerp_color(c0, c1, (d - t0) / (t1 - t0).max(1e-3)), alpha)
@@ -376,7 +574,12 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epai
 /// default (`CMDMEOW_BACKDROP_ALPHA` lets the blur through when tuning).
 fn backdrop_alpha() -> f32 {
     static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *A.get_or_init(|| std::env::var("CMDMEOW_BACKDROP_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
+    *A.get_or_init(|| {
+        std::env::var("CMDMEOW_BACKDROP_ALPHA")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0)
+    })
 }
 
 /// `pts` (a closed outline) with extra points so no edge is longer than `step`.
@@ -421,10 +624,18 @@ pub const BTN_DANGER: u8 = 2;
 /// Standard push button (28–34 pt tall, radius 8). `kind`: 0 = secondary
 /// (quiet fill + hairline), 1 = primary (blue), 2 = destructive (red).
 pub fn pill_button(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool) -> Response {
-    let id = ui.scope_id().with(("pill", label, rect.min.x as i32, rect.min.y as i32));
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let id = ui
+        .scope_id()
+        .with(("pill", label, rect.min.x as i32, rect.min.y as i32));
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
     let resp = ui.interact(rect, id, sense);
-    let hover = ui.ctx().animate_bool(id.with("h"), resp.hovered() && enabled);
+    let hover = ui
+        .ctx()
+        .animate_bool(id.with("h"), resp.hovered() && enabled);
     let pressed = resp.is_pointer_button_down_on() && enabled;
     let p = ui.painter();
     let tint = match kind {
@@ -439,7 +650,15 @@ pub fn pill_button(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool
         None => (font(13.0), TEXT()),
     };
     let col = if enabled { col } else { with_alpha(col, 0.5) };
-    text_fit(p, rect.center(), Align2::CENTER_CENTER, label, f, col, rect.width() - 12.0);
+    text_fit(
+        p,
+        rect.center(),
+        Align2::CENTER_CENTER,
+        label,
+        f,
+        col,
+        rect.width() - 12.0,
+    );
     if enabled && resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -451,11 +670,19 @@ pub fn pill_button(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool
 /// (lime, apricot), white on dark ones.
 pub fn on_color(fill: Color32) -> Color32 {
     let [r, g, b, _] = fill.to_srgba_unmultiplied();
-    if 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32 > 150.0 { ON_ACTION } else { Color32::WHITE }
+    if 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32 > 150.0 {
+        ON_ACTION
+    } else {
+        Color32::WHITE
+    }
 }
 
 pub fn button_width(p: &Painter, label: &str, kind: u8) -> f32 {
-    let f = if kind == BTN_SECONDARY { font(13.0) } else { bold(13.0) };
+    let f = if kind == BTN_SECONDARY {
+        font(13.0)
+    } else {
+        bold(13.0)
+    };
     p.layout_no_wrap(label.to_owned(), f, TEXT()).size().x + 28.0
 }
 
@@ -465,30 +692,59 @@ pub fn liquid_capsule(p: &Painter, rect: Rect, tint: Option<Color32>, hover: f32
     let r = R_BUTTON.min(rect.height() / 2.0);
     match tint {
         Some(c) => {
-            let fill = if hover > 1.0 { lerp_color(c, Color32::BLACK, 0.12) } else { lerp_color(c, Color32::WHITE, 0.12 * hover) };
+            let fill = if hover > 1.0 {
+                lerp_color(c, Color32::BLACK, 0.12)
+            } else {
+                lerp_color(c, Color32::WHITE, 0.12 * hover)
+            };
             // a soft glow of its own colour below, a darker lip inside
-            let glow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: with_alpha(c, 0.25 * alpha) };
+            let glow = egui::epaint::Shadow {
+                offset: [0, 6],
+                blur: 18,
+                spread: 0,
+                color: with_alpha(c, 0.25 * alpha),
+            };
             p.add(glow.as_shape(rect, r));
             p.rect_filled(rect, r, with_alpha(fill, alpha));
             let lip = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 2.0), rect.max);
-            p.with_clip_rect(lip).rect_filled(rect, r, Color32::from_black_alpha((46.0 * alpha) as u8));
+            p.with_clip_rect(lip).rect_filled(
+                rect,
+                r,
+                Color32::from_black_alpha((46.0 * alpha) as u8),
+            );
         }
         None => {
-            let a = if hover > 1.0 { 26.0 } else { 10.0 + 10.0 * hover };
+            let a = if hover > 1.0 {
+                26.0
+            } else {
+                10.0 + 10.0 * hover
+            };
             p.rect_filled(rect, r, white((a * alpha) as u8));
-            p.rect_stroke(rect, r, Stroke::new(1.0, white((36.0 * alpha) as u8)), StrokeKind::Inside);
+            p.rect_stroke(
+                rect,
+                r,
+                Stroke::new(1.0, white((36.0 * alpha) as u8)),
+                StrokeKind::Inside,
+            );
         }
     }
 }
 
 /// A 30 pt square icon button (panel header, sheet actions).
 pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
-    let id = ui.scope_id().with(("icon-btn", tip, rect.min.x as i32, rect.min.y as i32));
+    let id = ui
+        .scope_id()
+        .with(("icon-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let resp = ui.interact(rect, id, Sense::click());
     let h = ui.ctx().animate_bool(id, resp.hovered());
     let p = ui.painter();
     p.rect_filled(rect, R_BUTTON, white((15.0 + 13.0 * h) as u8));
-    icon(p, ic, Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.53)), TEXT_SOFT());
+    icon(
+        p,
+        ic,
+        Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.53)),
+        TEXT_SOFT(),
+    );
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -497,22 +753,41 @@ pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
 
 /// The round 26 pt close / refresh button used in sheet headers.
 pub fn round_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
-    let id = ui.scope_id().with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
+    let id = ui
+        .scope_id()
+        .with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let resp = ui.interact(rect, id, Sense::click());
     let h = ui.ctx().animate_bool(id, resp.hovered());
     let p = ui.painter();
-    p.circle_filled(rect.center(), rect.height() / 2.0, white((20.0 + 18.0 * h) as u8));
-    icon(p, ic, Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.46)), TEXT_SOFT());
+    p.circle_filled(
+        rect.center(),
+        rect.height() / 2.0,
+        white((20.0 + 18.0 * h) as u8),
+    );
+    icon(
+        p,
+        ic,
+        Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.46)),
+        TEXT_SOFT(),
+    );
     resp.on_hover_text(tip)
 }
 
 /// Text link in the accent blue.
 pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Response {
-    let galley = ui.painter().layout_no_wrap(label.to_owned(), bold(size), ACCENT());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), bold(size), ACCENT());
     let rect = align.anchor_size(pos, galley.size());
-    let id = ui.scope_id().with(("link", label, pos.x as i32, pos.y as i32));
+    let id = ui
+        .scope_id()
+        .with(("link", label, pos.x as i32, pos.y as i32));
     let resp = ui.interact(rect.expand(4.0), id, Sense::click());
-    let col = if resp.hovered() { Color32::from_rgb(0x7D, 0xBB, 0xFF) } else { ACCENT() };
+    let col = if resp.hovered() {
+        Color32::from_rgb(0x7D, 0xBB, 0xFF)
+    } else {
+        ACCENT()
+    };
     ui.painter().galley(rect.min, galley, col);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -527,7 +802,11 @@ pub fn bar(painter: &Painter, rect: Rect, frac: f32, color: Color32) {
     let f = frac.clamp(0.0, 1.0);
     if f > 0.0 {
         let w = (rect.width() * f).max(rect.height());
-        painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(w, rect.height())), r, color);
+        painter.rect_filled(
+            Rect::from_min_size(rect.min, Vec2::new(w, rect.height())),
+            r,
+            color,
+        );
     }
 }
 
@@ -544,17 +823,36 @@ pub fn stacked_bar(painter: &Painter, rect: Rect, segments: &[(f32, Color32)]) {
         if w < 0.5 {
             continue;
         }
-        let seg = Rect::from_min_max(Pos2::new(x, rect.top()), Pos2::new((x + w).min(rect.right()), rect.bottom()));
+        let seg = Rect::from_min_max(
+            Pos2::new(x, rect.top()),
+            Pos2::new((x + w).min(rect.right()), rect.bottom()),
+        );
         shapes.push((seg, *c));
         x += w + 2.0;
     }
     // round only the outer ends: draw the run as one rounded mask, then cut gaps
     for (seg, c) in shapes {
         let cr = CornerRadius {
-            nw: if seg.left() <= rect.left() + 0.5 { r as u8 } else { 0 },
-            sw: if seg.left() <= rect.left() + 0.5 { r as u8 } else { 0 },
-            ne: if seg.right() >= rect.right() - 0.5 { r as u8 } else { 0 },
-            se: if seg.right() >= rect.right() - 0.5 { r as u8 } else { 0 },
+            nw: if seg.left() <= rect.left() + 0.5 {
+                r as u8
+            } else {
+                0
+            },
+            sw: if seg.left() <= rect.left() + 0.5 {
+                r as u8
+            } else {
+                0
+            },
+            ne: if seg.right() >= rect.right() - 0.5 {
+                r as u8
+            } else {
+                0
+            },
+            se: if seg.right() >= rect.right() - 0.5 {
+                r as u8
+            } else {
+                0
+            },
         };
         clip.rect_filled(seg, cr, c);
     }
@@ -611,10 +909,19 @@ struct Ambient {
 /// Advance the decorative clock (once per pass; one clock for all windows,
 /// so a blade drawn in two keeps one angle) and say whether loops run.
 fn ambient_state(ctx: &egui::Context) -> (f64, bool) {
-    let (now, moved) = ctx.input(|i| (i.time, i.pointer.delta() != Vec2::ZERO || !i.events.is_empty()));
+    let (now, moved) = ctx.input(|i| {
+        (
+            i.time,
+            i.pointer.delta() != Vec2::ZERO || !i.events.is_empty(),
+        )
+    });
     let id = egui::Id::NULL.with("ambient-clock");
     ctx.data_mut(|d| {
-        let a = d.get_temp_mut_or_insert_with(id, || Ambient { clock: 0.0, seen: now, input: now });
+        let a = d.get_temp_mut_or_insert_with(id, || Ambient {
+            clock: 0.0,
+            seen: now,
+            input: now,
+        });
         if moved {
             a.input = now;
         }
@@ -645,7 +952,10 @@ pub fn ambient_live(ctx: &egui::Context) -> bool {
 pub fn ambient(ctx: &egui::Context) {
     if ambient_state(ctx).1 {
         let now = ctx.input(|i| i.time);
-        ctx.request_repaint_after(std::time::Duration::from_secs_f64(next_beat(now, ambient_tuning().0)));
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(next_beat(
+            now,
+            ambient_tuning().0,
+        )));
     }
 }
 
@@ -653,7 +963,10 @@ pub fn ambient(ctx: &egui::Context) {
 /// and clocks that change by the second all ask for this one frame, so an
 /// open window that nothing else moves draws about once a second.
 pub fn next_second() -> std::time::Duration {
-    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_millis()).unwrap_or(0);
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_millis())
+        .unwrap_or(0);
     std::time::Duration::from_millis(1000 - ms as u64 + 5)
 }
 
@@ -662,8 +975,17 @@ pub fn next_second() -> std::time::Duration {
 fn ambient_tuning() -> (f64, f64) {
     static T: std::sync::OnceLock<(f64, f64)> = std::sync::OnceLock::new();
     *T.get_or_init(|| {
-        let var = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.parse::<f64>().ok()).filter(|v| *v > 0.0).unwrap_or(d);
-        (var("CMDMEOW_AMBIENT_FPS", AMBIENT_FPS), var("CMDMEOW_AMBIENT_REST", AMBIENT_REST))
+        let var = |k: &str, d: f64| {
+            std::env::var(k)
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0)
+                .unwrap_or(d)
+        };
+        (
+            var("CMDMEOW_AMBIENT_FPS", AMBIENT_FPS),
+            var("CMDMEOW_AMBIENT_REST", AMBIENT_REST),
+        )
     })
 }
 
@@ -671,7 +993,11 @@ fn ambient_tuning() -> (f64, f64) {
 fn next_beat(now: f64, fps: f64) -> f64 {
     let period = 1.0 / fps;
     let left = period - now.rem_euclid(period);
-    if left < 0.004 { left + period } else { left }
+    if left < 0.004 {
+        left + period
+    } else {
+        left
+    }
 }
 
 /// A spinning arc used while something is working. It turns by itself: a
@@ -680,11 +1006,25 @@ fn next_beat(now: f64, fps: f64) -> f64 {
 /// used to pass the clock).
 #[track_caller]
 pub fn spinner(painter: &Painter, center: Pos2, radius: f32, _t: f64, color: Color32) {
-    crate::kit::spin::arc_at(painter, center, radius, color, std::panic::Location::caller());
+    crate::kit::spin::arc_at(
+        painter,
+        center,
+        radius,
+        color,
+        std::panic::Location::caller(),
+    );
 }
 
 pub fn checkbox(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect.expand(3.0), id, if enabled { Sense::click() } else { Sense::hover() });
+    let resp = ui.interact(
+        rect.expand(3.0),
+        id,
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
     let p = ui.painter();
     let r = 4.0;
     if on && enabled {
@@ -692,16 +1032,32 @@ pub fn checkbox(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) 
         let a = rect.left_top() + Vec2::new(rect.width() * 0.24, rect.height() * 0.52);
         let b = rect.left_top() + Vec2::new(rect.width() * 0.43, rect.height() * 0.71);
         let c = rect.left_top() + Vec2::new(rect.width() * 0.78, rect.height() * 0.31);
-        p.add(PathShape::line(vec![a, b, c], PathStroke::new(2.0, ON_ACTION)));
+        p.add(PathShape::line(
+            vec![a, b, c],
+            PathStroke::new(2.0, ON_ACTION),
+        ));
     } else {
-        p.rect_stroke(rect, r, Stroke::new(1.5, white(if enabled { 90 } else { 30 })), StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            r,
+            Stroke::new(1.5, white(if enabled { 90 } else { 30 })),
+            StrokeKind::Inside,
+        );
     }
     resp
 }
 
 /// One choice of several (a filled dot when picked), the size of a checkbox.
 pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect.expand(3.0), id, if enabled { Sense::click() } else { Sense::hover() });
+    let resp = ui.interact(
+        rect.expand(3.0),
+        id,
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
     let p = ui.painter();
     let c = rect.center();
     let r = rect.width().min(rect.height()) / 2.0;
@@ -709,14 +1065,25 @@ pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> 
         p.circle_filled(c, r, BLUE());
         p.circle_filled(c, r * 0.4, ON_ACTION);
     } else {
-        stroke_circle(p, c, r - 0.75, Stroke::new(1.5, white(if enabled { 90 } else { 30 })));
+        stroke_circle(
+            p,
+            c,
+            r - 0.75,
+            Stroke::new(1.5, white(if enabled { 90 } else { 30 })),
+        );
     }
     resp
 }
 
 /// A small rounded status chip ("Safe", "Ask", "Kept"). `colors` = (fill, text).
 /// Returns the chip's rect.
-pub fn chip(p: &Painter, pos: Pos2, align: Align2, label: &str, colors: (Color32, Color32)) -> Rect {
+pub fn chip(
+    p: &Painter,
+    pos: Pos2,
+    align: Align2,
+    label: &str,
+    colors: (Color32, Color32),
+) -> Rect {
     let g = p.layout_no_wrap(label.to_owned(), bold(11.0), colors.1);
     let r = align.anchor_size(pos, g.size() + Vec2::new(16.0, 5.0));
     p.rect_filled(r, 6.0, colors.0);
@@ -734,20 +1101,41 @@ pub fn badge(p: &Painter, pos: Pos2, align: Align2, label: &str) -> Rect {
 }
 
 /// Two-or-more option segmented control. Returns the index clicked this frame.
-pub fn segmented(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selected: usize) -> Option<usize> {
+pub fn segmented(
+    ui: &mut Ui,
+    rect: Rect,
+    id: egui::Id,
+    labels: &[&str],
+    selected: usize,
+) -> Option<usize> {
     let p = ui.painter().clone();
     p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
     let w = inner.width() / labels.len().max(1) as f32;
     let mut out = None;
     for (i, l) in labels.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(inner.left() + w * i as f32, inner.top()), Vec2::new(w, inner.height()));
+        let r = Rect::from_min_size(
+            Pos2::new(inner.left() + w * i as f32, inner.top()),
+            Vec2::new(w, inner.height()),
+        );
         let resp = ui.interact(r, id.with(i), Sense::click());
         if i == selected {
             p.rect_filled(r, 6.0, pick(Color32::from_white_alpha(36), Color32::WHITE));
         }
-        let col = if i == selected || resp.hovered() { TEXT() } else { TEXT_DIM() };
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, l, font(12.0), col, r.width() - 8.0);
+        let col = if i == selected || resp.hovered() {
+            TEXT()
+        } else {
+            TEXT_DIM()
+        };
+        text_fit(
+            &p,
+            r.center(),
+            Align2::CENTER_CENTER,
+            l,
+            font(12.0),
+            col,
+            r.width() - 8.0,
+        );
         if resp.clicked() && i != selected {
             out = Some(i);
         }
@@ -757,7 +1145,15 @@ pub fn segmented(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selecte
 
 /// An on/off switch (30×18).
 pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect, id, if enabled { Sense::click() } else { Sense::hover() });
+    let resp = ui.interact(
+        rect,
+        id,
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
     let p = ui.painter();
     if !enabled {
         dashed_rect(p, rect, rect.height() / 2.0, white(64));
@@ -788,14 +1184,28 @@ pub fn tool_chip(p: &Painter, rect: Rect, glyph: Icon, color: Color32) {
     } else {
         // a group tile: its colour faint behind, a little stronger as the edge
         p.rect_filled(rect, r, with_alpha(color, 0.12));
-        p.rect_stroke(rect, r, Stroke::new(1.0, with_alpha(color, 0.28)), StrokeKind::Inside);
+        p.rect_stroke(
+            rect,
+            r,
+            Stroke::new(1.0, with_alpha(color, 0.28)),
+            StrokeKind::Inside,
+        );
     }
-    icon(p, glyph, Rect::from_center_size(rect.center(), rect.size() * 0.6), lift(color));
+    icon(
+        p,
+        glyph,
+        Rect::from_center_size(rect.center(), rect.size() * 0.6),
+        lift(color),
+    );
 }
 
 /// A tint made readable as a glyph or text on a dark card (blue → lighter blue).
 pub fn lift(c: Color32) -> Color32 {
-    if c == BLUE() { ACCENT() } else { c }
+    if c == BLUE() {
+        ACCENT()
+    } else {
+        c
+    }
 }
 
 /// 1 pt separator line.
@@ -819,7 +1229,13 @@ pub fn section_header(p: &Painter, pos: Pos2, align: Align2, label: &str) -> Rec
 /// centre y, for a link on the same line.
 pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     let cy = section_title_y(p, top);
-    p.text(Pos2::new(x, cy), Align2::LEFT_CENTER, label, ty::section(), white(150));
+    p.text(
+        Pos2::new(x, cy),
+        Align2::LEFT_CENTER,
+        label,
+        ty::section(),
+        white(150),
+    );
     cy
 }
 
@@ -830,22 +1246,59 @@ pub fn section_title_y(p: &Painter, top: f32) -> f32 {
 
 /// The header of a detail sheet: tint chip, title, subtitle, close button.
 /// Returns true when the close button was clicked.
-pub fn sheet_header(ui: &mut Ui, rect: Rect, glyph: Icon, color: Color32, title: &str, sub: &str) -> bool {
+pub fn sheet_header(
+    ui: &mut Ui,
+    rect: Rect,
+    glyph: Icon,
+    color: Color32,
+    title: &str,
+    sub: &str,
+) -> bool {
     let p = ui.painter().clone();
-    tool_chip(&p, Rect::from_min_size(rect.min + Vec2::new(16.0, 14.0), Vec2::splat(30.0)), glyph, color);
+    tool_chip(
+        &p,
+        Rect::from_min_size(rect.min + Vec2::new(16.0, 14.0), Vec2::splat(30.0)),
+        glyph,
+        color,
+    );
     let cy = rect.top() + 29.0;
     if sub.is_empty() {
-        text_fit(&p, Pos2::new(rect.left() + 56.0, cy), Align2::LEFT_CENTER, title, bold(15.0), TEXT(), rect.width() - 110.0);
+        text_fit(
+            &p,
+            Pos2::new(rect.left() + 56.0, cy),
+            Align2::LEFT_CENTER,
+            title,
+            bold(15.0),
+            TEXT(),
+            rect.width() - 110.0,
+        );
     } else {
-        two_lines(&p, rect.left() + 56.0, cy, title, bold(15.0), TEXT(), sub, font(12.0), TEXT_DIM(), rect.width() - 110.0);
+        two_lines(
+            &p,
+            rect.left() + 56.0,
+            cy,
+            title,
+            bold(15.0),
+            TEXT(),
+            sub,
+            font(12.0),
+            TEXT_DIM(),
+            rect.width() - 110.0,
+        );
     }
-    hairline(&p, Pos2::new(rect.left(), rect.top() + 57.0), Pos2::new(rect.right(), rect.top() + 57.0));
-    let cr = Rect::from_center_size(Pos2::new(rect.right() - 27.0, rect.top() + 29.0), Vec2::splat(26.0));
+    hairline(
+        &p,
+        Pos2::new(rect.left(), rect.top() + 57.0),
+        Pos2::new(rect.right(), rect.top() + 57.0),
+    );
+    let cr = Rect::from_center_size(
+        Pos2::new(rect.right() - 27.0, rect.top() + 29.0),
+        Vec2::splat(26.0),
+    );
     round_button(ui, cr, Icon::Close, "Close").clicked()
 }
 
 // ---------------------------------------------------------------- panel widgets
-
 
 /// A sheet's big number: "1.44 TB free of 2 TB". Returns the height used.
 pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str) -> f32 {
@@ -853,24 +1306,66 @@ pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str)
     let (w, h) = (g.size().x, g.size().y);
     let base = pos.y + h * 0.80;
     p.galley(pos, g, TEXT());
-    let u = p.text(Pos2::new(pos.x + w + 6.0, base), Align2::LEFT_BOTTOM, unit, bold(15.0), TEXT_SOFT());
-    p.text(Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base), Align2::LEFT_BOTTOM, caption, font(13.0), TEXT_DIM());
+    let u = p.text(
+        Pos2::new(pos.x + w + 6.0, base),
+        Align2::LEFT_BOTTOM,
+        unit,
+        bold(15.0),
+        TEXT_SOFT(),
+    );
+    p.text(
+        Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base),
+        Align2::LEFT_BOTTOM,
+        caption,
+        font(13.0),
+        TEXT_DIM(),
+    );
     h
 }
 
 /// A window sidebar row: tint chip (or dashed chip when `planned`), label and
 /// a small right-aligned `meta` text. Selected rows get the blue fill.
-pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, meta: &str, selected: bool, planned: bool) -> Response {
-    let resp = ui.interact(rect, id, if planned { Sense::hover() } else { Sense::click() });
-    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !planned);
+pub fn sidebar_item(
+    ui: &mut Ui,
+    rect: Rect,
+    id: egui::Id,
+    glyph: Icon,
+    color: Color32,
+    label: &str,
+    meta: &str,
+    selected: bool,
+    planned: bool,
+) -> Response {
+    let resp = ui.interact(
+        rect,
+        id,
+        if planned {
+            Sense::hover()
+        } else {
+            Sense::click()
+        },
+    );
+    let h = ui
+        .ctx()
+        .animate_bool(id.with("h"), resp.hovered() && !planned);
     let p = ui.painter();
     let active_text = pick(hex(0xD9F78A), hex(0x3F6B0A));
     if selected {
-        p.rect_filled(rect, 8.0, pick(Color32::from_rgba_unmultiplied(200, 240, 90, 41), Color32::from_rgba_unmultiplied(125, 181, 25, 41)));
+        p.rect_filled(
+            rect,
+            8.0,
+            pick(
+                Color32::from_rgba_unmultiplied(200, 240, 90, 41),
+                Color32::from_rgba_unmultiplied(125, 181, 25, 41),
+            ),
+        );
     } else if h > 0.0 {
         p.rect_filled(rect, 6.0, white((12.0 * h) as u8));
     }
-    let chip_r = Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.center().y - 8.0), Vec2::splat(16.0));
+    let chip_r = Rect::from_min_size(
+        Pos2::new(rect.left() + 8.0, rect.center().y - 8.0),
+        Vec2::splat(16.0),
+    );
     let glyph_col = if planned {
         TEXT_MUTED()
     } else if selected {
@@ -883,9 +1378,36 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     icon(p, glyph, chip_r, glyph_col);
     let mut right = rect.right() - 8.0;
     if !meta.is_empty() {
-        right = p.text(Pos2::new(right, rect.center().y), Align2::RIGHT_CENTER, meta, font(11.0), if selected { with_alpha(active_text, 0.8) } else { white(120) }).left() - 6.0;
+        right = p
+            .text(
+                Pos2::new(right, rect.center().y),
+                Align2::RIGHT_CENTER,
+                meta,
+                font(11.0),
+                if selected {
+                    with_alpha(active_text, 0.8)
+                } else {
+                    white(120)
+                },
+            )
+            .left()
+            - 6.0;
     }
-    text_fit(p, Pos2::new(chip_r.right() + 9.0, rect.center().y), Align2::LEFT_CENTER, label, font(13.0), if planned { TEXT_FAINT() } else if selected { active_text } else { white(217) }, right - chip_r.right() - 9.0);
+    text_fit(
+        p,
+        Pos2::new(chip_r.right() + 9.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font(13.0),
+        if planned {
+            TEXT_FAINT()
+        } else if selected {
+            active_text
+        } else {
+            white(217)
+        },
+        right - chip_r.right() - 9.0,
+    );
     if planned {
         return resp.on_hover_text("Planned: not built yet");
     }
@@ -912,13 +1434,31 @@ pub fn page_header(p: &Painter, r: Rect, title: &str, sub: &str, sub_col: Color3
 /// chip such as AI Check's); the status line moves right. Also returns the
 /// left-centre point of that room. The status line ends before `sub_right`
 /// (where the page's own header controls start).
-pub fn page_header_room(p: &Painter, r: Rect, title: &str, sub: &str, sub_col: Color32, room: f32, sub_right: f32) -> (Rect, Pos2) {
+pub fn page_header_room(
+    p: &Painter,
+    r: Rect,
+    title: &str,
+    sub: &str,
+    sub_col: Color32,
+    room: f32,
+    sub_right: f32,
+) -> (Rect, Pos2) {
     let cy = r.top() + PAGE_HEADER_H / 2.0;
-    let t = p.text(Pos2::new(r.left() + sp::PAGE_EDGE, cy), Align2::LEFT_CENTER, title, ty::lead(), TEXT());
+    let t = p.text(
+        Pos2::new(r.left() + sp::PAGE_EDGE, cy),
+        Align2::LEFT_CENTER,
+        title,
+        ty::lead(),
+        TEXT(),
+    );
     let at = Pos2::new(t.right() + 10.0, cy);
     let sx = if room > 0.0 { at.x + room + 10.0 } else { at.x };
     // status sits on the same line as the title, like a macOS toolbar
-    let sub_col = if sub_col == TEXT_DIM() { ty::caption_color() } else { sub_col };
+    let sub_col = if sub_col == TEXT_DIM() {
+        ty::caption_color()
+    } else {
+        sub_col
+    };
     // never cut the status: drop its trailing " · " parts until it fits,
     // or leave it out
     let avail = sub_right - sx;
@@ -926,21 +1466,48 @@ pub fn page_header_room(p: &Painter, r: Rect, title: &str, sub: &str, sub_col: C
     while !parts.is_empty() {
         let s = parts.join(" · ");
         if p.layout_no_wrap(s.clone(), ty::label(), sub_col).size().x <= avail {
-            p.text(Pos2::new(sx, cy + 1.0), Align2::LEFT_CENTER, s, ty::label(), sub_col);
+            p.text(
+                Pos2::new(sx, cy + 1.0),
+                Align2::LEFT_CENTER,
+                s,
+                ty::label(),
+                sub_col,
+            );
             break;
         }
         parts.pop();
     }
-    p.line_segment([Pos2::new(r.left(), r.top() + PAGE_HEADER_H), Pos2::new(r.right(), r.top() + PAGE_HEADER_H)], Stroke::new(1.0, Color32::from_black_alpha(115)));
+    p.line_segment(
+        [
+            Pos2::new(r.left(), r.top() + PAGE_HEADER_H),
+            Pos2::new(r.right(), r.top() + PAGE_HEADER_H),
+        ],
+        Stroke::new(1.0, Color32::from_black_alpha(115)),
+    );
     let h = sp::HEADER_CONTROL_H / 2.0;
-    (Rect::from_min_max(Pos2::new(r.right() - sp::PAGE_EDGE, cy - h), Pos2::new(r.right() - sp::PAGE_EDGE, cy + h)), at)
+    (
+        Rect::from_min_max(
+            Pos2::new(r.right() - sp::PAGE_EDGE, cy - h),
+            Pos2::new(r.right() - sp::PAGE_EDGE, cy + h),
+        ),
+        at,
+    )
 }
 
 /// A window page's footer strip (darker, with a top hairline). Returns its rect.
 pub fn page_footer(p: &Painter, r: Rect, window_radius: f32) -> Rect {
     let f = Rect::from_min_max(Pos2::new(r.left(), r.bottom() - PAGE_FOOTER_H), r.max);
     let rr = window_radius.round().clamp(0.0, 255.0) as u8;
-    p.rect_filled(f, CornerRadius { nw: 0, ne: 0, sw: 0, se: rr }, FOOTER());
+    p.rect_filled(
+        f,
+        CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: 0,
+            se: rr,
+        },
+        FOOTER(),
+    );
     p.line_segment([f.left_top(), f.right_top()], Stroke::new(1.0, white(20)));
     f
 }
@@ -950,23 +1517,72 @@ pub const SHEET_HEADER_H: f32 = 58.0;
 
 /// A label/value row inside a group card, with an optional hint line under it.
 /// Returns the height used.
-pub fn fact_row(p: &Painter, r: Rect, label: &str, value: &str, value_col: Color32, hint: &str) -> f32 {
+pub fn fact_row(
+    p: &Painter,
+    r: Rect,
+    label: &str,
+    value: &str,
+    value_col: Color32,
+    hint: &str,
+) -> f32 {
     let top = r.top() + 8.0;
-    let vr = p.text(Pos2::new(r.right() - 12.0, top), Align2::RIGHT_TOP, value, bold(13.0), value_col);
-    text_fit(p, Pos2::new(r.left() + 12.0, top), Align2::LEFT_TOP, label, font(13.0), TEXT_DIM(), (vr.left() - r.left() - 24.0).max(40.0));
+    let vr = p.text(
+        Pos2::new(r.right() - 12.0, top),
+        Align2::RIGHT_TOP,
+        value,
+        bold(13.0),
+        value_col,
+    );
+    text_fit(
+        p,
+        Pos2::new(r.left() + 12.0, top),
+        Align2::LEFT_TOP,
+        label,
+        font(13.0),
+        TEXT_DIM(),
+        (vr.left() - r.left() - 24.0).max(40.0),
+    );
     if hint.is_empty() {
         return 32.0;
     }
-    let h = paragraph(p, Pos2::new(r.left() + 12.0, top + 19.0), hint, font(12.0), TEXT_FAINT(), r.width() - 24.0);
+    let h = paragraph(
+        p,
+        Pos2::new(r.left() + 12.0, top + 19.0),
+        hint,
+        font(12.0),
+        TEXT_FAINT(),
+        r.width() - 24.0,
+    );
     27.0 + h + 8.0
 }
 
 /// A legend row: colour square, label, value.
-pub fn legend_row(p: &Painter, r: Rect, color: Color32, label: &str, value: &str, value_col: Color32) {
+pub fn legend_row(
+    p: &Painter,
+    r: Rect,
+    color: Color32,
+    label: &str,
+    value: &str,
+    value_col: Color32,
+) {
     let c = Pos2::new(r.left() + 16.5, r.center().y);
     p.rect_filled(Rect::from_center_size(c, Vec2::splat(9.0)), 3.0, color);
-    let vr = p.text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, value, font(13.0), value_col);
-    text_fit(p, Pos2::new(r.left() + 31.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), (vr.left() - r.left() - 40.0).max(40.0));
+    let vr = p.text(
+        Pos2::new(r.right() - 12.0, r.center().y),
+        Align2::RIGHT_CENTER,
+        value,
+        font(13.0),
+        value_col,
+    );
+    text_fit(
+        p,
+        Pos2::new(r.left() + 31.0, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font(13.0),
+        TEXT(),
+        (vr.left() - r.left() - 40.0).max(40.0),
+    );
 }
 
 /// The height of one line of `font`.
@@ -978,10 +1594,37 @@ pub fn line_h(p: &Painter, font: &FontId) -> f32 {
 /// [`sp::LINE_GAP`] between them; both cut to `max_w`. Returns both rects.
 #[allow(clippy::too_many_arguments)]
 #[track_caller]
-pub fn two_lines(p: &Painter, x: f32, cy: f32, title: &str, title_font: FontId, title_col: Color32, detail: &str, detail_font: FontId, detail_col: Color32, max_w: f32) -> (Rect, Rect) {
+pub fn two_lines(
+    p: &Painter,
+    x: f32,
+    cy: f32,
+    title: &str,
+    title_font: FontId,
+    title_col: Color32,
+    detail: &str,
+    detail_font: FontId,
+    detail_col: Color32,
+    max_w: f32,
+) -> (Rect, Rect) {
     let (t, d) = two_lines_y(p, cy, &title_font, &detail_font);
-    let tr = text_fit(p, Pos2::new(x, t), Align2::LEFT_CENTER, title, title_font, title_col, max_w);
-    let dr = text_fit(p, Pos2::new(x, d), Align2::LEFT_CENTER, detail, detail_font, detail_col, max_w);
+    let tr = text_fit(
+        p,
+        Pos2::new(x, t),
+        Align2::LEFT_CENTER,
+        title,
+        title_font,
+        title_col,
+        max_w,
+    );
+    let dr = text_fit(
+        p,
+        Pos2::new(x, d),
+        Align2::LEFT_CENTER,
+        detail,
+        detail_font,
+        detail_col,
+        max_w,
+    );
     (tr, dr)
 }
 
@@ -989,14 +1632,28 @@ pub fn two_lines(p: &Painter, x: f32, cy: f32, title: &str, title_font: FontId, 
 /// starting at `x` and cut to `max_w` ("Memory" / "17%" / "normal").
 /// Empty lines are skipped. Returns the rect of each line drawn.
 #[track_caller]
-pub fn stack_lines(p: &Painter, x: f32, cy: f32, lines: &[(&str, FontId, Color32)], max_w: f32) -> Vec<Rect> {
+pub fn stack_lines(
+    p: &Painter,
+    x: f32,
+    cy: f32,
+    lines: &[(&str, FontId, Color32)],
+    max_w: f32,
+) -> Vec<Rect> {
     let lines: Vec<&(&str, FontId, Color32)> = lines.iter().filter(|l| !l.0.is_empty()).collect();
     let hs: Vec<f32> = lines.iter().map(|l| line_h(p, &l.1)).collect();
     let total = hs.iter().sum::<f32>() + sp::LINE_GAP * (hs.len().max(1) - 1) as f32;
     let mut y = cy - total / 2.0;
     let mut out = Vec::new();
     for (l, h) in lines.iter().zip(hs) {
-        out.push(text_fit(p, Pos2::new(x, y + h / 2.0), Align2::LEFT_CENTER, l.0, l.1.clone(), l.2, max_w));
+        out.push(text_fit(
+            p,
+            Pos2::new(x, y + h / 2.0),
+            Align2::LEFT_CENTER,
+            l.0,
+            l.1.clone(),
+            l.2,
+            max_w,
+        ));
         y += h + sp::LINE_GAP;
     }
     out
@@ -1016,10 +1673,35 @@ pub fn two_lines_y(p: &Painter, cy: f32, title_font: &FontId, detail_font: &Font
 /// what is left and is cut if it must. Returns (name, value) rects.
 #[allow(clippy::too_many_arguments)]
 #[track_caller]
-pub fn split_line(p: &Painter, left: Pos2, right: Pos2, v: egui::Align, name: &str, name_font: FontId, name_col: Color32, value: &str, value_font: FontId, value_col: Color32) -> (Rect, Rect) {
-    let vr = p.text(right, Align2([egui::Align::Max, v]), value, value_font, value_col);
+pub fn split_line(
+    p: &Painter,
+    left: Pos2,
+    right: Pos2,
+    v: egui::Align,
+    name: &str,
+    name_font: FontId,
+    name_col: Color32,
+    value: &str,
+    value_font: FontId,
+    value_col: Color32,
+) -> (Rect, Rect) {
+    let vr = p.text(
+        right,
+        Align2([egui::Align::Max, v]),
+        value,
+        value_font,
+        value_col,
+    );
     let gap = if value.is_empty() { 0.0 } else { sp::M };
-    let nr = text_fit(p, left, Align2([egui::Align::Min, v]), name, name_font, name_col, vr.left() - gap - left.x);
+    let nr = text_fit(
+        p,
+        left,
+        Align2([egui::Align::Min, v]),
+        name,
+        name_font,
+        name_col,
+        vr.left() - gap - left.x,
+    );
     (nr, vr)
 }
 
@@ -1027,7 +1709,16 @@ pub fn split_line(p: &Painter, left: Pos2, right: Pos2, v: egui::Align, name: &s
 /// being cut (status lines like "Out tomorrow 23:40" in a narrow card).
 #[allow(clippy::too_many_arguments)]
 #[track_caller]
-pub fn text_wrap(p: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId, color: Color32, max_w: f32, max_rows: usize) -> Rect {
+pub fn text_wrap(
+    p: &Painter,
+    pos: Pos2,
+    align: Align2,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    max_w: f32,
+    max_rows: usize,
+) -> Rect {
     let caller = std::panic::Location::caller();
     let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, color, max_w.max(1.0));
     job.wrap.max_rows = max_rows;
@@ -1041,7 +1732,11 @@ pub fn text_wrap(p: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId
         fit_log(caller, text, max_w);
     }
     let r = align.anchor_size(pos, g.size());
-    let at = if align.x() == egui::Align::Center { Pos2::new(pos.x, r.top()) } else { r.min };
+    let at = if align.x() == egui::Align::Center {
+        Pos2::new(pos.x, r.top())
+    } else {
+        r.min
+    };
     let out = g.rect.translate(at.to_vec2());
     p.galley(at, g, color);
     out
@@ -1049,21 +1744,39 @@ pub fn text_wrap(p: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId
 
 /// Text that is cut with an ellipsis to fit `max_w`.
 #[track_caller]
-pub fn text_fit(painter: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId, color: Color32, max_w: f32) -> Rect {
+pub fn text_fit(
+    painter: &Painter,
+    pos: Pos2,
+    align: Align2,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    max_w: f32,
+) -> Rect {
     let caller = std::panic::Location::caller();
     // No glyph is narrower than about a quarter of the font size, so more
     // characters than this can never fit: don't lay out a whole long clip.
     let cap = ((max_w.max(0.0) / (font.size * 0.25).max(1.0)) as usize).saturating_add(2);
     let chars: Vec<char> = text.chars().take(cap + 1).collect();
     let mut g = if chars.len() > cap {
-        painter.layout_no_wrap(chars[..cap].iter().collect::<String>() + "…", font.clone(), color)
+        painter.layout_no_wrap(
+            chars[..cap].iter().collect::<String>() + "…",
+            font.clone(),
+            color,
+        )
     } else {
         painter.layout_no_wrap(text.to_owned(), font.clone(), color)
     };
     if g.size().x > max_w {
         // the longest prefix (plus "…") that fits: binary search, not one
         // layout per dropped character
-        let cut = |n: usize| painter.layout_no_wrap(chars[..n].iter().collect::<String>() + "…", font.clone(), color);
+        let cut = |n: usize| {
+            painter.layout_no_wrap(
+                chars[..n].iter().collect::<String>() + "…",
+                font.clone(),
+                color,
+            )
+        };
         let (mut lo, mut hi) = (1usize, chars.len().min(cap));
         while lo < hi {
             let mid = (lo + hi).div_ceil(2);
@@ -1086,7 +1799,11 @@ pub fn text_fit(painter: &Painter, pos: Pos2, align: Align2, text: &str, font: F
 fn fit_log(at: &std::panic::Location, text: &str, max_w: f32) {
     use std::sync::{Mutex, OnceLock};
     static SEEN: OnceLock<Option<Mutex<std::collections::HashSet<String>>>> = OnceLock::new();
-    let Some(seen) = SEEN.get_or_init(|| std::env::var_os("CMDMEOW_FIT_LOG").map(|_| Mutex::new(Default::default()))) else { return };
+    let Some(seen) = SEEN.get_or_init(|| {
+        std::env::var_os("CMDMEOW_FIT_LOG").map(|_| Mutex::new(Default::default()))
+    }) else {
+        return;
+    };
     let key = format!("{}:{} {text:?} (max {max_w:.0})", at.file(), at.line());
     if seen.lock().is_ok_and(|mut s| s.insert(key.clone())) {
         eprintln!("[fit] {key}");
@@ -1115,10 +1832,22 @@ pub fn middle_ellipsis(s: &str, max_chars: usize) -> String {
 }
 
 /// Wrapped paragraph; returns the height used.
-pub fn paragraph(painter: &Painter, pos: Pos2, text: &str, font: FontId, color: Color32, width: f32) -> f32 {
+pub fn paragraph(
+    painter: &Painter,
+    pos: Pos2,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    width: f32,
+) -> f32 {
     // a paragraph sits in a box: a few thousand characters fill any of them,
     // and laying out a megabyte clip every frame stalls scrolling
-    let g = painter.layout(prefix_chars(text, PARAGRAPH_MAX).to_owned(), font, color, width);
+    let g = painter.layout(
+        prefix_chars(text, PARAGRAPH_MAX).to_owned(),
+        font,
+        color,
+        width,
+    );
     let h = g.size().y;
     painter.galley(pos, g, color);
     h
@@ -1129,7 +1858,6 @@ pub const PARAGRAPH_MAX: usize = 4000;
 
 // ---------------------------------------------------------------- icons
 #[allow(dead_code)] // the full symbol set: some glyphs wait for views not drawn yet
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Icon {
     Disk,
@@ -1292,19 +2020,37 @@ pub fn symbol(p: &Painter, name: &str, rect: Rect, color: Color32) -> bool {
     let entry = match entry {
         Some(e) => e,
         None => {
-            let made = crate::kit::native::render_symbol(name, px as f64, crate::kit::native::weight_semibold()).map(|(w, h, rgba)| {
+            let made = crate::kit::native::render_symbol(
+                name,
+                px as f64,
+                crate::kit::native::weight_semibold(),
+            )
+            .map(|(w, h, rgba)| {
                 let img = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
-                let tex = p.ctx().load_texture(format!("sf:{name}:{px}"), img, egui::TextureOptions::LINEAR);
+                let tex = p.ctx().load_texture(
+                    format!("sf:{name}:{px}"),
+                    img,
+                    egui::TextureOptions::LINEAR,
+                );
                 (tex, Vec2::new(w as f32 / ppp, h as f32 / ppp))
             });
             SYMBOLS.with(|m| m.borrow_mut().insert(key, made.clone()));
             made
         }
     };
-    let Some((tex, size)) = entry else { return false };
-    let scale = (rect.width() / size.x).min(rect.height() / size.y).min(1.15);
+    let Some((tex, size)) = entry else {
+        return false;
+    };
+    let scale = (rect.width() / size.x)
+        .min(rect.height() / size.y)
+        .min(1.15);
     let r = Rect::from_center_size(rect.center(), size * scale);
-    p.image(tex.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), color);
+    p.image(
+        tex.id(),
+        r,
+        Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+        color,
+    );
     true
 }
 
@@ -1327,16 +2073,30 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
     let w = (1.8 * u).max(1.1);
     let st = Stroke::new(w, color);
     let open = |pts: &[(f32, f32)]| {
-        p.add(PathShape::line(pts.iter().map(|&(x, y)| pt(x, y)).collect(), PathStroke::new(w, color)));
+        p.add(PathShape::line(
+            pts.iter().map(|&(x, y)| pt(x, y)).collect(),
+            PathStroke::new(w, color),
+        ));
     };
     let closed = |pts: &[(f32, f32)]| {
-        p.add(PathShape::closed_line(pts.iter().map(|&(x, y)| pt(x, y)).collect(), PathStroke::new(w, color)));
+        p.add(PathShape::closed_line(
+            pts.iter().map(|&(x, y)| pt(x, y)).collect(),
+            PathStroke::new(w, color),
+        ));
     };
     let boxr = |x0: f32, y0: f32, x1: f32, y1: f32, r: f32| {
-        p.rect_stroke(Rect::from_min_max(pt(x0, y0), pt(x1, y1)), r * u, st, StrokeKind::Middle);
+        p.rect_stroke(
+            Rect::from_min_max(pt(x0, y0), pt(x1, y1)),
+            r * u,
+            st,
+            StrokeKind::Middle,
+        );
     };
     let arc = |cx: f32, cy: f32, r: f32, a0: f32, a1: f32| {
-        p.add(PathShape::line(arc_points(pt(cx, cy), r * u, a0, a1, 24), PathStroke::new(w, color)));
+        p.add(PathShape::line(
+            arc_points(pt(cx, cy), r * u, a0, a1, 24),
+            PathStroke::new(w, color),
+        ));
     };
     let dot = |x: f32, y: f32, r: f32| p.circle_filled(pt(x, y), r * u, color);
     match icon {
@@ -1357,7 +2117,11 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(21.0, 11.0), (21.0, 13.0)]);
             let f = level.min(100) as f32 / 100.0;
             let fill = if level <= 20 { RED() } else { color };
-            p.rect_filled(Rect::from_min_max(pt(5.0, 10.0), pt(5.0 + 11.0 * f, 14.0)), 1.0 * u, fill);
+            p.rect_filled(
+                Rect::from_min_max(pt(5.0, 10.0), pt(5.0 + 11.0 * f, 14.0)),
+                1.0 * u,
+                fill,
+            );
         }
         Icon::Cpu => {
             boxr(7.0, 7.0, 17.0, 17.0, 1.5);
@@ -1375,7 +2139,14 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             }
             dot(12.0, 19.5, 1.3);
         }
-        Icon::Bluetooth => open(&[(7.0, 7.5), (17.0, 16.0), (12.0, 20.5), (12.0, 3.5), (17.0, 8.0), (7.0, 16.5)]),
+        Icon::Bluetooth => open(&[
+            (7.0, 7.5),
+            (17.0, 16.0),
+            (12.0, 20.5),
+            (12.0, 3.5),
+            (17.0, 8.0),
+            (7.0, 16.5),
+        ]),
         Icon::Headphones => {
             arc(12.0, 12.0, 8.0, PI, TAU);
             open(&[(4.0, 12.0), (4.0, 15.0)]);
@@ -1384,7 +2155,14 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             boxr(17.0, 15.0, 20.0, 20.0, 1.0);
         }
         Icon::Shield => {
-            closed(&[(12.0, 3.0), (19.5, 6.0), (18.5, 13.0), (12.0, 21.0), (5.5, 13.0), (4.5, 6.0)]);
+            closed(&[
+                (12.0, 3.0),
+                (19.5, 6.0),
+                (18.5, 13.0),
+                (12.0, 21.0),
+                (5.5, 13.0),
+                (4.5, 6.0),
+            ]);
             open(&[(8.5, 12.0), (11.0, 14.5), (15.5, 9.5)]);
         }
         Icon::Gauge => {
@@ -1392,7 +2170,16 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(12.0, 14.0), (16.0, 9.0)]);
             p.circle_filled(pt(12.0, 14.0), 1.4 * u, color);
         }
-        Icon::Sparkle => closed(&[(12.0, 3.0), (13.8, 8.2), (19.0, 10.0), (13.8, 11.8), (12.0, 17.0), (10.2, 11.8), (5.0, 10.0), (10.2, 8.2)]),
+        Icon::Sparkle => closed(&[
+            (12.0, 3.0),
+            (13.8, 8.2),
+            (19.0, 10.0),
+            (13.8, 11.8),
+            (12.0, 17.0),
+            (10.2, 11.8),
+            (5.0, 10.0),
+            (10.2, 8.2),
+        ]),
         Icon::Broom => {
             open(&[(18.0, 3.0), (12.0, 9.0)]);
             closed(&[(9.0, 8.0), (16.0, 15.0), (13.0, 21.0), (3.0, 11.0)]);
@@ -1403,7 +2190,10 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             for i in 0..8 {
                 let a = i as f32 / 8.0 * TAU;
                 let d = Vec2::new(a.cos(), a.sin());
-                p.line_segment([pt(12.0, 12.0) + d * 7.0 * u, pt(12.0, 12.0) + d * 9.5 * u], Stroke::new(w * 1.4, color));
+                p.line_segment(
+                    [pt(12.0, 12.0) + d * 7.0 * u, pt(12.0, 12.0) + d * 9.5 * u],
+                    Stroke::new(w * 1.4, color),
+                );
             }
         }
         Icon::Trash => {
@@ -1411,8 +2201,21 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(9.0, 6.0), (9.0, 3.5), (15.0, 3.5), (15.0, 6.0)]);
             open(&[(6.0, 6.0), (7.0, 20.5), (17.0, 20.5), (18.0, 6.0)]);
         }
-        Icon::Folder => closed(&[(3.0, 6.0), (9.5, 6.0), (11.5, 8.0), (21.0, 8.0), (21.0, 19.0), (3.0, 19.0)]),
-        Icon::Doc => closed(&[(6.0, 3.0), (14.0, 3.0), (19.0, 8.0), (19.0, 21.0), (6.0, 21.0)]),
+        Icon::Folder => closed(&[
+            (3.0, 6.0),
+            (9.5, 6.0),
+            (11.5, 8.0),
+            (21.0, 8.0),
+            (21.0, 19.0),
+            (3.0, 19.0),
+        ]),
+        Icon::Doc => closed(&[
+            (6.0, 3.0),
+            (14.0, 3.0),
+            (19.0, 8.0),
+            (19.0, 21.0),
+            (6.0, 21.0),
+        ]),
         Icon::Lens | Icon::Search => {
             stroke_circle(&p, pt(11.0, 11.0), 7.0 * u, st);
             open(&[(16.0, 16.0), (21.0, 21.0)]);
@@ -1426,7 +2229,10 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             for i in 0..48 {
                 let t = i as f32 / 48.0 * TAU;
                 let x = 16.0 * t.sin().powi(3);
-                let y = -(13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos());
+                let y = -(13.0 * t.cos()
+                    - 5.0 * (2.0 * t).cos()
+                    - 2.0 * (3.0 * t).cos()
+                    - (4.0 * t).cos());
                 pts.push(pt(12.0 + x * 0.5, 12.0 + y * 0.5));
             }
             p.add(PathShape::closed_line(pts, PathStroke::new(w, color)));
@@ -1443,8 +2249,20 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
         Icon::Link => {
             // two links at 45°, as two short open loops
             open(&[(10.5, 13.5), (13.5, 10.5)]);
-            open(&[(9.0, 11.0), (6.5, 13.5), (6.5, 17.5), (10.5, 17.5), (13.0, 15.0)]);
-            open(&[(15.0, 13.0), (17.5, 10.5), (17.5, 6.5), (13.5, 6.5), (11.0, 9.0)]);
+            open(&[
+                (9.0, 11.0),
+                (6.5, 13.5),
+                (6.5, 17.5),
+                (10.5, 17.5),
+                (13.0, 15.0),
+            ]);
+            open(&[
+                (15.0, 13.0),
+                (17.5, 10.5),
+                (17.5, 6.5),
+                (13.5, 6.5),
+                (11.0, 9.0),
+            ]);
         }
         Icon::Up => {
             open(&[(12.0, 20.0), (12.0, 4.5)]);
@@ -1493,14 +2311,28 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(12.0, 4.0), (12.0, 20.0)]);
             open(&[(12.0, 9.0), (21.0, 9.0)]);
         }
-        Icon::Pulse => open(&[(3.0, 12.0), (7.0, 12.0), (10.0, 5.0), (14.0, 19.0), (17.0, 12.0), (21.0, 12.0)]),
+        Icon::Pulse => open(&[
+            (3.0, 12.0),
+            (7.0, 12.0),
+            (10.0, 5.0),
+            (14.0, 19.0),
+            (17.0, 12.0),
+            (21.0, 12.0),
+        ]),
         Icon::Crop => {
             open(&[(6.0, 2.0), (6.0, 18.0), (22.0, 18.0)]);
             open(&[(2.0, 6.0), (18.0, 6.0), (18.0, 22.0)]);
         }
         Icon::Clipboard => {
             boxr(9.0, 3.5, 15.0, 6.5, 0.8);
-            open(&[(7.0, 5.0), (5.0, 5.0), (5.0, 21.0), (19.0, 21.0), (19.0, 5.0), (17.0, 5.0)]);
+            open(&[
+                (7.0, 5.0),
+                (5.0, 5.0),
+                (5.0, 21.0),
+                (19.0, 21.0),
+                (19.0, 5.0),
+                (17.0, 5.0),
+            ]);
         }
         Icon::Fan => {
             // six curved blades around a hub (four straight arms read wrong)
@@ -1526,7 +2358,13 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(8.0, 3.0), (8.0, 6.0)]);
             open(&[(12.0, 3.0), (12.0, 6.0)]);
         }
-        Icon::Home => closed(&[(3.0, 11.0), (12.0, 4.0), (21.0, 11.0), (21.0, 20.0), (3.0, 20.0)]),
+        Icon::Home => closed(&[
+            (3.0, 11.0),
+            (12.0, 4.0),
+            (21.0, 11.0),
+            (21.0, 20.0),
+            (3.0, 20.0),
+        ]),
         Icon::Close => {
             open(&[(6.0, 6.0), (18.0, 18.0)]);
             open(&[(18.0, 6.0), (6.0, 18.0)]);
@@ -1536,7 +2374,14 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(20.0, 4.0), (20.0, 9.0), (15.0, 9.0)]);
         }
         Icon::Grip => {
-            for (x, y) in [(8.0, 6.0), (16.0, 6.0), (8.0, 12.0), (16.0, 12.0), (8.0, 18.0), (16.0, 18.0)] {
+            for (x, y) in [
+                (8.0, 6.0),
+                (16.0, 6.0),
+                (8.0, 12.0),
+                (16.0, 12.0),
+                (8.0, 18.0),
+                (16.0, 18.0),
+            ] {
                 dot(x, y, 1.6);
             }
         }
@@ -1618,11 +2463,21 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             for k in 0..8 {
                 let a = k as f32 * std::f32::consts::FRAC_PI_4;
                 let (dx, dy) = (a.cos(), a.sin());
-                open(&[(12.0 + dx * 7.0, 12.0 + dy * 7.0), (12.0 + dx * 9.5, 12.0 + dy * 9.5)]);
+                open(&[
+                    (12.0 + dx * 7.0, 12.0 + dy * 7.0),
+                    (12.0 + dx * 9.5, 12.0 + dy * 9.5),
+                ]);
             }
         }
         Icon::Speaker | Icon::SpeakerOff => {
-            closed(&[(3.0, 9.0), (7.0, 9.0), (12.0, 5.0), (12.0, 19.0), (7.0, 15.0), (3.0, 15.0)]);
+            closed(&[
+                (3.0, 9.0),
+                (7.0, 9.0),
+                (12.0, 5.0),
+                (12.0, 19.0),
+                (7.0, 15.0),
+                (3.0, 15.0),
+            ]);
             if icon == Icon::Speaker {
                 arc(13.0, 12.0, 4.0, -0.9, 0.9);
                 arc(13.0, 12.0, 7.5, -0.9, 0.9);
@@ -1670,7 +2525,6 @@ pub fn human_duration(secs: u64) -> String {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1687,9 +2541,14 @@ mod tests {
     /// One pass at `time`, with or without a pointer move; returns the
     /// decorative clock and whether a frame was asked for.
     fn ambient_pass(ctx: &egui::Context, time: f64, moved: bool) -> (f64, bool) {
-        let mut input = egui::RawInput { time: Some(time), ..Default::default() };
+        let mut input = egui::RawInput {
+            time: Some(time),
+            ..Default::default()
+        };
         if moved {
-            input.events.push(egui::Event::PointerMoved(Pos2::new(time as f32, 5.0)));
+            input
+                .events
+                .push(egui::Event::PointerMoved(Pos2::new(time as f32, 5.0)));
         }
         let mut clock = 0.0;
         let mut out = ctx.run_ui(input, |ui| {
@@ -1697,7 +2556,10 @@ mod tests {
             ambient(ui.ctx());
         });
         out.textures_delta.clear();
-        let asked = out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.repaint_delay < std::time::Duration::from_secs(1));
+        let asked = out
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .is_some_and(|v| v.repaint_delay < std::time::Duration::from_secs(1));
         (clock, asked)
     }
 
@@ -1744,11 +2606,27 @@ mod tests {
         with_painter(|p| {
             let long = "word ".repeat(200_000);
             let t = std::time::Instant::now();
-            let r = text_fit(p, Pos2::ZERO, Align2::LEFT_TOP, &long, FontId::proportional(13.0), Color32::WHITE, 200.0);
+            let r = text_fit(
+                p,
+                Pos2::ZERO,
+                Align2::LEFT_TOP,
+                &long,
+                FontId::proportional(13.0),
+                Color32::WHITE,
+                200.0,
+            );
             assert!(r.width() <= 200.0 && r.width() > 150.0, "{r:?}");
             // used to lay out the text once per dropped character
             assert!(t.elapsed().as_millis() < 200, "{:?}", t.elapsed());
-            let short = text_fit(p, Pos2::ZERO, Align2::LEFT_TOP, "hi", FontId::proportional(13.0), Color32::WHITE, 200.0);
+            let short = text_fit(
+                p,
+                Pos2::ZERO,
+                Align2::LEFT_TOP,
+                "hi",
+                FontId::proportional(13.0),
+                Color32::WHITE,
+                200.0,
+            );
             assert!(short.width() < 30.0);
         });
     }
@@ -1766,7 +2644,10 @@ mod tests {
         assert_eq!(human_bytes(1_500), "1.50 KB");
         assert_eq!(human_bytes(46_100_000), "46.1 MB");
         assert_eq!(human_bytes(2_000_000_000_000), "2.00 TB");
-        assert_eq!(human_bytes(u64::MAX), format!("{:.0} TB", u64::MAX as f64 / 1e12));
+        assert_eq!(
+            human_bytes(u64::MAX),
+            format!("{:.0} TB", u64::MAX as f64 / 1e12)
+        );
     }
 
     #[test]
@@ -1776,7 +2657,10 @@ mod tests {
         assert_eq!(s.chars().count(), 20);
         assert!(s.starts_with("/Users/m") && s.ends_with("app/Cache") && s.contains('…'));
         // multi-byte text is cut on characters
-        assert_eq!(middle_ellipsis("ааааааааааббббббббб", 10).chars().count(), 10);
+        assert_eq!(
+            middle_ellipsis("ааааааааааббббббббб", 10).chars().count(),
+            10
+        );
     }
 }
 
@@ -1794,45 +2678,125 @@ const HINT_GAP: f32 = 3.0;
 
 /// The one text field: a rounded fill, a ring while focused, text and hint
 /// in body type on one baseline, vertically centred in `r` whatever its height.
-pub fn text_input(ui: &mut Ui, r: Rect, id: egui::Id, text: &mut String, hint: &str, st: FieldStyle) -> egui::Response {
+pub fn text_input(
+    ui: &mut Ui,
+    r: Rect,
+    id: egui::Id,
+    text: &mut String,
+    hint: &str,
+    st: FieldStyle,
+) -> egui::Response {
     let p = ui.painter().clone();
     let fid = ty::body();
     let edit_id = id.with("edit");
     let focused = ui.ctx().memory(|m| m.focused()) == Some(edit_id);
     p.rect_filled(r, R_SMALL, white(15));
     if focused {
-        p.rect_stroke(r, R_SMALL, Stroke::new(1.0, white(46)), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            r,
+            R_SMALL,
+            Stroke::new(1.0, white(46)),
+            egui::StrokeKind::Inside,
+        );
     }
     let clear = st.search && !text.is_empty();
     let left = if st.search {
-        icon(&p, Icon::Search, Rect::from_center_size(Pos2::new(r.left() + 15.0, r.center().y), Vec2::splat(13.0)), TEXT_FAINT());
+        icon(
+            &p,
+            Icon::Search,
+            Rect::from_center_size(Pos2::new(r.left() + 15.0, r.center().y), Vec2::splat(13.0)),
+            TEXT_FAINT(),
+        );
         r.left() + 28.0
     } else {
         r.left() + 10.0
     };
-    let right = if clear { r.right() - 26.0 } else { r.right() - 10.0 };
+    let right = if clear {
+        r.right() - 26.0
+    } else {
+        r.right() - 10.0
+    };
     // exactly one line tall, centred: the caret, the text and the hint share it
     let row_h = ui.ctx().fonts_mut(|f| f.row_height(&fid));
     // egui grows a TextEdit to interact_size.y downwards; size the row to match so it stays centred
     let row_h = row_h.max(ui.spacing().interact_size.y);
-    let tr = Rect::from_min_max(Pos2::new(left, r.center().y - row_h / 2.0), Pos2::new(right.max(left + 1.0), r.center().y + row_h / 2.0));
+    let tr = Rect::from_min_max(
+        Pos2::new(left, r.center().y - row_h / 2.0),
+        Pos2::new(right.max(left + 1.0), r.center().y + row_h / 2.0),
+    );
     if text.is_empty() {
-        let (at, align) = if st.right { (Pos2::new(tr.right() - HINT_GAP, r.center().y), Align2::RIGHT_CENTER) } else { (Pos2::new(tr.left() + HINT_GAP, r.center().y), Align2::LEFT_CENTER) };
-        text_fit(&p, at, align, hint, fid.clone(), TEXT_FAINT(), tr.width() - HINT_GAP);
+        let (at, align) = if st.right {
+            (
+                Pos2::new(tr.right() - HINT_GAP, r.center().y),
+                Align2::RIGHT_CENTER,
+            )
+        } else {
+            (
+                Pos2::new(tr.left() + HINT_GAP, r.center().y),
+                Align2::LEFT_CENTER,
+            )
+        };
+        text_fit(
+            &p,
+            at,
+            align,
+            hint,
+            fid.clone(),
+            TEXT_FAINT(),
+            tr.width() - HINT_GAP,
+        );
     }
-    let align = if st.right { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
-    let te = egui::TextEdit::singleline(text).id(edit_id).frame(egui::Frame::NONE).margin(Vec2::ZERO).font(fid).text_color(TEXT()).password(st.secret).align(align).desired_width(tr.width()).min_size(tr.size());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tr).layout(egui::Layout::left_to_right(egui::Align::Min)));
+    let align = if st.right {
+        Align2::RIGHT_CENTER
+    } else {
+        Align2::LEFT_CENTER
+    };
+    let te = egui::TextEdit::singleline(text)
+        .id(edit_id)
+        .frame(egui::Frame::NONE)
+        .margin(Vec2::ZERO)
+        .font(fid)
+        .text_color(TEXT())
+        .password(st.secret)
+        .align(align)
+        .desired_width(tr.width())
+        .min_size(tr.size());
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(tr)
+            .layout(egui::Layout::left_to_right(egui::Align::Min)),
+    );
     child.visuals_mut().text_cursor.stroke = Stroke::new(1.5, TEXT());
     let resp = child.add(te);
     if clear {
-        let cr = Rect::from_center_size(Pos2::new(r.right() - 14.0, r.center().y), Vec2::splat(16.0));
+        let cr =
+            Rect::from_center_size(Pos2::new(r.right() - 14.0, r.center().y), Vec2::splat(16.0));
         let cresp = ui.interact(cr, id.with("clear"), egui::Sense::click());
-        p.circle_filled(cr.center(), 7.0, if cresp.hovered() { white(70) } else { white(40) });
+        p.circle_filled(
+            cr.center(),
+            7.0,
+            if cresp.hovered() {
+                white(70)
+            } else {
+                white(40)
+            },
+        );
         let d = 2.5;
         let s = Stroke::new(1.3, Color32::from_black_alpha(200));
-        p.line_segment([cr.center() + Vec2::new(-d, -d), cr.center() + Vec2::new(d, d)], s);
-        p.line_segment([cr.center() + Vec2::new(-d, d), cr.center() + Vec2::new(d, -d)], s);
+        p.line_segment(
+            [
+                cr.center() + Vec2::new(-d, -d),
+                cr.center() + Vec2::new(d, d),
+            ],
+            s,
+        );
+        p.line_segment(
+            [
+                cr.center() + Vec2::new(-d, d),
+                cr.center() + Vec2::new(d, -d),
+            ],
+            s,
+        );
         if cresp.on_hover_text("Clear").clicked() {
             text.clear();
             resp.request_focus();
@@ -1845,9 +2809,25 @@ pub fn text_input(ui: &mut Ui, r: Rect, id: egui::Id, text: &mut String, hint: &
 }
 
 /// A search field: [`text_input`] with the magnifier and a clear button.
-pub fn search_field(ui: &mut Ui, r: Rect, text: &mut String, hint: &str, focus: bool) -> egui::Response {
+pub fn search_field(
+    ui: &mut Ui,
+    r: Rect,
+    text: &mut String,
+    hint: &str,
+    focus: bool,
+) -> egui::Response {
     let id = ui.scope_id().with(("search-field", hint));
-    let resp = text_input(ui, r, id, text, hint, FieldStyle { search: true, ..Default::default() });
+    let resp = text_input(
+        ui,
+        r,
+        id,
+        text,
+        hint,
+        FieldStyle {
+            search: true,
+            ..Default::default()
+        },
+    );
     if focus && !resp.has_focus() {
         resp.request_focus();
     }

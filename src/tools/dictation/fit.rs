@@ -22,7 +22,9 @@ const SENTENCE_END: &[char] = &['.', '!', '?', '…'];
 /// (the app didn't say) the text goes in as it is.
 pub fn fit(text: &str, around: Option<&Around>, keep: &[String]) -> String {
     let core = text.trim();
-    let Some(a) = around else { return core.to_string() };
+    let Some(a) = around else {
+        return core.to_string();
+    };
     if core.is_empty() {
         return String::new();
     }
@@ -36,10 +38,19 @@ pub fn fit(text: &str, around: Option<&Around>, keep: &[String]) -> String {
     };
 
     // the sentence goes on after the caret: no full stop of ours
-    let next = a.after.split('\n').next().unwrap_or("").trim_start().chars().next();
+    let next = a
+        .after
+        .split('\n')
+        .next()
+        .unwrap_or("")
+        .trim_start()
+        .chars()
+        .next();
     if let Some(n) = next {
         let one_period = out.ends_with('.') && !out.ends_with("..");
-        if (one_period && (n.is_lowercase() || [',', ';', ':'].contains(&n))) || (SENTENCE_END.contains(&n) && out.ends_with(n)) {
+        if (one_period && (n.is_lowercase() || [',', ';', ':'].contains(&n)))
+            || (SENTENCE_END.contains(&n) && out.ends_with(n))
+        {
             out.pop();
         }
     }
@@ -49,11 +60,22 @@ pub fn fit(text: &str, around: Option<&Around>, keep: &[String]) -> String {
         None => false,
         Some(c) if c.is_whitespace() || OPENING.contains(&c) => false,
         // a straight quote opens when there's a space (or nothing) before it
-        Some('"' | '\'') => !a.before.chars().rev().nth(1).is_none_or(char::is_whitespace),
-        Some(_) => !first.is_some_and(|f| [',', '.', ';', ':', '!', '?', ')', ']', '}'].contains(&f)),
+        Some('"' | '\'') => !a
+            .before
+            .chars()
+            .rev()
+            .nth(1)
+            .is_none_or(char::is_whitespace),
+        Some(_) => {
+            !first.is_some_and(|f| [',', '.', ';', ':', '!', '?', ')', ']', '}'].contains(&f))
+        }
     };
     let space_after = a.after.chars().next().is_some_and(char::is_alphanumeric);
-    format!("{}{out}{}", if space_before { " " } else { "" }, if space_after { " " } else { "" })
+    format!(
+        "{}{out}{}",
+        if space_before { " " } else { "" },
+        if space_after { " " } else { "" }
+    )
 }
 
 /// Nothing before, a new line, or a finished sentence (maybe in quotes).
@@ -67,7 +89,10 @@ fn starts_sentence(left: &str) -> bool {
 
 /// A word, a comma or a dash right before: the sentence is still going.
 fn mid_sentence(left: &str) -> bool {
-    left.trim_end_matches(CLOSING).chars().last().is_some_and(|c| c.is_alphanumeric() || [',', ';', ':', '-', '–', '—'].contains(&c))
+    left.trim_end_matches(CLOSING)
+        .chars()
+        .last()
+        .is_some_and(|c| c.is_alphanumeric() || [',', ';', ':', '-', '–', '—'].contains(&c))
 }
 
 fn capital(s: &str) -> String {
@@ -82,12 +107,19 @@ fn capital(s: &str) -> String {
 /// that keeps its capital: "I", an acronym, a mixed-case word, or one of
 /// `keep`.
 fn small(s: &str, keep: &[String]) -> String {
-    let word: String = s.chars().take_while(|c| c.is_alphanumeric() || *c == '\'' || *c == '’').collect();
+    let word: String = s
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '\'' || *c == '’')
+        .collect();
     let mut wc = word.chars();
-    let Some(f) = wc.next() else { return s.to_string() };
+    let Some(f) = wc.next() else {
+        return s.to_string();
+    };
     let rest_small = wc.clone().all(|c| !c.is_uppercase());
     let is_i = word == "I" || word.starts_with("I'") || word.starts_with("I’");
-    let kept = keep.iter().any(|k| k.split_whitespace().next() == Some(word.as_str()));
+    let kept = keep
+        .iter()
+        .any(|k| k.split_whitespace().next() == Some(word.as_str()));
     if !f.is_uppercase() || !rest_small || is_i || kept {
         return s.to_string();
     }
@@ -99,7 +131,10 @@ mod tests {
     use super::*;
 
     fn at(before: &str, after: &str) -> Around {
-        Around { before: before.into(), after: after.into() }
+        Around {
+            before: before.into(),
+            after: after.into(),
+        }
     }
 
     #[test]
@@ -119,19 +154,40 @@ mod tests {
 
     #[test]
     fn mid_sentence_the_first_letter_is_small() {
-        assert_eq!(fit("And then we left.", Some(&at("We ate,", "")), &[]), " and then we left.");
-        assert_eq!(fit("Привіт усім.", Some(&at("Кажу", "")), &[]), " привіт усім.");
+        assert_eq!(
+            fit("And then we left.", Some(&at("We ate,", "")), &[]),
+            " and then we left."
+        );
+        assert_eq!(
+            fit("Привіт усім.", Some(&at("Кажу", "")), &[]),
+            " привіт усім."
+        );
         // names and the like keep their capital
-        assert_eq!(fit("I think so.", Some(&at("Well", "")), &[]), " I think so.");
+        assert_eq!(
+            fit("I think so.", Some(&at("Well", "")), &[]),
+            " I think so."
+        );
         assert_eq!(fit("NASA said.", Some(&at("Then", "")), &[]), " NASA said.");
-        assert_eq!(fit("iPhone works.", Some(&at("My", "")), &[]), " iPhone works.");
-        assert_eq!(fit("Claude said.", Some(&at("Then", "")), &["Claude".into()]), " Claude said.");
+        assert_eq!(
+            fit("iPhone works.", Some(&at("My", "")), &[]),
+            " iPhone works."
+        );
+        assert_eq!(
+            fit("Claude said.", Some(&at("Then", "")), &["Claude".into()]),
+            " Claude said."
+        );
     }
 
     #[test]
     fn a_new_sentence_starts_with_a_capital() {
-        assert_eq!(fit("then we left.", Some(&at("We ate.", "")), &[]), " Then we left.");
-        assert_eq!(fit("then we left.", Some(&at("Done!\n", "")), &[]), "Then we left.");
+        assert_eq!(
+            fit("then we left.", Some(&at("We ate.", "")), &[]),
+            " Then we left."
+        );
+        assert_eq!(
+            fit("then we left.", Some(&at("Done!\n", "")), &[]),
+            "Then we left."
+        );
         assert_eq!(fit("then.", Some(&at("", "")), &[]), "Then.");
         assert_eq!(fit("ok.", Some(&at("He said \"stop.\"", "")), &[]), " Ok.");
     }

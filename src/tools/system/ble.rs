@@ -71,7 +71,9 @@ mod mac {
     use objc2::rc::{Allocated, Retained};
     use objc2::runtime::{AnyObject, Bool};
     use objc2::{class, define_class, msg_send, AnyThread};
-    use objc2_foundation::{NSArray, NSBundle, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSString};
+    use objc2_foundation::{
+        NSArray, NSBundle, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSString,
+    };
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
     use std::sync::{Mutex, OnceLock};
@@ -141,7 +143,9 @@ mod mac {
     /// The app's bundle explains why it uses Bluetooth (macOS kills an app
     /// that asks without it).
     fn has_usage_text() -> bool {
-        let v: Option<Retained<AnyObject>> = unsafe { msg_send![&*NSBundle::mainBundle(), objectForInfoDictionaryKey: &*ns("NSBluetoothAlwaysUsageDescription")] };
+        let v: Option<Retained<AnyObject>> = unsafe {
+            msg_send![&*NSBundle::mainBundle(), objectForInfoDictionaryKey: &*ns("NSBluetoothAlwaysUsageDescription")]
+        };
         v.is_some()
     }
 
@@ -167,7 +171,8 @@ mod mac {
 
     fn peripheral_id(p: &AnyObject) -> String {
         let id: Option<Retained<AnyObject>> = unsafe { msg_send![p, identifier] };
-        id.and_then(|id| string(unsafe { msg_send![&*id, UUIDString] })).unwrap_or_default()
+        id.and_then(|id| string(unsafe { msg_send![&*id, UUIDString] }))
+            .unwrap_or_default()
     }
 
     fn bytes_of(data: &AnyObject) -> Vec<u8> {
@@ -292,7 +297,10 @@ mod mac {
     fn begin_scan(central: &AnyObject) {
         unsafe {
             let yes = NSNumber::numberWithBool(true);
-            let opts = NSDictionary::<NSString, NSNumber>::from_slices(&[&*ns("kCBScanOptionAllowDuplicates")], &[&*yes]);
+            let opts = NSDictionary::<NSString, NSNumber>::from_slices(
+                &[&*ns("kCBScanOptionAllowDuplicates")],
+                &[&*yes],
+            );
             let none: *mut AnyObject = std::ptr::null_mut();
             let _: () = msg_send![central, scanForPeripheralsWithServices: none, options: &*opts];
         }
@@ -303,7 +311,8 @@ mod mac {
         }
         let Some(core) = CORE.get() else { return };
         let services = NSArray::from_retained_slice(&[uuid(BATTERY_SERVICE)]);
-        let list: Option<Retained<NSArray<AnyObject>>> = unsafe { msg_send![central, retrieveConnectedPeripheralsWithServices: &*services] };
+        let list: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send![central, retrieveConnectedPeripheralsWithServices: &*services] };
         let delegate: &Delegate = &core.delegate.0;
         for p in list.iter().flat_map(|a| a.iter()) {
             let state_: isize = unsafe { msg_send![&*p, state] };
@@ -347,9 +356,15 @@ mod mac {
             let q: *mut AnyObject = (&*queue as *const DispatchQueue).cast_mut().cast();
             msg_send![alloc, initWithDelegate: &*delegate, queue: q]
         };
-        let _ = CORE.set(Core { queue, manager: Keep(manager), delegate: Keep(delegate), held: Mutex::new(vec![]) });
+        let _ = CORE.set(Core {
+            queue,
+            manager: Keep(manager),
+            delegate: Keep(delegate),
+            held: Mutex::new(vec![]),
+        });
         // game controllers report to a menu bar app only with this
-        let _: () = unsafe { msg_send![class!(GCController), setShouldMonitorBackgroundEvents: true] };
+        let _: () =
+            unsafe { msg_send![class!(GCController), setShouldMonitorBackgroundEvents: true] };
     }
 
     pub fn stop() {
@@ -371,7 +386,10 @@ mod mac {
         }
         let (stop, go) = {
             let s = state().lock_ok();
-            (s.scanning_since.is_some_and(|t| t.elapsed() >= SCAN_FOR), s.scanning_since.is_none() && s.last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY))
+            (
+                s.scanning_since.is_some_and(|t| t.elapsed() >= SCAN_FOR),
+                s.scanning_since.is_none() && s.last_scan.is_none_or(|t| t.elapsed() >= SCAN_EVERY),
+            )
         };
         if !(stop || go) {
             return;
@@ -396,7 +414,16 @@ mod mac {
     pub fn gatt() -> Vec<Extra> {
         let mut s = state().lock_ok();
         s.gatt.retain(|_, (_, _, t)| t.elapsed() < GATT_TTL);
-        let mut v: Vec<Extra> = s.gatt.values().map(|(name, pct, _)| Extra { name: name.clone(), pct: *pct, charging: None, address: String::new() }).collect();
+        let mut v: Vec<Extra> = s
+            .gatt
+            .values()
+            .map(|(name, pct, _)| Extra {
+                name: name.clone(),
+                pct: *pct,
+                charging: None,
+                address: String::new(),
+            })
+            .collect();
         v.sort_by(|a, b| a.name.cmp(&b.name));
         v
     }
@@ -405,17 +432,25 @@ mod mac {
     /// 1 charging, 2 full (plugged in).
     pub fn controllers() -> Vec<Extra> {
         let mut out = Vec::new();
-        let list: Option<Retained<NSArray<AnyObject>>> = unsafe { msg_send![class!(GCController), controllers] };
+        let list: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send![class!(GCController), controllers] };
         for c in list.iter().flat_map(|a| a.iter()) {
             let battery: Option<Retained<AnyObject>> = unsafe { msg_send![&*c, battery] };
             let Some(b) = battery else { continue };
-            let Some(name) = string(unsafe { msg_send![&*c, vendorName] }) else { continue };
+            let Some(name) = string(unsafe { msg_send![&*c, vendorName] }) else {
+                continue;
+            };
             let level: f32 = unsafe { msg_send![&*b, batteryLevel] };
             let st: isize = unsafe { msg_send![&*b, batteryState] };
             if !(0.0..=1.0).contains(&level) {
                 continue;
             }
-            out.push(Extra { name, pct: (level * 100.0).round() as u8, charging: (st >= 0).then_some(st >= 1), address: String::new() });
+            out.push(Extra {
+                name,
+                pct: (level * 100.0).round() as u8,
+                charging: (st >= 0).then_some(st >= 1),
+                address: String::new(),
+            });
         }
         out
     }
@@ -425,7 +460,8 @@ mod mac {
         if !has_usage_text() || authorization() != ALLOWED {
             return None;
         }
-        let list: Option<Retained<NSArray<AnyObject>>> = unsafe { msg_send![class!(IOBluetoothDevice), pairedDevices] };
+        let list: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send![class!(IOBluetoothDevice), pairedDevices] };
         let mut v: Vec<String> = list
             .iter()
             .flat_map(|a| a.iter())
@@ -444,7 +480,8 @@ mod mac {
         if !has_usage_text() || authorization() != ALLOWED {
             return Vec::new();
         }
-        let list: Option<Retained<NSArray<AnyObject>>> = unsafe { msg_send![class!(IOBluetoothDevice), pairedDevices] };
+        let list: Option<Retained<NSArray<AnyObject>>> =
+            unsafe { msg_send![class!(IOBluetoothDevice), pairedDevices] };
         let single = objc2::sel!(batteryPercentSingle);
         list.iter()
             .flat_map(|a| a.iter())
@@ -453,12 +490,19 @@ mod mac {
             .filter_map(|d| {
                 let pct: u8 = unsafe { msg_send![&*d, batteryPercentSingle] };
                 let name = string(unsafe { msg_send![&*d, name] })?;
-                let address = string(unsafe { msg_send![&*d, addressString] }).map(|a| a.to_lowercase().replace(':', "-")).unwrap_or_default();
+                let address = string(unsafe { msg_send![&*d, addressString] })
+                    .map(|a| a.to_lowercase().replace(':', "-"))
+                    .unwrap_or_default();
                 static LOGGED: AtomicBool = AtomicBool::new(false);
                 if !LOGGED.swap(true, Ordering::Relaxed) {
                     eprintln!("[bt] classic battery: {name} {address} {pct}%");
                 }
-                (1..=100).contains(&pct).then_some(Extra { name, pct, charging: None, address })
+                (1..=100).contains(&pct).then_some(Extra {
+                    name,
+                    pct,
+                    charging: None,
+                    address,
+                })
             })
             .collect()
     }

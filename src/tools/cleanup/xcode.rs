@@ -17,39 +17,115 @@ pub(super) fn scan(c: &mut Ctx) {
             continue;
         }
         let ws = workspace_of(&p);
-        let name = ws.as_ref().and_then(|w| w.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| derived_data_name(&super::engine::fname(&p)));
+        let name = ws
+            .as_ref()
+            .and_then(|w| w.file_stem())
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| derived_data_name(&super::engine::fname(&p)));
         let gone = ws.as_ref().is_some_and(|w| !w.exists());
         let (v, why) = if xcode_open {
-            (Verdict::Ask, "Xcode is open — quit it first or allow anyway".to_string())
+            (
+                Verdict::Ask,
+                "Xcode is open — quit it first or allow anyway".to_string(),
+            )
         } else if gone {
             (Verdict::Safe, "Its project no longer exists".to_string())
         } else {
-            (Verdict::Safe, "Build products and index; Xcode rebuilds them".to_string())
+            (
+                Verdict::Safe,
+                "Build products and index; Xcode rebuilds them".to_string(),
+            )
         };
-        c.add(Group::Developer, &format!("Derived Data · {name}"), p, "Build Data", v, &why);
+        c.add(
+            Group::Developer,
+            &format!("Derived Data · {name}"),
+            p,
+            "Build Data",
+            v,
+            &why,
+        );
         if xcode_open {
             if let Some(it) = c.items.last_mut() {
                 it.app_running = true;
             }
         }
     }
-    c.add(Group::Developer, "Xcode Caches", x.join("Xcode/DocumentationCache"), "Caches", Verdict::Safe, "Documentation cache");
-    c.add(Group::Developer, "Swift module cache", x.join("Xcode/ModuleCache.noindex"), "Caches", Verdict::Safe, "Precompiled module cache");
-    c.add(Group::Developer, "SwiftUI Previews", x.join("Xcode/UserData/Previews"), "Caches", Verdict::Safe, "Preview simulator data");
-    c.add(Group::Developer, "iOS Device Logs", x.join("Xcode/iOS Device Logs"), "Logs", Verdict::Safe, "Device logs collected by Xcode");
-    c.add(Group::Developer, "Simulator caches", x.join("CoreSimulator/Caches"), "Caches", Verdict::Safe, "Simulator dyld caches; rebuilt on boot");
+    c.add(
+        Group::Developer,
+        "Xcode Caches",
+        x.join("Xcode/DocumentationCache"),
+        "Caches",
+        Verdict::Safe,
+        "Documentation cache",
+    );
+    c.add(
+        Group::Developer,
+        "Swift module cache",
+        x.join("Xcode/ModuleCache.noindex"),
+        "Caches",
+        Verdict::Safe,
+        "Precompiled module cache",
+    );
+    c.add(
+        Group::Developer,
+        "SwiftUI Previews",
+        x.join("Xcode/UserData/Previews"),
+        "Caches",
+        Verdict::Safe,
+        "Preview simulator data",
+    );
+    c.add(
+        Group::Developer,
+        "iOS Device Logs",
+        x.join("Xcode/iOS Device Logs"),
+        "Logs",
+        Verdict::Safe,
+        "Device logs collected by Xcode",
+    );
+    c.add(
+        Group::Developer,
+        "Simulator caches",
+        x.join("CoreSimulator/Caches"),
+        "Caches",
+        Verdict::Safe,
+        "Simulator dyld caches; rebuilt on boot",
+    );
     // device support: the newest version of each OS stays on offer as a question
-    for os in ["iOS DeviceSupport", "watchOS DeviceSupport", "macOS DeviceSupport", "tvOS DeviceSupport", "visionOS DeviceSupport"] {
+    for os in [
+        "iOS DeviceSupport",
+        "watchOS DeviceSupport",
+        "macOS DeviceSupport",
+        "tvOS DeviceSupport",
+        "visionOS DeviceSupport",
+    ] {
         let label = os.replace(" DeviceSupport", "");
-        let found: Vec<(PathBuf, Option<DsVersion>)> = super::engine::children(&x.join("Xcode").join(os)).into_iter().filter(|p| p.is_dir()).map(|p| (p.clone(), DsVersion::parse(&super::engine::fname(&p)))).collect();
+        let found: Vec<(PathBuf, Option<DsVersion>)> =
+            super::engine::children(&x.join("Xcode").join(os))
+                .into_iter()
+                .filter(|p| p.is_dir())
+                .map(|p| (p.clone(), DsVersion::parse(&super::engine::fname(&p))))
+                .collect();
         let newest = found.iter().filter_map(|(_, v)| v.as_ref()).max().cloned();
         for (p, v) in found {
             let (verdict, why) = match &v {
                 None => (Verdict::Ask, "Couldn't tell which OS version this is for"),
-                Some(v) if Some(v) == newest.as_ref() => (Verdict::Ask, "Newest device support — needed to debug on that device"),
-                Some(_) => (Verdict::Safe, "Support files for an older OS version; recreated when you connect that device"),
+                Some(v) if Some(v) == newest.as_ref() => (
+                    Verdict::Ask,
+                    "Newest device support — needed to debug on that device",
+                ),
+                Some(_) => (
+                    Verdict::Safe,
+                    "Support files for an older OS version; recreated when you connect that device",
+                ),
             };
-            c.add(Group::Developer, &format!("{label} {}", super::engine::fname(&p)), p, "Device Support", verdict, why);
+            c.add(
+                Group::Developer,
+                &format!("{label} {}", super::engine::fname(&p)),
+                p,
+                "Device Support",
+                verdict,
+                why,
+            );
         }
     }
     scan_archives(c, &x.join("Xcode/Archives"));
@@ -58,7 +134,13 @@ pub(super) fn scan(c: &mut Ctx) {
 /// "MyApp-abcdefghijk" → "MyApp".
 fn derived_data_name(folder: &str) -> String {
     match folder.rsplit_once('-') {
-        Some((name, hash)) if !name.is_empty() && hash.len() >= 20 && hash.chars().all(|c| c.is_ascii_alphanumeric()) => name.to_string(),
+        Some((name, hash))
+            if !name.is_empty()
+                && hash.len() >= 20
+                && hash.chars().all(|c| c.is_ascii_alphanumeric()) =>
+        {
+            name.to_string()
+        }
         _ => folder.to_string(),
     }
 }
@@ -82,7 +164,10 @@ impl DsVersion {
     pub fn parse(name: &str) -> Option<DsVersion> {
         let toks: Vec<&str> = name.split_whitespace().collect();
         let num = |t: &str| -> Option<Vec<u32>> {
-            if t.is_empty() || !t.starts_with(|c: char| c.is_ascii_digit()) || !t.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            if t.is_empty()
+                || !t.starts_with(|c: char| c.is_ascii_digit())
+                || !t.chars().all(|c| c.is_ascii_digit() || c == '.')
+            {
                 return None;
             }
             t.split('.').map(|x| x.parse().ok()).collect()
@@ -92,8 +177,15 @@ impl DsVersion {
             Some(v) => (0, v),
             None => (1, toks.get(1).and_then(|t| num(t))?),
         };
-        let build = toks.get(vi + 1).filter(|t| t.starts_with('(')).map(|t| t.trim_matches(|c| c == '(' || c == ')').to_string()).unwrap_or_default();
-        Some(DsVersion { version, build: build_key(&build) })
+        let build = toks
+            .get(vi + 1)
+            .filter(|t| t.starts_with('('))
+            .map(|t| t.trim_matches(|c| c == '(' || c == ')').to_string())
+            .unwrap_or_default();
+        Some(DsVersion {
+            version,
+            build: build_key(&build),
+        })
     }
 }
 
@@ -101,10 +193,19 @@ impl DsVersion {
 fn build_key(b: &str) -> String {
     let digits_first: String = b.chars().take_while(|c| c.is_ascii_digit()).collect();
     let rest = &b[digits_first.len()..];
-    let letters: String = rest.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    let letters: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .collect();
     let tail = &rest[letters.len()..];
     let tail_num: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
-    format!("{:0>4}{}{:0>8}{}", digits_first, letters, tail_num, &tail[tail_num.len()..])
+    format!(
+        "{:0>4}{}{:0>8}{}",
+        digits_first,
+        letters,
+        tail_num,
+        &tail[tail_num.len()..]
+    )
 }
 
 // ---- archives: grouped by app, the newest of each app stays
@@ -119,11 +220,24 @@ struct Archive {
 fn read_archive(p: &Path) -> Archive {
     let info = crate::kit::plist::read(&p.join("Info.plist"));
     let props = info.as_ref().and_then(|i| i.get("ApplicationProperties"));
-    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     // "MyApp 12.11.2026, 10.21" → "MyApp"
-    let from_name = stem.split_once(' ').map(|(a, _)| a.to_string()).unwrap_or(stem.clone());
-    let name = info.as_ref().and_then(|i| i.get_str("Name")).map(str::to_string).unwrap_or(from_name);
-    let app = props.and_then(|p| p.get_str("CFBundleIdentifier")).map(str::to_string).unwrap_or_else(|| name.clone());
+    let from_name = stem
+        .split_once(' ')
+        .map(|(a, _)| a.to_string())
+        .unwrap_or(stem.clone());
+    let name = info
+        .as_ref()
+        .and_then(|i| i.get_str("Name"))
+        .map(str::to_string)
+        .unwrap_or(from_name);
+    let app = props
+        .and_then(|p| p.get_str("CFBundleIdentifier"))
+        .map(str::to_string)
+        .unwrap_or_else(|| name.clone());
     let ver = props.and_then(|p| p.get_str("CFBundleShortVersionString"));
     let build = props.and_then(|p| p.get_str("CFBundleVersion"));
     let label = match (ver, build) {
@@ -131,13 +245,28 @@ fn read_archive(p: &Path) -> Archive {
         (Some(v), None) => format!("{name} {v}"),
         _ => stem,
     };
-    let when = p.symlink_metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
-    Archive { path: p.to_path_buf(), app, label, when }
+    let when = p
+        .symlink_metadata()
+        .and_then(|m| m.modified())
+        .unwrap_or(std::time::UNIX_EPOCH);
+    Archive {
+        path: p.to_path_buf(),
+        app,
+        label,
+        when,
+    }
 }
 
 fn scan_archives(c: &mut Ctx, root: &Path) {
     for (a, v, why) in archive_plan(root) {
-        c.add(Group::Developer, &format!("Archive · {}", a.label), a.path, "Archives", v, why);
+        c.add(
+            Group::Developer,
+            &format!("Archive · {}", a.label),
+            a.path,
+            "Archives",
+            v,
+            why,
+        );
     }
 }
 
@@ -155,7 +284,17 @@ fn archive_plan(root: &Path) -> Vec<(Archive, Verdict, &'static str)> {
     for (_, mut list) in by_app {
         list.sort_by_key(|a| std::cmp::Reverse(a.when));
         for (i, a) in list.into_iter().enumerate() {
-            let (v, why) = if i == 0 { (Verdict::Keep, "Latest archive of this app — keeps the debug symbols of what you shipped") } else { (Verdict::Ask, "Older archive; the latest one of this app is kept") };
+            let (v, why) = if i == 0 {
+                (
+                    Verdict::Keep,
+                    "Latest archive of this app — keeps the debug symbols of what you shipped",
+                )
+            } else {
+                (
+                    Verdict::Ask,
+                    "Older archive; the latest one of this app is kept",
+                )
+            };
             out.push((a, v, why));
         }
     }
@@ -166,7 +305,10 @@ fn archive_plan(root: &Path) -> Vec<(Archive, Verdict, &'static str)> {
 
 fn xcrun() -> Option<PathBuf> {
     // `xcrun` without developer tools pops up an install prompt: check first
-    let dev = std::process::Command::new("/usr/bin/xcode-select").arg("-p").output().ok()?;
+    let dev = std::process::Command::new("/usr/bin/xcode-select")
+        .arg("-p")
+        .output()
+        .ok()?;
     if !dev.status.success() || !home().join("Library/Developer/CoreSimulator").is_dir() {
         return None;
     }
@@ -175,20 +317,51 @@ fn xcrun() -> Option<PathBuf> {
 
 pub(super) fn scan_simulators(c: &mut Ctx) {
     let Some(xcrun) = xcrun() else { return };
-    if let Some(o) = run::output(std::process::Command::new(&xcrun).args(["simctl", "list", "devices", "-j"]), Duration::from_secs(20)) {
+    if let Some(o) = run::output(
+        std::process::Command::new(&xcrun).args(["simctl", "list", "devices", "-j"]),
+        Duration::from_secs(20),
+    ) {
         for d in unavailable_devices(&o.stdout) {
-            let dir = home().join("Library/Developer/CoreSimulator/Devices").join(&d.udid);
-            let why = if d.why.is_empty() { "Its runtime is gone, so it can't start".to_string() } else { format!("Can't start: {}", d.why) };
-            c.add(Group::Developer, &format!("Simulator · {}", d.name), dir, "Simulators", Verdict::Safe, &why);
+            let dir = home()
+                .join("Library/Developer/CoreSimulator/Devices")
+                .join(&d.udid);
+            let why = if d.why.is_empty() {
+                "Its runtime is gone, so it can't start".to_string()
+            } else {
+                format!("Can't start: {}", d.why)
+            };
+            c.add(
+                Group::Developer,
+                &format!("Simulator · {}", d.name),
+                dir,
+                "Simulators",
+                Verdict::Safe,
+                &why,
+            );
             if let Some(it) = c.items.last_mut().filter(|i| i.kind == "Simulators") {
                 it.action = Action::SimDevice(d.udid.clone());
             }
         }
     }
-    if let Some(o) = run::output(std::process::Command::new(&xcrun).args(["simctl", "runtime", "list", "-j"]), Duration::from_secs(20)) {
+    if let Some(o) = run::output(
+        std::process::Command::new(&xcrun).args(["simctl", "runtime", "list", "-j"]),
+        Duration::from_secs(20),
+    ) {
         for r in old_runtimes(&o.stdout) {
             let path = PathBuf::from(format!("/Library/Developer/CoreSimulator/Volumes/{}", r.id));
-            c.add_action(Group::Developer, &format!("Simulator runtime · {} {}", r.platform, r.version), path, "Simulators", Verdict::Ask, &format!("Older {} runtime; Xcode downloads it again if a project needs it", r.platform), Action::SimRuntime(r.id.clone()), r.bytes);
+            c.add_action(
+                Group::Developer,
+                &format!("Simulator runtime · {} {}", r.platform, r.version),
+                path,
+                "Simulators",
+                Verdict::Ask,
+                &format!(
+                    "Older {} runtime; Xcode downloads it again if a project needs it",
+                    r.platform
+                ),
+                Action::SimRuntime(r.id.clone()),
+                r.bytes,
+            );
         }
     }
 }
@@ -202,16 +375,24 @@ pub struct SimDevice {
 
 /// Devices `simctl list devices -j` marks unavailable.
 pub fn unavailable_devices(json: &[u8]) -> Vec<SimDevice> {
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(json) else { return vec![] };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(json) else {
+        return vec![];
+    };
     let mut out = Vec::new();
     for (_, list) in v["devices"].as_object().into_iter().flatten() {
         for d in list.as_array().into_iter().flatten() {
-            let (Some(udid), Some(false)) = (d["udid"].as_str(), d["isAvailable"].as_bool()) else { continue };
+            let (Some(udid), Some(false)) = (d["udid"].as_str(), d["isAvailable"].as_bool()) else {
+                continue;
+            };
             // a udid is only ever hex and dashes: it becomes a folder name
             if udid.is_empty() || !udid.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
                 continue;
             }
-            out.push(SimDevice { udid: udid.into(), name: d["name"].as_str().unwrap_or("Simulator").into(), why: d["availabilityError"].as_str().unwrap_or("").into() });
+            out.push(SimDevice {
+                udid: udid.into(),
+                name: d["name"].as_str().unwrap_or("Simulator").into(),
+                why: d["availabilityError"].as_str().unwrap_or("").into(),
+            });
         }
     }
     out
@@ -228,7 +409,9 @@ pub struct Runtime {
 /// Deletable runtimes from `simctl runtime list -j`, except the newest of each
 /// platform.
 pub fn old_runtimes(json: &[u8]) -> Vec<Runtime> {
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(json) else { return vec![] };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(json) else {
+        return vec![];
+    };
     let mut all: Vec<(Vec<u32>, Runtime, bool)> = Vec::new();
     for (key, r) in v.as_object().into_iter().flatten() {
         let id = r["identifier"].as_str().unwrap_or(key).to_string();
@@ -238,8 +421,18 @@ pub fn old_runtimes(json: &[u8]) -> Vec<Runtime> {
         let version = r["version"].as_str().unwrap_or("").to_string();
         let platform = platform_name(r["platformIdentifier"].as_str().unwrap_or(""));
         let key: Vec<u32> = version.split('.').filter_map(|x| x.parse().ok()).collect();
-        let deletable = r["deletable"].as_bool().unwrap_or(false) && r["state"].as_str().is_none_or(|s| s == "Ready");
-        all.push((key, Runtime { id, platform, version, bytes: r["sizeBytes"].as_u64().unwrap_or(0) }, deletable));
+        let deletable = r["deletable"].as_bool().unwrap_or(false)
+            && r["state"].as_str().is_none_or(|s| s == "Ready");
+        all.push((
+            key,
+            Runtime {
+                id,
+                platform,
+                version,
+                bytes: r["sizeBytes"].as_u64().unwrap_or(0),
+            },
+            deletable,
+        ));
     }
     let mut newest: BTreeMap<String, Vec<u32>> = BTreeMap::new();
     for (k, r, _) in &all {
@@ -248,14 +441,24 @@ pub fn old_runtimes(json: &[u8]) -> Vec<Runtime> {
             *e = k.clone();
         }
     }
-    let mut out: Vec<Runtime> = all.into_iter().filter(|(k, r, del)| *del && newest.get(&r.platform) != Some(k)).map(|(_, r, _)| r).collect();
+    let mut out: Vec<Runtime> = all
+        .into_iter()
+        .filter(|(k, r, del)| *del && newest.get(&r.platform) != Some(k))
+        .map(|(_, r, _)| r)
+        .collect();
     out.sort_by(|a, b| a.platform.cmp(&b.platform).then(a.version.cmp(&b.version)));
     out
 }
 
 fn platform_name(id: &str) -> String {
     let id = id.to_lowercase();
-    for (k, n) in [("iphone", "iOS"), ("watch", "watchOS"), ("appletv", "tvOS"), ("xr", "visionOS"), ("vision", "visionOS")] {
+    for (k, n) in [
+        ("iphone", "iOS"),
+        ("watch", "watchOS"),
+        ("appletv", "tvOS"),
+        ("xr", "visionOS"),
+        ("vision", "visionOS"),
+    ] {
         if id.contains(k) {
             return n.into();
         }
@@ -271,11 +474,20 @@ pub(super) fn remove(action: &Action) -> Result<(), String> {
         Action::SimRuntime(id) => vec!["simctl", "runtime", "delete", id],
         _ => return Err("not a simulator".into()),
     };
-    let o = run::output(std::process::Command::new(xcrun).args(&args), Duration::from_secs(120)).ok_or("simctl didn't answer")?;
+    let o = run::output(
+        std::process::Command::new(xcrun).args(&args),
+        Duration::from_secs(120),
+    )
+    .ok_or("simctl didn't answer")?;
     if o.status.success() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("simctl failed").to_string())
+        Err(String::from_utf8_lossy(&o.stderr)
+            .trim()
+            .lines()
+            .last()
+            .unwrap_or("simctl failed")
+            .to_string())
     }
 }
 
@@ -293,17 +505,31 @@ mod tests {
         assert_eq!(v("Watch2,7 5.2.1 (16U113)"), Some(vec![5, 2, 1]));
         assert_eq!(v("14.2"), Some(vec![14, 2]));
         assert_eq!(v("Something odd"), None);
-        let mut l = ["Watch2,7 5.2.1 (16U113)", "iPhone16,2 17.2 (21C62)", "9.3", "17.10 (21A)"].map(|s| DsVersion::parse(s).unwrap());
+        let mut l = [
+            "Watch2,7 5.2.1 (16U113)",
+            "iPhone16,2 17.2 (21C62)",
+            "9.3",
+            "17.10 (21A)",
+        ]
+        .map(|s| DsVersion::parse(s).unwrap());
         l.sort();
         assert_eq!(l.last().unwrap().version, vec![17, 10]);
         // same version: the later build wins
-        assert!(DsVersion::parse("17.2 (21C101)").unwrap() > DsVersion::parse("17.2 (21C62)").unwrap());
+        assert!(
+            DsVersion::parse("17.2 (21C101)").unwrap() > DsVersion::parse("17.2 (21C62)").unwrap()
+        );
     }
 
     #[test]
     fn derived_data_names() {
-        assert_eq!(derived_data_name("MyApp-abcdefghijklmnopqrstuvwxyz"), "MyApp");
-        assert_eq!(derived_data_name("my-app-abcdefghijklmnopqrstuvwxyz"), "my-app");
+        assert_eq!(
+            derived_data_name("MyApp-abcdefghijklmnopqrstuvwxyz"),
+            "MyApp"
+        );
+        assert_eq!(
+            derived_data_name("my-app-abcdefghijklmnopqrstuvwxyz"),
+            "my-app"
+        );
         assert_eq!(derived_data_name("NoHash"), "NoHash");
         assert_eq!(derived_data_name("short-abc"), "short-abc");
     }
@@ -313,7 +539,10 @@ mod tests {
         let base = std::env::temp_dir().join(format!("cmdmeow-dd-{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap();
         std::fs::write(base.join("info.plist"), "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>LastAccessedDate</key><date>2026-01-01T00:00:00Z</date><key>WorkspacePath</key><string>/Users/me/gone/Foo.xcodeproj</string></dict></plist>").unwrap();
-        assert_eq!(workspace_of(&base), Some(PathBuf::from("/Users/me/gone/Foo.xcodeproj")));
+        assert_eq!(
+            workspace_of(&base),
+            Some(PathBuf::from("/Users/me/gone/Foo.xcodeproj"))
+        );
         std::fs::remove_dir_all(&base).unwrap();
     }
 
@@ -359,11 +588,23 @@ mod tests {
         mk("2026-02-01", "Bar 01.02.2026, 11.00.xcarchive", 200);
         let a = read_archive(&base.join("2026-01-01/Foo 01.01.2026, 10.00.xcarchive"));
         assert_eq!(a.app, "Foo");
-        let plan: Vec<(String, Verdict)> = archive_plan(&base).into_iter().map(|(a, v, _)| (a.path.strip_prefix(&base).unwrap().display().to_string(), v)).collect();
+        let plan: Vec<(String, Verdict)> = archive_plan(&base)
+            .into_iter()
+            .map(|(a, v, _)| (a.path.strip_prefix(&base).unwrap().display().to_string(), v))
+            .collect();
         assert_eq!(plan.len(), 3);
-        assert!(plan.contains(&("2026-02-01/Bar 01.02.2026, 11.00.xcarchive".into(), Verdict::Keep)));
-        assert!(plan.contains(&("2026-02-01/Foo 01.02.2026, 10.00.xcarchive".into(), Verdict::Keep)));
-        assert!(plan.contains(&("2026-01-01/Foo 01.01.2026, 10.00.xcarchive".into(), Verdict::Ask)));
+        assert!(plan.contains(&(
+            "2026-02-01/Bar 01.02.2026, 11.00.xcarchive".into(),
+            Verdict::Keep
+        )));
+        assert!(plan.contains(&(
+            "2026-02-01/Foo 01.02.2026, 10.00.xcarchive".into(),
+            Verdict::Keep
+        )));
+        assert!(plan.contains(&(
+            "2026-01-01/Foo 01.01.2026, 10.00.xcarchive".into(),
+            Verdict::Ask
+        )));
         std::fs::remove_dir_all(&base).unwrap();
     }
 }

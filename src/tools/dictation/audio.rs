@@ -14,7 +14,15 @@ pub fn to_mono(samples: &[f32], channels: usize, planar: bool) -> Vec<f32> {
     let frames = samples.len() / channels;
     (0..frames)
         .map(|f| {
-            let sum: f32 = (0..channels).map(|c| if planar { samples[c * frames + f] } else { samples[f * channels + c] }).sum();
+            let sum: f32 = (0..channels)
+                .map(|c| {
+                    if planar {
+                        samples[c * frames + f]
+                    } else {
+                        samples[f * channels + c]
+                    }
+                })
+                .sum();
             sum / channels as f32
         })
         .collect()
@@ -82,7 +90,9 @@ pub fn tidy_text(segments: &[String]) -> String {
     let mut out = String::new();
     for s in segments {
         let t = s.trim();
-        let aside = (t.starts_with('[') && t.ends_with(']')) || (t.starts_with('(') && t.ends_with(')')) || (t.starts_with('*') && t.ends_with('*'));
+        let aside = (t.starts_with('[') && t.ends_with(']'))
+            || (t.starts_with('(') && t.ends_with(')'))
+            || (t.starts_with('*') && t.ends_with('*'));
         if t.is_empty() || aside {
             continue;
         }
@@ -126,7 +136,11 @@ mod imp {
     use objc2::rc::Retained;
     use objc2::runtime::ProtocolObject;
     use objc2::{define_class, msg_send, AnyThread, DefinedClass};
-    use objc2_av_foundation::{AVCaptureAudioDataOutput, AVCaptureAudioDataOutputSampleBufferDelegate, AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession, AVMediaTypeAudio};
+    use objc2_av_foundation::{
+        AVCaptureAudioDataOutput, AVCaptureAudioDataOutputSampleBufferDelegate,
+        AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput,
+        AVCaptureSession, AVMediaTypeAudio,
+    };
     use objc2_core_media::CMSampleBuffer;
     use objc2_foundation::{NSObject, NSObjectProtocol};
     use std::ffi::c_void;
@@ -157,7 +171,12 @@ mod imp {
         fn CMAudioFormatDescriptionGetStreamBasicDescription(desc: *const c_void) -> *const Asbd;
         fn CMSampleBufferGetDataBuffer(sb: *const c_void) -> *const c_void;
         fn CMBlockBufferGetDataLength(b: *const c_void) -> usize;
-        fn CMBlockBufferCopyDataBytes(b: *const c_void, offset: usize, len: usize, dest: *mut c_void) -> i32;
+        fn CMBlockBufferCopyDataBytes(
+            b: *const c_void,
+            offset: usize,
+            len: usize,
+            dest: *mut c_void,
+        ) -> i32;
     }
 
     /// What the capture queue hands over, at the 16 kHz the model takes.
@@ -178,7 +197,11 @@ mod imp {
                     // resample in whole runs of the ratio; the rest waits
                     self.carry.extend_from_slice(&mono);
                     let ratio = rate / MODEL_RATE as f64;
-                    let whole = if ratio >= 1.0 { ((self.carry.len() as f64 / ratio).floor() * ratio).floor() as usize } else { self.carry.len() };
+                    let whole = if ratio >= 1.0 {
+                        ((self.carry.len() as f64 / ratio).floor() * ratio).floor() as usize
+                    } else {
+                        self.carry.len()
+                    };
                     if whole > 0 {
                         let chunk: Vec<f32> = self.carry.drain(..whole).collect();
                         self.pcm.extend(resample(&chunk, rate, MODEL_RATE));
@@ -201,16 +224,23 @@ mod imp {
             if desc.is_null() {
                 return Err("no format".into());
             }
-            let asbd = *CMAudioFormatDescriptionGetStreamBasicDescription(desc).as_ref().ok_or("no stream description")?;
+            let asbd = *CMAudioFormatDescriptionGetStreamBasicDescription(desc)
+                .as_ref()
+                .ok_or("no stream description")?;
             let ch = asbd.channels_per_frame as usize;
             if asbd.format_id != LPCM || ch == 0 {
                 return Err(format!("not linear PCM ({:08x}, {ch} ch)", asbd.format_id));
             }
             let float = asbd.format_flags & FLAG_FLOAT != 0 && asbd.bits_per_channel == 32;
-            let int16 = !float && asbd.format_flags & FLAG_SIGNED != 0 && asbd.bits_per_channel == 16;
-            let int32 = !float && asbd.format_flags & FLAG_SIGNED != 0 && asbd.bits_per_channel == 32;
+            let int16 =
+                !float && asbd.format_flags & FLAG_SIGNED != 0 && asbd.bits_per_channel == 16;
+            let int32 =
+                !float && asbd.format_flags & FLAG_SIGNED != 0 && asbd.bits_per_channel == 32;
             if !float && !int16 && !int32 {
-                return Err(format!("unsupported samples (flags {:x}, {} bits)", asbd.format_flags, asbd.bits_per_channel));
+                return Err(format!(
+                    "unsupported samples (flags {:x}, {} bits)",
+                    asbd.format_flags, asbd.bits_per_channel
+                ));
             }
             let data = CMSampleBufferGetDataBuffer(raw);
             if data.is_null() {
@@ -218,15 +248,26 @@ mod imp {
             }
             let len = CMBlockBufferGetDataLength(data);
             let mut bytes = vec![0u8; len];
-            if len > 0 && CMBlockBufferCopyDataBytes(data, 0, len, bytes.as_mut_ptr() as *mut c_void) != 0 {
+            if len > 0
+                && CMBlockBufferCopyDataBytes(data, 0, len, bytes.as_mut_ptr() as *mut c_void) != 0
+            {
                 return Err("copying the samples failed".into());
             }
             let samples: Vec<f32> = if float {
-                bytes.chunks_exact(4).map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]])).collect()
+                bytes
+                    .chunks_exact(4)
+                    .map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect()
             } else if int32 {
-                bytes.chunks_exact(4).map(|b| i32::from_ne_bytes([b[0], b[1], b[2], b[3]]) as f32 / 2_147_483_648.0).collect()
+                bytes
+                    .chunks_exact(4)
+                    .map(|b| i32::from_ne_bytes([b[0], b[1], b[2], b[3]]) as f32 / 2_147_483_648.0)
+                    .collect()
             } else {
-                bytes.chunks_exact(2).map(|b| i16::from_ne_bytes([b[0], b[1]]) as f32 / 32768.0).collect()
+                bytes
+                    .chunks_exact(2)
+                    .map(|b| i16::from_ne_bytes([b[0], b[1]]) as f32 / 32768.0)
+                    .collect()
             };
             let planar = asbd.format_flags & FLAG_PLANAR != 0 && ch > 1;
             Ok((to_mono(&samples, ch, planar), asbd.sample_rate))
@@ -272,8 +313,10 @@ mod imp {
         pub fn start() -> Result<Mic, String> {
             unsafe {
                 let media = AVMediaTypeAudio.ok_or("no audio media type")?;
-                let dev = AVCaptureDevice::defaultDeviceWithMediaType(media).ok_or("No microphone")?;
-                let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev).map_err(|e| e.localizedDescription().to_string())?;
+                let dev =
+                    AVCaptureDevice::defaultDeviceWithMediaType(media).ok_or("No microphone")?;
+                let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev)
+                    .map_err(|e| e.localizedDescription().to_string())?;
                 let session = AVCaptureSession::new();
                 let output = AVCaptureAudioDataOutput::new();
                 if !session.canAddInput(&input) || !session.canAddOutput(&output) {
@@ -284,14 +327,21 @@ mod imp {
                 let buf = Arc::new(Mutex::new(Buf::default()));
                 let sink = Sink::new(buf.clone());
                 let queue = DispatchQueue::new("cmdmeow.dictation", None);
-                output.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(&*sink)), Some(&queue));
+                output.setSampleBufferDelegate_queue(
+                    Some(ProtocolObject::from_ref(&*sink)),
+                    Some(&queue),
+                );
                 // starting takes a moment; not on the UI thread
                 let s = SendBox(session.clone());
                 serial(move || {
                     let s = s;
                     s.0.startRunning();
                 });
-                Ok(Mic { session, _sink: sink, buf })
+                Ok(Mic {
+                    session,
+                    _sink: sink,
+                    buf,
+                })
             }
         }
 
@@ -302,7 +352,10 @@ mod imp {
 
         /// Voice heard so far.
         pub fn seconds(&self) -> f32 {
-            self.buf.lock().map(|b| b.pcm.len() as f32 / MODEL_RATE as f32).unwrap_or(0.0)
+            self.buf
+                .lock()
+                .map(|b| b.pcm.len() as f32 / MODEL_RATE as f32)
+                .unwrap_or(0.0)
         }
 
         pub fn failed(&self) -> Option<String> {
@@ -316,7 +369,10 @@ mod imp {
                 let s = s;
                 unsafe { s.0.stopRunning() };
             });
-            self.buf.lock().map(|mut b| std::mem::take(&mut b.pcm)).unwrap_or_default()
+            self.buf
+                .lock()
+                .map(|mut b| std::mem::take(&mut b.pcm))
+                .unwrap_or_default()
         }
     }
 
@@ -324,7 +380,8 @@ mod imp {
     /// never overtakes its start.
     fn serial(f: impl FnOnce() + Send + 'static) {
         type Job = Box<dyn FnOnce() + Send>;
-        static Q: std::sync::OnceLock<Mutex<std::sync::mpsc::Sender<Job>>> = std::sync::OnceLock::new();
+        static Q: std::sync::OnceLock<Mutex<std::sync::mpsc::Sender<Job>>> =
+            std::sync::OnceLock::new();
         let q = Q.get_or_init(|| {
             let (tx, rx) = std::sync::mpsc::channel::<Job>();
             std::thread::spawn(move || {
@@ -375,7 +432,12 @@ mod tests {
 
     #[test]
     fn text_is_tidied() {
-        let segs = vec![" Привіт,".to_string(), " [music] ".into(), "  як справи?  ".into(), "(laughs)".into()];
+        let segs = vec![
+            " Привіт,".to_string(),
+            " [music] ".into(),
+            "  як справи?  ".into(),
+            "(laughs)".into(),
+        ];
         assert_eq!(tidy_text(&segs), "Привіт, як справи?");
         assert_eq!(tidy_text(&[]), "");
     }

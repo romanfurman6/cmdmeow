@@ -30,16 +30,46 @@ pub fn install_panic_log() {
 
 fn write_panic(info: &std::panic::PanicHookInfo) -> std::io::Result<()> {
     use std::io::Write;
-    let dir = dirs::home_dir().unwrap_or_else(std::env::temp_dir).join("Library/Logs/CmdMeow");
+    let dir = dirs::home_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Library/Logs/CmdMeow");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(if super::fs::is_dev() { "crash-dev.log" } else { "crash.log" });
+    let path = dir.join(if super::fs::is_dev() {
+        "crash-dev.log"
+    } else {
+        "crash.log"
+    });
     // keep the file small: start over once it passes 1 MB
-    let append = std::fs::metadata(&path).map(|m| m.len() < 1 << 20).unwrap_or(true);
-    let mut f = std::fs::OpenOptions::new().create(true).write(true).append(append).truncate(!append).open(&path)?;
-    let msg = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_else(|| "panic".into());
-    let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+    let append = std::fs::metadata(&path)
+        .map(|m| m.len() < 1 << 20)
+        .unwrap_or(true);
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(&path)?;
+    let msg = info
+        .payload()
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| info.payload().downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "panic".into());
+    let place = info
+        .location()
+        .map(|l| format!("{}:{}", l.file(), l.line()))
+        .unwrap_or_default();
     let thread = std::thread::current();
-    writeln!(f, "{} v{} [{}] {} at {}\n{}\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), env!("CARGO_PKG_VERSION"), thread.name().unwrap_or("?"), msg, place, std::backtrace::Backtrace::force_capture())
+    writeln!(
+        f,
+        "{} v{} [{}] {} at {}\n{}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+        env!("CARGO_PKG_VERSION"),
+        thread.name().unwrap_or("?"),
+        msg,
+        place,
+        std::backtrace::Backtrace::force_capture()
+    )
 }
 
 #[cfg(test)]

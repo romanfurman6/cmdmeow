@@ -47,10 +47,14 @@ pub const LEASE_SECS: u64 = 8;
 pub enum Request {
     Hello,
     /// Hold each fan at this rpm (`None` = Auto for that fan).
-    Set { rpm: Vec<Option<f32>> },
+    Set {
+        rpm: Vec<Option<f32>>,
+    },
     Auto,
     /// Hold this charge policy (limit 100 = off).
-    Charge { policy: Policy },
+    Charge {
+        policy: Policy,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, PartialEq)]
@@ -105,7 +109,11 @@ pub fn install() -> Result<(), String> {
     let plist_tmp = dir.join("helper.plist");
     std::fs::write(&plist_tmp, plist).map_err(|e| e.to_string())?;
     let script = install_script(&sh_quote(&exe), &sh_quote(&plist_tmp));
-    let r = run_admin(&dir, &script, "Cmd+Meow wants to add its helper so it can change fan speed and charging.");
+    let r = run_admin(
+        &dir,
+        &script,
+        "Cmd+Meow wants to add its helper so it can change fan speed and charging.",
+    );
     let _ = std::fs::remove_dir_all(&dir);
     r?;
     // give launchd a moment to start it
@@ -174,8 +182,16 @@ fn run_admin(dir: &Path, script: &str, prompt: &str) -> Result<(), String> {
     let file = dir.join("run.sh");
     std::fs::write(&file, script).map_err(|e| e.to_string())?;
     let cmd = format!("/bin/sh {}", sh_quote(&file));
-    let apple = format!("do shell script \"{}\" with prompt \"{}\" with administrator privileges", cmd.replace('\\', "\\\\").replace('"', "\\\""), prompt);
-    let out = std::process::Command::new("/usr/bin/osascript").arg("-e").arg(apple).output().map_err(|e| e.to_string())?;
+    let apple = format!(
+        "do shell script \"{}\" with prompt \"{}\" with administrator privileges",
+        cmd.replace('\\', "\\\\").replace('"', "\\\""),
+        prompt
+    );
+    let out = std::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(apple)
+        .output()
+        .map_err(|e| e.to_string())?;
     if out.status.success() {
         return Ok(());
     }
@@ -184,7 +200,11 @@ fn run_admin(dir: &Path, script: &str, prompt: &str) -> Result<(), String> {
     if err.contains("-128") {
         return Err(String::new());
     }
-    Err(if err.is_empty() { "The helper couldn't be installed.".into() } else { err })
+    Err(if err.is_empty() {
+        "The helper couldn't be installed.".into()
+    } else {
+        err
+    })
 }
 
 #[cfg(test)]
@@ -193,15 +213,36 @@ mod tests {
 
     #[test]
     fn protocol_round_trips() {
-        let r = Request::Set { rpm: vec![Some(2400.0), None] };
+        let r = Request::Set {
+            rpm: vec![Some(2400.0), None],
+        };
         let s = serde_json::to_string(&r).unwrap();
         assert_eq!(s, r#"{"op":"set","rpm":[2400.0,null]}"#);
         assert_eq!(serde_json::from_str::<Request>(&s).unwrap(), r);
-        assert_eq!(serde_json::from_str::<Request>(r#"{"op":"auto"}"#).unwrap(), Request::Auto);
-        assert_eq!(serde_json::from_str::<Reply>(r#"{"version":1,"manual":true}"#).unwrap(), Reply { version: 1, manual: true, ..Default::default() });
-        let c = Request::Charge { policy: Policy { limit: 80, sailing: true, heat: false } };
+        assert_eq!(
+            serde_json::from_str::<Request>(r#"{"op":"auto"}"#).unwrap(),
+            Request::Auto
+        );
+        assert_eq!(
+            serde_json::from_str::<Reply>(r#"{"version":1,"manual":true}"#).unwrap(),
+            Reply {
+                version: 1,
+                manual: true,
+                ..Default::default()
+            }
+        );
+        let c = Request::Charge {
+            policy: Policy {
+                limit: 80,
+                sailing: true,
+                heat: false,
+            },
+        };
         let s = serde_json::to_string(&c).unwrap();
-        assert_eq!(s, r#"{"op":"charge","policy":{"limit":80,"sailing":true,"heat":false}}"#);
+        assert_eq!(
+            s,
+            r#"{"op":"charge","policy":{"limit":80,"sailing":true,"heat":false}}"#
+        );
         assert_eq!(serde_json::from_str::<Request>(&s).unwrap(), c);
     }
 
@@ -214,7 +255,10 @@ mod tests {
 
     #[test]
     fn quotes_paths_for_sh() {
-        assert_eq!(sh_quote(Path::new("/Applications/CmdMeow Dev.app/x")), "'/Applications/CmdMeow Dev.app/x'");
+        assert_eq!(
+            sh_quote(Path::new("/Applications/CmdMeow Dev.app/x")),
+            "'/Applications/CmdMeow Dev.app/x'"
+        );
         assert_eq!(sh_quote(Path::new("/a'b")), r"'/a'\''b'");
     }
 
@@ -225,7 +269,11 @@ mod tests {
         assert!(!s.contains(&format!("cp -f '/x/cmdmeow' {BIN}\n")));
         assert!(s.contains(&format!("mv -f {BIN}.new {BIN}")));
         // signed on its own before it goes in place
-        let sign = s.find(&format!("/usr/bin/codesign --force --sign - --identifier {LABEL} {BIN}.new")).unwrap();
+        let sign = s
+            .find(&format!(
+                "/usr/bin/codesign --force --sign - --identifier {LABEL} {BIN}.new"
+            ))
+            .unwrap();
         assert!(sign < s.find("mv -f").unwrap());
         // waits for the old helper before bootstrapping the new one
         let wait = s.find("while launchctl print").unwrap();

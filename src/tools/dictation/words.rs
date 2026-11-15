@@ -24,7 +24,11 @@ pub fn apply(text: &str, words: &[String]) -> String {
         .iter()
         .map(|w| w.trim())
         .filter(|w| !w.is_empty())
-        .map(|w| Known { word: w, key: sound_key(w), parts: w.split_whitespace().count() })
+        .map(|w| Known {
+            word: w,
+            key: sound_key(w),
+            parts: w.split_whitespace().count(),
+        })
         .filter(|k| k.key.chars().count() >= 3)
         .collect();
     if known.is_empty() {
@@ -39,13 +43,19 @@ pub fn apply(text: &str, words: &[String]) -> String {
             let joined = span.join(" ");
             let (lead, core, trail) = split_punct(&joined);
             // punctuation inside a span means two thoughts, not one word
-            if core.is_empty() || core.chars().any(|c| !c.is_alphanumeric() && !c.is_whitespace() && c != '-' && c != '\'' && c != '’') {
+            if core.is_empty()
+                || core.chars().any(|c| {
+                    !c.is_alphanumeric() && !c.is_whitespace() && c != '-' && c != '\'' && c != '’'
+                })
+            {
                 continue;
             }
             let key = sound_key(core);
             // the same number of words may differ a little; one more heard
             // word ("cmd meow" for CmdMeow) must sound exactly the same
-            if let Some(k) = known.iter().find(|k| (n == k.parts && sounds_like(&key, &k.key)) || (n == k.parts + 1 && key == k.key)) {
+            if let Some(k) = known.iter().find(|k| {
+                (n == k.parts && sounds_like(&key, &k.key)) || (n == k.parts + 1 && key == k.key)
+            }) {
                 out.push(format!("{lead}{}{trail}", k.word));
                 i += n;
                 continue 'next;
@@ -60,7 +70,10 @@ pub fn apply(text: &str, words: &[String]) -> String {
 /// Leading punctuation, the word part, trailing punctuation.
 fn split_punct(s: &str) -> (&str, &str, &str) {
     let start = s.find(|c: char| c.is_alphanumeric()).unwrap_or(s.len());
-    let end = s.rfind(|c: char| c.is_alphanumeric()).map(|k| k + s[k..].chars().next().map_or(1, char::len_utf8)).unwrap_or(start);
+    let end = s
+        .rfind(|c: char| c.is_alphanumeric())
+        .map(|k| k + s[k..].chars().next().map_or(1, char::len_utf8))
+        .unwrap_or(start);
     (&s[..start], &s[start..end], &s[end..])
 }
 
@@ -88,7 +101,11 @@ fn distance(a: &str, b: &str) -> usize {
         row[0] = i + 1;
         for j in 0..b.len() {
             let cur = row[j + 1];
-            row[j + 1] = if ca == b[j] { prev } else { 1 + prev.min(cur).min(row[j]) };
+            row[j + 1] = if ca == b[j] {
+                prev
+            } else {
+                1 + prev.min(cur).min(row[j])
+            };
             prev = cur;
         }
     }
@@ -107,7 +124,21 @@ pub fn sound_key(s: &str) -> String {
         // spaces, hyphens, apostrophes and the rest: not sounds
     }
     let mut k = latin;
-    for (from, to) in [("dzh", "j"), ("sch", "sh"), ("tch", "ch"), ("ck", "k"), ("ph", "f"), ("th", "t"), ("kh", "h"), ("au", "o"), ("aw", "o"), ("oo", "u"), ("ee", "i"), ("ea", "i"), ("ou", "au")] {
+    for (from, to) in [
+        ("dzh", "j"),
+        ("sch", "sh"),
+        ("tch", "ch"),
+        ("ck", "k"),
+        ("ph", "f"),
+        ("th", "t"),
+        ("kh", "h"),
+        ("au", "o"),
+        ("aw", "o"),
+        ("oo", "u"),
+        ("ee", "i"),
+        ("ea", "i"),
+        ("ou", "au"),
+    ] {
         k = k.replace(from, to);
     }
     let mut out = String::with_capacity(k.len());

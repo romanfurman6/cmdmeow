@@ -39,12 +39,21 @@ pub fn begin(ctx: &egui::Context) {
     static FIRST: std::sync::Once = std::sync::Once::new();
     FIRST.call_once(|| {
         if let Some(t) = STARTED.get() {
-            eprintln!("[timing] first pass {} ms after launch", t.elapsed().as_millis());
+            eprintln!(
+                "[timing] first pass {} ms after launch",
+                t.elapsed().as_millis()
+            );
         }
     });
     let causes = ctx.repaint_causes();
     let mut g = LOG.lock().unwrap_or_else(|e| e.into_inner());
-    let log = g.get_or_insert_with(|| Log { since: Instant::now(), frames: 0, busy: Duration::ZERO, started: None, causes: HashMap::new() });
+    let log = g.get_or_insert_with(|| Log {
+        since: Instant::now(),
+        frames: 0,
+        busy: Duration::ZERO,
+        started: None,
+        causes: HashMap::new(),
+    });
     log.frames += 1;
     log.started = Some(Instant::now());
     for c in causes {
@@ -69,10 +78,18 @@ pub fn end() {
         return;
     }
     let fps = log.frames as f64 / span.as_secs_f64();
-    let per = if log.frames > 0 { log.busy.as_secs_f64() * 1000.0 / log.frames as f64 } else { 0.0 };
+    let per = if log.frames > 0 {
+        log.busy.as_secs_f64() * 1000.0 / log.frames as f64
+    } else {
+        0.0
+    };
     let mut top: Vec<_> = log.causes.drain().collect();
     top.sort_by(|a, b| b.1.cmp(&a.1));
-    let list: Vec<String> = top.iter().take(8).map(|(k, n)| format!("{k}×{n}")).collect();
+    let list: Vec<String> = top
+        .iter()
+        .take(8)
+        .map(|(k, n)| format!("{k}×{n}"))
+        .collect();
     // GPU frames over all windows: painted, and skipped as unchanged
     let (painted, same) = eframe::take_paint_counts();
     let secs = span.as_secs_f64();

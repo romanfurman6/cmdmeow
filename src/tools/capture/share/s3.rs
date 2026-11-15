@@ -35,7 +35,14 @@ impl Bucket {
         let name = name.trim().trim_matches('/');
         // "https://fsn1.your-objectstorage.com/", a pasted bucket URL
         // ("https://clips.fsn1…/", "https://fsn1…/clips") or a bare host
-        let host: String = endpoint.trim().trim_start_matches("https://").trim_start_matches("http://").split('/').next().unwrap_or("").to_lowercase();
+        let host: String = endpoint
+            .trim()
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .to_lowercase();
         let host = match host.strip_prefix(&format!("{}.", name.to_lowercase())) {
             Some(rest) if !name.is_empty() && rest.contains('.') => rest.to_string(),
             _ => host,
@@ -52,14 +59,25 @@ impl Bucket {
         } else {
             region.trim().to_string()
         };
-        Bucket { host, region, name: name.to_string(), access_key: access_key.trim().to_string(), secret: secret.trim().to_string(), public_url: String::new() }
+        Bucket {
+            host,
+            region,
+            name: name.to_string(),
+            access_key: access_key.trim().to_string(),
+            secret: secret.trim().to_string(),
+            public_url: String::new(),
+        }
     }
 
     /// With public files read from `url` ("pub-….r2.dev" or a domain; the
     /// scheme is optional). Empty keeps the bucket's own host.
     pub fn public_at(mut self, url: &str) -> Bucket {
         let u = url.trim().trim_end_matches('/');
-        self.public_url = if u.is_empty() || u.contains("://") { u.to_string() } else { format!("https://{u}") };
+        self.public_url = if u.is_empty() || u.contains("://") {
+            u.to_string()
+        } else {
+            format!("https://{u}")
+        };
         self
     }
 
@@ -112,7 +130,10 @@ impl Bucket {
     }
 
     pub fn ready(&self) -> bool {
-        !self.host.is_empty() && !self.name.is_empty() && !self.access_key.is_empty() && !self.secret.is_empty()
+        !self.host.is_empty()
+            && !self.name.is_empty()
+            && !self.access_key.is_empty()
+            && !self.secret.is_empty()
     }
 }
 
@@ -137,15 +158,30 @@ impl Progress {
 
 /// Put the file at `key` (replacing what was there), readable by anyone
 /// with the link when `public`. Blocks.
-pub fn put_file(b: &Bucket, key: &str, file: &Path, content_type: &str, public: bool, p: &Progress) -> Result<(), String> {
-    let len = std::fs::metadata(file).map_err(|e| format!("Can't read the file: {e}"))?.len();
+pub fn put_file(
+    b: &Bucket,
+    key: &str,
+    file: &Path,
+    content_type: &str,
+    public: bool,
+    p: &Progress,
+) -> Result<(), String> {
+    let len = std::fs::metadata(file)
+        .map_err(|e| format!("Can't read the file: {e}"))?
+        .len();
     p.total.store(len, Ordering::Relaxed);
     let hash = file_sha256(file, &p.cancel)?;
     let now = chrono::Utc::now();
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-    let name = file.file_name().map(|n| n.to_string_lossy().replace('"', "")).unwrap_or_default();
+    let name = file
+        .file_name()
+        .map(|n| n.to_string_lossy().replace('"', ""))
+        .unwrap_or_default();
     let mut headers: Vec<(String, String)> = vec![
-        ("content-disposition".into(), format!("inline; filename=\"{}\"", ascii_only(&name))),
+        (
+            "content-disposition".into(),
+            format!("inline; filename=\"{}\"", ascii_only(&name)),
+        ),
         ("content-length".into(), len.to_string()),
         ("content-type".into(), content_type.into()),
         ("host".into(), b.bucket_host()),
@@ -157,7 +193,12 @@ pub fn put_file(b: &Bucket, key: &str, file: &Path, content_type: &str, public: 
     }
     let path = b.path(key);
     let auth = authorization(b, "PUT", &path, "", &mut headers, &hash, &amz_date);
-    let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_connect(Some(Duration::from_secs(20))).build());
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(20)))
+            .build(),
+    );
     let mut req = agent.put(&format!("https://{}{}", b.bucket_host(), path));
     for (k, v) in &headers {
         if k != "host" {
@@ -167,15 +208,20 @@ pub fn put_file(b: &Bucket, key: &str, file: &Path, content_type: &str, public: 
     req = req.header("authorization", &auth);
     let f = std::fs::File::open(file).map_err(|e| format!("Can't read the file: {e}"))?;
     let mut body = Counting { inner: f, p };
-    let resp = req.send(ureq::SendBody::from_reader(&mut body)).map_err(|e| {
-        if p.cancel.load(Ordering::Relaxed) {
-            "Stopped".to_string()
-        } else if e.to_string().contains("lookup address") {
-            format!("Upload failed: {} doesn't exist; check Endpoint and Bucket", b.bucket_host())
-        } else {
-            format!("Upload failed: {e}")
-        }
-    })?;
+    let resp = req
+        .send(ureq::SendBody::from_reader(&mut body))
+        .map_err(|e| {
+            if p.cancel.load(Ordering::Relaxed) {
+                "Stopped".to_string()
+            } else if e.to_string().contains("lookup address") {
+                format!(
+                    "Upload failed: {} doesn't exist; check Endpoint and Bucket",
+                    b.bucket_host()
+                )
+            } else {
+                format!("Upload failed: {e}")
+            }
+        })?;
     let status = resp.status().as_u16();
     if (200..300).contains(&status) {
         return Ok(());
@@ -189,17 +235,29 @@ pub fn delete(b: &Bucket, key: &str) -> Result<(), String> {
     // SHA-256 of an empty body
     const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let amz_date = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-    let mut headers: Vec<(String, String)> = vec![("host".into(), b.bucket_host()), ("x-amz-content-sha256".into(), EMPTY.into()), ("x-amz-date".into(), amz_date.clone())];
+    let mut headers: Vec<(String, String)> = vec![
+        ("host".into(), b.bucket_host()),
+        ("x-amz-content-sha256".into(), EMPTY.into()),
+        ("x-amz-date".into(), amz_date.clone()),
+    ];
     let path = b.path(key);
     let auth = authorization(b, "DELETE", &path, "", &mut headers, EMPTY, &amz_date);
-    let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_connect(Some(Duration::from_secs(20))).build());
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_connect(Some(Duration::from_secs(20)))
+            .build(),
+    );
     let mut req = agent.delete(&format!("https://{}{}", b.bucket_host(), path));
     for (k, v) in &headers {
         if k != "host" {
             req = req.header(k, v);
         }
     }
-    let resp = req.header("authorization", &auth).call().map_err(|e| format!("Couldn't delete: {e}"))?;
+    let resp = req
+        .header("authorization", &auth)
+        .call()
+        .map_err(|e| format!("Couldn't delete: {e}"))?;
     let status = resp.status().as_u16();
     if (200..300).contains(&status) || status == 404 {
         return Ok(());
@@ -216,36 +274,61 @@ pub fn presign_get(b: &Bucket, key: &str, secs: u64, now: chrono::DateTime<chron
     let scope = format!("{date}/{}/s3/aws4_request", b.region);
     let mut q: Vec<(String, String)> = vec![
         ("X-Amz-Algorithm".into(), "AWS4-HMAC-SHA256".into()),
-        ("X-Amz-Credential".into(), format!("{}/{scope}", b.access_key)),
+        (
+            "X-Amz-Credential".into(),
+            format!("{}/{scope}", b.access_key),
+        ),
         ("X-Amz-Date".into(), amz_date.clone()),
         ("X-Amz-Expires".into(), secs.min(604_800).to_string()),
         ("X-Amz-SignedHeaders".into(), "host".into()),
     ];
     q.sort();
-    let query: String = q.iter().map(|(k, v)| format!("{}={}", encode(k, true), encode(v, true))).collect::<Vec<_>>().join("&");
+    let query: String = q
+        .iter()
+        .map(|(k, v)| format!("{}={}", encode(k, true), encode(v, true)))
+        .collect::<Vec<_>>()
+        .join("&");
     let path = b.path(key);
-    let canonical = format!("GET\n{path}\n{query}\nhost:{}\n\nhost\nUNSIGNED-PAYLOAD", b.bucket_host());
+    let canonical = format!(
+        "GET\n{path}\n{query}\nhost:{}\n\nhost\nUNSIGNED-PAYLOAD",
+        b.bucket_host()
+    );
     let sig = signature(b, &amz_date, &canonical);
-    format!("https://{}{path}?{query}&X-Amz-Signature={sig}", b.bucket_host())
+    format!(
+        "https://{}{path}?{query}&X-Amz-Signature={sig}",
+        b.bucket_host()
+    )
 }
 
 /// Let the share page (`origins`, e.g. "https://cmdmeow.com") read files
 /// in the bucket from the browser, so it can edit a copy. Rules the bucket
 /// already has stay. Returns whether the bucket was changed. Blocks.
 pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
-    let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(Duration::from_secs(20))).build());
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(Duration::from_secs(20)))
+            .build(),
+    );
     let empty = hex(&Sha256::digest(b""));
     // Read what is there now.
     let now = chrono::Utc::now();
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-    let mut headers: Vec<(String, String)> = vec![("host".into(), b.bucket_host()), ("x-amz-content-sha256".into(), empty.clone()), ("x-amz-date".into(), amz_date.clone())];
+    let mut headers: Vec<(String, String)> = vec![
+        ("host".into(), b.bucket_host()),
+        ("x-amz-content-sha256".into(), empty.clone()),
+        ("x-amz-date".into(), amz_date.clone()),
+    ];
     let root = b.root();
     let auth = authorization(b, "GET", &root, "cors=", &mut headers, &empty, &amz_date);
     let mut req = agent.get(&format!("https://{}{root}?cors", b.bucket_host()));
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
-    let resp = req.header("authorization", &auth).call().map_err(|e| format!("CORS check failed: {e}"))?;
+    let resp = req
+        .header("authorization", &auth)
+        .call()
+        .map_err(|e| format!("CORS check failed: {e}"))?;
     let status = resp.status().as_u16();
     let text = resp.into_body().read_to_string().unwrap_or_default();
     let existing = match status {
@@ -253,7 +336,9 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
         404 => None, // NoSuchCORSConfiguration
         _ => return Err(explain(status, &text).replace("Upload failed", "CORS check failed")),
     };
-    let Some(body) = cors_config(existing.as_deref(), origins) else { return Ok(false) };
+    let Some(body) = cors_config(existing.as_deref(), origins) else {
+        return Ok(false);
+    };
 
     let hash = hex(&Sha256::digest(body.as_bytes()));
     let md5 = base64(&md5::Md5::digest(body.as_bytes()));
@@ -270,7 +355,10 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
-    let resp = req.header("authorization", &auth).send(body.as_bytes()).map_err(|e| format!("CORS setup failed: {e}"))?;
+    let resp = req
+        .header("authorization", &auth)
+        .send(body.as_bytes())
+        .map_err(|e| format!("CORS setup failed: {e}"))?;
     let status = resp.status().as_u16();
     if (200..300).contains(&status) {
         return Ok(true);
@@ -282,9 +370,20 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
 /// The bucket's CORS document with one read rule added for the `origins`
 /// it doesn't allow yet, or None when all of them are allowed.
 fn cors_config(existing: Option<&str>, origins: &[&str]) -> Option<String> {
-    let existing = existing.map(str::trim).filter(|x| x.contains("</CORSConfiguration>"));
-    let allowed = |o: &str| existing.is_some_and(|x| x.contains(&format!("<AllowedOrigin>{o}</AllowedOrigin>")) || x.contains("<AllowedOrigin>*</AllowedOrigin>"));
-    let missing: String = origins.iter().filter(|o| !allowed(o)).map(|o| format!("<AllowedOrigin>{o}</AllowedOrigin>")).collect();
+    let existing = existing
+        .map(str::trim)
+        .filter(|x| x.contains("</CORSConfiguration>"));
+    let allowed = |o: &str| {
+        existing.is_some_and(|x| {
+            x.contains(&format!("<AllowedOrigin>{o}</AllowedOrigin>"))
+                || x.contains("<AllowedOrigin>*</AllowedOrigin>")
+        })
+    };
+    let missing: String = origins
+        .iter()
+        .filter(|o| !allowed(o))
+        .map(|o| format!("<AllowedOrigin>{o}</AllowedOrigin>"))
+        .collect();
     if missing.is_empty() {
         return None;
     }
@@ -304,9 +403,15 @@ fn base64(b: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for c in b.chunks(3) {
-        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        let n = (c[0] as u32) << 16
+            | (*c.get(1).unwrap_or(&0) as u32) << 8
+            | *c.get(2).unwrap_or(&0) as u32;
         for i in 0..4 {
-            out.push(if i <= c.len() { T[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+            out.push(if i <= c.len() {
+                T[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
         }
     }
     out
@@ -314,10 +419,25 @@ fn base64(b: &[u8]) -> String {
 
 /// The Authorization header for a request whose headers (lowercase names)
 /// are all signed.
-fn authorization(b: &Bucket, method: &str, path: &str, query: &str, headers: &mut [(String, String)], payload_hash: &str, amz_date: &str) -> String {
+fn authorization(
+    b: &Bucket,
+    method: &str,
+    path: &str,
+    query: &str,
+    headers: &mut [(String, String)],
+    payload_hash: &str,
+    amz_date: &str,
+) -> String {
     headers.sort();
-    let canon_headers: String = headers.iter().map(|(k, v)| format!("{k}:{}\n", v.trim())).collect();
-    let signed: String = headers.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join(";");
+    let canon_headers: String = headers
+        .iter()
+        .map(|(k, v)| format!("{k}:{}\n", v.trim()))
+        .collect();
+    let signed: String = headers
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .collect::<Vec<_>>()
+        .join(";");
     let canonical = format!("{method}\n{path}\n{query}\n{canon_headers}\n{signed}\n{payload_hash}");
     let sig = signature(b, amz_date, &canonical);
     format!("AWS4-HMAC-SHA256 Credential={}/{}/{}/s3/aws4_request, SignedHeaders={signed}, Signature={sig}", b.access_key, &amz_date[..8], b.region)
@@ -326,7 +446,10 @@ fn authorization(b: &Bucket, method: &str, path: &str, query: &str, headers: &mu
 fn signature(b: &Bucket, amz_date: &str, canonical: &str) -> String {
     let date = &amz_date[..8];
     let scope = format!("{date}/{}/s3/aws4_request", b.region);
-    let to_sign = format!("AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}", hex(&Sha256::digest(canonical.as_bytes())));
+    let to_sign = format!(
+        "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
+        hex(&Sha256::digest(canonical.as_bytes()))
+    );
     let k = hmac(format!("AWS4{}", b.secret).as_bytes(), date.as_bytes());
     let k = hmac(&k, b.region.as_bytes());
     let k = hmac(&k, b"s3");
@@ -350,7 +473,9 @@ pub(super) fn encode(s: &str, slash: bool) -> String {
     let mut out = String::new();
     for &c in s.as_bytes() {
         match c {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(c as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(c as char)
+            }
             b'/' if !slash => out.push('/'),
             _ => out.push_str(&format!("%{c:02X}")),
         }
@@ -359,7 +484,15 @@ pub(super) fn encode(s: &str, slash: bool) -> String {
 }
 
 fn ascii_only(s: &str) -> String {
-    s.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() { c } else { '_' }).collect()
+    s.chars()
+        .map(|c| {
+            if c.is_ascii() && !c.is_ascii_control() {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn file_sha256(file: &Path, cancel: &AtomicBool) -> Result<String, String> {
@@ -370,7 +503,9 @@ fn file_sha256(file: &Path, cancel: &AtomicBool) -> Result<String, String> {
         if cancel.load(Ordering::Relaxed) {
             return Err("Stopped".into());
         }
-        let n = f.read(&mut buf).map_err(|e| format!("Can't read the file: {e}"))?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| format!("Can't read the file: {e}"))?;
         if n == 0 {
             break;
         }
@@ -388,7 +523,10 @@ struct Counting<'a, R> {
 impl<R: Read> Read for Counting<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.p.cancel.load(Ordering::Relaxed) {
-            return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "stopped"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "stopped",
+            ));
         }
         let n = self.inner.read(buf)?;
         self.p.sent.fetch_add(n as u64, Ordering::Relaxed);
@@ -398,7 +536,13 @@ impl<R: Read> Read for Counting<'_, R> {
 
 /// S3's XML error, said plainly.
 fn explain(status: u16, xml: &str) -> String {
-    let tag = |t: &str| xml.split(&format!("<{t}>")).nth(1).and_then(|r| r.split(&format!("</{t}>")).next()).unwrap_or("").to_string();
+    let tag = |t: &str| {
+        xml.split(&format!("<{t}>"))
+            .nth(1)
+            .and_then(|r| r.split(&format!("</{t}>")).next())
+            .unwrap_or("")
+            .to_string()
+    };
     let code = tag("Code");
     let why = match code.as_str() {
         "InvalidAccessKeyId" => "the access key is wrong".to_string(),
@@ -424,15 +568,29 @@ mod tests {
     use super::*;
 
     fn example() -> Bucket {
-        Bucket { host: "s3.amazonaws.com".into(), region: "us-east-1".into(), name: "examplebucket".into(), access_key: "AKIAIOSFODNN7EXAMPLE".into(), secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into(), public_url: String::new() }
+        Bucket {
+            host: "s3.amazonaws.com".into(),
+            region: "us-east-1".into(),
+            name: "examplebucket".into(),
+            access_key: "AKIAIOSFODNN7EXAMPLE".into(),
+            secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".into(),
+            public_url: String::new(),
+        }
     }
 
     #[test]
     fn presigned_link_matches_the_aws_example() {
-        let now = chrono::DateTime::parse_from_rfc3339("2013-05-24T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        let now = chrono::DateTime::parse_from_rfc3339("2013-05-24T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
         let url = presign_get(&example(), "test.txt", 86_400, now);
         assert!(url.starts_with("https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request"), "{url}");
-        assert!(url.ends_with("X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"), "{url}");
+        assert!(
+            url.ends_with(
+                "X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404"
+            ),
+            "{url}"
+        );
     }
 
     #[test]
@@ -442,45 +600,112 @@ mod tests {
             ("date".into(), "Fri, 24 May 2013 00:00:00 GMT".into()),
             ("x-amz-date".into(), "20130524T000000Z".into()),
             ("x-amz-storage-class".into(), "REDUCED_REDUNDANCY".into()),
-            ("x-amz-content-sha256".into(), "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072".into()),
+            (
+                "x-amz-content-sha256".into(),
+                "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072".into(),
+            ),
         ];
-        let auth = authorization(&example(), "PUT", &format!("/{}", encode("test$file.text", false)), "", &mut h, "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072", "20130524T000000Z");
+        let auth = authorization(
+            &example(),
+            "PUT",
+            &format!("/{}", encode("test$file.text", false)),
+            "",
+            &mut h,
+            "44ce7dd67c959e0d3524ffac1771dfbba87d2b6b4b4e99e42034a8b803f8b072",
+            "20130524T000000Z",
+        );
         assert!(auth.ends_with("SignedHeaders=date;host;x-amz-content-sha256;x-amz-date;x-amz-storage-class, Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd"), "{auth}");
     }
 
     #[test]
     fn endpoints_and_regions_from_what_people_type() {
-        let b = Bucket::new("https://fsn1.your-objectstorage.com/", "", "clips", "k", "s");
-        assert_eq!((b.host.as_str(), b.region.as_str()), ("fsn1.your-objectstorage.com", "fsn1"));
-        assert_eq!(b.url("a b/c.mp4"), "https://clips.fsn1.your-objectstorage.com/a%20b/c.mp4");
-        assert_eq!(Bucket::new("s3.eu-central-1.amazonaws.com", "", "x", "k", "s").region, "eu-central-1");
-        assert_eq!(Bucket::new("nbg1.your-objectstorage.com", " nbg1 ", "x", "k", "s").region, "nbg1");
+        let b = Bucket::new(
+            "https://fsn1.your-objectstorage.com/",
+            "",
+            "clips",
+            "k",
+            "s",
+        );
+        assert_eq!(
+            (b.host.as_str(), b.region.as_str()),
+            ("fsn1.your-objectstorage.com", "fsn1")
+        );
+        assert_eq!(
+            b.url("a b/c.mp4"),
+            "https://clips.fsn1.your-objectstorage.com/a%20b/c.mp4"
+        );
+        assert_eq!(
+            Bucket::new("s3.eu-central-1.amazonaws.com", "", "x", "k", "s").region,
+            "eu-central-1"
+        );
+        assert_eq!(
+            Bucket::new("nbg1.your-objectstorage.com", " nbg1 ", "x", "k", "s").region,
+            "nbg1"
+        );
         // a pasted bucket URL, either style
-        assert_eq!(Bucket::new("https://clips.fsn1.your-objectstorage.com/", "", "clips", "k", "s").host, "fsn1.your-objectstorage.com");
-        assert_eq!(Bucket::new("https://fsn1.your-objectstorage.com/clips", "", " clips ", "k", "s").bucket_host(), "clips.fsn1.your-objectstorage.com");
+        assert_eq!(
+            Bucket::new(
+                "https://clips.fsn1.your-objectstorage.com/",
+                "",
+                "clips",
+                "k",
+                "s"
+            )
+            .host,
+            "fsn1.your-objectstorage.com"
+        );
+        assert_eq!(
+            Bucket::new(
+                "https://fsn1.your-objectstorage.com/clips",
+                "",
+                " clips ",
+                "k",
+                "s"
+            )
+            .bucket_host(),
+            "clips.fsn1.your-objectstorage.com"
+        );
     }
 
     #[test]
     fn r2_signs_path_style_with_region_auto_and_links_to_its_public_url() {
-        let b = Bucket::new("https://0123abcd.r2.cloudflarestorage.com", "", "clips", "k", "s");
+        let b = Bucket::new(
+            "https://0123abcd.r2.cloudflarestorage.com",
+            "",
+            "clips",
+            "k",
+            "s",
+        );
         assert!(b.is_r2());
-        assert_eq!((b.region.as_str(), b.bucket_host().as_str()), ("auto", "0123abcd.r2.cloudflarestorage.com"));
+        assert_eq!(
+            (b.region.as_str(), b.bucket_host().as_str()),
+            ("auto", "0123abcd.r2.cloudflarestorage.com")
+        );
         assert_eq!(b.path("a b/c.mp4"), "/clips/a%20b/c.mp4");
         assert_eq!(b.root(), "/clips");
         assert!(!b.public_ready());
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-14T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
-        assert!(presign_get(&b, "x.png", 60, now).starts_with("https://0123abcd.r2.cloudflarestorage.com/clips/x.png?X-Amz-Algorithm"));
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-14T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        assert!(presign_get(&b, "x.png", 60, now)
+            .starts_with("https://0123abcd.r2.cloudflarestorage.com/clips/x.png?X-Amz-Algorithm"));
         let b = b.public_at("pub-9f.r2.dev/");
         assert!(b.public_ready());
         assert_eq!(b.url("a b/c.mp4"), "https://pub-9f.r2.dev/a%20b/c.mp4");
         // a region typed by hand still wins; other storages keep their own host
-        assert_eq!(Bucket::new("x.r2.cloudflarestorage.com", "weur", "c", "k", "s").region, "weur");
+        assert_eq!(
+            Bucket::new("x.r2.cloudflarestorage.com", "weur", "c", "k", "s").region,
+            "weur"
+        );
         assert!(Bucket::new("fsn1.your-objectstorage.com", "", "c", "k", "s").public_ready());
     }
 
     #[test]
     fn errors_read_plainly() {
-        assert_eq!(explain(403, "<Error><Code>SignatureDoesNotMatch</Code></Error>"), "Upload failed: the secret key doesn't match the access key");
+        assert_eq!(
+            explain(403, "<Error><Code>SignatureDoesNotMatch</Code></Error>"),
+            "Upload failed: the secret key doesn't match the access key"
+        );
         assert_eq!(explain(500, ""), "Upload failed: the storage answered 500");
     }
 
@@ -488,20 +713,48 @@ mod tests {
     fn cors_rule_is_added_once_and_keeps_other_rules() {
         let o = ["https://cmdmeow.com", "https://cmdmeow.furman.cat"];
         let new = cors_config(None, &o).unwrap();
-        assert!(new.starts_with("<CORSConfiguration") && new.contains("<AllowedOrigin>https://cmdmeow.com</AllowedOrigin>") && new.contains("<AllowedOrigin>https://cmdmeow.furman.cat</AllowedOrigin>") && new.contains("<AllowedHeader>*</AllowedHeader>"), "{new}");
+        assert!(
+            new.starts_with("<CORSConfiguration")
+                && new.contains("<AllowedOrigin>https://cmdmeow.com</AllowedOrigin>")
+                && new.contains("<AllowedOrigin>https://cmdmeow.furman.cat</AllowedOrigin>")
+                && new.contains("<AllowedHeader>*</AllowedHeader>"),
+            "{new}"
+        );
         assert_eq!(cors_config(Some(&new), &o), None);
         let other = "<?xml version=\"1.0\"?><CORSConfiguration><CORSRule><AllowedOrigin>https://a.b</AllowedOrigin><AllowedMethod>PUT</AllowedMethod></CORSRule></CORSConfiguration>";
         let merged = cors_config(Some(other), &o).unwrap();
-        assert!(merged.contains("https://a.b") && merged.contains(o[0]) && merged.contains(o[1]) && merged.ends_with("</CORSRule></CORSConfiguration>"), "{merged}");
+        assert!(
+            merged.contains("https://a.b")
+                && merged.contains(o[0])
+                && merged.contains(o[1])
+                && merged.ends_with("</CORSRule></CORSConfiguration>"),
+            "{merged}"
+        );
         assert_eq!(cors_config(Some("<CORSConfiguration><CORSRule><AllowedOrigin>*</AllowedOrigin></CORSRule></CORSConfiguration>"), &o), None);
     }
 
     #[test]
     fn cors_adds_only_the_new_site_to_a_bucket_set_up_before_the_move() {
         let before = cors_config(None, &["https://cmdmeow.furman.cat"]).unwrap();
-        let after = cors_config(Some(&before), &["https://cmdmeow.com", "https://cmdmeow.furman.cat"]).unwrap();
-        assert_eq!(after.matches("<AllowedOrigin>https://cmdmeow.furman.cat</AllowedOrigin>").count(), 1, "{after}");
-        assert_eq!(after.matches("<AllowedOrigin>https://cmdmeow.com</AllowedOrigin>").count(), 1, "{after}");
+        let after = cors_config(
+            Some(&before),
+            &["https://cmdmeow.com", "https://cmdmeow.furman.cat"],
+        )
+        .unwrap();
+        assert_eq!(
+            after
+                .matches("<AllowedOrigin>https://cmdmeow.furman.cat</AllowedOrigin>")
+                .count(),
+            1,
+            "{after}"
+        );
+        assert_eq!(
+            after
+                .matches("<AllowedOrigin>https://cmdmeow.com</AllowedOrigin>")
+                .count(),
+            1,
+            "{after}"
+        );
         assert_eq!(after.matches("<CORSRule>").count(), 2, "{after}");
     }
 

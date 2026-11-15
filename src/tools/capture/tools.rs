@@ -5,7 +5,9 @@
 //! (Screenshot when it's on), so nothing runs twice.
 
 use super::{settings::Command, ui, Capture, VTab, CARD, ID, SHARING_ID, VIDEO_CARD, VIDEO_ID};
-use crate::core::tool::{Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM};
+use crate::core::tool::{
+    Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM,
+};
 use crate::kit::glass::{tint, Icon};
 use egui::{Rect, Ui};
 use std::cell::RefCell;
@@ -29,7 +31,10 @@ impl Tool for Sharing {
         "Sharing"
     }
     fn badge(&self) -> Badge {
-        Badge { icon: Icon::Link, color: tint::CAPTURE() }
+        Badge {
+            icon: Icon::Link,
+            color: tint::CAPTURE(),
+        }
     }
     fn section(&self) -> &'static str {
         "Create"
@@ -49,7 +54,10 @@ impl Tool for Sharing {
 }
 
 fn key(c: &Capture, cmd: Command) -> String {
-    c.settings.shortcut(cmd).map(|s| s.display()).unwrap_or_default()
+    c.settings
+        .shortcut(cmd)
+        .map(|s| s.display())
+        .unwrap_or_default()
 }
 
 impl Tool for Screenshot {
@@ -60,7 +68,10 @@ impl Tool for Screenshot {
         "Screenshot"
     }
     fn badge(&self) -> Badge {
-        Badge { icon: Icon::Crop, color: tint::CAPTURE() }
+        Badge {
+            icon: Icon::Crop,
+            color: tint::CAPTURE(),
+        }
     }
     fn section(&self) -> &'static str {
         "Create"
@@ -74,7 +85,10 @@ impl Tool for Screenshot {
     }
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
-        c.settings.shortcut(Command::Area).map(|s| vec![("Capture area", s.display())]).unwrap_or_default()
+        c.settings
+            .shortcut(Command::Area)
+            .map(|s| vec![("Capture area", s.display())])
+            .unwrap_or_default()
     }
     fn sidebar_meta(&self) -> String {
         key(&self.0.borrow(), Command::Area)
@@ -83,7 +97,14 @@ impl Tool for Screenshot {
         self.0.borrow_mut().set_parts(Some(on), None);
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Screenshot", about: "Take a screenshot; recent captures at the bigger sizes.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec {
+            id: CARD,
+            title: "Screenshot",
+            about: "Take a screenshot; recent captures at the bigger sizes.",
+            sizes: UP_TO_MEDIUM,
+            size: Size::S11,
+            default_on: true,
+        }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(&mut self.0.borrow_mut(), size, ui, rect, cx);
@@ -127,7 +148,10 @@ impl Tool for Video {
         self.0.borrow().transcript_models()
     }
     fn badge(&self) -> Badge {
-        Badge { icon: Icon::Camera, color: tint::CAPTURE() }
+        Badge {
+            icon: Icon::Camera,
+            color: tint::CAPTURE(),
+        }
     }
     fn section(&self) -> &'static str {
         "Create"
@@ -137,21 +161,38 @@ impl Tool for Video {
     }
     fn needs(&self) -> Vec<crate::kit::perms::Need> {
         use crate::kit::perms::{Need, Perm};
-        vec![Need::must(Perm::Screen), Need::may(Perm::Microphone), Need::may(Perm::Camera)]
+        vec![
+            Need::must(Perm::Screen),
+            Need::may(Perm::Microphone),
+            Need::may(Perm::Camera),
+        ]
     }
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
-        c.settings.shortcut(Command::Record).map(|s| vec![("Record screen", s.display())]).unwrap_or_default()
+        c.settings
+            .shortcut(Command::Record)
+            .map(|s| vec![("Record screen", s.display())])
+            .unwrap_or_default()
     }
     fn sidebar_meta(&self) -> String {
         let c = self.0.borrow();
-        c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string()).unwrap_or_else(|| key(&c, Command::Record))
+        c.rec
+            .tray()
+            .map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string())
+            .unwrap_or_else(|| key(&c, Command::Record))
     }
     fn set_on(&mut self, on: bool) {
         self.0.borrow_mut().set_parts(None, Some(on));
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: VIDEO_CARD, title: "Video", about: "Record the screen; recent recordings at the bigger sizes.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec {
+            id: VIDEO_CARD,
+            title: "Video",
+            about: "Record the screen; recent recordings at the bigger sizes.",
+            sizes: UP_TO_MEDIUM,
+            size: Size::S11,
+            default_on: true,
+        }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::video_widget(&mut self.0.borrow_mut(), size, ui, rect, cx);
@@ -161,7 +202,11 @@ impl Tool for Video {
     }
     fn open_page(&mut self, route: &str) {
         let mut c = self.0.borrow_mut();
-        c.vtab = if route == "settings" { VTab::Settings } else { VTab::Recordings };
+        c.vtab = if route == "settings" {
+            VTab::Settings
+        } else {
+            VTab::Recordings
+        };
     }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::video_page(&mut self.0.borrow_mut(), ui, rect, cx);
@@ -192,7 +237,9 @@ impl Tool for Video {
             }
             "video-empty" => {
                 c.vtab = VTab::Recordings;
-                c.store.shots.retain(|s| s.kind != super::store::Kind::Recording);
+                c.store
+                    .shots
+                    .retain(|s| s.kind != super::store::Kind::Recording);
                 Some(View::Page)
             }
             _ => None,

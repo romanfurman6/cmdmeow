@@ -23,23 +23,49 @@ pub fn read_info(app: &Path) -> Option<Info> {
     if id.is_empty() {
         return None;
     }
-    let file_name = app.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let name = if file_name.is_empty() { v.get_str("CFBundleDisplayName").or(v.get_str("CFBundleName")).unwrap_or("").to_string() } else { file_name };
-    let version = v.get_str("CFBundleShortVersionString").or(v.get_str("CFBundleVersion")).unwrap_or("").trim().to_string();
+    let file_name = app
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let name = if file_name.is_empty() {
+        v.get_str("CFBundleDisplayName")
+            .or(v.get_str("CFBundleName"))
+            .unwrap_or("")
+            .to_string()
+    } else {
+        file_name
+    };
+    let version = v
+        .get_str("CFBundleShortVersionString")
+        .or(v.get_str("CFBundleVersion"))
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let mut alt: Vec<String> = Vec::new();
     for k in ["CFBundleDisplayName", "CFBundleName"] {
         if let Some(n) = v.get_str(k).map(|s| s.trim().to_string()) {
-            if !n.is_empty() && !n.eq_ignore_ascii_case(&name) && !alt.iter().any(|a| a.eq_ignore_ascii_case(&n)) {
+            if !n.is_empty()
+                && !n.eq_ignore_ascii_case(&name)
+                && !alt.iter().any(|a| a.eq_ignore_ascii_case(&n))
+            {
                 alt.push(n);
             }
         }
     }
-    Some(Info { id, name, version, alt })
+    Some(Info {
+        id,
+        name,
+        version,
+        alt,
+    })
 }
 
 /// The folders apps are installed in.
 pub fn app_roots() -> Vec<PathBuf> {
-    vec![PathBuf::from("/Applications"), crate::kit::fs::home().join("Applications")]
+    vec![
+        PathBuf::from("/Applications"),
+        crate::kit::fs::home().join("Applications"),
+    ]
 }
 
 /// Every `.app` in `roots`, and one folder level down ("/Applications/Utilities",
@@ -47,7 +73,9 @@ pub fn app_roots() -> Vec<PathBuf> {
 pub fn find_bundles(roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for root in roots {
-        let Ok(rd) = std::fs::read_dir(root) else { continue };
+        let Ok(rd) = std::fs::read_dir(root) else {
+            continue;
+        };
         for e in rd.flatten() {
             let p = e.path();
             let name = e.file_name().to_string_lossy().into_owned();

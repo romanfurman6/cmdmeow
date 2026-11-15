@@ -26,7 +26,10 @@ static WANTED_AT: AtomicU64 = AtomicU64::new(0);
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// Totals per process: "name.pid" → (name, bytes in, bytes out).
@@ -45,9 +48,15 @@ pub fn parse(out: &str) -> Totals {
             name_i = cols.iter().position(|c| c.is_empty()).filter(|&n| n < i);
             continue;
         }
-        let (Some(ni), Some(ii), Some(oi)) = (name_i, in_i, out_i) else { continue };
-        let (Some(key), Some(bi), Some(bo)) = (cols.get(ni), cols.get(ii), cols.get(oi)) else { continue };
-        let (Ok(bi), Ok(bo)) = (bi.parse::<u64>(), bo.parse::<u64>()) else { continue };
+        let (Some(ni), Some(ii), Some(oi)) = (name_i, in_i, out_i) else {
+            continue;
+        };
+        let (Some(key), Some(bi), Some(bo)) = (cols.get(ni), cols.get(ii), cols.get(oi)) else {
+            continue;
+        };
+        let (Ok(bi), Ok(bo)) = (bi.parse::<u64>(), bo.parse::<u64>()) else {
+            continue;
+        };
         if key.is_empty() {
             continue;
         }
@@ -86,7 +95,9 @@ pub fn rates(prev: &Totals, now: &Totals, secs: f64) -> Vec<AppRate> {
     let mut by_app: HashMap<&str, (f64, f64)> = HashMap::new();
     for (key, (name, bi, bo)) in now {
         // a process that's new since last time has no rate yet
-        let Some((_, pi, po)) = prev.get(key) else { continue };
+        let Some((_, pi, po)) = prev.get(key) else {
+            continue;
+        };
         let e = by_app.entry(name.as_str()).or_default();
         e.0 += bi.saturating_sub(*pi) as f64 / secs;
         e.1 += bo.saturating_sub(*po) as f64 / secs;
@@ -94,9 +105,17 @@ pub fn rates(prev: &Totals, now: &Totals, secs: f64) -> Vec<AppRate> {
     let mut v: Vec<AppRate> = by_app
         .into_iter()
         .filter(|(_, (d, u))| d + u >= 1.0)
-        .map(|(n, (down, up))| AppRate { name: n.to_string(), down, up })
+        .map(|(n, (down, up))| AppRate {
+            name: n.to_string(),
+            down,
+            up,
+        })
         .collect();
-    v.sort_by(|a, b| (b.down + b.up).total_cmp(&(a.down + a.up)).then_with(|| a.name.cmp(&b.name)));
+    v.sort_by(|a, b| {
+        (b.down + b.up)
+            .total_cmp(&(a.down + a.up))
+            .then_with(|| a.name.cmp(&b.name))
+    });
     v.truncate(TOP);
     v
 }
@@ -117,21 +136,25 @@ pub fn want(shared: &Shared, ctx: &egui::Context) {
         return;
     }
     let (shared, ctx) = (shared.clone(), ctx.clone());
-    let spawned = std::thread::Builder::new().name("app-traffic".into()).spawn(move || {
-        let mut prev = read();
-        let mut at = Instant::now();
-        while now_ms().saturating_sub(WANTED_AT.load(Ordering::Relaxed)) < LINGER.as_millis() as u64 {
-            std::thread::sleep(EVERY);
-            let now = read();
-            let list = rates(&prev, &now, at.elapsed().as_secs_f64());
-            at = Instant::now();
-            prev = now;
-            shared.lock_ok().apps = list;
-            ctx.request_repaint();
-        }
-        shared.lock_ok().apps.clear();
-        RUNNING.store(false, Ordering::Relaxed);
-    });
+    let spawned = std::thread::Builder::new()
+        .name("app-traffic".into())
+        .spawn(move || {
+            let mut prev = read();
+            let mut at = Instant::now();
+            while now_ms().saturating_sub(WANTED_AT.load(Ordering::Relaxed))
+                < LINGER.as_millis() as u64
+            {
+                std::thread::sleep(EVERY);
+                let now = read();
+                let list = rates(&prev, &now, at.elapsed().as_secs_f64());
+                at = Instant::now();
+                prev = now;
+                shared.lock_ok().apps = list;
+                ctx.request_repaint();
+            }
+            shared.lock_ok().apps.clear();
+            RUNNING.store(false, Ordering::Relaxed);
+        });
     if spawned.is_err() {
         RUNNING.store(false, Ordering::Relaxed);
     }
@@ -174,7 +197,10 @@ mod tests {
         assert_eq!(app_name("Safari.900"), "Safari");
         assert_eq!(app_name("Google Chrome He.4120"), "Google Chrome");
         assert_eq!(app_name("Slack Helper (Renderer).77"), "Slack");
-        assert_eq!(app_name("com.apple.WebKit.Networking.12"), "com.apple.WebKit.Networking");
+        assert_eq!(
+            app_name("com.apple.WebKit.Networking.12"),
+            "com.apple.WebKit.Networking"
+        );
         assert_eq!(app_name("Hel.3"), "Hel");
         assert_eq!(app_name("noPid"), "noPid");
     }
@@ -183,8 +209,22 @@ mod tests {
     fn rates_per_app() {
         let r = rates(&parse(A), &parse(B), 2.0);
         // Chrome's helpers add up; Safari was idle; new curl has no rate yet
-        assert_eq!(r[0], AppRate { name: "Google Chrome".into(), down: 1500.0, up: 300.0 });
-        assert_eq!(r[1], AppRate { name: "mDNSResponder".into(), down: 1.0, up: 1.0 });
+        assert_eq!(
+            r[0],
+            AppRate {
+                name: "Google Chrome".into(),
+                down: 1500.0,
+                up: 300.0
+            }
+        );
+        assert_eq!(
+            r[1],
+            AppRate {
+                name: "mDNSResponder".into(),
+                down: 1.0,
+                up: 1.0
+            }
+        );
         assert_eq!(r.len(), 2);
     }
 

@@ -58,7 +58,14 @@ mod mac {
         fn IOServiceOpen(service: u32, owning_task: u32, kind: u32, connect: *mut u32) -> i32;
         fn IOServiceClose(connect: u32) -> i32;
         fn IOObjectRelease(obj: u32) -> i32;
-        fn IOConnectCallStructMethod(conn: u32, selector: u32, input: *const c_void, in_size: usize, output: *mut c_void, out_size: *mut usize) -> i32;
+        fn IOConnectCallStructMethod(
+            conn: u32,
+            selector: u32,
+            input: *const c_void,
+            in_size: usize,
+            output: *mut c_void,
+            out_size: *mut usize,
+        ) -> i32;
     }
 
     // ------------------------------------------------------------ SMC
@@ -142,13 +149,28 @@ mod mac {
         fn call(&self, input: &KeyData) -> Option<KeyData> {
             let mut out = KeyData::default();
             let mut size = std::mem::size_of::<KeyData>();
-            let kr = unsafe { IOConnectCallStructMethod(self.conn, KERNEL_INDEX_SMC, input as *const KeyData as *const c_void, std::mem::size_of::<KeyData>(), &mut out as *mut KeyData as *mut c_void, &mut size) };
+            let kr = unsafe {
+                IOConnectCallStructMethod(
+                    self.conn,
+                    KERNEL_INDEX_SMC,
+                    input as *const KeyData as *const c_void,
+                    std::mem::size_of::<KeyData>(),
+                    &mut out as *mut KeyData as *mut c_void,
+                    &mut size,
+                )
+            };
             (kr == 0 && out.result == 0).then_some(out)
         }
 
         pub fn info(&self, key: &str) -> Option<KeyInfo> {
-            let input = KeyData { key: fourcc(key), data8: CMD_READ_KEYINFO, ..Default::default() };
-            self.call(&input).map(|o| o.info).filter(|i| i.size > 0 && i.size <= 32)
+            let input = KeyData {
+                key: fourcc(key),
+                data8: CMD_READ_KEYINFO,
+                ..Default::default()
+            };
+            self.call(&input)
+                .map(|o| o.info)
+                .filter(|i| i.size > 0 && i.size <= 32)
         }
 
         /// (size, type) of a key, if this SMC has it.
@@ -158,22 +180,32 @@ mod mac {
 
         /// Write a number to a key in the key's own type. Needs root.
         pub fn write(&self, key: &str, v: f32) -> bool {
-            let Some(info) = self.info(key) else { return false };
-            let Some(b) = encode(info.kind, v, info.size as usize) else { return false };
+            let Some(info) = self.info(key) else {
+                return false;
+            };
+            let Some(b) = encode(info.kind, v, info.size as usize) else {
+                return false;
+            };
             self.write_raw(key, info, &b)
         }
 
         /// Write raw bytes to a key; they must be exactly the key's size.
         /// Needs root.
         pub fn write_bytes(&self, key: &str, b: &[u8]) -> bool {
-            self.info(key).is_some_and(|info| self.write_raw(key, info, b))
+            self.info(key)
+                .is_some_and(|info| self.write_raw(key, info, b))
         }
 
         fn write_raw(&self, key: &str, info: KeyInfo, b: &[u8]) -> bool {
             if b.len() != info.size as usize {
                 return false;
             }
-            let mut input = KeyData { key: fourcc(key), info, data8: CMD_WRITE_BYTES, ..Default::default() };
+            let mut input = KeyData {
+                key: fourcc(key),
+                info,
+                data8: CMD_WRITE_BYTES,
+                ..Default::default()
+            };
             input.bytes[..b.len()].copy_from_slice(b);
             self.call(&input).is_some()
         }
@@ -181,12 +213,22 @@ mod mac {
         /// A key's raw bytes.
         pub fn read_bytes(&self, key: &str) -> Option<Vec<u8>> {
             let info = self.info(key)?;
-            let out = self.call(&KeyData { key: fourcc(key), info, data8: CMD_READ_BYTES, ..Default::default() })?;
+            let out = self.call(&KeyData {
+                key: fourcc(key),
+                info,
+                data8: CMD_READ_BYTES,
+                ..Default::default()
+            })?;
             Some(out.bytes[..info.size as usize].to_vec())
         }
 
         pub fn read_with(&self, key: &str, info: KeyInfo) -> Option<f32> {
-            let input = KeyData { key: fourcc(key), info, data8: CMD_READ_BYTES, ..Default::default() };
+            let input = KeyData {
+                key: fourcc(key),
+                info,
+                data8: CMD_READ_BYTES,
+                ..Default::default()
+            };
             let out = self.call(&input)?;
             decode(info.kind, &out.bytes[..info.size as usize])
         }
@@ -214,7 +256,11 @@ mod mac {
 
         /// The name of key number `i`.
         pub fn key_at(&self, i: u32) -> Option<String> {
-            let input = KeyData { data8: CMD_READ_INDEX, data32: i, ..Default::default() };
+            let input = KeyData {
+                data8: CMD_READ_INDEX,
+                data32: i,
+                ..Default::default()
+            };
             self.call(&input).map(|k| fourcc_str(k.key))
         }
     }
@@ -234,19 +280,28 @@ mod tests {
 
     #[test]
     fn encodes_smc_types() {
-        assert_eq!(encode(fourcc("flt "), 2140.0, 4), Some(2140.0f32.to_le_bytes().to_vec()));
+        assert_eq!(
+            encode(fourcc("flt "), 2140.0, 4),
+            Some(2140.0f32.to_le_bytes().to_vec())
+        );
         assert_eq!(encode(fourcc("fpe2"), 2140.0, 2), Some(vec![0x21, 0x70]));
         assert_eq!(encode(fourcc("ui8 "), 1.0, 1), Some(vec![1]));
         assert_eq!(encode(fourcc("ui8 "), 1.0, 2), None);
         assert_eq!(encode(fourcc("ch8*"), 1.0, 1), None);
         for (k, v, n) in [("flt ", 3196.5, 4), ("fpe2", 1350.0, 2), ("ui16", 7.0, 2)] {
-            assert_eq!(decode(fourcc(k), &encode(fourcc(k), v, n).unwrap()), Some(v));
+            assert_eq!(
+                decode(fourcc(k), &encode(fourcc(k), v, n).unwrap()),
+                Some(v)
+            );
         }
     }
 
     #[test]
     fn decodes_smc_types() {
-        assert_eq!(decode(fourcc("flt "), &2140.0f32.to_le_bytes()), Some(2140.0));
+        assert_eq!(
+            decode(fourcc("flt "), &2140.0f32.to_le_bytes()),
+            Some(2140.0)
+        );
         assert_eq!(decode(fourcc("fpe2"), &[0x21, 0x70]), Some(2140.0));
         assert_eq!(decode(fourcc("sp78"), &[0x40, 0x80]), Some(64.5));
         assert_eq!(decode(fourcc("ui8 "), &[2]), Some(2.0));

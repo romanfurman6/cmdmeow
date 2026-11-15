@@ -102,10 +102,30 @@ mod imp {
         fn CGDisplayModelNumber(id: u32) -> u32;
         fn CGDisplaySerialNumber(id: u32) -> u32;
         fn CGDisplayBounds(id: u32) -> CgRect;
-        fn CGGetDisplayTransferByTable(id: u32, cap: u32, r: *mut f32, g: *mut f32, b: *mut f32, count: *mut u32) -> i32;
-        fn CGSetDisplayTransferByTable(id: u32, n: u32, r: *const f32, g: *const f32, b: *const f32) -> i32;
+        fn CGGetDisplayTransferByTable(
+            id: u32,
+            cap: u32,
+            r: *mut f32,
+            g: *mut f32,
+            b: *mut f32,
+            count: *mut u32,
+        ) -> i32;
+        fn CGSetDisplayTransferByTable(
+            id: u32,
+            n: u32,
+            r: *const f32,
+            g: *const f32,
+            b: *const f32,
+        ) -> i32;
         fn CGDisplayRestoreColorSyncSettings();
-        fn CGEventTapCreate(tap: u32, place: u32, options: u32, mask: u64, callback: TapCallback, info: *mut c_void) -> CfRef;
+        fn CGEventTapCreate(
+            tap: u32,
+            place: u32,
+            options: u32,
+            mask: u64,
+            callback: TapCallback,
+            info: *mut c_void,
+        ) -> CfRef;
         fn CGEventTapEnable(tap: CfRef, on: bool);
         fn CGEventGetFlags(e: CfRef) -> u64;
         fn CGEventGetLocation(e: CfRef) -> CgPoint;
@@ -114,20 +134,38 @@ mod imp {
     #[link(name = "IOKit", kind = "framework")]
     unsafe extern "C" {
         fn IORegistryGetRootEntry(main_port: u32) -> u32;
-        fn IORegistryEntryCreateIterator(entry: u32, plane: *const c_char, options: u32, iter: *mut u32) -> i32;
+        fn IORegistryEntryCreateIterator(
+            entry: u32,
+            plane: *const c_char,
+            options: u32,
+            iter: *mut u32,
+        ) -> i32;
         fn IOIteratorNext(iter: u32) -> u32;
         fn IOObjectConformsTo(obj: u32, class: *const c_char) -> u32;
         fn IOObjectRelease(obj: u32) -> i32;
         fn IORegistryEntryGetRegistryEntryID(entry: u32, id: *mut u64) -> i32;
         fn IORegistryEntryGetName(entry: u32, name: *mut c_char) -> i32;
-        fn IORegistryEntryCreateCFProperty(entry: u32, key: CfRef, alloc: CfRef, options: u32) -> CfRef;
-        fn IORegistryEntryGetParentEntry(entry: u32, plane: *const c_char, parent: *mut u32) -> i32;
+        fn IORegistryEntryCreateCFProperty(
+            entry: u32,
+            key: CfRef,
+            alloc: CfRef,
+            options: u32,
+        ) -> CfRef;
+        fn IORegistryEntryGetParentEntry(entry: u32, plane: *const c_char, parent: *mut u32)
+            -> i32;
         fn IORegistryEntryCopyFromPath(main_port: u32, path: CfRef) -> u32;
     }
 
     #[link(name = "CoreAudio", kind = "framework")]
     unsafe extern "C" {
-        fn AudioObjectGetPropertyData(obj: u32, addr: *const AudioAddr, qsize: u32, qdata: *const c_void, size: *mut u32, data: *mut c_void) -> i32;
+        fn AudioObjectGetPropertyData(
+            obj: u32,
+            addr: *const AudioAddr,
+            qsize: u32,
+            qdata: *const c_void,
+            size: *mut u32,
+            data: *mut c_void,
+        ) -> i32;
     }
 
     unsafe extern "C" {
@@ -168,7 +206,11 @@ mod imp {
         if unsafe { CFStringGetCString(cf, buf.as_mut_ptr(), buf.len() as isize, UTF8) } == 0 {
             return None;
         }
-        Some(unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned())
+        Some(
+            unsafe { CStr::from_ptr(buf.as_ptr()) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     fn dict_get(d: CfRef, key: &str) -> CfRef {
@@ -216,10 +258,19 @@ mod imp {
         static P: std::sync::OnceLock<Private> = std::sync::OnceLock::new();
         P.get_or_init(|| unsafe {
             let open = |p: &CStr| dlopen(p.as_ptr(), 1);
-            let core_display = open(c"/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay");
-            let display_services = open(c"/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices");
+            let core_display =
+                open(c"/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay");
+            let display_services = open(
+                c"/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices",
+            );
             let iokit = open(c"/System/Library/Frameworks/IOKit.framework/IOKit");
-            let sym = |h: *mut c_void, name: &CStr| if h.is_null() { std::ptr::null_mut() } else { dlsym(h, name.as_ptr()) };
+            let sym = |h: *mut c_void, name: &CStr| {
+                if h.is_null() {
+                    std::ptr::null_mut()
+                } else {
+                    dlsym(h, name.as_ptr())
+                }
+            };
             macro_rules! f {
                 ($h:expr, $name:expr, $t:ty) => {{
                     let p = sym($h, $name);
@@ -231,8 +282,16 @@ mod imp {
                 }};
             }
             Private {
-                info: f!(core_display, c"CoreDisplay_DisplayCreateInfoDictionary", InfoFn),
-                ds_get: f!(display_services, c"DisplayServicesGetBrightness", BrightnessFn),
+                info: f!(
+                    core_display,
+                    c"CoreDisplay_DisplayCreateInfoDictionary",
+                    InfoFn
+                ),
+                ds_get: f!(
+                    display_services,
+                    c"DisplayServicesGetBrightness",
+                    BrightnessFn
+                ),
                 av_create: f!(iokit, c"IOAVServiceCreateWithService", AvCreateFn),
                 av_read: f!(iokit, c"IOAVServiceReadI2C", AvReadFn),
                 av_write: f!(iokit, c"IOAVServiceWriteI2C", AvWriteFn),
@@ -252,7 +311,9 @@ mod imp {
     fn entry_name(e: u32) -> String {
         let mut buf = [0 as c_char; 128];
         unsafe { IORegistryEntryGetName(e, buf.as_mut_ptr()) };
-        unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
+        unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
     }
 
     fn entry_string(e: u32, key: &str) -> Option<String> {
@@ -263,10 +324,12 @@ mod imp {
 
     fn behind_bridge(proxy: u32) -> bool {
         let mut parent = 0u32;
-        if unsafe { IORegistryEntryGetParentEntry(proxy, SERVICE_PLANE.as_ptr(), &mut parent) } != 0 {
+        if unsafe { IORegistryEntryGetParentEntry(proxy, SERVICE_PLANE.as_ptr(), &mut parent) } != 0
+        {
             return false;
         }
-        let bridge = entry_string(parent, "EPICProviderClass").is_some_and(|c| c == "AppleDCPMCDP29XX");
+        let bridge =
+            entry_string(parent, "EPICProviderClass").is_some_and(|c| c == "AppleDCPMCDP29XX");
         unsafe { IOObjectRelease(parent) };
         bridge
     }
@@ -274,10 +337,20 @@ mod imp {
     /// Every framebuffer's DDC line: framebuffer registry id → (AV service, chip).
     fn ddc_lines() -> HashMap<u64, (Cf, u8)> {
         let mut out = HashMap::new();
-        let Some(create) = private().av_create else { return out };
+        let Some(create) = private().av_create else {
+            return out;
+        };
         let mut iter = 0u32;
         let root = unsafe { IORegistryGetRootEntry(0) };
-        if unsafe { IORegistryEntryCreateIterator(root, SERVICE_PLANE.as_ptr(), ITERATE_RECURSIVELY, &mut iter) } != 0 {
+        if unsafe {
+            IORegistryEntryCreateIterator(
+                root,
+                SERVICE_PLANE.as_ptr(),
+                ITERATE_RECURSIVELY,
+                &mut iter,
+            )
+        } != 0
+        {
             return out;
         }
         let mut entries = Vec::new();
@@ -298,7 +371,10 @@ mod imp {
             }
             if entry_name(e) == "DCPAVServiceProxy" {
                 let external = entry_string(e, "Location").is_some_and(|l| l == "External");
-                entries.push(ddc::RegEntry::Proxy { external, mcdp: external && behind_bridge(e) });
+                entries.push(ddc::RegEntry::Proxy {
+                    external,
+                    mcdp: external && behind_bridge(e),
+                });
                 proxies.push(e);
                 continue;
             }
@@ -360,9 +436,22 @@ mod imp {
 
         fn set_gamma(&mut self, id: u32, scale: f32) -> bool {
             if !self.gamma.contains_key(&id) {
-                let (mut r, mut g, mut b) = (vec![0f32; GAMMA_LEN], vec![0f32; GAMMA_LEN], vec![0f32; GAMMA_LEN]);
+                let (mut r, mut g, mut b) = (
+                    vec![0f32; GAMMA_LEN],
+                    vec![0f32; GAMMA_LEN],
+                    vec![0f32; GAMMA_LEN],
+                );
                 let mut n = 0u32;
-                let err = unsafe { CGGetDisplayTransferByTable(id, GAMMA_LEN as u32, r.as_mut_ptr(), g.as_mut_ptr(), b.as_mut_ptr(), &mut n) };
+                let err = unsafe {
+                    CGGetDisplayTransferByTable(
+                        id,
+                        GAMMA_LEN as u32,
+                        r.as_mut_ptr(),
+                        g.as_mut_ptr(),
+                        b.as_mut_ptr(),
+                        &mut n,
+                    )
+                };
                 if err != 0 || n == 0 {
                     return false;
                 }
@@ -375,7 +464,10 @@ mod imp {
             let t = &self.gamma[&id];
             let scaled = |v: &[f32]| v.iter().map(|x| x * scale).collect::<Vec<f32>>();
             let (r, g, b) = (scaled(&t.r), scaled(&t.g), scaled(&t.b));
-            unsafe { CGSetDisplayTransferByTable(id, r.len() as u32, r.as_ptr(), g.as_ptr(), b.as_ptr()) == 0 }
+            unsafe {
+                CGSetDisplayTransferByTable(id, r.len() as u32, r.as_ptr(), g.as_ptr(), b.as_ptr())
+                    == 0
+            }
         }
     }
 
@@ -389,11 +481,24 @@ mod imp {
             let mut ids: Vec<u32> = ids[..(n as usize).min(16)].to_vec();
             ids.sort_unstable();
             let changed = ids != self.ids;
-            let infos: Vec<(u32, Cf)> = ids.iter().map(|&id| (id, Cf(private().info.map(|f| unsafe { f(id) }).unwrap_or(std::ptr::null())))).collect();
+            let infos: Vec<(u32, Cf)> = ids
+                .iter()
+                .map(|&id| {
+                    (
+                        id,
+                        Cf(private()
+                            .info
+                            .map(|f| unsafe { f(id) })
+                            .unwrap_or(std::ptr::null())),
+                    )
+                })
+                .collect();
             if changed {
                 self.walks_left = 5;
             }
-            let missing = ids.iter().any(|&id| !self.lines.contains_key(&id) && unsafe { CGDisplayIsBuiltin(id) } == 0);
+            let missing = ids
+                .iter()
+                .any(|&id| !self.lines.contains_key(&id) && unsafe { CGDisplayIsBuiltin(id) } == 0);
             if changed || (missing && self.walks_left > 0) {
                 self.walks_left = self.walks_left.saturating_sub(1);
                 // the lines belong to framebuffers, which follow the cables
@@ -421,18 +526,45 @@ mod imp {
                     let id = *id;
                     let builtin = unsafe { CGDisplayIsBuiltin(id) } != 0;
                     let vendor = unsafe { CGDisplayVendorNumber(id) };
-                    let mut key = format!("{:x}-{:x}-{:x}", vendor, unsafe { CGDisplayModelNumber(id) }, unsafe { CGDisplaySerialNumber(id) });
+                    let mut key = format!(
+                        "{:x}-{:x}-{:x}",
+                        vendor,
+                        unsafe { CGDisplayModelNumber(id) },
+                        unsafe { CGDisplaySerialNumber(id) }
+                    );
                     // two identical monitors without serials
-                    let twins = keys.iter().filter(|k| k.split('#').next() == Some(key.as_str())).count();
+                    let twins = keys
+                        .iter()
+                        .filter(|k| k.split('#').next() == Some(key.as_str()))
+                        .count();
                     if twins > 0 {
                         key = format!("{key}#{twins}");
                     }
                     keys.push(key.clone());
                     let b = unsafe { CGDisplayBounds(id) };
-                    let frame = Rect::from_min_size(Pos2::new(b.origin.x as f32, b.origin.y as f32), Vec2::new(b.w as f32, b.h as f32));
-                    let name = localized(dict_get(info.0, "DisplayProductName")).unwrap_or_else(|| if builtin { "Built-in Display".into() } else { "Display".into() });
-                    let native = builtin || (vendor == APPLE_VENDOR && native_brightness(id).is_some());
-                    Found { id, key, name, builtin, native, ddc: self.lines.contains_key(&id), frame }
+                    let frame = Rect::from_min_size(
+                        Pos2::new(b.origin.x as f32, b.origin.y as f32),
+                        Vec2::new(b.w as f32, b.h as f32),
+                    );
+                    let name =
+                        localized(dict_get(info.0, "DisplayProductName")).unwrap_or_else(|| {
+                            if builtin {
+                                "Built-in Display".into()
+                            } else {
+                                "Display".into()
+                            }
+                        });
+                    let native =
+                        builtin || (vendor == APPLE_VENDOR && native_brightness(id).is_some());
+                    Found {
+                        id,
+                        key,
+                        name,
+                        builtin,
+                        native,
+                        ddc: self.lines.contains_key(&id),
+                        frame,
+                    }
                 })
                 .collect()
         }
@@ -444,7 +576,16 @@ mod imp {
             let req = ddc::get_request(code);
             for _ in 0..4 {
                 std::thread::sleep(Duration::from_millis(10));
-                if unsafe { write(svc, chip as u32, ddc::HOST as u32, req.as_ptr(), req.len() as u32) } != 0 {
+                if unsafe {
+                    write(
+                        svc,
+                        chip as u32,
+                        ddc::HOST as u32,
+                        req.as_ptr(),
+                        req.len() as u32,
+                    )
+                } != 0
+                {
                     std::thread::sleep(Duration::from_millis(20));
                     continue;
                 }
@@ -461,12 +602,25 @@ mod imp {
         }
 
         fn ddc_write(&mut self, id: u32, code: u8, value: u16) -> bool {
-            let Some((svc, chip)) = self.line(id) else { return false };
-            let Some(write) = private().av_write else { return false };
+            let Some((svc, chip)) = self.line(id) else {
+                return false;
+            };
+            let Some(write) = private().av_write else {
+                return false;
+            };
             let req = ddc::set_request(code, value);
             for _ in 0..3 {
                 std::thread::sleep(Duration::from_millis(10));
-                if unsafe { write(svc, chip as u32, ddc::HOST as u32, req.as_ptr(), req.len() as u32) } == 0 {
+                if unsafe {
+                    write(
+                        svc,
+                        chip as u32,
+                        ddc::HOST as u32,
+                        req.as_ptr(),
+                        req.len() as u32,
+                    )
+                } == 0
+                {
                     return true;
                 }
                 std::thread::sleep(Duration::from_millis(20));
@@ -509,10 +663,23 @@ mod imp {
     }
 
     fn prop<T: Default>(obj: u32, selector: u32) -> Option<T> {
-        let addr = AudioAddr { selector, scope: four(b"glob"), element: 0 };
+        let addr = AudioAddr {
+            selector,
+            scope: four(b"glob"),
+            element: 0,
+        };
         let mut v = T::default();
         let mut size = std::mem::size_of::<T>() as u32;
-        let err = unsafe { AudioObjectGetPropertyData(obj, &addr, 0, std::ptr::null(), &mut size, &mut v as *mut T as *mut c_void) };
+        let err = unsafe {
+            AudioObjectGetPropertyData(
+                obj,
+                &addr,
+                0,
+                std::ptr::null(),
+                &mut size,
+                &mut v as *mut T as *mut c_void,
+            )
+        };
         (err == 0).then_some(v)
     }
 
@@ -520,18 +687,24 @@ mod imp {
     /// or anything else.
     pub fn audio() -> Audio {
         const SYSTEM: u32 = 1;
-        let Some(dev) = prop::<u32>(SYSTEM, four(b"dOut")).filter(|&d| d != 0) else { return Audio::Elsewhere };
+        let Some(dev) = prop::<u32>(SYSTEM, four(b"dOut")).filter(|&d| d != 0) else {
+            return Audio::Elsewhere;
+        };
         let transport = prop::<u32>(dev, four(b"tran")).unwrap_or(0);
         if transport != four(b"hdmi") && transport != four(b"dprt") {
             return Audio::Elsewhere;
         }
-        let name = prop::<usize>(dev, four(b"lnam")).map(|p| Cf(p as CfRef)).and_then(|cf| string_of(cf.0)).unwrap_or_default();
+        let name = prop::<usize>(dev, four(b"lnam"))
+            .map(|p| Cf(p as CfRef))
+            .and_then(|cf| string_of(cf.0))
+            .unwrap_or_default();
         Audio::Monitor(name)
     }
 
     // ------------------------------------------------------------ the keys
 
-    type TapCallback = unsafe extern "C" fn(proxy: CfRef, kind: u32, event: CfRef, info: *mut c_void) -> CfRef;
+    type TapCallback =
+        unsafe extern "C" fn(proxy: CfRef, kind: u32, event: CfRef, info: *mut c_void) -> CfRef;
 
     struct Tap {
         handler: Handler,
@@ -543,7 +716,12 @@ mod imp {
     const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
     const TAP_DISABLED_BY_USER: u32 = 0xFFFF_FFFF;
 
-    unsafe extern "C" fn on_event(_proxy: CfRef, kind: u32, event: CfRef, info: *mut c_void) -> CfRef {
+    unsafe extern "C" fn on_event(
+        _proxy: CfRef,
+        kind: u32,
+        event: CfRef,
+        info: *mut c_void,
+    ) -> CfRef {
         let tap = unsafe { &*(info as *const Tap) };
         if kind == TAP_DISABLED_BY_TIMEOUT || kind == TAP_DISABLED_BY_USER {
             let port = tap.port.load(std::sync::atomic::Ordering::Relaxed);
@@ -560,7 +738,9 @@ mod imp {
             let ns = objc2_app_kit::NSEvent::eventWithCGEvent(cg)?;
             decode(ns.subtype().0, ns.data1() as i64)
         });
-        let Some((key, down, _repeat)) = parsed else { return event };
+        let Some((key, down, _repeat)) = parsed else {
+            return event;
+        };
         let mut taken = match tap.taken.lock() {
             Ok(t) => t,
             Err(p) => p.into_inner(),
@@ -575,7 +755,10 @@ mod imp {
         let flags = unsafe { CGEventGetFlags(event) };
         let p = unsafe { CGEventGetLocation(event) };
         // never let a panic cross into CoreGraphics
-        let take = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (tap.handler)(key, fine(flags), Pos2::new(p.x as f32, p.y as f32)))).unwrap_or(false);
+        let take = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            (tap.handler)(key, fine(flags), Pos2::new(p.x as f32, p.y as f32))
+        }))
+        .unwrap_or(false);
         if take {
             if !taken.contains(&key) {
                 taken.push(key);
@@ -588,22 +771,38 @@ mod imp {
     /// Watch the media keys on a thread of their own. Taking keys needs
     /// Accessibility; until it is granted, try again now and then.
     pub fn start_keys(handler: Handler) {
-        let tap: &'static Tap = Box::leak(Box::new(Tap { handler, port: Default::default(), taken: Default::default() }));
+        let tap: &'static Tap = Box::leak(Box::new(Tap {
+            handler,
+            port: Default::default(),
+            taken: Default::default(),
+        }));
         std::thread::Builder::new()
             .name("display-keys".into())
             .spawn(move || loop {
                 // never create the tap before Accessibility is granted: the
                 // attempt itself makes macOS show its alert (setup asks instead)
-                if crate::kit::perms::Perm::Accessibility.status() != crate::kit::perms::Status::Allowed {
+                if crate::kit::perms::Perm::Accessibility.status()
+                    != crate::kit::perms::Status::Allowed
+                {
                     std::thread::sleep(Duration::from_secs(10));
                     continue;
                 }
-                let port = unsafe { CGEventTapCreate(1, 0, 0, 1u64 << NX_SYSDEFINED, on_event, tap as *const Tap as *mut c_void) };
+                let port = unsafe {
+                    CGEventTapCreate(
+                        1,
+                        0,
+                        0,
+                        1u64 << NX_SYSDEFINED,
+                        on_event,
+                        tap as *const Tap as *mut c_void,
+                    )
+                };
                 if port.is_null() {
                     std::thread::sleep(Duration::from_secs(10));
                     continue;
                 }
-                tap.port.store(port as *mut c_void, std::sync::atomic::Ordering::Relaxed);
+                tap.port
+                    .store(port as *mut c_void, std::sync::atomic::Ordering::Relaxed);
                 unsafe {
                     let src = CFMachPortCreateRunLoopSource(std::ptr::null(), port, 0);
                     CFRunLoopAddSource(CFRunLoopGetCurrent(), src, kCFRunLoopCommonModes);
@@ -620,7 +819,9 @@ mod imp {
     pub fn float(title: &str) {
         use objc2::MainThreadMarker;
         use objc2_app_kit::{NSApplication, NSWindowCollectionBehavior};
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         for w in NSApplication::sharedApplication(mtm).windows().iter() {
             if w.title().to_string() != title {
                 continue;
@@ -628,7 +829,10 @@ mod imp {
             if w.level() != 25 {
                 w.setLevel(25);
             }
-            let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle;
+            let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+                | NSWindowCollectionBehavior::FullScreenAuxiliary
+                | NSWindowCollectionBehavior::Stationary
+                | NSWindowCollectionBehavior::IgnoresCycle;
             if w.collectionBehavior() != behavior {
                 w.setCollectionBehavior(behavior);
             }
@@ -682,11 +886,26 @@ mod tests {
 
     #[test]
     fn decodes_media_keys() {
-        assert_eq!(decode(8, data1(2, 0x0A, false)), Some((Key::BrightnessUp, true, false)));
-        assert_eq!(decode(8, data1(3, 0x0B, false)), Some((Key::BrightnessDown, false, false)));
-        assert_eq!(decode(8, data1(0, 0x0A, true)), Some((Key::VolumeUp, true, true)));
-        assert_eq!(decode(8, data1(1, 0x0A, false)).map(|k| k.0), Some(Key::VolumeDown));
-        assert_eq!(decode(8, data1(7, 0x0A, false)).map(|k| k.0), Some(Key::Mute));
+        assert_eq!(
+            decode(8, data1(2, 0x0A, false)),
+            Some((Key::BrightnessUp, true, false))
+        );
+        assert_eq!(
+            decode(8, data1(3, 0x0B, false)),
+            Some((Key::BrightnessDown, false, false))
+        );
+        assert_eq!(
+            decode(8, data1(0, 0x0A, true)),
+            Some((Key::VolumeUp, true, true))
+        );
+        assert_eq!(
+            decode(8, data1(1, 0x0A, false)).map(|k| k.0),
+            Some(Key::VolumeDown)
+        );
+        assert_eq!(
+            decode(8, data1(7, 0x0A, false)).map(|k| k.0),
+            Some(Key::Mute)
+        );
         // play/pause and keyboard backlight are not ours
         assert_eq!(decode(8, data1(16, 0x0A, false)), None);
         assert_eq!(decode(8, data1(21, 0x0A, false)), None);
@@ -694,7 +913,10 @@ mod tests {
         assert_eq!(decode(7, data1(2, 0x0A, false)), None);
         assert_eq!(decode(8, data1(2, 0x00, false)), None);
         // the sign bit of a 64-bit data1 doesn't matter
-        assert_eq!(decode(8, data1(2, 0x0A, false) | (-1i64 << 32)), Some((Key::BrightnessUp, true, false)));
+        assert_eq!(
+            decode(8, data1(2, 0x0A, false) | (-1i64 << 32)),
+            Some((Key::BrightnessUp, true, false))
+        );
     }
 
     #[test]

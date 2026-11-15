@@ -15,7 +15,10 @@ pub struct Edl {
 impl Edl {
     pub fn new(duration: f64) -> Edl {
         let duration = duration.max(0.0);
-        Edl { duration, keep: vec![(0.0, duration)] }
+        Edl {
+            duration,
+            keep: vec![(0.0, duration)],
+        }
     }
 
     /// Nothing cut or trimmed.
@@ -116,7 +119,10 @@ impl Edl {
     /// How much kept video comes before source `t` (its place in the edited
     /// video, also for a `t` inside a cut: where the cut closes up).
     pub fn edited_at(&self, t: f64) -> f64 {
-        self.keep.iter().map(|&(a, b)| (t.min(b) - a).max(0.0)).sum()
+        self.keep
+            .iter()
+            .map(|&(a, b)| (t.min(b) - a).max(0.0))
+            .sum()
     }
 
     /// Edited time → source time (clamped into the video).

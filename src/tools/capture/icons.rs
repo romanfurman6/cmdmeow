@@ -106,13 +106,24 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
     let pt = |x: f32, y: f32| c + Vec2::new((x - 12.0) * u, (y - 12.0) * u);
     let w = (1.8 * u).max(1.1);
     let line = |pts: &[(f32, f32)]| {
-        p.add(PathShape::line(pts.iter().map(|&(x, y)| pt(x, y)).collect(), PathStroke::new(w, color)));
+        p.add(PathShape::line(
+            pts.iter().map(|&(x, y)| pt(x, y)).collect(),
+            PathStroke::new(w, color),
+        ));
     };
     let closed = |pts: &[(f32, f32)]| {
-        p.add(PathShape::closed_line(pts.iter().map(|&(x, y)| pt(x, y)).collect(), PathStroke::new(w, color)));
+        p.add(PathShape::closed_line(
+            pts.iter().map(|&(x, y)| pt(x, y)).collect(),
+            PathStroke::new(w, color),
+        ));
     };
     let boxr = |x0: f32, y0: f32, x1: f32, y1: f32| {
-        p.rect_stroke(Rect::from_min_max(pt(x0, y0), pt(x1, y1)), 1.5 * u, Stroke::new(w, color), StrokeKind::Middle);
+        p.rect_stroke(
+            Rect::from_min_max(pt(x0, y0), pt(x1, y1)),
+            1.5 * u,
+            Stroke::new(w, color),
+            StrokeKind::Middle,
+        );
     };
     let circle = |x: f32, y: f32, r: f32| {
         crate::kit::glass::stroke_circle(&p, pt(x, y), r * u, Stroke::new(w, color));
@@ -150,7 +161,14 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
         }
         Ico::Rect => boxr(4.0, 6.0, 20.0, 18.0),
         Ico::Ellipse => circle(12.0, 12.0, 8.0),
-        Ico::Pen => line(&[(3.0, 17.0), (6.0, 11.0), (9.0, 15.0), (13.0, 7.0), (16.0, 14.0), (21.0, 6.0)]),
+        Ico::Pen => line(&[
+            (3.0, 17.0),
+            (6.0, 11.0),
+            (9.0, 15.0),
+            (13.0, 7.0),
+            (16.0, 14.0),
+            (21.0, 6.0),
+        ]),
         Ico::Frame => {
             boxr(3.0, 3.0, 21.0, 21.0);
             boxr(7.5, 7.5, 16.5, 16.5);
@@ -162,7 +180,13 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
         }
         Ico::Highlight => {
             line(&[(4.0, 20.0), (12.0, 20.0)]);
-            closed(&[(14.0, 4.0), (20.0, 10.0), (12.0, 18.0), (8.0, 18.0), (8.0, 14.0)]);
+            closed(&[
+                (14.0, 4.0),
+                (20.0, 10.0),
+                (12.0, 18.0),
+                (8.0, 18.0),
+                (8.0, 14.0),
+            ]);
         }
         Ico::Blur => {
             for (x, y) in [(4.0, 4.0), (14.0, 4.0), (4.0, 14.0), (14.0, 14.0)] {
@@ -171,7 +195,13 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
         }
         Ico::Eraser => {
             line(&[(7.0, 20.0), (20.0, 20.0)]);
-            closed(&[(4.0, 15.0), (13.0, 6.0), (19.0, 12.0), (11.0, 20.0), (8.0, 20.0)]);
+            closed(&[
+                (4.0, 15.0),
+                (13.0, 6.0),
+                (19.0, 12.0),
+                (11.0, 20.0),
+                (8.0, 20.0),
+            ]);
             line(&[(9.0, 10.0), (15.0, 16.0)]);
         }
         Ico::Steps => {
@@ -184,7 +214,13 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
         }
         Ico::Eyedropper => {
             line(&[(15.0, 4.0), (20.0, 9.0)]);
-            closed(&[(13.0, 6.0), (18.0, 11.0), (9.0, 20.0), (4.0, 20.0), (4.0, 15.0)]);
+            closed(&[
+                (13.0, 6.0),
+                (18.0, 11.0),
+                (9.0, 20.0),
+                (4.0, 20.0),
+                (4.0, 15.0),
+            ]);
         }
         Ico::Ruler => {
             closed(&[(3.0, 17.0), (17.0, 3.0), (21.0, 7.0), (7.0, 21.0)]);
@@ -193,7 +229,14 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
             }
         }
         Ico::Pin => {
-            closed(&[(9.0, 3.0), (15.0, 3.0), (14.0, 10.0), (18.0, 13.0), (6.0, 13.0), (10.0, 10.0)]);
+            closed(&[
+                (9.0, 3.0),
+                (15.0, 3.0),
+                (14.0, 10.0),
+                (18.0, 13.0),
+                (6.0, 13.0),
+                (10.0, 10.0),
+            ]);
             line(&[(12.0, 13.0), (12.0, 21.0)]);
         }
         Ico::Copy => {
@@ -205,21 +248,40 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
             line(&[(7.0, 10.0), (12.0, 15.0), (17.0, 10.0)]);
             line(&[(4.0, 20.0), (20.0, 20.0)]);
         }
-        Ico::Edit => closed(&[(4.0, 20.0), (8.0, 20.0), (19.0, 9.0), (15.0, 5.0), (4.0, 16.0)]),
+        Ico::Edit => closed(&[
+            (4.0, 20.0),
+            (8.0, 20.0),
+            (19.0, 9.0),
+            (15.0, 5.0),
+            (4.0, 16.0),
+        ]),
         Ico::Undo => {
             line(&[(9.0, 14.0), (4.0, 9.0), (9.0, 4.0)]);
-            p.add(PathShape::line(arc(pt(15.0, 14.0), 5.0 * u, -90.0, 90.0, pt(4.0, 9.0)), PathStroke::new(w, color)));
+            p.add(PathShape::line(
+                arc(pt(15.0, 14.0), 5.0 * u, -90.0, 90.0, pt(4.0, 9.0)),
+                PathStroke::new(w, color),
+            ));
         }
         Ico::Redo => {
             line(&[(15.0, 14.0), (20.0, 9.0), (15.0, 4.0)]);
-            p.add(PathShape::line(arc(pt(9.0, 14.0), 5.0 * u, 270.0, 90.0, pt(20.0, 9.0)), PathStroke::new(w, color)));
+            p.add(PathShape::line(
+                arc(pt(9.0, 14.0), 5.0 * u, 270.0, 90.0, pt(20.0, 9.0)),
+                PathStroke::new(w, color),
+            ));
         }
         Ico::Trash => {
             line(&[(4.0, 6.0), (20.0, 6.0)]);
             line(&[(9.0, 6.0), (9.0, 3.5), (15.0, 3.5), (15.0, 6.0)]);
             line(&[(6.0, 6.0), (7.0, 20.5), (17.0, 20.5), (18.0, 6.0)]);
         }
-        Ico::Folder => closed(&[(3.0, 6.0), (9.5, 6.0), (11.5, 8.0), (21.0, 8.0), (21.0, 19.0), (3.0, 19.0)]),
+        Ico::Folder => closed(&[
+            (3.0, 6.0),
+            (9.5, 6.0),
+            (11.5, 8.0),
+            (21.0, 8.0),
+            (21.0, 19.0),
+            (3.0, 19.0),
+        ]),
         Ico::History => {
             circle(12.0, 12.0, 8.5);
             line(&[(12.0, 8.0), (12.0, 12.0), (15.0, 14.0)]);
@@ -242,7 +304,13 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
         }
         Ico::Mic | Ico::MicOff => {
             boxr(9.0, 3.0, 15.0, 13.0);
-            line(&[(5.0, 11.0), (6.0, 15.0), (12.0, 18.0), (18.0, 15.0), (19.0, 11.0)]);
+            line(&[
+                (5.0, 11.0),
+                (6.0, 15.0),
+                (12.0, 18.0),
+                (18.0, 15.0),
+                (19.0, 11.0),
+            ]);
             line(&[(12.0, 18.0), (12.0, 21.0)]);
             if i == Ico::MicOff {
                 line(&[(3.0, 3.0), (21.0, 21.0)]);
@@ -253,7 +321,14 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
             closed(&[(15.0, 10.0), (21.0, 7.0), (21.0, 17.0), (15.0, 14.0)]);
         }
         Ico::Speaker => {
-            closed(&[(4.0, 9.0), (8.0, 9.0), (13.0, 5.0), (13.0, 19.0), (8.0, 15.0), (4.0, 15.0)]);
+            closed(&[
+                (4.0, 9.0),
+                (8.0, 9.0),
+                (13.0, 5.0),
+                (13.0, 19.0),
+                (8.0, 15.0),
+                (4.0, 15.0),
+            ]);
             line(&[(16.0, 9.0), (17.5, 12.0), (16.0, 15.0)]);
             line(&[(19.0, 6.0), (21.5, 12.0), (19.0, 18.0)]);
         }
@@ -262,11 +337,18 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
             line(&[(15.0, 5.0), (15.0, 19.0)]);
         }
         Ico::Play => {
-            p.add(PathShape::convex_polygon(vec![pt(7.0, 4.0), pt(20.0, 12.0), pt(7.0, 20.0)], color, Stroke::NONE));
+            p.add(PathShape::convex_polygon(
+                vec![pt(7.0, 4.0), pt(20.0, 12.0), pt(7.0, 20.0)],
+                color,
+                Stroke::NONE,
+            ));
         }
         Ico::Restart => {
             line(&[(4.0, 4.0), (4.0, 9.0), (9.0, 9.0)]);
-            p.add(PathShape::line(arc(pt(12.0, 12.0), 8.0 * u, 200.0, 160.0, pt(4.0, 9.0)), PathStroke::new(w, color)));
+            p.add(PathShape::line(
+                arc(pt(12.0, 12.0), 8.0 * u, 200.0, 160.0, pt(4.0, 9.0)),
+                PathStroke::new(w, color),
+            ));
         }
         Ico::Scissors => {
             circle(7.0, 17.0, 3.0);
@@ -276,15 +358,32 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
         }
         Ico::Link => {
             line(&[(10.0, 14.0), (14.0, 10.0)]);
-            line(&[(11.0, 7.0), (13.5, 4.5), (16.5, 4.5), (19.5, 7.5), (19.5, 10.5), (17.0, 13.0)]);
-            line(&[(13.0, 17.0), (10.5, 19.5), (7.5, 19.5), (4.5, 16.5), (4.5, 13.5), (7.0, 11.0)]);
+            line(&[
+                (11.0, 7.0),
+                (13.5, 4.5),
+                (16.5, 4.5),
+                (19.5, 7.5),
+                (19.5, 10.5),
+                (17.0, 13.0),
+            ]);
+            line(&[
+                (13.0, 17.0),
+                (10.5, 19.5),
+                (7.5, 19.5),
+                (4.5, 16.5),
+                (4.5, 13.5),
+                (7.0, 11.0),
+            ]);
         }
         Ico::Gear => {
             circle(12.0, 12.0, 3.0);
             circle(12.0, 12.0, 7.5);
             for k in 0..8 {
                 let a = (k as f32 * 45.0f32).to_radians();
-                line(&[(12.0 + 7.5 * a.cos(), 12.0 + 7.5 * a.sin()), (12.0 + 10.0 * a.cos(), 12.0 + 10.0 * a.sin())]);
+                line(&[
+                    (12.0 + 7.5 * a.cos(), 12.0 + 7.5 * a.sin()),
+                    (12.0 + 10.0 * a.cos(), 12.0 + 10.0 * a.sin()),
+                ]);
             }
         }
     }
@@ -294,7 +393,11 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
 fn arc(center: Pos2, r: f32, from_deg: f32, to_deg: f32, start: Pos2) -> Vec<Pos2> {
     let mut pts = vec![start, Pos2::new(center.x, center.y - r)];
     let n = 12;
-    let span = if to_deg >= from_deg { to_deg - from_deg } else { to_deg + 360.0 - from_deg };
+    let span = if to_deg >= from_deg {
+        to_deg - from_deg
+    } else {
+        to_deg + 360.0 - from_deg
+    };
     for k in 0..=n {
         let a = (from_deg + span * k as f32 / n as f32).to_radians();
         pts.push(Pos2::new(center.x + r * a.cos(), center.y + r * a.sin()));

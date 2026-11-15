@@ -1,10 +1,10 @@
 //! Live Mac health readings for the menu panel. A background thread refreshes a
 //! shared snapshot; slow sources (system_profiler, folder sizes) run less often.
 
-use crate::kit::sync::LockExt;
 use crate::kit::activity::{self, Every};
 use crate::kit::fs::dir_size;
 use crate::kit::mechanics as m;
+use crate::kit::sync::LockExt;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Command;
@@ -48,10 +48,10 @@ pub struct Battery {
     pub permanent_failure: bool,
 }
 
-pub use super::devices::Device;
-use crate::kit::charge;
 use super::devices;
+pub use super::devices::Device;
 use super::devices_store::{History, Seen};
+use crate::kit::charge;
 
 #[derive(Clone, Debug, Default)]
 pub struct Wifi {
@@ -228,7 +228,9 @@ impl Snapshot {
         self.uptime_secs / m::SECONDS_PER_DAY
     }
     pub fn trash_overfill(&self) -> bool {
-        self.trash_bytes.map(|b| b > m::TRASH_SIZE_THRESHOLD).unwrap_or(false)
+        self.trash_bytes
+            .map(|b| b > m::TRASH_SIZE_THRESHOLD)
+            .unwrap_or(false)
     }
     pub fn thermal_word(&self) -> &'static str {
         ["Cool", "Warm", "Hot", "Critical"][self.thermal.min(3) as usize]
@@ -317,7 +319,10 @@ fn bt_store() -> &'static Mutex<BtStore> {
         let now = devices::now();
         let mut history: History = crate::kit::fs::load_json(&History::path());
         history.prune(now);
-        Mutex::new(BtStore { seen: crate::kit::fs::load_json(&Seen::path()), history })
+        Mutex::new(BtStore {
+            seen: crate::kit::fs::load_json(&Seen::path()),
+            history,
+        })
     })
 }
 
@@ -345,9 +350,17 @@ pub fn forget_device(mon: &Shared, key: &str) {
 fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     let mut list = profile.connected.clone();
     let mut io = run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
-    io.push_str(&run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
+    io.push_str(&run_cmd(
+        "ioreg",
+        &["-r", "-l", "-k", "BatteryPercentSingle"],
+    ));
     devices::merge(&mut list, &devices::parse_ioreg(&io));
-    devices::merge_extra(&mut list, &profile.paired_pods, &super::ble::adverts(), &super::ble::extra());
+    devices::merge_extra(
+        &mut list,
+        &profile.paired_pods,
+        &super::ble::adverts(),
+        &super::ble::extra(),
+    );
     let now = devices::now();
     let mut st = bt_store().lock_ok();
     let mut history_changed = false;
@@ -367,7 +380,11 @@ fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     for d in &mut list {
         let key = d.key();
         d.trend = st.history.trend(&key, now);
-        d.eta = if d.charging || !d.live() { None } else { st.history.eta(&key) };
+        d.eta = if d.charging || !d.live() {
+            None
+        } else {
+            st.history.eta(&key)
+        };
     }
     list
 }
@@ -391,9 +408,20 @@ pub fn set_paused(paused: bool) {
 }
 
 pub fn start(ctx: egui::Context, demo: bool) -> Shared {
-    let policy = if demo { charge::Policy::default() } else { charge::load() };
-    let charge = charge::View { policy, ..Default::default() };
-    let shared: Shared = Arc::new(Mutex::new(Snapshot { bt_prefs: devices::Prefs::load(), charge, ..Snapshot::default() }));
+    let policy = if demo {
+        charge::Policy::default()
+    } else {
+        charge::load()
+    };
+    let charge = charge::View {
+        policy,
+        ..Default::default()
+    };
+    let shared: Shared = Arc::new(Mutex::new(Snapshot {
+        bt_prefs: devices::Prefs::load(),
+        charge,
+        ..Snapshot::default()
+    }));
     let s = shared.clone();
     std::thread::Builder::new()
         .name("monitor".into())
@@ -411,7 +439,13 @@ struct Cadence {
 
 impl Cadence {
     const fn secs(shown: u64, hidden: Option<u64>) -> Self {
-        Cadence { shown: Duration::from_secs(shown), hidden: match hidden { Some(h) => Some(Duration::from_secs(h)), None => None } }
+        Cadence {
+            shown: Duration::from_secs(shown),
+            hidden: match hidden {
+                Some(h) => Some(Duration::from_secs(h)),
+                None => None,
+            },
+        }
     }
     /// Due now? `None` while hidden means "not until it's shown again",
     /// except for the very first reading.
@@ -454,11 +488,13 @@ fn in_background(name: &str, f: impl FnOnce() + Send + 'static) {
     if SIZING.swap(true, Ordering::Relaxed) {
         return;
     }
-    let spawned = std::thread::Builder::new().name(name.into()).spawn(move || {
-        activity::low_priority();
-        f();
-        SIZING.store(false, Ordering::Relaxed);
-    });
+    let spawned = std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            activity::low_priority();
+            f();
+            SIZING.store(false, Ordering::Relaxed);
+        });
     if spawned.is_err() {
         SIZING.store(false, Ordering::Relaxed);
     }
@@ -482,13 +518,26 @@ pub fn measure_folders(shared: Shared, ctx: egui::Context) {
     let s = shared.clone();
     in_background("folder-sizes", move || {
         let home = home_dir();
-        let places = [("Applications", PathBuf::from("/Applications")), ("Documents", home.join("Documents")), ("Downloads", home.join("Downloads")), ("Desktop", home.join("Desktop"))];
+        let places = [
+            ("Applications", PathBuf::from("/Applications")),
+            ("Documents", home.join("Documents")),
+            ("Downloads", home.join("Downloads")),
+            ("Desktop", home.join("Desktop")),
+        ];
         // each folder on its own thread: the slowest one sets the wait
         let (cats, trash) = std::thread::scope(|sc| {
-            let jobs: Vec<_> = places.iter().map(|(n, p)| sc.spawn(move || (n.to_string(), dir_size(p)))).collect();
+            let jobs: Vec<_> = places
+                .iter()
+                .map(|(n, p)| sc.spawn(move || (n.to_string(), dir_size(p))))
+                .collect();
             let t = home.join(".Trash");
             let trash = std::fs::read_dir(&t).ok().map(|_| dir_size(&t));
-            (jobs.into_iter().map(|j| j.join().unwrap_or_default()).collect::<Vec<_>>(), trash)
+            (
+                jobs.into_iter()
+                    .map(|j| j.join().unwrap_or_default())
+                    .collect::<Vec<_>>(),
+                trash,
+            )
         });
         let mut g = s.lock_ok();
         g.categories = cats;
@@ -511,8 +560,14 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
     // a second look a little later (the report lags behind a connect)
     let mut bt_connected: Option<Vec<String>> = None;
     let mut bt_recheck: Option<Instant> = None;
-    let (mut battery_at, mut health_at, mut hid_at, mut profile_at) = (Every::default(), Every::default(), Every::default(), Every::default());
-    let (mut wifi_at, mut wifi_details_at, mut sizes_at) = (Every::default(), Every::default(), Every::default());
+    let (mut battery_at, mut health_at, mut hid_at, mut profile_at) = (
+        Every::default(),
+        Every::default(),
+        Every::default(),
+        Every::default(),
+    );
+    let (mut wifi_at, mut wifi_details_at, mut sizes_at) =
+        (Every::default(), Every::default(), Every::default());
     let mut wifi_info = Wifi::default();
     let started = Instant::now();
     let wifi_slot: Arc<Mutex<Option<Wifi>>> = Arc::new(Mutex::new(None));
@@ -521,9 +576,17 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
     let mut psys = sysinfo::System::new();
     let mut procs_at = Every::default();
     #[cfg(target_os = "macos")]
-    let mut sampler = if demo { None } else { crate::kit::ioreport::Sampler::open() };
+    let mut sampler = if demo {
+        None
+    } else {
+        crate::kit::ioreport::Sampler::open()
+    };
     #[cfg(target_os = "macos")]
-    let smc = if demo { None } else { crate::kit::smc::Smc::open() };
+    let smc = if demo {
+        None
+    } else {
+        crate::kit::smc::Smc::open()
+    };
     // one-off facts
     {
         let (model, chip) = hardware();
@@ -572,13 +635,24 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         let shown = activity::visible();
         #[cfg(target_os = "macos")]
         let (power, sys_watts) = if shown {
-            (sampler.as_mut().and_then(|s| s.read()), smc.as_ref().and_then(|s| s.read("PSTR")).filter(|w| w.is_finite() && *w > 0.0 && *w < 1000.0))
+            (
+                sampler.as_mut().and_then(|s| s.read()),
+                smc.as_ref()
+                    .and_then(|s| s.read("PSTR"))
+                    .filter(|w| w.is_finite() && *w > 0.0 && *w < 1000.0),
+            )
         } else {
             (None, None)
         };
         #[cfg(not(target_os = "macos"))]
         let (power, sys_watts) = (None, None);
-        let procs = (!demo && PROCS_EVERY.due(&mut procs_at)).then(|| super::procs::top(super::procs::read(&mut psys), std::process::id(), super::procs::TOP_N));
+        let procs = (!demo && PROCS_EVERY.due(&mut procs_at)).then(|| {
+            super::procs::top(
+                super::procs::read(&mut psys),
+                std::process::id(),
+                super::procs::TOP_N,
+            )
+        });
         let battery_due = BATTERY_EVERY.due(&mut battery_at);
         // keep the helper's charge state fresh (and hand it the policy
         // again, in case it was reinstalled)
@@ -598,7 +672,9 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         });
         // system_profiler takes ~9 s: on its own thread, so the first reading
         // (and every widget waiting for it) doesn't wait for it
-        if WIFI_DETAILS_EVERY.due(&mut wifi_details_at) && !wifi_busy.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        if WIFI_DETAILS_EVERY.due(&mut wifi_details_at)
+            && !wifi_busy.swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
             let (slot, busy) = (wifi_slot.clone(), wifi_busy.clone());
             std::thread::Builder::new()
                 .name("wifi-details".into())
@@ -635,16 +711,24 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         // hidden, the slow report is only for the alerts: skip it while
         // nothing is connected over Bluetooth
         let none_connected = bt_connected.as_ref().is_some_and(|c| c.is_empty());
-        let slow_profile = (activity::visible() || !none_connected) && BT_PROFILE_EVERY.due(&mut profile_at);
+        let slow_profile =
+            (activity::visible() || !none_connected) && BT_PROFILE_EVERY.due(&mut profile_at);
         if slow_profile {
-            bt_profile = devices::parse_profiler(&run_cmd("system_profiler", &["SPBluetoothDataType", "-json"]));
+            bt_profile = devices::parse_profiler(&run_cmd(
+                "system_profiler",
+                &["SPBluetoothDataType", "-json"],
+            ));
         }
-        let devices = (HID_EVERY.due(&mut hid_at) || slow_profile).then(|| read_devices(&bt_profile));
+        let devices =
+            (HID_EVERY.due(&mut hid_at) || slow_profile).then(|| read_devices(&bt_profile));
 
         {
             let mut s = shared.lock_ok();
             if !s.ready {
-                eprintln!("[monitor] first reading after {} ms", started.elapsed().as_millis());
+                eprintln!(
+                    "[monitor] first reading after {} ms",
+                    started.elapsed().as_millis()
+                );
             }
             s.ready = true;
             s.disk_total = total;
@@ -715,7 +799,10 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
 
         // only the Trash is measured on its own (for the "Empty Trash" nudge);
         // the big folders wait for a click ([`measure_folders`])
-        if !activity::recording() && !SIZING.load(Ordering::Relaxed) && TRASH_EVERY.due(&mut sizes_at) {
+        if !activity::recording()
+            && !SIZING.load(Ordering::Relaxed)
+            && TRASH_EVERY.due(&mut sizes_at)
+        {
             let (shared, ctx) = (shared.clone(), ctx.clone());
             in_background("trash-size", move || {
                 let trash = home_dir().join(".Trash");
@@ -744,7 +831,11 @@ fn hardware() -> (String, String) {
     let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
     let item = &v["SPHardwareDataType"][0];
     let model = item["machine_name"].as_str().unwrap_or("Mac").to_string();
-    let chip = item["chip_type"].as_str().or(item["cpu_type"].as_str()).unwrap_or("").to_string();
+    let chip = item["chip_type"]
+        .as_str()
+        .or(item["cpu_type"].as_str())
+        .unwrap_or("")
+        .to_string();
     (model, chip)
 }
 
@@ -769,7 +860,15 @@ pub fn sysctl_u32(name: &str) -> Option<u32> {
     let c = std::ffi::CString::new(name).ok()?;
     let mut v: u32 = 0;
     let mut len = std::mem::size_of::<u32>();
-    let r = unsafe { libc::sysctlbyname(c.as_ptr(), &mut v as *mut u32 as *mut _, &mut len, std::ptr::null_mut(), 0) };
+    let r = unsafe {
+        libc::sysctlbyname(
+            c.as_ptr(),
+            &mut v as *mut u32 as *mut _,
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
     (r == 0).then_some(v)
 }
 
@@ -786,7 +885,15 @@ fn swap() -> (u64, u64) {
     let c = std::ffi::CString::new("vm.swapusage").unwrap();
     let mut v: XswUsage = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<XswUsage>();
-    let r = unsafe { libc::sysctlbyname(c.as_ptr(), &mut v as *mut XswUsage as *mut _, &mut len, std::ptr::null_mut(), 0) };
+    let r = unsafe {
+        libc::sysctlbyname(
+            c.as_ptr(),
+            &mut v as *mut XswUsage as *mut _,
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
     if r == 0 {
         (v.used, v.total)
     } else {
@@ -805,20 +912,41 @@ fn vm_counts() -> Option<(u64, u64, u64)> {
         let mut count = libc::HOST_VM_INFO64_COUNT;
         #[allow(deprecated)]
         let host = libc::mach_host_self();
-        let r = libc::host_statistics64(host, libc::HOST_VM_INFO64, &mut info as *mut _ as *mut i32, &mut count);
+        let r = libc::host_statistics64(
+            host,
+            libc::HOST_VM_INFO64,
+            &mut info as *mut _ as *mut i32,
+            &mut count,
+        );
         if r != 0 {
             return None;
         }
         #[allow(deprecated)]
         let page = libc::vm_page_size as u64;
-        Some(mem_split(info.internal_page_count as u64, info.purgeable_count as u64, info.wire_count as u64, info.compressor_page_count as u64, page))
+        Some(mem_split(
+            info.internal_page_count as u64,
+            info.purgeable_count as u64,
+            info.wire_count as u64,
+            info.compressor_page_count as u64,
+            page,
+        ))
     }
 }
 
 /// (app memory, wired, compressed) bytes from page counts.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn mem_split(internal: u64, purgeable: u64, wired: u64, compressed: u64, page: u64) -> (u64, u64, u64) {
-    (internal.saturating_sub(purgeable) * page, wired * page, compressed * page)
+fn mem_split(
+    internal: u64,
+    purgeable: u64,
+    wired: u64,
+    compressed: u64,
+    page: u64,
+) -> (u64, u64, u64) {
+    (
+        internal.saturating_sub(purgeable) * page,
+        wired * page,
+        compressed * page,
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -828,7 +956,12 @@ fn cpu_ticks() -> [u64; 4] {
         let mut count = libc::HOST_CPU_LOAD_INFO_COUNT;
         #[allow(deprecated)]
         let host = libc::mach_host_self();
-        let r = libc::host_statistics(host, libc::HOST_CPU_LOAD_INFO, &mut info as *mut _ as *mut i32, &mut count);
+        let r = libc::host_statistics(
+            host,
+            libc::HOST_CPU_LOAD_INFO,
+            &mut info as *mut _ as *mut i32,
+            &mut count,
+        );
         if r != 0 {
             return [0; 4];
         }
@@ -879,7 +1012,9 @@ fn parse_battery(out: &str) -> Battery {
     let (mut to_empty, mut to_full) = (None, None);
     for line in out.lines() {
         let l = line.trim_start_matches([' ', '|']).trim();
-        let Some((k, v)) = l.split_once(" = ") else { continue };
+        let Some((k, v)) = l.split_once(" = ") else {
+            continue;
+        };
         let k = k.trim_matches('"');
         let v = v.trim();
         let n = || v.parse::<f64>().ok();
@@ -903,7 +1038,9 @@ fn parse_battery(out: &str) -> Battery {
     // AvgTimeToEmpty / AvgTimeToFull, 65535 = unknown. Picked after the loop:
     // ioreg lists keys alphabetically, so "IsCharging" comes after both.
     let t = if b.charging { to_full } else { to_empty };
-    b.minutes_left = t.filter(|&t| t > 0.0 && t < m::BATTERY_TIME_UNKNOWN).map(|t| t as u32);
+    b.minutes_left = t
+        .filter(|&t| t > 0.0 && t < m::BATTERY_TIME_UNKNOWN)
+        .map(|t| t as u32);
     // Apple Silicon reports health from AppleRawMaxCapacity
     let max = if raw_max > 0.0 { raw_max } else { nominal };
     if design > 0.0 && max > 0.0 {
@@ -944,9 +1081,18 @@ fn wifi_details() -> Wifi {
                     .replace("spairport_security_mode_", "")
                     .replace('_', " ")
                     .to_uppercase();
-                w.phy = cur["spairport_network_phymode"].as_str().unwrap_or("").to_string();
-                w.channel = cur["spairport_network_channel"].as_str().unwrap_or("").to_string();
-                w.signal = cur["spairport_signal_noise"].as_str().unwrap_or("").to_string();
+                w.phy = cur["spairport_network_phymode"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                w.channel = cur["spairport_network_channel"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                w.signal = cur["spairport_signal_noise"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
             }
         }
     }
@@ -963,7 +1109,11 @@ fn wifi_name(details: &Wifi) -> Wifi {
     // macOS hides the network name without Location access
     apply_ipconfig(&mut w, &run_cmd("ipconfig", &["getsummary", "en0"]));
     if w.name.is_empty() {
-        w.name = if w.security.is_empty() { "Network".into() } else { "Wi-Fi".into() };
+        w.name = if w.security.is_empty() {
+            "Network".into()
+        } else {
+            "Wi-Fi".into()
+        };
     }
     w
 }
@@ -1031,7 +1181,13 @@ pub fn demo_snapshot() -> Snapshot {
         cpu_system: 5.0,
         cpu_history: demo_series(60, 7, 14.0, 9.0, &[(22, 38.0), (41, 31.0)]),
         mem_history: demo_series(60, 3, 17.0, 3.0, &[]),
-        net_history: demo_series(60, 11, 40_000.0, 60_000.0, &[(18, 3_200_000.0), (47, 900_000.0)]),
+        net_history: demo_series(
+            60,
+            11,
+            40_000.0,
+            60_000.0,
+            &[(18, 3_200_000.0), (47, 900_000.0)],
+        ),
         thermal: 0,
         uptime_secs: 3 * 86_400 + 5 * 3600,
         battery: Battery {
@@ -1053,35 +1209,84 @@ pub fn demo_snapshot() -> Snapshot {
         net_sent_total: 1_200_000_000,
         net_recv_total: 5_400_000_000,
         online: true,
-        wifi: Wifi { name: "Home Wi-Fi".into(), security: "WPA3 PERSONAL".into(), phy: "802.11ax".into(), channel: "149 (5GHz, 80MHz)".into(), signal: "-52 dBm / -92 dBm".into(), wired: false },
+        wifi: Wifi {
+            name: "Home Wi-Fi".into(),
+            security: "WPA3 PERSONAL".into(),
+            phy: "802.11ax".into(),
+            channel: "149 (5GHz, 80MHz)".into(),
+            signal: "-52 dBm / -92 dBm".into(),
+            wired: false,
+        },
         devices: devices::demo(),
         hidden_devices: vec![],
         bt_prefs: devices::Prefs::default(),
         speed: SpeedTest::default(),
         charge: charge::View {
-            policy: charge::Policy { limit: 80, ..Default::default() },
+            policy: charge::Policy {
+                limit: 80,
+                ..Default::default()
+            },
             helper_ok: Some(true),
-            status: charge::Status { supported: true, policy: None, state: charge::State { held: true, hot: false } },
+            status: charge::Status {
+                supported: true,
+                policy: None,
+                state: charge::State {
+                    held: true,
+                    hot: false,
+                },
+            },
             installing: false,
         },
         power: Some(crate::kit::ioreport::Reading {
             cpu_w: 3.4,
             gpu_w: 0.8,
             ane_w: 0.0,
-            ecpu: crate::kit::ioreport::Usage { busy: 0.31, mhz: 1420.0 },
-            pcpu: crate::kit::ioreport::Usage { busy: 0.12, mhz: 3180.0 },
-            gpu: crate::kit::ioreport::Usage { busy: 0.06, mhz: 440.0 },
+            ecpu: crate::kit::ioreport::Usage {
+                busy: 0.31,
+                mhz: 1420.0,
+            },
+            pcpu: crate::kit::ioreport::Usage {
+                busy: 0.12,
+                mhz: 3180.0,
+            },
+            gpu: crate::kit::ioreport::Usage {
+                busy: 0.06,
+                mhz: 440.0,
+            },
         }),
         sys_watts: Some(11.6),
         procs: vec![
-            super::procs::Proc { pid: 812, name: "Safari".into(), cpu: 24.0, mine: true },
-            super::procs::Proc { pid: 406, name: "WindowServer".into(), cpu: 11.5, mine: false },
-            super::procs::Proc { pid: 1290, name: "Xcode".into(), cpu: 6.2, mine: true },
+            super::procs::Proc {
+                pid: 812,
+                name: "Safari".into(),
+                cpu: 24.0,
+                mine: true,
+            },
+            super::procs::Proc {
+                pid: 406,
+                name: "WindowServer".into(),
+                cpu: 11.5,
+                mine: false,
+            },
+            super::procs::Proc {
+                pid: 1290,
+                name: "Xcode".into(),
+                cpu: 6.2,
+                mine: true,
+            },
         ],
-        apps: [("Safari", 2_400_000.0, 61_000.0), ("Slack", 180_000.0, 24_000.0), ("Music", 96_000.0, 2_000.0)]
-            .iter()
-            .map(|(n, d, u)| super::traffic::AppRate { name: n.to_string(), down: *d, up: *u })
-            .collect(),
+        apps: [
+            ("Safari", 2_400_000.0, 61_000.0),
+            ("Slack", 180_000.0, 24_000.0),
+            ("Music", 96_000.0, 2_000.0),
+        ]
+        .iter()
+        .map(|(n, d, u)| super::traffic::AppRate {
+            name: n.to_string(),
+            down: *d,
+            up: *u,
+        })
+        .collect(),
     }
 }
 
@@ -1120,7 +1325,9 @@ mod tests {
         assert_eq!(b.temp_c, Some(30.3));
         assert!(!b.permanent_failure);
 
-        let on_battery = IOREG.replace("\"IsCharging\" = Yes", "\"IsCharging\" = No").replace("\"AvgTimeToEmpty\" = 65535", "\"AvgTimeToEmpty\" = 240");
+        let on_battery = IOREG
+            .replace("\"IsCharging\" = Yes", "\"IsCharging\" = No")
+            .replace("\"AvgTimeToEmpty\" = 65535", "\"AvgTimeToEmpty\" = 240");
         let b = parse_battery(&on_battery);
         assert!(!b.charging);
         assert_eq!(b.minutes_left, Some(240));
@@ -1139,7 +1346,10 @@ mod tests {
     #[test]
     fn memory_split_from_pages() {
         // 16 KB pages: app = anonymous − purgeable
-        assert_eq!(mem_split(1000, 200, 300, 50, 16384), (800 * 16384, 300 * 16384, 50 * 16384));
+        assert_eq!(
+            mem_split(1000, 200, 300, 50, 16384),
+            (800 * 16384, 300 * 16384, 50 * 16384)
+        );
         assert_eq!(mem_split(10, 20, 0, 0, 4096), (0, 0, 0));
     }
 
@@ -1147,7 +1357,10 @@ mod tests {
     fn wifi_name_from_ipconfig() {
         let mut w = Wifi::default();
         apply_ipconfig(&mut w, "  SSID : <redacted>\n  Security : WPA2_Personal\n");
-        assert_eq!((w.name.as_str(), w.security.as_str()), ("", "WPA2 Personal"));
+        assert_eq!(
+            (w.name.as_str(), w.security.as_str()),
+            ("", "WPA2 Personal")
+        );
         apply_ipconfig(&mut w, "  SSID : Home\n");
         assert_eq!(w.name, "Home");
     }
@@ -1189,11 +1402,12 @@ mod tests {
     #[test]
     fn good_for_by_speed() {
         assert!(good_for(0.1).is_empty());
-        assert_eq!(good_for(4.0), vec!["Messaging", "Audio calls", "Music streaming", "Video calls"]);
+        assert_eq!(
+            good_for(4.0),
+            vec!["Messaging", "Audio calls", "Music streaming", "Video calls"]
+        );
         assert_eq!(good_for(1000.0).len(), m::GOOD_FOR.len());
     }
-
-
 }
 
 /// Sample data that looks like a real reading: noise around `base` plus a
@@ -1206,7 +1420,11 @@ fn demo_series(n: usize, seed: u32, base: f32, spread: f32, spikes: &[(usize, f3
             x ^= x >> 17;
             x ^= x << 5;
             let noise = (x % 1000) as f32 / 1000.0;
-            spikes.iter().find(|(k, _)| *k == i).map(|(_, v)| *v).unwrap_or(base + noise * spread)
+            spikes
+                .iter()
+                .find(|(k, _)| *k == i)
+                .map(|(_, v)| *v)
+                .unwrap_or(base + noise * spread)
         })
         .collect()
 }

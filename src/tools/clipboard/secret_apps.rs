@@ -18,32 +18,126 @@ pub struct Known {
 pub const CATALOG: &[Known] = &[
     Known {
         name: "1Password",
-        ids: &["com.1password.1password", "com.agilebits.onepassword7", "com.agilebits.onepassword4", "com.agilebits.onepassword-osx", "com.agilebits.onepassword"],
+        ids: &[
+            "com.1password.1password",
+            "com.agilebits.onepassword7",
+            "com.agilebits.onepassword4",
+            "com.agilebits.onepassword-osx",
+            "com.agilebits.onepassword",
+        ],
         files: &["1Password", "1Password 7", "1Password 8"],
     },
-    Known { name: "Bitwarden", ids: &["com.bitwarden.desktop"], files: &["Bitwarden"] },
-    Known { name: "Dashlane", ids: &["com.dashlane.dashlane", "com.dashlane.dashlanephonefinal"], files: &["Dashlane"] },
-    Known { name: "LastPass", ids: &["com.lastpass.lastpass", "com.lastpass.lastpassmacdesktop"], files: &["LastPass"] },
-    Known { name: "KeePassXC", ids: &["org.keepassxc.keepassxc"], files: &["KeePassXC"] },
-    Known { name: "KeePassX", ids: &["org.keepassx.keepassx"], files: &["KeePassX"] },
-    Known { name: "KeePassium", ids: &["com.keepassium.ios", "com.keepassium.pro"], files: &["KeePassium", "KeePassium Pro"] },
-    Known { name: "KeeWeb", ids: &["net.antelle.keeweb"], files: &["KeeWeb"] },
-    Known { name: "Keeper", ids: &["com.keepersecurity.passwordmanager", "com.callpod.keepermac.lite"], files: &["Keeper Password Manager", "Keeper"] },
-    Known { name: "Enpass", ids: &["in.sinew.enpass-desktop", "in.sinew.enpass-desktop.app"], files: &["Enpass"] },
-    Known { name: "NordPass", ids: &["com.nordsec.nordpass"], files: &["NordPass"] },
-    Known { name: "Proton Pass", ids: &["me.proton.pass.electron", "me.proton.pass"], files: &["Proton Pass"] },
-    Known { name: "RoboForm", ids: &["com.sibersystems.roboform", "com.sibersystems.roboformmac"], files: &["RoboForm"] },
-    Known { name: "Strongbox", ids: &["com.markmcguill.strongbox.mac", "com.markmcguill.strongbox.mac.pro"], files: &["Strongbox", "Strongbox Pro"] },
-    Known { name: "MacPass", ids: &["com.hicknhacksoftware.macpass"], files: &["MacPass"] },
-    Known { name: "Secrets", ids: &["com.outercorner.secrets-macos", "com.outercorner.secrets"], files: &["Secrets"] },
-    Known { name: "Buttercup", ids: &["pw.buttercup.desktop"], files: &["Buttercup"] },
-    Known { name: "Padloc", ids: &["app.padloc"], files: &["Padloc"] },
-    Known { name: "Passwords", ids: &["com.apple.passwords"], files: &["Passwords"] },
-    Known { name: "Keychain Access", ids: &["com.apple.keychainaccess"], files: &["Keychain Access"] },
+    Known {
+        name: "Bitwarden",
+        ids: &["com.bitwarden.desktop"],
+        files: &["Bitwarden"],
+    },
+    Known {
+        name: "Dashlane",
+        ids: &["com.dashlane.dashlane", "com.dashlane.dashlanephonefinal"],
+        files: &["Dashlane"],
+    },
+    Known {
+        name: "LastPass",
+        ids: &["com.lastpass.lastpass", "com.lastpass.lastpassmacdesktop"],
+        files: &["LastPass"],
+    },
+    Known {
+        name: "KeePassXC",
+        ids: &["org.keepassxc.keepassxc"],
+        files: &["KeePassXC"],
+    },
+    Known {
+        name: "KeePassX",
+        ids: &["org.keepassx.keepassx"],
+        files: &["KeePassX"],
+    },
+    Known {
+        name: "KeePassium",
+        ids: &["com.keepassium.ios", "com.keepassium.pro"],
+        files: &["KeePassium", "KeePassium Pro"],
+    },
+    Known {
+        name: "KeeWeb",
+        ids: &["net.antelle.keeweb"],
+        files: &["KeeWeb"],
+    },
+    Known {
+        name: "Keeper",
+        ids: &[
+            "com.keepersecurity.passwordmanager",
+            "com.callpod.keepermac.lite",
+        ],
+        files: &["Keeper Password Manager", "Keeper"],
+    },
+    Known {
+        name: "Enpass",
+        ids: &["in.sinew.enpass-desktop", "in.sinew.enpass-desktop.app"],
+        files: &["Enpass"],
+    },
+    Known {
+        name: "NordPass",
+        ids: &["com.nordsec.nordpass"],
+        files: &["NordPass"],
+    },
+    Known {
+        name: "Proton Pass",
+        ids: &["me.proton.pass.electron", "me.proton.pass"],
+        files: &["Proton Pass"],
+    },
+    Known {
+        name: "RoboForm",
+        ids: &["com.sibersystems.roboform", "com.sibersystems.roboformmac"],
+        files: &["RoboForm"],
+    },
+    Known {
+        name: "Strongbox",
+        ids: &[
+            "com.markmcguill.strongbox.mac",
+            "com.markmcguill.strongbox.mac.pro",
+        ],
+        files: &["Strongbox", "Strongbox Pro"],
+    },
+    Known {
+        name: "MacPass",
+        ids: &["com.hicknhacksoftware.macpass"],
+        files: &["MacPass"],
+    },
+    Known {
+        name: "Secrets",
+        ids: &["com.outercorner.secrets-macos", "com.outercorner.secrets"],
+        files: &["Secrets"],
+    },
+    Known {
+        name: "Buttercup",
+        ids: &["pw.buttercup.desktop"],
+        files: &["Buttercup"],
+    },
+    Known {
+        name: "Padloc",
+        ids: &["app.padloc"],
+        files: &["Padloc"],
+    },
+    Known {
+        name: "Passwords",
+        ids: &["com.apple.passwords"],
+        files: &["Passwords"],
+    },
+    Known {
+        name: "Keychain Access",
+        ids: &["com.apple.keychainaccess"],
+        files: &["Keychain Access"],
+    },
 ];
 
 /// The defaults older builds wrote into every settings file, installed or not.
-pub const OLD_DEFAULTS: &[&str] = &["com.1password.1password", "com.agilebits.onepassword7", "com.apple.keychainaccess", "com.apple.Passwords", "com.bitwarden.desktop"];
+pub const OLD_DEFAULTS: &[&str] = &[
+    "com.1password.1password",
+    "com.agilebits.onepassword7",
+    "com.apple.keychainaccess",
+    "com.apple.Passwords",
+    "com.bitwarden.desktop",
+];
 
 /// An installed app.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,14 +154,20 @@ pub fn known(bundle: &str, file_name: &str) -> Option<&'static Known> {
     CATALOG
         .iter()
         .find(|k| k.ids.contains(&id.as_str()))
-        .or_else(|| CATALOG.iter().find(|k| k.files.iter().any(|f| f.eq_ignore_ascii_case(file_name))))
+        .or_else(|| {
+            CATALOG
+                .iter()
+                .find(|k| k.files.iter().any(|f| f.eq_ignore_ascii_case(file_name)))
+        })
 }
 
 /// Of `installed`, the password managers.
 pub fn password_managers(installed: &[Found]) -> Vec<Found> {
     let mut out: Vec<Found> = Vec::new();
     for f in installed {
-        if known(&f.bundle, &f.name).is_some() && !out.iter().any(|o| o.bundle.eq_ignore_ascii_case(&f.bundle)) {
+        if known(&f.bundle, &f.name).is_some()
+            && !out.iter().any(|o| o.bundle.eq_ignore_ascii_case(&f.bundle))
+        {
             out.push(f.clone());
         }
     }
@@ -88,7 +188,11 @@ pub fn scan() -> Vec<Found> {
         .into_iter()
         .filter_map(|path| {
             let info = apps::read_info(&path)?;
-            Some(Found { bundle: info.id, name: info.name, path })
+            Some(Found {
+                bundle: info.id,
+                name: info.name,
+                path,
+            })
         })
         .collect()
 }
@@ -98,27 +202,51 @@ mod tests {
     use super::*;
 
     fn f(bundle: &str, name: &str) -> Found {
-        Found { bundle: bundle.into(), name: name.into(), path: PathBuf::from(format!("/Applications/{name}.app")) }
+        Found {
+            bundle: bundle.into(),
+            name: name.into(),
+            path: PathBuf::from(format!("/Applications/{name}.app")),
+        }
     }
 
     #[test]
     fn matches_by_id_any_case() {
-        assert_eq!(known("com.bitwarden.desktop", "Whatever").map(|k| k.name), Some("Bitwarden"));
-        assert_eq!(known("com.apple.Passwords", "Passwords").map(|k| k.name), Some("Passwords"));
-        assert_eq!(known("in.sinew.Enpass-Desktop", "Enpass").map(|k| k.name), Some("Enpass"));
+        assert_eq!(
+            known("com.bitwarden.desktop", "Whatever").map(|k| k.name),
+            Some("Bitwarden")
+        );
+        assert_eq!(
+            known("com.apple.Passwords", "Passwords").map(|k| k.name),
+            Some("Passwords")
+        );
+        assert_eq!(
+            known("in.sinew.Enpass-Desktop", "Enpass").map(|k| k.name),
+            Some("Enpass")
+        );
     }
 
     #[test]
     fn falls_back_to_file_name() {
-        assert_eq!(known("com.example.unknown", "Dashlane").map(|k| k.name), Some("Dashlane"));
+        assert_eq!(
+            known("com.example.unknown", "Dashlane").map(|k| k.name),
+            Some("Dashlane")
+        );
         assert!(known("com.apple.Safari", "Safari").is_none());
     }
 
     #[test]
     fn picks_only_managers_once() {
-        let all = [f("com.apple.Safari", "Safari"), f("com.1password.1password", "1Password"), f("com.1password.1password", "1Password"), f("org.keepassxc.keepassxc", "KeePassXC")];
+        let all = [
+            f("com.apple.Safari", "Safari"),
+            f("com.1password.1password", "1Password"),
+            f("com.1password.1password", "1Password"),
+            f("org.keepassxc.keepassxc", "KeePassXC"),
+        ];
         let pm = password_managers(&all);
-        assert_eq!(pm.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["1Password", "KeePassXC"]);
+        assert_eq!(
+            pm.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            ["1Password", "KeePassXC"]
+        );
     }
 
     #[test]

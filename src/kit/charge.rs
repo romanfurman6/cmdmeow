@@ -34,7 +34,11 @@ pub struct Policy {
 
 impl Default for Policy {
     fn default() -> Self {
-        Policy { limit: 100, sailing: true, heat: true }
+        Policy {
+            limit: 100,
+            sailing: true,
+            heat: true,
+        }
     }
 }
 
@@ -110,7 +114,10 @@ pub fn decide(p: &Policy, b: Battery, st: &mut State) -> bool {
 /// The internal battery now, from `ioreg` (`None` without one).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn read_battery() -> Option<Battery> {
-    let out = std::process::Command::new("/usr/sbin/ioreg").args(["-rn", "AppleSmartBattery"]).output().ok()?;
+    let out = std::process::Command::new("/usr/sbin/ioreg")
+        .args(["-rn", "AppleSmartBattery"])
+        .output()
+        .ok()?;
     parse_ioreg(&String::from_utf8_lossy(&out.stdout))
 }
 
@@ -120,7 +127,9 @@ fn parse_ioreg(out: &str) -> Option<Battery> {
     let mut seen = false;
     for line in out.lines() {
         let l = line.trim_start_matches([' ', '|']).trim();
-        let Some((k, v)) = l.split_once(" = ") else { continue };
+        let Some((k, v)) = l.split_once(" = ") else {
+            continue;
+        };
         let v = v.trim();
         match k.trim_matches('"') {
             // a percentage on Apple silicon
@@ -129,7 +138,12 @@ fn parse_ioreg(out: &str) -> Option<Battery> {
                 seen = true;
             }
             "ExternalConnected" => b.plugged = v == "Yes",
-            "Temperature" => b.temp_c = v.parse::<f32>().ok().map(|t| t / super::mechanics::BATTERY_TEMP_DIVISOR),
+            "Temperature" => {
+                b.temp_c = v
+                    .parse::<f32>()
+                    .ok()
+                    .map(|t| t / super::mechanics::BATTERY_TEMP_DIVISOR)
+            }
             _ => {}
         }
     }
@@ -190,23 +204,48 @@ mod tests {
     use super::*;
 
     fn bat(percent: u8, temp: f32) -> Battery {
-        Battery { percent, plugged: true, temp_c: Some(temp) }
+        Battery {
+            percent,
+            plugged: true,
+            temp_c: Some(temp),
+        }
     }
 
     #[test]
     fn off_or_unplugged_always_allows_charging() {
-        let mut st = State { held: true, hot: true };
+        let mut st = State {
+            held: true,
+            hot: true,
+        };
         assert!(!decide(&Policy::default(), bat(95, 40.0), &mut st));
         assert_eq!(st, State::default());
-        let p = Policy { limit: 80, ..Default::default() };
-        let mut st = State { held: true, hot: true };
-        assert!(!decide(&p, Battery { percent: 90, plugged: false, temp_c: Some(40.0) }, &mut st));
+        let p = Policy {
+            limit: 80,
+            ..Default::default()
+        };
+        let mut st = State {
+            held: true,
+            hot: true,
+        };
+        assert!(!decide(
+            &p,
+            Battery {
+                percent: 90,
+                plugged: false,
+                temp_c: Some(40.0)
+            },
+            &mut st
+        ));
         assert_eq!(st, State::default());
     }
 
     #[test]
     fn stops_at_limit_and_sails_down() {
-        let p = Policy { limit: 80, sailing: true, heat: false };
+        let p = Policy {
+            limit: 80,
+            sailing: true,
+            heat: false,
+        };
         let mut st = State::default();
         assert!(!decide(&p, bat(79, 30.0), &mut st));
         assert!(decide(&p, bat(80, 30.0), &mut st));
@@ -221,7 +260,11 @@ mod tests {
 
     #[test]
     fn without_sailing_resumes_right_under_the_limit() {
-        let p = Policy { limit: 80, sailing: false, heat: false };
+        let p = Policy {
+            limit: 80,
+            sailing: false,
+            heat: false,
+        };
         let mut st = State::default();
         assert!(decide(&p, bat(85, 30.0), &mut st));
         assert!(decide(&p, bat(80, 30.0), &mut st));
@@ -230,7 +273,11 @@ mod tests {
 
     #[test]
     fn heat_protection_has_hysteresis() {
-        let p = Policy { limit: 90, sailing: false, heat: true };
+        let p = Policy {
+            limit: 90,
+            sailing: false,
+            heat: true,
+        };
         let mut st = State::default();
         assert!(!decide(&p, bat(50, 34.0), &mut st));
         assert!(decide(&p, bat(50, 35.0), &mut st));
@@ -242,7 +289,15 @@ mod tests {
         assert!(!decide(&p, bat(50, 40.0), &mut st));
         // unknown temperature never blocks
         let p = Policy { heat: true, ..p };
-        assert!(!decide(&p, Battery { percent: 50, plugged: true, temp_c: None }, &mut st));
+        assert!(!decide(
+            &p,
+            Battery {
+                percent: 50,
+                plugged: true,
+                temp_c: None
+            },
+            &mut st
+        ));
     }
 
     #[test]
@@ -251,15 +306,45 @@ mod tests {
         let b = parse_ioreg(out).unwrap();
         assert_eq!(b.percent, 81);
         assert!(b.plugged);
-        assert_eq!(b.temp_c, Some(3050.0 / crate::kit::mechanics::BATTERY_TEMP_DIVISOR));
+        assert_eq!(
+            b.temp_c,
+            Some(3050.0 / crate::kit::mechanics::BATTERY_TEMP_DIVISOR)
+        );
         assert!(parse_ioreg("").is_none());
     }
 
     #[test]
     fn bad_limits_mean_off() {
-        assert_eq!(Policy { limit: 10, ..Default::default() }.sanitize().limit, 100);
-        assert_eq!(Policy { limit: 150, ..Default::default() }.sanitize().limit, 100);
-        assert_eq!(Policy { limit: 80, ..Default::default() }.sanitize().limit, 80);
-        assert_eq!(serde_json::from_str::<Policy>("{}").unwrap(), Policy::default());
+        assert_eq!(
+            Policy {
+                limit: 10,
+                ..Default::default()
+            }
+            .sanitize()
+            .limit,
+            100
+        );
+        assert_eq!(
+            Policy {
+                limit: 150,
+                ..Default::default()
+            }
+            .sanitize()
+            .limit,
+            100
+        );
+        assert_eq!(
+            Policy {
+                limit: 80,
+                ..Default::default()
+            }
+            .sanitize()
+            .limit,
+            80
+        );
+        assert_eq!(
+            serde_json::from_str::<Policy>("{}").unwrap(),
+            Policy::default()
+        );
     }
 }

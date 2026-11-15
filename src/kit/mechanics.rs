@@ -4,11 +4,31 @@
 /// SharedPreferences sub_1c60/sub_5764: the low-disk alert threshold is the
 /// preset nearest to 10% of the disk's capacity (presets from the table at
 /// 0x1c1e0); 1 TB when the capacity can't be read.
-pub const DISK_THRESHOLD_PRESETS: [u64; 7] = [2_000_000_000, 5_000_000_000, 10_000_000_000, 20_000_000_000, 30_000_000_000, 50_000_000_000, 100_000_000_000];
+pub const DISK_THRESHOLD_PRESETS: [u64; 7] = [
+    2_000_000_000,
+    5_000_000_000,
+    10_000_000_000,
+    20_000_000_000,
+    30_000_000_000,
+    50_000_000_000,
+    100_000_000_000,
+];
 pub const DISK_THRESHOLD_CAPACITY_DIVISOR: u64 = 10;
 pub const DISK_THRESHOLD_FALLBACK: u64 = 1_000_000_000_000;
 /// SharedPreferences sub_5594: Trash alert = TrashSizeLimits[2] (table at 0x1c280).
-pub const TRASH_SIZE_LIMITS: [u64; 11] = [500_000_000, 1_000_000_000, 2_000_000_000, 3_000_000_000, 5_000_000_000, 10_000_000_000, 15_000_000_000, 20_000_000_000, 30_000_000_000, 50_000_000_000, 100_000_000_000];
+pub const TRASH_SIZE_LIMITS: [u64; 11] = [
+    500_000_000,
+    1_000_000_000,
+    2_000_000_000,
+    3_000_000_000,
+    5_000_000_000,
+    10_000_000_000,
+    15_000_000_000,
+    20_000_000_000,
+    30_000_000_000,
+    50_000_000_000,
+    100_000_000_000,
+];
 pub const TRASH_SIZE_THRESHOLD: u64 = TRASH_SIZE_LIMITS[2];
 /// HealthIssuesController sub_a308: a Bluetooth device is ignored when its
 /// battery is above 19% (cmp #0x13); Apple mobile devices are skipped.
@@ -68,7 +88,11 @@ pub enum BatteryHealthState {
 /// Failure" or the failure flag → 4 (service); health "Good" 1, "Fair" 2, "Poor" 3.
 pub fn battery_health_state(text: &str, permanent_failure: bool) -> BatteryHealthState {
     let t = text.trim();
-    if permanent_failure || t.eq_ignore_ascii_case("Check Battery") || t.eq_ignore_ascii_case("Permanent Battery Failure") || t.eq_ignore_ascii_case("Service Recommended") {
+    if permanent_failure
+        || t.eq_ignore_ascii_case("Check Battery")
+        || t.eq_ignore_ascii_case("Permanent Battery Failure")
+        || t.eq_ignore_ascii_case("Service Recommended")
+    {
         BatteryHealthState::Service
     } else if t.eq_ignore_ascii_case("Good") || t.eq_ignore_ascii_case("Normal") {
         BatteryHealthState::Good

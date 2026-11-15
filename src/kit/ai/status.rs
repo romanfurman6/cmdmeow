@@ -21,7 +21,11 @@ pub fn fetch(url: &str) -> Option<String> {
     if url.is_empty() {
         return None;
     }
-    let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().timeout_global(Some(std::time::Duration::from_secs(8))).build());
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(8)))
+            .build(),
+    );
     let body = agent.get(url).call().ok()?.body_mut().read_to_vec().ok()?;
     parse(&body)
 }
@@ -32,10 +36,22 @@ mod tests {
 
     #[test]
     fn indicators() {
-        assert_eq!(parse(br#"{"status":{"indicator":"none","description":"All Systems Operational"}}"#), None);
-        assert_eq!(parse(br#"{"status":{"indicator":"minor","description":"Partial outage"}}"#).as_deref(), Some("Degraded"));
-        assert_eq!(parse(br#"{"status":{"indicator":"major"}}"#).as_deref(), Some("Outage"));
-        assert_eq!(parse(br#"{"status":{"indicator":"critical"}}"#).as_deref(), Some("Outage"));
+        assert_eq!(
+            parse(br#"{"status":{"indicator":"none","description":"All Systems Operational"}}"#),
+            None
+        );
+        assert_eq!(
+            parse(br#"{"status":{"indicator":"minor","description":"Partial outage"}}"#).as_deref(),
+            Some("Degraded")
+        );
+        assert_eq!(
+            parse(br#"{"status":{"indicator":"major"}}"#).as_deref(),
+            Some("Outage")
+        );
+        assert_eq!(
+            parse(br#"{"status":{"indicator":"critical"}}"#).as_deref(),
+            Some("Outage")
+        );
         assert_eq!(parse(b"<html>"), None);
     }
 }

@@ -49,11 +49,20 @@ impl Seen {
             }
         }
         let before = self.devices.len();
-        self.devices.retain(|s| s.seen.is_some_and(|t| now.saturating_sub(t) < FORGET_AFTER));
+        self.devices
+            .retain(|s| s.seen.is_some_and(|t| now.saturating_sub(t) < FORGET_AFTER));
         // a name-only copy of a connected device ("AirPods Max" next to
         // "Roman's AirPods Max" with its address) is the same one, seen
         // before its address was known
-        self.devices.retain(|s| !(s.address.is_empty() && live.iter().any(|d| d.live() && !d.address.is_empty() && d.kind == s.kind && ends_with_name(&d.name, &s.name))));
+        self.devices.retain(|s| {
+            !(s.address.is_empty()
+                && live.iter().any(|d| {
+                    d.live()
+                        && !d.address.is_empty()
+                        && d.kind == s.kind
+                        && ends_with_name(&d.name, &s.name)
+                }))
+        });
         changed || self.devices.len() != before
     }
 
@@ -63,7 +72,11 @@ impl Seen {
         self.devices
             .iter()
             .filter(|s| !live.iter().any(|d| d.same(s)))
-            .map(|s| Device { charging: false, case_charging: false, ..s.clone() })
+            .map(|s| Device {
+                charging: false,
+                case_charging: false,
+                ..s.clone()
+            })
             .collect()
     }
 
@@ -123,7 +136,9 @@ impl History {
     /// One point per 3 hours over the week, oldest first, starting at the
     /// first reading; a gap repeats the last known value.
     pub fn trend(&self, key: &str, now: u64) -> Vec<u8> {
-        let Some(pts) = self.by.get(key).filter(|p| !p.is_empty()) else { return vec![] };
+        let Some(pts) = self.by.get(key).filter(|p| !p.is_empty()) else {
+            return vec![];
+        };
         let start = now.saturating_sub(HISTORY_SPAN);
         let buckets = (HISTORY_SPAN / TREND_STEP) as usize;
         let mut out: Vec<Option<u8>> = vec![None; buckets];
@@ -170,13 +185,27 @@ mod tests {
     use crate::tools::system::devices::Kind;
 
     fn dev(name: &str, b: u8) -> Device {
-        Device { name: name.into(), kind: Kind::Mouse, main: Some(b), ..Default::default() }
+        Device {
+            name: name.into(),
+            kind: Kind::Mouse,
+            main: Some(b),
+            ..Default::default()
+        }
     }
 
     #[test]
     fn remembers_devices_that_went_away() {
         let mut s = Seen::default();
-        assert!(s.update(&[dev("Mouse", 40), Device { name: "Speaker".into(), ..Default::default() }], 100));
+        assert!(s.update(
+            &[
+                dev("Mouse", 40),
+                Device {
+                    name: "Speaker".into(),
+                    ..Default::default()
+                }
+            ],
+            100
+        ));
         assert_eq!(s.devices.len(), 1, "only devices with a battery");
         assert!(!s.update(&[dev("Mouse", 38)], 200), "same set");
         assert_eq!(s.devices[0].main, Some(38));
@@ -185,7 +214,10 @@ mod tests {
         charging.charging = true;
         s.update(&[charging], 300);
         let away = s.away(&[]);
-        assert_eq!((away[0].main, away[0].seen, away[0].charging), (Some(38), Some(300), false));
+        assert_eq!(
+            (away[0].main, away[0].seen, away[0].charging),
+            (Some(38), Some(300), false)
+        );
         assert!(s.update(&[], 300 + FORGET_AFTER), "forgotten after a month");
         assert!(s.devices.is_empty());
     }
@@ -223,7 +255,10 @@ mod tests {
         assert!(!h.record("m", 30, 89), "too soon");
         assert!(h.record("m", 90, 89), "changed");
         assert!(!h.record("m", 200, 89), "same value");
-        assert!(h.record("m", 90 + POINT_EVERY, 89), "but at least every 15 min");
+        assert!(
+            h.record("m", 90 + POINT_EVERY, 89),
+            "but at least every 15 min"
+        );
         h.record("m", HISTORY_SPAN + 2000, 50);
         assert_eq!(h.by["m"].len(), 1, "older than a week dropped");
         h.prune(3 * HISTORY_SPAN);
@@ -235,7 +270,14 @@ mod tests {
         let mut h = History::default();
         let now = HISTORY_SPAN * 2;
         let start = now - HISTORY_SPAN;
-        h.by.insert("m".into(), vec![(start + 10 * TREND_STEP, 80), (start + 13 * TREND_STEP + 5, 70), (now, 60)]);
+        h.by.insert(
+            "m".into(),
+            vec![
+                (start + 10 * TREND_STEP, 80),
+                (start + 13 * TREND_STEP + 5, 70),
+                (now, 60),
+            ],
+        );
         let t = h.trend("m", now);
         assert_eq!(t.len(), 56 - 10);
         assert_eq!(&t[..4], &[80, 80, 80, 70]);
@@ -247,7 +289,10 @@ mod tests {
     fn eta_from_the_current_discharge() {
         let mut h = History::default();
         // charged to 100 at hour 0, 80 at hour 10: 2%/h, 40 h left
-        h.by.insert("m".into(), vec![(0, 30), (3600, 100), (3600 * 6, 90), (3600 * 11, 80)]);
+        h.by.insert(
+            "m".into(),
+            vec![(0, 30), (3600, 100), (3600 * 6, 90), (3600 * 11, 80)],
+        );
         assert_eq!(h.eta("m"), Some(40 * 3600));
         // not enough yet
         h.by.insert("n".into(), vec![(0, 100), (1800, 98)]);

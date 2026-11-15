@@ -117,7 +117,10 @@ pub fn nap(d: Duration, kick: Option<&Kick>) -> Wake {
         if now >= until {
             return Wake::Timeout;
         }
-        g = WAKE.wait_timeout(g, until - now).unwrap_or_else(|e| e.into_inner()).0;
+        g = WAKE
+            .wait_timeout(g, until - now)
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
     }
 }
 

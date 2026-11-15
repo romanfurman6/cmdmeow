@@ -29,13 +29,22 @@ pub fn current(all: &All) -> &Shared {
         return &all[i];
     }
     let s = settings::get();
-    ai::PROVIDERS.iter().position(|m| s.is_on(m.id)).map(|i| &all[i]).unwrap_or(&all[0])
+    ai::PROVIDERS
+        .iter()
+        .position(|m| s.is_on(m.id))
+        .map(|i| &all[i])
+        .unwrap_or(&all[0])
 }
 
 /// The providers turned on in Settings, with their data.
 pub fn enabled(all: &All) -> Vec<UsageInfo> {
     let s = settings::get();
-    ai::PROVIDERS.iter().zip(all.iter()).filter(|(m, _)| s.is_on(m.id)).map(|(_, i)| i.lock_ok().clone()).collect()
+    ai::PROVIDERS
+        .iter()
+        .zip(all.iter())
+        .filter(|(m, _)| s.is_on(m.id))
+        .map(|(_, i)| i.lock_ok().clone())
+        .collect()
 }
 
 static SHOWN: std::sync::OnceLock<All> = std::sync::OnceLock::new();
@@ -49,11 +58,31 @@ pub fn snapshot(i: usize) -> Option<UsageInfo> {
 pub fn start(ctx: egui::Context, demo: bool) -> All {
     let providers: Vec<_> = (0..ai::ALL).map(ai::make).collect();
     if demo {
-        let all: All = Arc::new(providers.iter().map(|p| Arc::new(Mutex::new(UsageInfo { scanned: true, ..p.demo() }))).collect());
+        let all: All = Arc::new(
+            providers
+                .iter()
+                .map(|p| {
+                    Arc::new(Mutex::new(UsageInfo {
+                        scanned: true,
+                        ..p.demo()
+                    }))
+                })
+                .collect(),
+        );
         let _ = SHOWN.set(all.clone());
         return all;
     }
-    let all: All = Arc::new(providers.iter().map(|p| Arc::new(Mutex::new(UsageInfo { loading: true, ..UsageInfo::new(p.name()) }))).collect());
+    let all: All = Arc::new(
+        providers
+            .iter()
+            .map(|p| {
+                Arc::new(Mutex::new(UsageInfo {
+                    loading: true,
+                    ..UsageInfo::new(p.name())
+                }))
+            })
+            .collect(),
+    );
     let shared = all.clone();
     let _ = SHOWN.set(all.clone());
     std::thread::Builder::new()
@@ -125,7 +154,9 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             // a provider with no limits yet asks again each minute, quietly:
             // `loading` is only for the first check and a Refresh, so the
             // page doesn't swap its layout every minute
-            let retry_empty = ai::PROVIDERS[i].limits && s.lock_ok().limits.is_empty() && limits_at[i].age().is_some_and(|a| a.as_secs() > 60);
+            let retry_empty = ai::PROVIDERS[i].limits
+                && s.lock_ok().limits.is_empty()
+                && limits_at[i].age().is_some_and(|a| a.as_secs() > 60);
             if retry_empty || limits_at[i].due(Duration::from_secs(m::CLAUDE_LIMITS_REFRESH_SECS)) {
                 limits_at[i].mark();
                 p.fetch_account(s);
@@ -133,7 +164,9 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             // local logs of every provider that's on, so switching tabs only
             // changes what's drawn; the cache reads only what was added since.
             // Hidden, it waits until the panel or window opens (the nap ends then)
-            if (activity::visible() || local_at[i].age().is_none()) && local_at[i].due(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS)) {
+            if (activity::visible() || local_at[i].age().is_none())
+                && local_at[i].due(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS))
+            {
                 let mut local = p.local_tokens();
                 history::with(id, |h| {
                     h.merge_days(&mut local, chrono::Local::now().date_naive());
@@ -174,9 +207,15 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
         // Refresh, after every provider shows its numbers
         if !activity::recording() {
             for i in 0..n {
-                if set.is_on(ai::PROVIDERS[i].id) && providers[i].enabled() && size_at[i].age().is_none() {
+                if set.is_on(ai::PROVIDERS[i].id)
+                    && providers[i].enabled()
+                    && size_at[i].age().is_none()
+                {
                     size_at[i].mark();
-                    let d = providers[i].data_dir().map(|d| crate::kit::fs::dir_size(&d)).unwrap_or(0);
+                    let d = providers[i]
+                        .data_dir()
+                        .map(|d| crate::kit::fs::dir_size(&d))
+                        .unwrap_or(0);
                     all[i].lock_ok().data_bytes = d;
                     activity::repaint(&ctx);
                 }
@@ -198,8 +237,16 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             }
         }
         // wait, but wake early when someone asks for a refresh or the panel opens
-        if activity::nap(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS), Some(cc::recheck())) == Wake::Kicked {
-            for e in limits_at.iter_mut().chain(local_at.iter_mut()).chain(size_at.iter_mut()) {
+        if activity::nap(
+            Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS),
+            Some(cc::recheck()),
+        ) == Wake::Kicked
+        {
+            for e in limits_at
+                .iter_mut()
+                .chain(local_at.iter_mut())
+                .chain(size_at.iter_mut())
+            {
                 e.reset();
             }
             status_at.reset();

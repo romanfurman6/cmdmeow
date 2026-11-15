@@ -29,7 +29,10 @@ impl Model {
     }
 
     pub fn url(self) -> String {
-        format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", self.file())
+        format!(
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
+            self.file()
+        )
     }
 
     /// About how big the download is.
@@ -112,7 +115,13 @@ impl Progress {
 /// answering, not on a long download.
 pub fn agent() -> ureq::Agent {
     use std::time::Duration;
-    ureq::Agent::new_with_config(ureq::Agent::config_builder().timeout_connect(Some(Duration::from_secs(20))).timeout_recv_response(Some(Duration::from_secs(30))).http_status_as_error(false).build())
+    ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(20)))
+            .timeout_recv_response(Some(Duration::from_secs(30)))
+            .http_status_as_error(false)
+            .build(),
+    )
 }
 
 /// Fetch `m`, picking up a download that stopped part way. Blocks. One
@@ -135,7 +144,9 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
     if have > 0 {
         req = req.header("Range", format!("bytes={have}-"));
     }
-    let resp = req.call().map_err(|e| format!("Couldn't reach the download: {e}"))?;
+    let resp = req
+        .call()
+        .map_err(|e| format!("Couldn't reach the download: {e}"))?;
     let status = resp.status().as_u16();
     if status == 416 && have > 0 {
         // the part is already whole (or the file changed): start over
@@ -146,12 +157,22 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
     if status != 200 && !resumed {
         return Err(format!("The download answered {status}"));
     }
-    let len = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
+    let len = resp
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
     let start = if resumed { have } else { 0 };
     let total = len.map(|l| l + start).unwrap_or(m.bytes());
     p.total.store(total, Ordering::Relaxed);
     p.done.store(start, Ordering::Relaxed);
-    let mut file = std::fs::OpenOptions::new().create(true).append(resumed).write(true).truncate(!resumed).open(&part).map_err(|e| e.to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(resumed)
+        .write(true)
+        .truncate(!resumed)
+        .open(&part)
+        .map_err(|e| e.to_string())?;
     let mut body = resp.into_body();
     let mut reader = body.as_reader();
     let mut buf = vec![0u8; 1 << 16];
@@ -160,7 +181,9 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
         if p.cancelled() {
             return Err("Stopped".into());
         }
-        let n = reader.read(&mut buf).map_err(|e| format!("The download broke off: {e}"))?;
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("The download broke off: {e}"))?;
         if n == 0 {
             break;
         }
@@ -175,7 +198,9 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
     }
     // a whisper.cpp model starts with "lmgg"
     let mut magic = [0u8; 4];
-    std::fs::File::open(&part).and_then(|mut f| f.read_exact(&mut magic)).map_err(|e| e.to_string())?;
+    std::fs::File::open(&part)
+        .and_then(|mut f| f.read_exact(&mut magic))
+        .map_err(|e| e.to_string())?;
     if &magic != b"lmgg" {
         let _ = std::fs::remove_file(&part);
         return Err("That wasn't a speech model; try again".into());
@@ -194,7 +219,8 @@ impl Loaded {
     #[cfg(target_os = "macos")]
     pub fn load(m: Model) -> Result<Loaded, String> {
         use whisper_rs::{WhisperContext, WhisperContextParameters};
-        let ctx = WhisperContext::new_with_params(m.path(), WhisperContextParameters::default()).map_err(|e| format!("The speech model didn't load: {e}"))?;
+        let ctx = WhisperContext::new_with_params(m.path(), WhisperContextParameters::default())
+            .map_err(|e| format!("The speech model didn't load: {e}"))?;
         Ok(Loaded { ctx })
     }
 
@@ -206,13 +232,27 @@ impl Loaded {
     /// Whisper's raw segments (start s, end s, text) for 16 kHz mono `pcm`.
     /// `lang` is a code like "uk", None to detect it. With `p`, progress is
     /// in percent and its cancel flag stops the run. Blocks.
-    pub fn run(&self, pcm: &[f32], lang: Option<&str>, p: Option<&std::sync::Arc<Progress>>) -> Result<Vec<(f64, f64, String)>, String> {
-        Ok(self.run_timed(pcm, lang, p)?.into_iter().map(|s| (s.start, s.end, s.text)).collect())
+    pub fn run(
+        &self,
+        pcm: &[f32],
+        lang: Option<&str>,
+        p: Option<&std::sync::Arc<Progress>>,
+    ) -> Result<Vec<(f64, f64, String)>, String> {
+        Ok(self
+            .run_timed(pcm, lang, p)?
+            .into_iter()
+            .map(|s| (s.start, s.end, s.text))
+            .collect())
     }
 
     /// [`Loaded::run`] with each segment's words and their times.
     #[cfg(target_os = "macos")]
-    pub fn run_timed(&self, pcm: &[f32], lang: Option<&str>, p: Option<&std::sync::Arc<Progress>>) -> Result<Vec<Segment>, String> {
+    pub fn run_timed(
+        &self,
+        pcm: &[f32],
+        lang: Option<&str>,
+        p: Option<&std::sync::Arc<Progress>>,
+    ) -> Result<Vec<Segment>, String> {
         use whisper_rs::{FullParams, SamplingStrategy};
         let mut state = self.ctx.create_state().map_err(|e| e.to_string())?;
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
@@ -226,7 +266,9 @@ impl Loaded {
         params.set_token_timestamps(true);
         if let Some(p) = p {
             let pa = p.clone();
-            params.set_progress_callback_safe(move |pct: i32| pa.done.store(pct.clamp(0, 100) as u64, Ordering::Relaxed));
+            params.set_progress_callback_safe(move |pct: i32| {
+                pa.done.store(pct.clamp(0, 100) as u64, Ordering::Relaxed)
+            });
             // whisper-rs 0.16's safe abort callback reads its closure wrongly (and
             // aborts every encode), so the raw one, on the cancel flag itself
             unsafe extern "C" fn stop(flag: *mut std::ffi::c_void) -> bool {
@@ -235,11 +277,19 @@ impl Loaded {
             // `p` outlives `full` below, so the flag stays where it is
             unsafe {
                 params.set_abort_callback(Some(stop));
-                params.set_abort_callback_user_data(&p.cancel as *const AtomicBool as *mut std::ffi::c_void);
+                params.set_abort_callback_user_data(
+                    &p.cancel as *const AtomicBool as *mut std::ffi::c_void,
+                );
             }
         }
         let cancelled = || p.is_some_and(|p| p.cancelled());
-        state.full(params, pcm).map_err(|e| if cancelled() { "Stopped".to_string() } else { format!("Transcribing failed: {e}") })?;
+        state.full(params, pcm).map_err(|e| {
+            if cancelled() {
+                "Stopped".to_string()
+            } else {
+                format!("Transcribing failed: {e}")
+            }
+        })?;
         Ok((0..state.full_n_segments())
             .filter_map(|i| state.get_segment(i))
             .map(|s| {
@@ -247,7 +297,11 @@ impl Loaded {
                     .filter_map(|j| s.get_token(j))
                     .map(|t| {
                         let d = t.token_data();
-                        (d.t0 as f64 / 100.0, d.t1 as f64 / 100.0, t.to_bytes().map(|b| b.to_vec()).unwrap_or_default())
+                        (
+                            d.t0 as f64 / 100.0,
+                            d.t1 as f64 / 100.0,
+                            t.to_bytes().map(|b| b.to_vec()).unwrap_or_default(),
+                        )
                     })
                     .collect();
                 Segment {
@@ -261,7 +315,12 @@ impl Loaded {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn run_timed(&self, _pcm: &[f32], _lang: Option<&str>, _p: Option<&std::sync::Arc<Progress>>) -> Result<Vec<Segment>, String> {
+    pub fn run_timed(
+        &self,
+        _pcm: &[f32],
+        _lang: Option<&str>,
+        _p: Option<&std::sync::Arc<Progress>>,
+    ) -> Result<Vec<Segment>, String> {
         Err("Speech to text needs macOS".into())
     }
 }
@@ -315,6 +374,12 @@ mod word_tests {
             (0.9, 1.0, b"!".to_vec()),
             (1.0, 1.0, b"<|endoftext|>".to_vec()),
         ];
-        assert_eq!(group_words(&toks), vec![(0.0, 0.6, "Привіт".to_string()), (0.7, 1.0, "all!".to_string())]);
+        assert_eq!(
+            group_words(&toks),
+            vec![
+                (0.0, 0.6, "Привіт".to_string()),
+                (0.7, 1.0, "all!".to_string())
+            ]
+        );
     }
 }

@@ -11,7 +11,11 @@ pub struct Camera;
 
 #[cfg(not(target_os = "macos"))]
 impl Camera {
-    pub fn open(_device: Option<&str>, _diameter: f32, _center: egui::Pos2) -> Result<Camera, String> {
+    pub fn open(
+        _device: Option<&str>,
+        _diameter: f32,
+        _center: egui::Pos2,
+    ) -> Result<Camera, String> {
         Err("The camera needs macOS".into())
     }
     pub fn window_number(&self) -> u32 {
@@ -33,18 +37,27 @@ impl Camera {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use egui::Pos2;
     use dispatch2::{DispatchQueue, DispatchTime};
+    use egui::Pos2;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, ProtocolObject};
-    use objc2::{define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+    use objc2::{
+        define_class, msg_send, AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly,
+    };
+    use objc2_app_kit::{
+        NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior,
+        NSWindowStyleMask,
+    };
     use objc2_av_foundation::{
-        AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession, AVCaptureSessionPreset1280x720, AVCaptureVideoDataOutput, AVCaptureVideoDataOutputSampleBufferDelegate,
-        AVCaptureVideoPreviewLayer, AVLayerVideoGravityResizeAspectFill, AVMediaTypeVideo,
+        AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput,
+        AVCaptureSession, AVCaptureSessionPreset1280x720, AVCaptureVideoDataOutput,
+        AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureVideoPreviewLayer,
+        AVLayerVideoGravityResizeAspectFill, AVMediaTypeVideo,
     };
     use objc2_core_media::CMSampleBuffer;
-    use objc2_foundation::{NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
+    use objc2_foundation::{
+        NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    };
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
@@ -65,14 +78,22 @@ mod imp {
 
         unsafe impl AVCaptureVideoDataOutputSampleBufferDelegate for Frames {
             #[unsafe(method(captureOutput:didOutputSampleBuffer:fromConnection:))]
-            fn did_output(&self, _output: &AVCaptureOutput, _sample: &CMSampleBuffer, _connection: &AVCaptureConnection) {
+            fn did_output(
+                &self,
+                _output: &AVCaptureOutput,
+                _sample: &CMSampleBuffer,
+                _connection: &AVCaptureConnection,
+            ) {
                 let r = self.ivars();
                 if r.live.swap(true, Ordering::Relaxed) {
                     return;
                 }
-                let Some(w) = r.window.lock().ok().and_then(|mut w| w.take()) else { return };
+                let Some(w) = r.window.lock().ok().and_then(|mut w| w.take()) else {
+                    return;
+                };
                 // the preview layer draws the frame a moment after we get it
-                let when = DispatchTime::try_from(std::time::Duration::from_millis(120)).unwrap_or(DispatchTime::NOW);
+                let when = DispatchTime::try_from(std::time::Duration::from_millis(120))
+                    .unwrap_or(DispatchTime::NOW);
                 let _ = DispatchQueue::main().after(when, move || {
                     let w = w;
                     fade_in(&w.0);
@@ -83,7 +104,10 @@ mod imp {
 
     impl Frames {
         fn new(window: Retained<NSWindow>) -> Retained<Self> {
-            let this = Self::alloc().set_ivars(Reveal { window: Mutex::new(Some(SendBox(window))), live: AtomicBool::new(false) });
+            let this = Self::alloc().set_ivars(Reveal {
+                window: Mutex::new(Some(SendBox(window))),
+                live: AtomicBool::new(false),
+            });
             unsafe { msg_send![super(this), init] }
         }
     }
@@ -121,7 +145,8 @@ mod imp {
                     .and_then(|id| AVCaptureDevice::deviceWithUniqueID(&NSString::from_str(id)))
                     .or_else(|| AVCaptureDevice::defaultDeviceWithMediaType(media))
                     .ok_or("No camera found")?;
-                let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev).map_err(|e| e.localizedDescription().to_string())?;
+                let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev)
+                    .map_err(|e| e.localizedDescription().to_string())?;
                 let session = AVCaptureSession::new();
                 if !session.canAddInput(&input) {
                     return Err("The camera is busy".into());
@@ -132,10 +157,20 @@ mod imp {
                     session.setSessionPreset(AVCaptureSessionPreset1280x720);
                 }
 
-                let top = NSScreen::screens(mtm).firstObject().map(|s| s.frame().size.height).unwrap_or(0.0);
+                let top = NSScreen::screens(mtm)
+                    .firstObject()
+                    .map(|s| s.frame().size.height)
+                    .unwrap_or(0.0);
                 let d = diameter as f64;
-                let origin = NSPoint::new(center.x as f64 - d / 2.0, top - center.y as f64 - d / 2.0);
-                let window = NSWindow::initWithContentRect_styleMask_backing_defer(NSWindow::alloc(mtm), NSRect::new(origin, NSSize::new(d, d)), NSWindowStyleMask::Borderless, NSBackingStoreType::Buffered, false);
+                let origin =
+                    NSPoint::new(center.x as f64 - d / 2.0, top - center.y as f64 - d / 2.0);
+                let window = NSWindow::initWithContentRect_styleMask_backing_defer(
+                    NSWindow::alloc(mtm),
+                    NSRect::new(origin, NSSize::new(d, d)),
+                    NSWindowStyleMask::Borderless,
+                    NSBackingStoreType::Buffered,
+                    false,
+                );
                 // see-through until the first frame (no black circle meanwhile)
                 window.setAlphaValue(0.0);
                 window.setReleasedWhenClosed(false);
@@ -144,7 +179,11 @@ mod imp {
                 window.setHasShadow(true);
                 window.setMovableByWindowBackground(true);
                 window.setLevel(LEVEL);
-                window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::FullScreenAuxiliary);
+                window.setCollectionBehavior(
+                    NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::Stationary
+                        | NSWindowCollectionBehavior::FullScreenAuxiliary,
+                );
                 let view = window.contentView().ok_or("no view")?;
                 view.setWantsLayer(true);
                 let preview = AVCaptureVideoPreviewLayer::layerWithSession(&session);
@@ -162,11 +201,17 @@ mod imp {
                     let out = AVCaptureVideoDataOutput::new();
                     let fmt = NSNumber::new_u32(u32::from_be_bytes(*b"420v"));
                     let key = NSString::from_str("PixelFormatType");
-                    out.setVideoSettings(Some(&NSDictionary::from_slices(&[&*key], &[&*fmt as &AnyObject])));
+                    out.setVideoSettings(Some(&NSDictionary::from_slices(
+                        &[&*key],
+                        &[&*fmt as &AnyObject],
+                    )));
                     out.setAlwaysDiscardsLateVideoFrames(true);
                     let delegate = Frames::new(window.clone());
                     let queue = DispatchQueue::new("cmdmeow.camera", None);
-                    out.setSampleBufferDelegate_queue(Some(ProtocolObject::from_ref(&*delegate)), Some(&queue));
+                    out.setSampleBufferDelegate_queue(
+                        Some(ProtocolObject::from_ref(&*delegate)),
+                        Some(&queue),
+                    );
                     session.canAddOutput(&out).then(|| {
                         session.addOutput(&out);
                         (out, delegate)
@@ -176,7 +221,13 @@ mod imp {
                     // nothing will say when it's live: show it now
                     window.setAlphaValue(1.0);
                 }
-                let cam = Camera { window, session, preview, frames, opened: std::time::Instant::now() };
+                let cam = Camera {
+                    window,
+                    session,
+                    preview,
+                    frames,
+                    opened: std::time::Instant::now(),
+                };
                 cam.lay_out(d);
                 if let Some(root) = view.layer() {
                     root.addSublayer(&cam.preview);
@@ -218,20 +269,36 @@ mod imp {
 
         /// Centre the bubble at `center` (global points, top-left origin).
         pub fn move_to(&self, center: Pos2) {
-            let Some(mtm) = MainThreadMarker::new() else { return };
-            let top = NSScreen::screens(mtm).firstObject().map(|s| s.frame().size.height).unwrap_or(0.0);
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            let top = NSScreen::screens(mtm)
+                .firstObject()
+                .map(|s| s.frame().size.height)
+                .unwrap_or(0.0);
             let f = self.window.frame();
-            let origin = NSPoint::new(center.x as f64 - f.size.width / 2.0, top - center.y as f64 - f.size.height / 2.0);
+            let origin = NSPoint::new(
+                center.x as f64 - f.size.width / 2.0,
+                top - center.y as f64 - f.size.height / 2.0,
+            );
             self.window.setFrameOrigin(origin);
         }
 
         /// Where the bubble is now (global points, top-left origin): the
         /// person may have dragged it.
         pub fn frame(&self) -> egui::Rect {
-            let Some(mtm) = MainThreadMarker::new() else { return egui::Rect::NOTHING };
-            let top = NSScreen::screens(mtm).firstObject().map(|s| s.frame().size.height).unwrap_or(0.0);
+            let Some(mtm) = MainThreadMarker::new() else {
+                return egui::Rect::NOTHING;
+            };
+            let top = NSScreen::screens(mtm)
+                .firstObject()
+                .map(|s| s.frame().size.height)
+                .unwrap_or(0.0);
             let f = self.window.frame();
-            egui::Rect::from_min_size(Pos2::new(f.origin.x as f32, (top - f.origin.y - f.size.height) as f32), egui::vec2(f.size.width as f32, f.size.height as f32))
+            egui::Rect::from_min_size(
+                Pos2::new(f.origin.x as f32, (top - f.origin.y - f.size.height) as f32),
+                egui::vec2(f.size.width as f32, f.size.height as f32),
+            )
         }
 
         pub fn visible(&self) -> bool {
@@ -241,7 +308,10 @@ mod imp {
         /// On for a while and still no picture: the camera sends none (a
         /// closed lid, another app holding it).
         pub fn stalled(&self) -> bool {
-            let live = self.frames.as_ref().is_none_or(|(_, f)| f.ivars().live.load(Ordering::Relaxed));
+            let live = self
+                .frames
+                .as_ref()
+                .is_none_or(|(_, f)| f.ivars().live.load(Ordering::Relaxed));
             !live && self.opened.elapsed().as_secs_f32() > 3.0
         }
 
@@ -273,13 +343,17 @@ mod imp {
         pub fn set_diameter(&self, d: f32) {
             let d = d as f64;
             let f = self.window.frame();
-            let c = NSPoint::new(f.origin.x + f.size.width / 2.0, f.origin.y + f.size.height / 2.0);
+            let c = NSPoint::new(
+                f.origin.x + f.size.width / 2.0,
+                f.origin.y + f.size.height / 2.0,
+            );
             let (mut x, mut y) = (c.x - d / 2.0, c.y - d / 2.0);
             if let Some(v) = self.window.screen().map(|s| s.visibleFrame()) {
                 x = x.min(v.origin.x + v.size.width - d).max(v.origin.x);
                 y = y.min(v.origin.y + v.size.height - d).max(v.origin.y);
             }
-            self.window.setFrame_display(NSRect::new(NSPoint::new(x, y), NSSize::new(d, d)), true);
+            self.window
+                .setFrame_display(NSRect::new(NSPoint::new(x, y), NSSize::new(d, d)), true);
             self.lay_out(d);
         }
     }

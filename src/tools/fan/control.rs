@@ -67,7 +67,13 @@ impl Source {
     }
     /// The temperature this source reads now, falling back to the hottest part.
     pub fn read(self, s: &Snapshot) -> Option<f32> {
-        let pick = |want: fn(Group) -> bool| s.groups().into_iter().filter(|g| want(g.group)).map(|g| g.max).reduce(f32::max);
+        let pick = |want: fn(Group) -> bool| {
+            s.groups()
+                .into_iter()
+                .filter(|g| want(g.group))
+                .map(|g| g.max)
+                .reduce(f32::max)
+        };
         let v = match self {
             Source::Hottest => None,
             Source::Cpu => pick(|g| matches!(g, Group::PCores | Group::ECores | Group::Cpu)),
@@ -89,7 +95,10 @@ pub struct Curve {
 
 impl Default for Curve {
     fn default() -> Self {
-        Curve { pts: Preset::Balanced.points(), source: Source::Hottest }
+        Curve {
+            pts: Preset::Balanced.points(),
+            source: Source::Hottest,
+        }
     }
 }
 
@@ -103,7 +112,11 @@ impl Curve {
         for w in p.windows(2) {
             let (a, b) = (w[0], w[1]);
             if t <= b.0 {
-                let k = if b.0 > a.0 { (t - a.0) / (b.0 - a.0) } else { 1.0 };
+                let k = if b.0 > a.0 {
+                    (t - a.0) / (b.0 - a.0)
+                } else {
+                    1.0
+                };
                 return a.1 + (b.1 - a.1) * k;
             }
         }
@@ -113,11 +126,22 @@ impl Curve {
     /// Move point `i` to (t, f), keeping the points in order 3 °C apart,
     /// inside the chart, and the speed never falling as it gets hotter.
     pub fn drag(&mut self, i: usize, t: f32, f: f32) {
-        let lo_t = if i == 0 { CURVE_LO } else { self.pts[i - 1].0 + 3.0 };
-        let hi_t = if i == 2 { CURVE_HI } else { self.pts[i + 1].0 - 3.0 };
+        let lo_t = if i == 0 {
+            CURVE_LO
+        } else {
+            self.pts[i - 1].0 + 3.0
+        };
+        let hi_t = if i == 2 {
+            CURVE_HI
+        } else {
+            self.pts[i + 1].0 - 3.0
+        };
         let lo_f = if i == 0 { 0.0 } else { self.pts[i - 1].1 };
         let hi_f = if i == 2 { 1.0 } else { self.pts[i + 1].1 };
-        self.pts[i] = (t.clamp(lo_t, hi_t.max(lo_t)).round(), f.clamp(lo_f, hi_f.max(lo_f)));
+        self.pts[i] = (
+            t.clamp(lo_t, hi_t.max(lo_t)).round(),
+            f.clamp(lo_f, hi_f.max(lo_f)),
+        );
     }
 
     pub fn preset(&self) -> Option<Preset> {
@@ -160,7 +184,11 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { mode: Mode::Auto, fixed: 0.4, curve: Curve::default() }
+        Settings {
+            mode: Mode::Auto,
+            fixed: 0.4,
+            curve: Curve::default(),
+        }
     }
 }
 
@@ -181,7 +209,12 @@ impl Settings {
 
     /// [`Settings::targets`] on a smoothed temperature, with Quiet's
     /// hysteresis, so a sensor spike doesn't make the fans hunt.
-    pub fn steady_targets(&self, fans: &[Fan], temp: Option<f32>, st: &mut Steady) -> Vec<Option<f32>> {
+    pub fn steady_targets(
+        &self,
+        fans: &[Fan],
+        temp: Option<f32>,
+        st: &mut Steady,
+    ) -> Vec<Option<f32>> {
         let t = temp.map(|t| st.smooth(t));
         if self.mode == Mode::Quiet {
             let on = t.is_some_and(|t| t >= QUIET_FROM_C || (st.quiet_on && t >= QUIET_UNTIL_C));
@@ -193,8 +226,17 @@ impl Settings {
     }
 
     fn sanitize(mut self) -> Self {
-        self.fixed = if self.fixed.is_finite() { self.fixed.clamp(0.0, 1.0) } else { 0.4 };
-        let ok = self.curve.pts.iter().all(|(t, f)| t.is_finite() && f.is_finite()) && self.curve.pts.windows(2).all(|w| w[0].0 < w[1].0);
+        self.fixed = if self.fixed.is_finite() {
+            self.fixed.clamp(0.0, 1.0)
+        } else {
+            0.4
+        };
+        let ok = self
+            .curve
+            .pts
+            .iter()
+            .all(|(t, f)| t.is_finite() && f.is_finite())
+            && self.curve.pts.windows(2).all(|w| w[0].0 < w[1].0);
         if !ok {
             self.curve = Curve::default();
         }
@@ -275,12 +317,19 @@ mod tests {
     use super::*;
 
     fn fan() -> Fan {
-        Fan { rpm: 2000.0, min: 1200.0, max: 5700.0 }
+        Fan {
+            rpm: 2000.0,
+            min: 1200.0,
+            max: 5700.0,
+        }
     }
 
     #[test]
     fn curve_interpolates_and_holds_ends() {
-        let c = Curve { pts: [(40.0, 0.0), (60.0, 0.5), (80.0, 1.0)], source: Source::Hottest };
+        let c = Curve {
+            pts: [(40.0, 0.0), (60.0, 0.5), (80.0, 1.0)],
+            source: Source::Hottest,
+        };
         assert_eq!(c.at(20.0), 0.0);
         assert_eq!(c.at(40.0), 0.0);
         assert_eq!(c.at(50.0), 0.25);
@@ -290,7 +339,10 @@ mod tests {
 
     #[test]
     fn drag_keeps_points_ordered_and_rising() {
-        let mut c = Curve { pts: [(40.0, 0.2), (60.0, 0.5), (80.0, 0.9)], source: Source::Hottest };
+        let mut c = Curve {
+            pts: [(40.0, 0.2), (60.0, 0.5), (80.0, 0.9)],
+            source: Source::Hottest,
+        };
         c.drag(1, 90.0, 0.0);
         assert_eq!(c.pts[1], (77.0, 0.2));
         c.drag(0, 10.0, 0.9);
@@ -302,7 +354,10 @@ mod tests {
     #[test]
     fn quiet_holds_between_55_and_60_and_spikes_are_smoothed() {
         let fans = [fan()];
-        let s = Settings { mode: Mode::Quiet, ..Default::default() };
+        let s = Settings {
+            mode: Mode::Quiet,
+            ..Default::default()
+        };
         let mut st = Steady::default();
         assert_eq!(s.steady_targets(&fans, Some(58.0), &mut st), vec![None]);
         // warm for a while: Quiet takes the fans
@@ -320,21 +375,37 @@ mod tests {
         }
         assert!(!st.quiet_on);
         // one hot reading moves a curve only part of the way
-        let mut c = Settings { mode: Mode::Curve, ..Default::default() };
+        let mut c = Settings {
+            mode: Mode::Curve,
+            ..Default::default()
+        };
         c.curve.pts = [(40.0, 0.0), (60.0, 0.5), (80.0, 1.0)];
         let mut st = Steady::default();
         let calm = c.steady_targets(&fans, Some(40.0), &mut st)[0].unwrap();
         let spike = c.steady_targets(&fans, Some(80.0), &mut st)[0].unwrap();
-        assert!(spike > calm && spike < speed(&fans[0], 1.0), "{calm} {spike}");
+        assert!(
+            spike > calm && spike < speed(&fans[0], 1.0),
+            "{calm} {spike}"
+        );
     }
 
     #[test]
     fn targets_per_mode() {
-        let fans = [fan(), Fan { rpm: 0.0, min: 1000.0, max: 2000.0 }];
+        let fans = [
+            fan(),
+            Fan {
+                rpm: 0.0,
+                min: 1000.0,
+                max: 2000.0,
+            },
+        ];
         let mut s = Settings::default();
         assert_eq!(s.targets(&fans, Some(70.0)), vec![None, None]);
         s.mode = Mode::Quiet;
-        assert_eq!(s.targets(&fans, Some(70.0)), vec![Some(1200.0), Some(1000.0)]);
+        assert_eq!(
+            s.targets(&fans, Some(70.0)),
+            vec![Some(1200.0), Some(1000.0)]
+        );
         assert_eq!(s.targets(&fans, Some(45.0)), vec![None, None]);
         s.mode = Mode::Max;
         assert_eq!(s.targets(&fans, None), vec![Some(5700.0), Some(2000.0)]);
@@ -343,7 +414,10 @@ mod tests {
         assert_eq!(s.targets(&fans, None), vec![Some(3450.0), Some(1500.0)]);
         s.mode = Mode::Curve;
         s.curve.pts = [(40.0, 0.0), (60.0, 0.5), (80.0, 1.0)];
-        assert_eq!(s.targets(&fans, Some(60.0)), vec![Some(3450.0), Some(1500.0)]);
+        assert_eq!(
+            s.targets(&fans, Some(60.0)),
+            vec![Some(3450.0), Some(1500.0)]
+        );
         assert_eq!(s.targets(&fans, None), vec![None, None]);
     }
 
@@ -363,10 +437,21 @@ mod tests {
         assert_eq!(c.preset(), Some(Preset::Balanced));
         c.drag(1, 66.0, 0.3);
         assert_eq!(c.preset(), None);
-        let bad = Settings { mode: Mode::Curve, fixed: f32::NAN, curve: Curve { pts: [(80.0, 0.0), (60.0, 0.5), (90.0, 1.0)], source: Source::Gpu } }.sanitize();
+        let bad = Settings {
+            mode: Mode::Curve,
+            fixed: f32::NAN,
+            curve: Curve {
+                pts: [(80.0, 0.0), (60.0, 0.5), (90.0, 1.0)],
+                source: Source::Gpu,
+            },
+        }
+        .sanitize();
         assert_eq!(bad.fixed, 0.4);
         assert_eq!(bad.curve, Curve::default());
         let json = serde_json::to_string(&Settings::default()).unwrap();
-        assert_eq!(serde_json::from_str::<Settings>(&json).unwrap(), Settings::default());
+        assert_eq!(
+            serde_json::from_str::<Settings>(&json).unwrap(),
+            Settings::default()
+        );
     }
 }

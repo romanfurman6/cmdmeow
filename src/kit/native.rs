@@ -6,9 +6,10 @@ mod mac {
     use objc2::rc::Retained;
     use objc2::MainThreadMarker;
     use objc2_app_kit::{
-        NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua, NSApplication, NSApplicationActivationPolicy,
-        NSAutoresizingMaskOptions, NSColor, NSView, NSVisualEffectBlendingMode,
-        NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindowOrderingMode, NSWorkspace,
+        NSAppearance, NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua,
+        NSApplication, NSApplicationActivationPolicy, NSAutoresizingMaskOptions, NSColor, NSView,
+        NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
+        NSVisualEffectView, NSWindowOrderingMode, NSWorkspace,
     };
     use objc2_foundation::NSProcessInfo;
     use std::cell::RefCell;
@@ -21,19 +22,30 @@ mod mac {
     /// True when the system appearance is light. Our windows pin their own
     /// appearance, so this asks the app, which follows the system.
     pub fn system_light() -> bool {
-        let Some(mtm) = MainThreadMarker::new() else { return false };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return false;
+        };
         let app = NSApplication::sharedApplication(mtm);
-        !app.effectiveAppearance().name().to_string().contains("Dark")
+        !app.effectiveAppearance()
+            .name()
+            .to_string()
+            .contains("Dark")
     }
 
     fn appearance(light: bool) -> Option<Retained<NSAppearance>> {
-        NSAppearance::appearanceNamed(if light { unsafe { NSAppearanceNameAqua } } else { unsafe { NSAppearanceNameDarkAqua } })
+        NSAppearance::appearanceNamed(if light {
+            unsafe { NSAppearanceNameAqua }
+        } else {
+            unsafe { NSAppearanceNameDarkAqua }
+        })
     }
 
     /// Give every glass window the light or dark material.
     pub fn set_appearance(light: bool) {
         LIGHT.with(|l| l.set(light));
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let Some(ap) = appearance(light) else { return };
         let app = NSApplication::sharedApplication(mtm);
         for w in app.windows().iter() {
@@ -47,11 +59,15 @@ mod mac {
     /// Put the system's frosted blur (NSVisualEffectView) behind every egui
     /// window, with rounded corners. Our backdrop sits on top, partly clear.
     pub fn apply_glass(corner_radius: f64) {
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let app = NSApplication::sharedApplication(mtm);
         let windows = app.windows();
         for w in windows.iter() {
-            let Some(content) = w.contentView() else { continue };
+            let Some(content) = w.contentView() else {
+                continue;
+            };
             let class = content.class().name().to_string_lossy().to_string();
             if !class.contains("Winit") || w.title().to_string().starts_with(super::PLAIN_WINDOW) {
                 continue;
@@ -61,7 +77,9 @@ mod mac {
             if known {
                 continue;
             }
-            let Some(superview) = (unsafe { content.superview() }) else { continue };
+            let Some(superview) = (unsafe { content.superview() }) else {
+                continue;
+            };
             w.setOpaque(false);
             w.setBackgroundColor(Some(&NSColor::clearColor()));
             // glass in our own mode, so text stays readable on any wallpaper
@@ -90,8 +108,15 @@ mod mac {
                 e.setMaskImage(Some(&mask));
             }
             let view: Retained<NSView> = Retained::into_super(e);
-            view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable);
-            superview.addSubview_positioned_relativeTo(&view, NSWindowOrderingMode::Below, Some(&content));
+            view.setAutoresizingMask(
+                NSAutoresizingMaskOptions::ViewWidthSizable
+                    | NSAutoresizingMaskOptions::ViewHeightSizable,
+            );
+            superview.addSubview_positioned_relativeTo(
+                &view,
+                NSWindowOrderingMode::Below,
+                Some(&content),
+            );
             w.invalidateShadow();
             GLASS.with(|g| g.borrow_mut().push((num, view)));
         }
@@ -118,32 +143,64 @@ mod mac {
             *p = image::Rgba([255, 255, 255, (a * 255.0).round() as u8]);
         }
         let mut png = Vec::new();
-        image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
+        image::DynamicImage::ImageRgba8(img)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .ok()?;
         let data = NSData::with_bytes(&png);
         let ns = NSImage::initWithData(NSImage::alloc(), &data)?;
         ns.setSize(NSSize::new(side_pt, side_pt));
-        ns.setCapInsets(NSEdgeInsets { top: r, left: r, bottom: r, right: r });
+        ns.setCapInsets(NSEdgeInsets {
+            top: r,
+            left: r,
+            bottom: r,
+            right: r,
+        });
         ns.setResizingMode(NSImageResizingMode::Stretch);
         Some(ns)
     }
 
     /// Diagnostic: describe our windows (frames, view classes, glass layers).
     pub fn debug_windows() -> String {
-        let Some(mtm) = MainThreadMarker::new() else { return String::new() };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return String::new();
+        };
         let app = NSApplication::sharedApplication(mtm);
         let mut out = String::new();
         for w in app.windows().iter() {
             let f = w.frame();
-            let screen = w.screen().map(|s| { let sf = s.frame(); (sf.size.width, sf.size.height, s.backingScaleFactor()) });
-            out.push_str(&format!("win #{} frame {:?} opaque {} visible {} scale {} screen {:?}\n", w.windowNumber(), (f.origin.x, f.origin.y, f.size.width, f.size.height), w.isOpaque(), w.isVisible(), w.backingScaleFactor(), screen));
+            let screen = w.screen().map(|s| {
+                let sf = s.frame();
+                (sf.size.width, sf.size.height, s.backingScaleFactor())
+            });
+            out.push_str(&format!(
+                "win #{} frame {:?} opaque {} visible {} scale {} screen {:?}\n",
+                w.windowNumber(),
+                (f.origin.x, f.origin.y, f.size.width, f.size.height),
+                w.isOpaque(),
+                w.isVisible(),
+                w.backingScaleFactor(),
+                screen
+            ));
             if let Some(c) = w.contentView() {
                 let cf = c.frame();
-                out.push_str(&format!("  content {} {:?}\n", c.class().name().to_string_lossy(), (cf.size.width, cf.size.height)));
+                out.push_str(&format!(
+                    "  content {} {:?}\n",
+                    c.class().name().to_string_lossy(),
+                    (cf.size.width, cf.size.height)
+                ));
                 if let Some(sv) = unsafe { c.superview() } {
-                    out.push_str(&format!("  super {}\n", sv.class().name().to_string_lossy()));
+                    out.push_str(&format!(
+                        "  super {}\n",
+                        sv.class().name().to_string_lossy()
+                    ));
                     for v in sv.subviews().iter() {
                         let vf = v.frame();
-                        out.push_str(&format!("    sub {} {:?} hidden {}\n", v.class().name().to_string_lossy(), (vf.origin.x, vf.origin.y, vf.size.width, vf.size.height), v.isHidden()));
+                        out.push_str(&format!(
+                            "    sub {} {:?} hidden {}\n",
+                            v.class().name().to_string_lossy(),
+                            (vf.origin.x, vf.origin.y, vf.size.width, vf.size.height),
+                            v.isHidden()
+                        ));
                     }
                 }
             }
@@ -153,9 +210,15 @@ mod mac {
 
     /// Accessory = menu bar app with no Dock icon; Regular = normal app window.
     pub fn set_dock_icon(visible: bool) {
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let app = NSApplication::sharedApplication(mtm);
-        let policy = if visible { NSApplicationActivationPolicy::Regular } else { NSApplicationActivationPolicy::Accessory };
+        let policy = if visible {
+            NSApplicationActivationPolicy::Regular
+        } else {
+            NSApplicationActivationPolicy::Accessory
+        };
         let was = app.activationPolicy();
         if was == policy {
             return;
@@ -186,7 +249,9 @@ mod mac {
         use objc2::runtime::AnyObject;
         use objc2::{class, msg_send, sel};
         use objc2_foundation::NSString;
-        let Some(_mtm) = MainThreadMarker::new() else { return };
+        let Some(_mtm) = MainThreadMarker::new() else {
+            return;
+        };
         unsafe {
             let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
             // the first item of the main menu is the app menu (winit's):
@@ -197,9 +262,13 @@ mod mac {
             // cmdmeow"): use the app's own name
             let process: Retained<AnyObject> = msg_send![class!(NSProcessInfo), processInfo];
             let pname: Retained<NSString> = msg_send![&*process, processName];
-            let me: Retained<AnyObject> = msg_send![class!(NSRunningApplication), currentApplication];
+            let me: Retained<AnyObject> =
+                msg_send![class!(NSRunningApplication), currentApplication];
             let shown: Option<Retained<NSString>> = msg_send![&*me, localizedName];
-            let (pname, shown) = (pname.to_string(), shown.map(|s| s.to_string()).unwrap_or_default());
+            let (pname, shown) = (
+                pname.to_string(),
+                shown.map(|s| s.to_string()).unwrap_or_default(),
+            );
             if !shown.is_empty() && shown != pname {
                 let first: Option<Retained<AnyObject>> = msg_send![&*main, itemAtIndex: 0isize];
                 let sub: Option<Retained<AnyObject>> = match &first {
@@ -225,7 +294,11 @@ mod mac {
             }
             let menu: Retained<AnyObject> = msg_send![class!(NSMenu), new];
             let _: () = msg_send![&*menu, setTitle: &*title];
-            for (name, action, key) in [("Close", sel!(performClose:), "w"), ("Minimize", sel!(performMiniaturize:), "m"), ("Zoom", sel!(performZoom:), "")] {
+            for (name, action, key) in [
+                ("Close", sel!(performClose:), "w"),
+                ("Minimize", sel!(performMiniaturize:), "m"),
+                ("Zoom", sel!(performZoom:), ""),
+            ] {
                 let item: Retained<AnyObject> = msg_send![class!(NSMenuItem), new];
                 let _: () = msg_send![&*item, setTitle: &*NSString::from_str(name)];
                 let _: () = msg_send![&*item, setAction: action];
@@ -245,7 +318,9 @@ mod mac {
     /// see the user ask for).
     pub fn bring_app_window_front() {
         use objc2_app_kit::NSWindowStyleMask;
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let app = NSApplication::sharedApplication(mtm);
         for w in app.windows().iter() {
             if w.isVisible() && w.styleMask().contains(NSWindowStyleMask::Titled) {
@@ -256,11 +331,14 @@ mod mac {
     }
 
     pub fn activate() {
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let app = NSApplication::sharedApplication(mtm);
         // macOS 14+ ignores activateIgnoringOtherApps more and more; its
         // cooperative `activate` is the one that brings the window forward
-        let modern: bool = unsafe { objc2::msg_send![&*app, respondsToSelector: objc2::sel!(activate)] };
+        let modern: bool =
+            unsafe { objc2::msg_send![&*app, respondsToSelector: objc2::sel!(activate)] };
         if modern {
             let _: () = unsafe { objc2::msg_send![&*app, activate] };
         }
@@ -272,10 +350,16 @@ mod mac {
     /// with alpha, `px` pixels tall. None when the name doesn't exist.
     pub fn render_symbol(name: &str, px: f64, weight: f64) -> Option<(usize, usize, Vec<u8>)> {
         use objc2::AllocAnyThread;
-        use objc2_app_kit::{NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace, NSGraphicsContext, NSImage, NSImageSymbolConfiguration};
+        use objc2_app_kit::{
+            NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace, NSGraphicsContext,
+            NSImage, NSImageSymbolConfiguration,
+        };
         use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
         MainThreadMarker::new()?;
-        let img = NSImage::imageWithSystemSymbolName_accessibilityDescription(&NSString::from_str(name), None)?;
+        let img = NSImage::imageWithSystemSymbolName_accessibilityDescription(
+            &NSString::from_str(name),
+            None,
+        )?;
         let cfg = NSImageSymbolConfiguration::configurationWithPointSize_weight(px, weight);
         let img = img.imageWithSymbolConfiguration(&cfg)?;
         let size = img.size();
@@ -367,7 +451,9 @@ mod mac {
         NSFileManager::defaultManager()
             .trashItemAtURL_resultingItemURL_error(&url, Some(&mut out))
             .map_err(|e| e.localizedDescription().to_string())?;
-        out.and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())).ok_or_else(|| "Moved, but the Trash didn't say where".to_string())
+        out.and_then(|u| u.path())
+            .map(|s| std::path::PathBuf::from(s.to_string()))
+            .ok_or_else(|| "Moved, but the Trash didn't say where".to_string())
     }
 
     /// Call `f` (on the main thread) when the system switches between light
@@ -380,7 +466,8 @@ mod mac {
         let block = block2::RcBlock::new(move |_note: std::ptr::NonNull<AnyObject>| f());
         let name = NSString::from_str("AppleInterfaceThemeChangedNotification");
         unsafe {
-            let center: Retained<AnyObject> = msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
+            let center: Retained<AnyObject> =
+                msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
             let queue: Retained<AnyObject> = msg_send![class!(NSOperationQueue), mainQueue];
             let token: Option<Retained<AnyObject>> = msg_send![&*center, addObserverForName: &*name, object: Option::<&AnyObject>::None, queue: &*queue, usingBlock: &*block];
             // observed for the app's whole life
@@ -432,7 +519,10 @@ mod other {
     pub fn trash_item_at(p: &std::path::Path) -> Result<std::path::PathBuf, String> {
         let trash = dirs::home_dir().ok_or("No home folder")?.join(".Trash");
         std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
-        let base = p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let base = p
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let mut dest = trash.join(&base);
         let mut k = 1;
         while dest.symlink_metadata().is_ok() {

@@ -55,7 +55,11 @@ fn changes(raw: Vec<(String, u32)>) -> Option<Vec<Change>> {
         let e = out.entry(p).or_insert(false);
         *e |= deep;
     }
-    let deep: Vec<PathBuf> = out.iter().filter(|(_, d)| **d).map(|(p, _)| p.clone()).collect();
+    let deep: Vec<PathBuf> = out
+        .iter()
+        .filter(|(_, d)| **d)
+        .map(|(p, _)| p.clone())
+        .collect();
     let mut v: Vec<Change> = out
         .into_iter()
         // anything under a folder read whole is covered by it
@@ -92,12 +96,21 @@ mod imp {
         copy_description: *const c_void,
     }
 
-    type Callback = extern "C" fn(*const c_void, *mut c_void, usize, *mut c_void, *const u32, *const u64);
+    type Callback =
+        extern "C" fn(*const c_void, *mut c_void, usize, *mut c_void, *const u32, *const u64);
 
     #[link(name = "CoreServices", kind = "framework")]
     unsafe extern "C" {
         fn FSEventsGetCurrentEventId() -> u64;
-        fn FSEventStreamCreate(alloc: *const c_void, cb: Callback, ctx: *mut Context, paths: *const c_void, since: u64, latency: f64, flags: u32) -> *mut c_void;
+        fn FSEventStreamCreate(
+            alloc: *const c_void,
+            cb: Callback,
+            ctx: *mut Context,
+            paths: *const c_void,
+            since: u64,
+            latency: f64,
+            flags: u32,
+        ) -> *mut c_void;
         fn FSEventStreamSetDispatchQueue(stream: *mut c_void, queue: *mut c_void);
         fn FSEventStreamStart(stream: *mut c_void) -> u8;
         fn FSEventStreamStop(stream: *mut c_void);
@@ -118,13 +131,25 @@ mod imp {
         done: Condvar,
     }
 
-    extern "C" fn got(_s: *const c_void, info: *mut c_void, n: usize, paths: *mut c_void, flags: *const u32, _ids: *const u64) {
+    extern "C" fn got(
+        _s: *const c_void,
+        info: *mut c_void,
+        n: usize,
+        paths: *mut c_void,
+        flags: *const u32,
+        _ids: *const u64,
+    ) {
         // `info` is the `Got` kept alive in `since` (one reference is leaked)
         let g = unsafe { &*(info as *const Got) };
         let paths = paths as *const *const c_char;
         let mut e = g.events.lock().unwrap_or_else(|x| x.into_inner());
         for i in 0..n {
-            let (p, f) = unsafe { (CStr::from_ptr(*paths.add(i)).to_string_lossy().into_owned(), *flags.add(i)) };
+            let (p, f) = unsafe {
+                (
+                    CStr::from_ptr(*paths.add(i)).to_string_lossy().into_owned(),
+                    *flags.add(i),
+                )
+            };
             if f & super::HISTORY_DONE != 0 {
                 e.1 = true;
             }
@@ -144,15 +169,33 @@ mod imp {
         // the stream's queue may still hold a callback after it's released,
         // so it keeps its own reference for good (a few bytes per update)
         let info = Arc::into_raw(g.clone()) as *mut c_void;
-        let list: Vec<_> = roots.iter().map(|p| NSString::from_str(&p.to_string_lossy())).collect();
+        let list: Vec<_> = roots
+            .iter()
+            .map(|p| NSString::from_str(&p.to_string_lossy()))
+            .collect();
         let arr = NSArray::from_retained_slice(&list);
-        let mut ctx = Context { version: 0, info, retain: std::ptr::null(), release: std::ptr::null(), copy_description: std::ptr::null() };
+        let mut ctx = Context {
+            version: 0,
+            info,
+            retain: std::ptr::null(),
+            release: std::ptr::null(),
+            copy_description: std::ptr::null(),
+        };
         unsafe {
-            let stream = FSEventStreamCreate(std::ptr::null(), got, &mut ctx, &*arr as *const NSArray<NSString> as *const c_void, id, 0.0, NO_DEFER);
+            let stream = FSEventStreamCreate(
+                std::ptr::null(),
+                got,
+                &mut ctx,
+                &*arr as *const NSArray<NSString> as *const c_void,
+                id,
+                0.0,
+                NO_DEFER,
+            );
             if stream.is_null() {
                 return None;
             }
-            let queue = dispatch_queue_create(c"cmdmeow.diskmap.history".as_ptr(), std::ptr::null_mut());
+            let queue =
+                dispatch_queue_create(c"cmdmeow.diskmap.history".as_ptr(), std::ptr::null_mut());
             FSEventStreamSetDispatchQueue(stream, queue);
             if FSEventStreamStart(stream) == 0 {
                 FSEventStreamInvalidate(stream);
@@ -167,7 +210,11 @@ mod imp {
                 if left.is_zero() {
                     break;
                 }
-                e = g.done.wait_timeout(e, left).unwrap_or_else(|x| x.into_inner()).0;
+                e = g
+                    .done
+                    .wait_timeout(e, left)
+                    .unwrap_or_else(|x| x.into_inner())
+                    .0;
             }
             let done = e.1;
             let events = std::mem::take(&mut e.0);
@@ -198,12 +245,18 @@ mod tests {
     use super::*;
 
     fn ch(p: &str, deep: bool) -> Change {
-        Change { path: PathBuf::from(p), deep }
+        Change {
+            path: PathBuf::from(p),
+            deep,
+        }
     }
 
     #[test]
     fn data_volume_paths_map_onto_the_firmlinks() {
-        assert_eq!(map_path("/System/Volumes/Data/Users/me/Downloads/"), PathBuf::from("/Users/me/Downloads"));
+        assert_eq!(
+            map_path("/System/Volumes/Data/Users/me/Downloads/"),
+            PathBuf::from("/Users/me/Downloads")
+        );
         assert_eq!(map_path("/Users/me/"), PathBuf::from("/Users/me"));
         assert_eq!(map_path("/"), PathBuf::from("/"));
     }
@@ -217,7 +270,10 @@ mod tests {
             ("/Users/me/b/c/".to_string(), 0),
             ("/".to_string(), HISTORY_DONE),
         ];
-        assert_eq!(changes(raw).unwrap(), vec![ch("/Users/me/a", false), ch("/Users/me/b", true)]);
+        assert_eq!(
+            changes(raw).unwrap(),
+            vec![ch("/Users/me/a", false), ch("/Users/me/b", true)]
+        );
     }
 
     #[test]

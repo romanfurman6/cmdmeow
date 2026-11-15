@@ -2,8 +2,8 @@
 //! drill-down treemap; selected items go to the Trash after review.
 
 use crate::kit::sync::LockExt;
-use std::os::unix::fs::MetadataExt;
 use std::collections::HashSet;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -74,7 +74,9 @@ pub type Shared = Arc<Scan>;
 
 /// What a folder at `p` is called on the map ("/" is the startup disk).
 pub fn display_name(p: &Path) -> String {
-    p.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_else(|| "Macintosh HD".into())
+    p.file_name()
+        .map(|x| x.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Macintosh HD".into())
 }
 
 /// The root's folders so far while mapping, with what's been counted in
@@ -85,7 +87,13 @@ pub fn partial(s: &Scan) -> Option<(PathBuf, Vec<LiveRow>)> {
     let (root, kids) = g.as_ref()?;
     let rows = kids
         .iter()
-        .map(|k| LiveRow { name: k.name.clone(), path: k.path.clone(), bytes: k.bytes.load(Ordering::Relaxed), done: k.done, node: k.node.clone() })
+        .map(|k| LiveRow {
+            name: k.name.clone(),
+            path: k.path.clone(),
+            bytes: k.bytes.load(Ordering::Relaxed),
+            done: k.done,
+            node: k.node.clone(),
+        })
         .filter(|r| r.bytes > 0)
         .collect();
     Some((root.clone(), rows))
@@ -96,13 +104,25 @@ pub fn partial(s: &Scan) -> Option<(PathBuf, Vec<LiveRow>)> {
 /// pops a system dialog even with Full Disk Access, so the map never
 /// enters them.
 pub fn asks_permission(p: &Path) -> bool {
-    if p.extension().is_some_and(|e| e == "musiclibrary" || e == "tvlibrary") {
+    if p.extension()
+        .is_some_and(|e| e == "musiclibrary" || e == "tvlibrary")
+    {
         return true;
     }
-    let Some(home) = dirs::home_dir() else { return false };
-    ["Music/Music", "Music/iTunes", "Movies/TV", "Library/Calendars", "Library/Reminders", "Library/Application Support/AddressBook", "Library/Application Support/CallHistoryDB"]
-        .iter()
-        .any(|x| p == home.join(x))
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    [
+        "Music/Music",
+        "Music/iTunes",
+        "Movies/TV",
+        "Library/Calendars",
+        "Library/Reminders",
+        "Library/Application Support/AddressBook",
+        "Library/Application Support/CallHistoryDB",
+    ]
+    .iter()
+    .any(|x| p == home.join(x))
 }
 
 /// Run the current thread just below the UI, so mapping never makes the
@@ -117,7 +137,23 @@ fn below_ui() {
 /// Folders that the system needs; they can be browsed but not selected.
 pub fn is_essential(p: &Path) -> bool {
     let home = dirs::home_dir().unwrap_or_default();
-    let fixed = ["/System", "/usr", "/bin", "/sbin", "/private", "/Library", "/Applications", "/opt", "/cores", "/dev", "/etc", "/var", "/tmp", "/Volumes", "/Users"];
+    let fixed = [
+        "/System",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/private",
+        "/Library",
+        "/Applications",
+        "/opt",
+        "/cores",
+        "/dev",
+        "/etc",
+        "/var",
+        "/tmp",
+        "/Volumes",
+        "/Users",
+    ];
     if fixed.iter().any(|f| p == Path::new(f)) {
         return true;
     }
@@ -125,10 +161,20 @@ pub fn is_essential(p: &Path) -> bool {
     if p.parent() == Some(Path::new("/Volumes")) {
         return true;
     }
-    if p.starts_with("/System") || p.starts_with("/usr") || p.starts_with("/bin") || p.starts_with("/sbin") || p.starts_with("/private/var/db") {
+    if p.starts_with("/System")
+        || p.starts_with("/usr")
+        || p.starts_with("/bin")
+        || p.starts_with("/sbin")
+        || p.starts_with("/private/var/db")
+    {
         return true;
     }
-    p == home || p == home.join("Library") || p == home.join("Library/Application Support") || p == home.join("Library/Containers") || p == home.join("Library/Preferences") || p == home.join("Library/Keychains")
+    p == home
+        || p == home.join("Library")
+        || p == home.join("Library/Application Support")
+        || p == home.join("Library/Containers")
+        || p == home.join("Library/Preferences")
+        || p == home.join("Library/Keychains")
 }
 
 const KEEP_FILES_OVER: u64 = 8_000_000;
@@ -203,12 +249,21 @@ pub fn update(shared: Shared, ctx: egui::Context, quiet: bool) {
         let since = *shared.event.lock_ok();
         let when = shared.when.lock_ok().unwrap_or(0);
         let fresh = chrono::Utc::now().timestamp() - when < UPDATE_MAX_AGE;
-        let root = old.as_ref().map(|n| n.path.clone()).unwrap_or_else(|| PathBuf::from("/"));
+        let root = old
+            .as_ref()
+            .map(|n| n.path.clone())
+            .unwrap_or_else(|| PathBuf::from("/"));
         let plan = match (old, since) {
             (Some(old), Some(since)) if fresh => {
                 ctx.request_repaint();
                 let now_event = super::history::current();
-                super::history::since(since, &watch_roots(&root), std::time::Duration::from_secs(10)).filter(|c| c.len() <= UPDATE_LIMIT).map(|c| (old, c, now_event))
+                super::history::since(
+                    since,
+                    &watch_roots(&root),
+                    std::time::Duration::from_secs(10),
+                )
+                .filter(|c| c.len() <= UPDATE_LIMIT)
+                .map(|c| (old, c, now_event))
             }
             _ => None,
         };
@@ -279,7 +334,10 @@ pub fn watch_roots(root: &Path) -> Vec<PathBuf> {
 /// own data (saving the map would otherwise count as a change of the map).
 fn relevant(changes: Vec<Change>, root: &Path) -> Vec<Change> {
     let own = crate::kit::fs::data_path("");
-    changes.into_iter().filter(|c| c.path.starts_with(root) && !c.path.starts_with(&own)).collect()
+    changes
+        .into_iter()
+        .filter(|c| c.path.starts_with(root) && !c.path.starts_with(&own))
+        .collect()
 }
 
 /// One changed folder from the history. `deep`: everything under it may have
@@ -295,12 +353,57 @@ pub struct Change {
 /// (dependencies, version control, bytecode caches). They're still measured
 /// in full; only their insides aren't kept.
 pub fn is_atomic(p: &Path) -> bool {
-    const EXT: &[&str] = &["app", "bundle", "framework", "plugin", "appex", "xpc", "kext", "photoslibrary", "photolibrary", "aplibrary", "migratedphotolibrary", "imovielibrary", "fcpbundle", "logicx", "band", "xcarchive", "dSYM", "sparsebundle", "pkg", "mpkg", "rtfd", "pages", "numbers", "key", "playground", "xcodeproj", "xcworkspace"];
-    const NAMES: &[&str] = &["node_modules", ".git", ".svn", ".hg", "__pycache__", ".venv", ".tox", ".gradle", ".pnpm-store", ".yarn", "bower_components"];
-    if p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXT.iter().any(|x| x.eq_ignore_ascii_case(e))) {
+    const EXT: &[&str] = &[
+        "app",
+        "bundle",
+        "framework",
+        "plugin",
+        "appex",
+        "xpc",
+        "kext",
+        "photoslibrary",
+        "photolibrary",
+        "aplibrary",
+        "migratedphotolibrary",
+        "imovielibrary",
+        "fcpbundle",
+        "logicx",
+        "band",
+        "xcarchive",
+        "dSYM",
+        "sparsebundle",
+        "pkg",
+        "mpkg",
+        "rtfd",
+        "pages",
+        "numbers",
+        "key",
+        "playground",
+        "xcodeproj",
+        "xcworkspace",
+    ];
+    const NAMES: &[&str] = &[
+        "node_modules",
+        ".git",
+        ".svn",
+        ".hg",
+        "__pycache__",
+        ".venv",
+        ".tox",
+        ".gradle",
+        ".pnpm-store",
+        ".yarn",
+        "bower_components",
+    ];
+    if p.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| EXT.iter().any(|x| x.eq_ignore_ascii_case(e)))
+    {
         return true;
     }
-    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| NAMES.contains(&n))
+    p.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| NAMES.contains(&n))
 }
 
 // ---------------------------------------------------------------- saved map
@@ -366,7 +469,9 @@ pub fn load(shared: &Shared, ctx: &egui::Context) -> bool {
     let (s, ctx) = (shared.clone(), ctx.clone());
     std::thread::spawn(move || {
         below_ui();
-        let saved: Option<Saved> = std::fs::File::open(&path).ok().and_then(|f| serde_json::from_reader(std::io::BufReader::new(f)).ok());
+        let saved: Option<Saved> = std::fs::File::open(&path)
+            .ok()
+            .and_then(|f| serde_json::from_reader(std::io::BufReader::new(f)).ok());
         if let Some(saved) = saved {
             let mut r = s.result.lock_ok();
             if r.is_none() && !s.running.load(Ordering::SeqCst) {
@@ -406,23 +511,41 @@ type Files = Vec<(PathBuf, u64, String)>;
 impl<'a> Walker<'a> {
     fn new(root: &Path, s: &'a Scan, ctx: &'a egui::Context) -> Self {
         let dev_of = |p: &str| Path::new(p).symlink_metadata().map(|m| m.dev()).ok();
-        let mut devs: Vec<u64> = root.symlink_metadata().map(|m| m.dev()).into_iter().collect();
+        let mut devs: Vec<u64> = root
+            .symlink_metadata()
+            .map(|m| m.dev())
+            .into_iter()
+            .collect();
         let mut skip = Vec::new();
         if root == Path::new("/") {
             devs.extend(dev_of("/System/Volumes/Data"));
             skip.push(PathBuf::from("/System/Volumes"));
             skip.push(PathBuf::from("/Volumes"));
         }
-        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) as u64;
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4) as u64;
         // leave a core for the window
-        Walker { s, ctx, devs, skip, free: AtomicU64::new(cores.saturating_sub(2).max(1)), last: Mutex::new(std::time::Instant::now()), links: Default::default(), clones: Default::default() }
+        Walker {
+            s,
+            ctx,
+            devs,
+            skip,
+            free: AtomicU64::new(cores.saturating_sub(2).max(1)),
+            last: Mutex::new(std::time::Instant::now()),
+            links: Default::default(),
+            clones: Default::default(),
+        }
     }
 
     /// Take a free thread if there is one.
     fn try_thread(&self) -> bool {
         let mut n = self.free.load(Ordering::Acquire);
         while n > 0 {
-            match self.free.compare_exchange_weak(n, n - 1, Ordering::AcqRel, Ordering::Acquire) {
+            match self
+                .free
+                .compare_exchange_weak(n, n - 1, Ordering::AcqRel, Ordering::Acquire)
+            {
                 Ok(_) => return true,
                 Err(now) => n = now,
             }
@@ -452,18 +575,36 @@ impl<'a> Walker<'a> {
     /// The root: its folders are published live and each one counts into
     /// its own total while it's walked.
     fn root(&self, root: &Path) -> Node {
-        let mut node = Node { name: display_name(root), path: root.to_path_buf(), ..Default::default() };
+        let mut node = Node {
+            name: display_name(root),
+            path: root.to_path_buf(),
+            ..Default::default()
+        };
         let (dirs, files) = self.list(root).unwrap_or_default();
         self.add_files(&mut node, files, None, true);
         let live: Vec<LiveChild> = dirs
             .iter()
-            .map(|d| LiveChild { name: d.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default(), path: d.clone(), bytes: Arc::new(AtomicU64::new(0)), done: false, node: None })
+            .map(|d| LiveChild {
+                name: d
+                    .file_name()
+                    .map(|x| x.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                path: d.clone(),
+                bytes: Arc::new(AtomicU64::new(0)),
+                done: false,
+                node: None,
+            })
             .collect();
         let counters: Vec<Arc<AtomicU64>> = live.iter().map(|l| l.bytes.clone()).collect();
         *self.s.live.lock_ok() = Some((root.to_path_buf(), live));
         let next = AtomicU64::new(0);
         // every core pulls the next top-level folder; inside one, free threads help
-        let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).saturating_sub(1).max(1).min(dirs.len().max(1));
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .saturating_sub(1)
+            .max(1)
+            .min(dirs.len().max(1));
         std::thread::scope(|sc| {
             for _ in 0..workers {
                 sc.spawn(|| loop {
@@ -473,7 +614,10 @@ impl<'a> Walker<'a> {
                         break;
                     }
                     let child = self.walk(&dirs[k], 1, Some(&counters[k]), true);
-                    counters[k].store(child.as_ref().map(|c| c.bytes).unwrap_or(0), Ordering::Relaxed);
+                    counters[k].store(
+                        child.as_ref().map(|c| c.bytes).unwrap_or(0),
+                        Ordering::Relaxed,
+                    );
                     if let Some((_, live)) = self.s.live.lock_ok().as_mut() {
                         live[k].done = true;
                         live[k].node = child.map(Arc::new);
@@ -484,8 +628,17 @@ impl<'a> Walker<'a> {
         });
         // the finished folders back out of the live list (the window may
         // still hold one for a moment: then it's copied)
-        let done: Vec<Arc<Node>> = self.s.live.lock_ok().as_mut().map(|(_, live)| live.iter_mut().filter_map(|l| l.node.take()).collect()).unwrap_or_default();
-        for child in done.into_iter().map(|a| Arc::try_unwrap(a).unwrap_or_else(|a| (*a).clone())) {
+        let done: Vec<Arc<Node>> = self
+            .s
+            .live
+            .lock_ok()
+            .as_mut()
+            .map(|(_, live)| live.iter_mut().filter_map(|l| l.node.take()).collect())
+            .unwrap_or_default();
+        for child in done
+            .into_iter()
+            .map(|a| Arc::try_unwrap(a).unwrap_or_else(|a| (*a).clone()))
+        {
             node.bytes += child.bytes;
             node.items += child.items + 1;
             node.children.push(child);
@@ -511,7 +664,11 @@ impl<'a> Walker<'a> {
             if e.dir {
                 dirs.push(cp);
             } else {
-                files.push((cp, self.charge(dev, e), e.name.to_string_lossy().into_owned()));
+                files.push((
+                    cp,
+                    self.charge(dev, e),
+                    e.name.to_string_lossy().into_owned(),
+                ));
             }
         }
         Some((dirs, files))
@@ -520,13 +677,22 @@ impl<'a> Walker<'a> {
     /// Count `files` into `node`; big ones get their own entry when `keep`.
     fn add_files(&self, node: &mut Node, files: Files, top: Option<&AtomicU64>, keep: bool) {
         let mut sum = 0;
-        self.s.files.fetch_add(files.len() as u64, Ordering::Relaxed);
+        self.s
+            .files
+            .fetch_add(files.len() as u64, Ordering::Relaxed);
         for (path, b, name) in files {
             node.bytes += b;
             node.items += 1;
             sum += b;
             if keep && b >= KEEP_FILES_OVER {
-                node.children.push(Node { name, path, bytes: b, items: 1, children: vec![], other: 0 });
+                node.children.push(Node {
+                    name,
+                    path,
+                    bytes: b,
+                    items: 1,
+                    children: vec![],
+                    other: 0,
+                });
             } else {
                 node.other += b;
             }
@@ -551,8 +717,15 @@ impl<'a> Walker<'a> {
     /// otherwise (inside a package or a dependency folder) only sizes are
     /// added up. `None` when it can't be read or is on another volume.
     fn walk(&self, p: &Path, depth: usize, top: Option<&AtomicU64>, keep: bool) -> Option<Node> {
-        let name = p.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string());
-        let mut node = Node { name, path: p.to_path_buf(), ..Default::default() };
+        let name = p
+            .file_name()
+            .map(|x| x.to_string_lossy().into_owned())
+            .unwrap_or_else(|| p.display().to_string());
+        let mut node = Node {
+            name,
+            path: p.to_path_buf(),
+            ..Default::default()
+        };
         if self.s.stop.load(Ordering::Relaxed) {
             return Some(node);
         }
@@ -603,19 +776,37 @@ impl<'a> Walker<'a> {
             return self.walk(&p, depth, None, true);
         }
         self.progress(&p);
-        let under = |q: &Path| changes.iter().filter(|c| c.path.starts_with(q)).cloned().collect::<Vec<_>>();
+        let under = |q: &Path| {
+            changes
+                .iter()
+                .filter(|c| c.path.starts_with(q))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         // read this folder again when it changed itself, or a change is in
         // something the map folded away (small files, tiny folders)
-        let relist = changes.iter().any(|c| c.path == p || !old.children.iter().any(|k| c.path.starts_with(&k.path)));
-        let mut node = Node { name: old.name.clone(), path: p.clone(), ..Default::default() };
+        let relist = changes
+            .iter()
+            .any(|c| c.path == p || !old.children.iter().any(|k| c.path.starts_with(&k.path)));
+        let mut node = Node {
+            name: old.name.clone(),
+            path: p.clone(),
+            ..Default::default()
+        };
         if relist {
             let (dirs, files) = self.list(&p)?;
             self.add_files(&mut node, files, None, true);
-            let mut known: std::collections::HashMap<PathBuf, Node> = old.children.into_iter().map(|k| (k.path.clone(), k)).collect();
+            let mut known: std::collections::HashMap<PathBuf, Node> = old
+                .children
+                .into_iter()
+                .map(|k| (k.path.clone(), k))
+                .collect();
             for d in dirs {
                 let child = match known.remove(&d) {
                     // a known folder; anything that looked like a file is read whole
-                    Some(k) if k.items > 1 || !k.children.is_empty() => self.refresh(k, depth + 1, &under(&d)),
+                    Some(k) if k.items > 1 || !k.children.is_empty() => {
+                        self.refresh(k, depth + 1, &under(&d))
+                    }
                     _ => self.walk(&d, depth + 1, None, true),
                 };
                 if let Some(c) = child {
@@ -666,7 +857,10 @@ pub fn find<'a>(root: &'a Node, path: &Path) -> Option<&'a Node> {
     if root.path == path {
         return Some(root);
     }
-    root.children.iter().filter(|c| path.starts_with(&c.path)).find_map(|c| find(c, path))
+    root.children
+        .iter()
+        .filter(|c| path.starts_with(&c.path))
+        .find_map(|c| find(c, path))
 }
 
 /// Remove nodes whose paths were deleted, fixing sizes on the way up.
@@ -694,11 +888,28 @@ mod tests {
     use super::*;
 
     fn node(path: &str, bytes: u64, children: Vec<Node>) -> Node {
-        Node { name: path.rsplit('/').next().unwrap().into(), path: PathBuf::from(path), bytes, children, ..Default::default() }
+        Node {
+            name: path.rsplit('/').next().unwrap().into(),
+            path: PathBuf::from(path),
+            bytes,
+            children,
+            ..Default::default()
+        }
     }
 
     fn tree() -> Node {
-        node("/r", 100, vec![node("/r/a", 60, vec![node("/r/a/x", 50, vec![]), node("/r/a/y", 10, vec![])]), node("/r/ab", 40, vec![])])
+        node(
+            "/r",
+            100,
+            vec![
+                node(
+                    "/r/a",
+                    60,
+                    vec![node("/r/a/x", 50, vec![]), node("/r/a/y", 10, vec![])],
+                ),
+                node("/r/ab", 40, vec![]),
+            ],
+        )
     }
 
     #[test]
@@ -732,7 +943,12 @@ mod tests {
     #[test]
     fn saved_map_round_trips() {
         let t = tree();
-        let json = serde_json::to_string(&Saved { when: 7, root: t.clone(), event: Some(9) }).unwrap();
+        let json = serde_json::to_string(&Saved {
+            when: 7,
+            root: t.clone(),
+            event: Some(9),
+        })
+        .unwrap();
         let back: Saved = serde_json::from_str(&json).unwrap();
         assert_eq!(back.when, 7);
         assert_eq!(back.event, Some(9));
@@ -798,7 +1014,20 @@ mod tests {
         std::fs::create_dir_all(base.join("t0/fresh")).unwrap();
         std::fs::write(base.join("t0/fresh/big"), vec![3u8; 9_000_000]).unwrap();
         // an untouched folder changes too, but isn't in the history: kept as it was
-        let changes = vec![Change { path: base.join("t0"), deep: false }, Change { path: base.join("t1/s2"), deep: false }, Change { path: base.join("t3"), deep: false }];
+        let changes = vec![
+            Change {
+                path: base.join("t0"),
+                deep: false,
+            },
+            Change {
+                path: base.join("t1/s2"),
+                deep: false,
+            },
+            Change {
+                path: base.join("t3"),
+                deep: false,
+            },
+        ];
         let shared: Shared = Default::default();
         let ctx = egui::Context::default();
         let w = Walker::new(&base, &shared, &ctx);
@@ -809,7 +1038,16 @@ mod tests {
         // a folder read whole
         std::fs::write(base.join("t2/s1/deep"), vec![4u8; 30_000]).unwrap();
         let w = Walker::new(&base, &shared, &ctx);
-        let updated = w.refresh(updated, 0, &[Change { path: base.join("t2"), deep: true }]).unwrap();
+        let updated = w
+            .refresh(
+                updated,
+                0,
+                &[Change {
+                    path: base.join("t2"),
+                    deep: true,
+                }],
+            )
+            .unwrap();
         same(&updated, &map_now(&base));
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -817,11 +1055,24 @@ mod tests {
     #[test]
     fn only_changes_on_the_map_count() {
         let own = crate::kit::fs::data_path("diskmap.json");
-        let c = |p: &Path| Change { path: p.to_path_buf(), deep: false };
-        let got = relevant(vec![c(Path::new("/Users/me/a")), c(Path::new("/Volumes/X/b")), c(own.parent().unwrap())], Path::new("/Users/me"));
+        let c = |p: &Path| Change {
+            path: p.to_path_buf(),
+            deep: false,
+        };
+        let got = relevant(
+            vec![
+                c(Path::new("/Users/me/a")),
+                c(Path::new("/Volumes/X/b")),
+                c(own.parent().unwrap()),
+            ],
+            Path::new("/Users/me"),
+        );
         assert_eq!(got, vec![c(Path::new("/Users/me/a"))]);
         assert_eq!(watch_roots(Path::new("/")).len(), 2);
-        assert_eq!(watch_roots(Path::new("/Users/me")), vec![PathBuf::from("/Users/me")]);
+        assert_eq!(
+            watch_roots(Path::new("/Users/me")),
+            vec![PathBuf::from("/Users/me")]
+        );
     }
 
     #[test]
@@ -833,7 +1084,11 @@ mod tests {
         let base = std::env::temp_dir().join(format!("cmb-pkg-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("Big.app/Contents/Resources")).unwrap();
-        std::fs::write(base.join("Big.app/Contents/Resources/blob"), vec![1u8; 9_000_000]).unwrap();
+        std::fs::write(
+            base.join("Big.app/Contents/Resources/blob"),
+            vec![1u8; 9_000_000],
+        )
+        .unwrap();
         let root = map_now(&base);
         let app = find(&root, &base.join("Big.app")).unwrap();
         assert!(app.children.is_empty());
@@ -889,5 +1144,4 @@ mod tests {
         assert!(root.children.iter().all(|c| c.children.len() >= 5));
         let _ = std::fs::remove_dir_all(&base);
     }
-
 }

@@ -11,14 +11,14 @@
 //! It also puts the video in a frame ([`scene`]): drawn live while it's
 //! chosen, rendered on the GPU on Save ([`compose`]).
 
+pub mod compose;
 pub mod edit;
 pub mod media;
-pub mod compose;
 pub mod scene;
 pub mod sound;
 pub mod speech;
-pub mod voice;
 mod ui;
+pub mod voice;
 
 use edit::Edl;
 use media::Player;
@@ -42,7 +42,11 @@ const PEAKS: usize = 1200;
 /// What the viewer needs Capture to do.
 pub enum Out {
     /// A file was written: over the original (`copy` false) or beside it.
-    Saved { path: PathBuf, secs: f64, copy: bool },
+    Saved {
+        path: PathBuf,
+        secs: f64,
+        copy: bool,
+    },
     CopyText(String),
     /// Upload the file for a link (Share).
     Share(PathBuf),
@@ -102,7 +106,12 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { model: Model::Accurate, captions: true, strength: 0.7, frame: Default::default() }
+        Prefs {
+            model: Model::Accurate,
+            captions: true,
+            strength: 0.7,
+            frame: Default::default(),
+        }
     }
 }
 
@@ -113,7 +122,9 @@ fn prefs_path() -> PathBuf {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Drag {
     /// Moving the start or end of what's kept.
-    Trim { end: bool },
+    Trim {
+        end: bool,
+    },
     /// Choosing a stretch, from where it began (source seconds).
     Select(f64),
     Scrub,
@@ -248,7 +259,12 @@ impl Viewer {
             }
         }
         self.kick = Instant::now();
-        let (tx, ctx, path, src) = (self.tx.clone(), self.ctx.clone(), self.path.clone(), self.source());
+        let (tx, ctx, path, src) = (
+            self.tx.clone(),
+            self.ctx.clone(),
+            self.path.clone(),
+            self.source(),
+        );
         std::thread::spawn(move || {
             let imgs = media::strip(&src, STRIP, 112.0);
             let _ = tx.send(Event::Strip(imgs));
@@ -280,7 +296,10 @@ impl Viewer {
 
     /// The unframed picture: what plays and what a frame goes around.
     pub fn source(&self) -> PathBuf {
-        self.project.as_ref().map(|p| p.0.raw()).unwrap_or_else(|| self.path.clone())
+        self.project
+            .as_ref()
+            .map(|p| p.0.raw())
+            .unwrap_or_else(|| self.path.clone())
     }
 
     /// The frame the file has now.
@@ -305,12 +324,19 @@ impl Viewer {
         self.job.is_some()
     }
 
-    fn spawn(&mut self, kind: JobKind, work: impl FnOnce(&Arc<Progress>) -> Event + Send + 'static) {
+    fn spawn(
+        &mut self,
+        kind: JobKind,
+        work: impl FnOnce(&Arc<Progress>) -> Event + Send + 'static,
+    ) {
         if self.job.is_some() {
             return;
         }
         let progress = Arc::new(Progress::default());
-        self.job = Some(Job { kind, progress: progress.clone() });
+        self.job = Some(Job {
+            kind,
+            progress: progress.clone(),
+        });
         self.job_error = None;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         std::thread::spawn(move || {
@@ -328,7 +354,9 @@ impl Viewer {
 
     /// Fetch the chosen speech model.
     pub fn download(&mut self, m: Model) {
-        self.spawn(JobKind::Download(m), move |p| Event::Downloaded(m, speech::download(m, p)));
+        self.spawn(JobKind::Download(m), move |p| {
+            Event::Downloaded(m, speech::download(m, p))
+        });
     }
 
     /// Turn the voice into timed lines with the chosen model.
@@ -339,16 +367,20 @@ impl Viewer {
             return;
         }
         let path = self.path.clone();
-        self.spawn(JobKind::Transcribe, move |p| Event::Transcribed(speech::transcribe(&path, m, p)));
+        self.spawn(JobKind::Transcribe, move |p| {
+            Event::Transcribed(speech::transcribe(&path, m, p))
+        });
     }
 
     /// Take the noise out of the voice (at the chosen strength).
     pub fn clean_voice(&mut self) {
         let (path, strength) = (self.path.clone(), self.prefs.strength);
-        self.spawn(JobKind::Clean, move |p| Event::Cleaned(voice::clean(&path, strength, p).map(|f| {
-            let peaks = voice::cleaned_peaks(&f, PEAKS);
-            (f, peaks)
-        })));
+        self.spawn(JobKind::Clean, move |p| {
+            Event::Cleaned(voice::clean(&path, strength, p).map(|f| {
+                let peaks = voice::cleaned_peaks(&f, PEAKS);
+                (f, peaks)
+            }))
+        });
     }
 
     /// Hear (and save) the cleaned voice, or the original.
@@ -389,10 +421,19 @@ impl Viewer {
     /// Write captions (.srt) or text (.txt) beside the video.
     pub fn export_text(&mut self, srt: bool) {
         let lines = self.edited_lines();
-        let (body, ext) = if srt { (speech::srt(&lines), "srt") } else { (speech::txt(&lines), "txt") };
+        let (body, ext) = if srt {
+            (speech::srt(&lines), "srt")
+        } else {
+            (speech::txt(&lines), "txt")
+        };
         let path = self.path.with_extension(ext);
         match std::fs::write(&path, body) {
-            Ok(()) => self.flash(format!("Saved {}", path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
+            Ok(()) => self.flash(format!(
+                "Saved {}",
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            )),
             Err(e) => self.flash(format!("Couldn't save: {e}")),
         }
     }
@@ -410,7 +451,10 @@ impl Viewer {
     }
 
     pub fn title(&self) -> String {
-        self.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Video".into())
+        self.path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Video".into())
     }
 
     /// Cuts not saved yet.
@@ -454,7 +498,11 @@ impl Viewer {
         }
         let t = p.time();
         let at_end = t >= self.edl.end() - 0.05;
-        let from = if at_end { Some(self.edl.start()) } else { self.edl.playable(t) };
+        let from = if at_end {
+            Some(self.edl.start())
+        } else {
+            self.edl.playable(t)
+        };
         if let Some(f) = from {
             if (f - t).abs() > 1e-3 {
                 p.seek(f);
@@ -481,7 +529,11 @@ impl Viewer {
 
     /// Step `d` seconds of the edited video.
     pub fn step(&mut self, d: f64) {
-        let e = self.edl.to_edited(self.time()).unwrap_or_else(|| self.edl.to_edited(self.edl.playable(self.time()).unwrap_or(self.edl.end())).unwrap_or(0.0));
+        let e = self.edl.to_edited(self.time()).unwrap_or_else(|| {
+            self.edl
+                .to_edited(self.edl.playable(self.time()).unwrap_or(self.edl.end()))
+                .unwrap_or(0.0)
+        });
         let t = self.edl.to_source((e + d).clamp(0.0, self.edl.length()));
         self.seek(t);
     }
@@ -572,7 +624,11 @@ impl Viewer {
             p.pause();
         }
         self.saving = true;
-        let dest = if copy { media::copy_name(&self.path) } else { media::temp_beside(&self.path) };
+        let dest = if copy {
+            media::copy_name(&self.path)
+        } else {
+            media::temp_beside(&self.path)
+        };
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         let voice = self.voice.clone().filter(|_| self.voice_on);
         let (src, style, edl) = (self.source(), self.look, self.edl.clone());
@@ -583,7 +639,12 @@ impl Viewer {
                 &edl,
                 dest,
                 Box::new(move |r| {
-                    let _ = tx.send(Event::Saved(r.map(|path| Written { path, copy, cut: None, style })));
+                    let _ = tx.send(Event::Saved(r.map(|path| Written {
+                        path,
+                        copy,
+                        cut: None,
+                        style,
+                    })));
                     ctx.request_repaint();
                 }),
             );
@@ -596,12 +657,26 @@ impl Viewer {
         std::thread::spawn(move || {
             let r = (|| -> Result<Written, String> {
                 let cut = match edited {
-                    true => Some(export_now(&src, voice.as_deref(), &edl, compose::scratch(&root))?),
+                    true => Some(export_now(
+                        &src,
+                        voice.as_deref(),
+                        &edl,
+                        compose::scratch(&root),
+                    )?),
                     false => None,
                 };
-                let job = compose::Job { src: cut.clone().unwrap_or(src), out: dest.clone(), frame };
+                let job = compose::Job {
+                    src: cut.clone().unwrap_or(src),
+                    out: dest.clone(),
+                    frame,
+                };
                 match compose::render(&job, &progress) {
-                    Ok(_) => Ok(Written { path: dest, copy, cut, style }),
+                    Ok(_) => Ok(Written {
+                        path: dest,
+                        copy,
+                        cut,
+                        style,
+                    }),
                     Err(e) => {
                         if let Some(c) = cut {
                             let _ = std::fs::remove_file(c);
@@ -642,13 +717,29 @@ impl Viewer {
                         if !lines.is_empty() {
                             speech::store(&w.path, &lines);
                         }
-                        self.flash(format!("Saved a copy: {}", w.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
-                        self.out.push(Out::Saved { path: w.path, secs, copy: true });
+                        self.flash(format!(
+                            "Saved a copy: {}",
+                            w.path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default()
+                        ));
+                        self.out.push(Out::Saved {
+                            path: w.path,
+                            secs,
+                            copy: true,
+                        });
                         continue;
                     }
                     // the player lets go of the files before they're replaced
                     self.player = None;
-                    match compose::commit_over(&projects_dir(), &self.path, &w.path, w.cut.as_deref(), w.style) {
+                    match compose::commit_over(
+                        &projects_dir(),
+                        &self.path,
+                        &w.path,
+                        w.cut.as_deref(),
+                        w.style,
+                    ) {
                         Ok(()) => {
                             if let Some(v) = self.voice.take() {
                                 let _ = std::fs::remove_file(v);
@@ -658,7 +749,11 @@ impl Viewer {
                             }
                             self.load();
                             self.flash("Saved");
-                            self.out.push(Out::Saved { path: self.path.clone(), secs: self.edl.duration, copy: false });
+                            self.out.push(Out::Saved {
+                                path: self.path.clone(),
+                                secs: self.edl.duration,
+                                copy: false,
+                            });
                         }
                         Err(e) => {
                             self.load();
@@ -679,7 +774,9 @@ impl Viewer {
                     self.job = None;
                     match r {
                         // straight on to what the download was for
-                        Ok(()) if m == self.prefs.model && self.lines.is_empty() => self.transcribe(),
+                        Ok(()) if m == self.prefs.model && self.lines.is_empty() => {
+                            self.transcribe()
+                        }
                         Ok(()) => {}
                         Err(e) => self.job_error = Some((Tab::Transcript, e)),
                     }
@@ -736,10 +833,16 @@ fn projects_dir() -> PathBuf {
 }
 
 /// [`media::export`], waited for (off the UI thread).
-fn export_now(src: &Path, voice: Option<&Path>, edl: &Edl, dest: PathBuf) -> Result<PathBuf, String> {
+fn export_now(
+    src: &Path,
+    voice: Option<&Path>,
+    edl: &Edl,
+    dest: PathBuf,
+) -> Result<PathBuf, String> {
     let (tx, rx) = channel();
     media::export(src, voice, edl, dest, Box::new(move |r| drop(tx.send(r))));
-    rx.recv().map_err(|_| "The cut video didn't come back".to_string())?
+    rx.recv()
+        .map_err(|_| "The cut video didn't come back".to_string())?
 }
 
 /// `--video-probe`: the viewer's work on `path` without UI, printed to
@@ -750,11 +853,20 @@ pub fn probe(path: &std::path::Path, download: bool) {
     eprintln!("[video] {} audio tracks: {n}", path.display());
     for (k, name) in ["mix", "system", "mic"].iter().enumerate().take(n) {
         if let Ok(s) = sound::read_nth(path, k, 8_000, 1) {
-            eprintln!("[video] track {k} ({name}): peak {:.3}", s.iter().fold(0.0f32, |m, v| m.max(v.abs())));
+            eprintln!(
+                "[video] track {k} ({name}): peak {:.3}",
+                s.iter().fold(0.0f32, |m, v| m.max(v.abs()))
+            );
         }
     }
     match sound::read_audio(path, sound::voice_track(n), 16_000, 1) {
-        Ok(s) => eprintln!("[video] voice at 16 kHz: {} samples ({:.2} s), peak {:.3} ({:?})", s.len(), s.len() as f64 / 16_000.0, s.iter().fold(0.0f32, |m, v| m.max(v.abs())), t.elapsed()),
+        Ok(s) => eprintln!(
+            "[video] voice at 16 kHz: {} samples ({:.2} s), peak {:.3} ({:?})",
+            s.len(),
+            s.len() as f64 / 16_000.0,
+            s.iter().fold(0.0f32, |m, v| m.max(v.abs())),
+            t.elapsed()
+        ),
         Err(e) => eprintln!("[video] reading the voice failed: {e}"),
     }
     let p = Progress::default();
@@ -762,7 +874,14 @@ pub fn probe(path: &std::path::Path, download: bool) {
     let cleaned = match voice::clean(path, 0.7, &p) {
         Ok(f) => {
             let peaks = voice::cleaned_peaks(&f, 50);
-            eprintln!("[video] cleaned voice: {} ({} bytes, {} audio tracks, peak {:.3}) in {:?}", f.display(), std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0), sound::audio_tracks(&f), peaks.iter().fold(0.0f32, |a, b| a.max(*b)), t.elapsed());
+            eprintln!(
+                "[video] cleaned voice: {} ({} bytes, {} audio tracks, peak {:.3}) in {:?}",
+                f.display(),
+                std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0),
+                sound::audio_tracks(&f),
+                peaks.iter().fold(0.0f32, |a, b| a.max(*b)),
+                t.elapsed()
+            );
             Some(f)
         }
         Err(e) => {
@@ -777,7 +896,13 @@ pub fn probe(path: &std::path::Path, download: bool) {
     let dest = media::copy_name(path);
     let (tx, rx) = channel();
     let t = Instant::now();
-    media::export(path, cleaned.as_deref(), &edl, dest, Box::new(move |r| drop(tx.send(r))));
+    media::export(
+        path,
+        cleaned.as_deref(),
+        &edl,
+        dest,
+        Box::new(move |r| drop(tx.send(r))),
+    );
     match rx.recv_timeout(std::time::Duration::from_secs(120)) {
         Ok(Ok(f)) => eprintln!("[video] saved a copy with a quarter cut and the cleaned voice: {} ({} audio tracks) in {:?}", f.display(), sound::audio_tracks(&f), t.elapsed()),
         Ok(Err(e)) => eprintln!("[video] saving failed: {e}"),
@@ -792,11 +917,19 @@ pub fn probe(path: &std::path::Path, download: bool) {
             eprintln!("[video] download failed: {e}");
         }
     }
-    if let Some(m) = [Model::Accurate, Model::Fast].into_iter().find(|m| m.ready()) {
+    if let Some(m) = [Model::Accurate, Model::Fast]
+        .into_iter()
+        .find(|m| m.ready())
+    {
         let t = Instant::now();
         match speech::transcribe(path, m, &Arc::new(Progress::default())) {
             Ok(lines) => {
-                eprintln!("[video] {} lines with {} in {:?}:", lines.len(), m.name(), t.elapsed());
+                eprintln!(
+                    "[video] {} lines with {} in {:?}:",
+                    lines.len(),
+                    m.name(),
+                    t.elapsed()
+                );
                 for l in lines.iter().take(10) {
                     eprintln!("[video]   {:6.2}–{:6.2} {}", l.start, l.end, l.text);
                 }
@@ -814,18 +947,38 @@ pub fn probe(path: &std::path::Path, download: bool) {
 /// The probe's framed save: how fast the GPU frames `path`, and one frame
 /// of it beside the same frame framed on the CPU (PNGs next to the video).
 fn probe_frame(path: &Path, secs: f64) {
-    let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "video".into());
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "video".into());
     let out = path.with_file_name(format!("{stem} framed.mp4"));
     let frame = crate::tools::capture::render::Frame::default();
     let t = Instant::now();
-    match compose::render(&compose::Job { src: path.to_path_buf(), out: out.clone(), frame }, &compose::Progress::default()) {
-        Ok(size) => eprintln!("[video] framed on the GPU: {} {size:?} in {:?} ({:.1}× real time)", out.display(), t.elapsed(), secs / t.elapsed().as_secs_f64().max(1e-3)),
+    match compose::render(
+        &compose::Job {
+            src: path.to_path_buf(),
+            out: out.clone(),
+            frame,
+        },
+        &compose::Progress::default(),
+    ) {
+        Ok(size) => eprintln!(
+            "[video] framed on the GPU: {} {size:?} in {:?} ({:.1}× real time)",
+            out.display(),
+            t.elapsed(),
+            secs / t.elapsed().as_secs_f64().max(1e-3)
+        ),
         Err(e) => {
             eprintln!("[video] framing failed: {e}");
             return;
         }
     }
-    let (Some(src), Some(gpu)) = (media::strip(path, 1, 720.0).pop(), media::strip(&out, 1, 720.0).pop()) else { return };
+    let (Some(src), Some(gpu)) = (
+        media::strip(path, 1, 720.0).pop(),
+        media::strip(&out, 1, 720.0).pop(),
+    ) else {
+        return;
+    };
     let png = |name: &str, img: &image::RgbaImage| {
         let p = path.with_file_name(format!("{stem} {name}.png"));
         match img.save(&p) {
@@ -836,9 +989,18 @@ fn probe_frame(path: &Path, secs: f64) {
     png("probe gpu", &gpu);
     let size = src.dimensions();
     let lay = scene::layout(size, Some(&frame));
-    let bgra: Vec<u8> = src.pixels().flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
-    if let Some(cpu) = scene::chrome(&frame, &lay).and_then(|ch| scene::compose_cpu(&ch, &lay, &bgra, size)) {
-        let rgba: Vec<u8> = cpu.data().chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
+    let bgra: Vec<u8> = src
+        .pixels()
+        .flat_map(|p| [p[2], p[1], p[0], p[3]])
+        .collect();
+    if let Some(cpu) =
+        scene::chrome(&frame, &lay).and_then(|ch| scene::compose_cpu(&ch, &lay, &bgra, size))
+    {
+        let rgba: Vec<u8> = cpu
+            .data()
+            .chunks_exact(4)
+            .flat_map(|p| [p[2], p[1], p[0], p[3]])
+            .collect();
         if let Some(img) = image::RgbaImage::from_raw(cpu.width(), cpu.height(), rgba) {
             png("probe cpu", &img);
         }

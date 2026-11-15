@@ -44,14 +44,16 @@ pub fn default_on() {
 
 /// Running from CmdMeow.app (not `cargo run`).
 fn in_bundle() -> bool {
-    std::env::current_exe().ok().is_some_and(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+    std::env::current_exe()
+        .ok()
+        .is_some_and(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
 }
 
 #[cfg(target_os = "macos")]
 mod imp {
+    use objc2::msg_send;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject};
-    use objc2::msg_send;
     use objc2_foundation::NSError;
 
     #[link(name = "ServiceManagement", kind = "framework")]

@@ -64,7 +64,15 @@ impl Screen {
     }
 
     /// A display for screenshots and tests.
-    pub fn sample(id: u32, name: &str, builtin: bool, how: How, frame: Rect, brightness: f32, volume: Option<f32>) -> Screen {
+    pub fn sample(
+        id: u32,
+        name: &str,
+        builtin: bool,
+        how: How,
+        frame: Rect,
+        brightness: f32,
+        volume: Option<f32>,
+    ) -> Screen {
         Screen {
             id,
             key: format!("sample-{id}"),
@@ -151,7 +159,10 @@ impl View {
     }
     /// Put a change into the view at once, so sliders follow the hand.
     pub fn apply(&mut self, cmd: Cmd) {
-        if let Some(s) = cmd.id().and_then(|id| self.screens.iter_mut().find(|s| s.id == id)) {
+        if let Some(s) = cmd
+            .id()
+            .and_then(|id| self.screens.iter_mut().find(|s| s.id == id))
+        {
             set_level(s, cmd);
         }
     }
@@ -216,19 +227,28 @@ pub enum Audio {
 /// The display a volume key is for: the one the sound goes to by name,
 /// else the one under the pointer, else the only one with speakers.
 fn volume_target<'a>(v: &'a View, audio: &Audio, at: Pos2) -> Option<&'a Screen> {
-    let Audio::Monitor(name) = audio else { return None };
+    let Audio::Monitor(name) = audio else {
+        return None;
+    };
     let speakers: Vec<&Screen> = v.screens.iter().filter(|s| s.volume.is_some()).collect();
     let n = norm(name);
     speakers
         .iter()
         .find(|s| !n.is_empty() && (norm(&s.name).contains(&n) || n.contains(&norm(&s.name))))
         .or_else(|| speakers.iter().find(|s| s.frame.contains(at)))
-        .or(if speakers.len() == 1 { speakers.first() } else { None })
+        .or(if speakers.len() == 1 {
+            speakers.first()
+        } else {
+            None
+        })
         .copied()
 }
 
 fn norm(s: &str) -> String {
-    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// What a key press does: the change to make, or None to leave the key to
@@ -240,7 +260,8 @@ pub fn on_key(v: &View, key: Key, fine: bool, at: Pos2, audio: &Audio) -> Option
     match key {
         Key::BrightnessUp | Key::BrightnessDown => {
             let s = v.screens.iter().find(|s| s.frame.contains(at))?;
-            s.adjustable().then(|| Cmd::Brightness(s.id, step(s.brightness, key == Key::BrightnessUp, fine)))
+            s.adjustable()
+                .then(|| Cmd::Brightness(s.id, step(s.brightness, key == Key::BrightnessUp, fine)))
         }
         Key::Mute => volume_target(v, audio, at).map(|s| Cmd::Mute(s.id, !s.muted)),
         Key::VolumeUp | Key::VolumeDown => {
@@ -255,8 +276,18 @@ pub fn on_key(v: &View, key: Key, fine: bool, at: Pos2, audio: &Audio) -> Option
 pub fn osd_for(v: &View, cmd: Cmd, at: Instant) -> Option<Osd> {
     let s = v.screen(cmd.id()?)?;
     let volume = !matches!(cmd, Cmd::Brightness(..));
-    let level = if volume { s.volume.unwrap_or(0.0) } else { s.brightness };
-    Some(Osd { id: s.id, volume, level, muted: volume && s.muted, at })
+    let level = if volume {
+        s.volume.unwrap_or(0.0)
+    } else {
+        s.brightness
+    };
+    Some(Osd {
+        id: s.id,
+        volume,
+        level,
+        muted: volume && s.muted,
+        at,
+    })
 }
 
 // ---------------------------------------------------------------- the OS side
@@ -304,7 +335,16 @@ pub struct Engine<B: Bus> {
 
 impl<B: Bus> Engine<B> {
     pub fn new(bus: B, levels: HashMap<String, Levels>) -> Self {
-        Engine { bus, screens: Vec::new(), levels, seen: HashSet::new(), pending: Vec::new(), reapply: 0, levels_dirty: false, paused: false }
+        Engine {
+            bus,
+            screens: Vec::new(),
+            levels,
+            seen: HashSet::new(),
+            pending: Vec::new(),
+            reapply: 0,
+            levels_dirty: false,
+            paused: false,
+        }
     }
 
     /// Bring the list in line with what is plugged in. `woke`: the Mac just
@@ -317,7 +357,8 @@ impl<B: Bus> Engine<B> {
         }
         let found = self.bus.list();
         let before = self.screens.clone();
-        self.screens.retain(|s| found.iter().any(|f| f.id == s.id && f.key == s.key));
+        self.screens
+            .retain(|s| found.iter().any(|f| f.id == s.id && f.key == s.key));
         for f in &found {
             if let Some(i) = self.screens.iter().position(|s| s.id == f.id) {
                 let s = &mut self.screens[i];
@@ -365,10 +406,16 @@ impl<B: Bus> Engine<B> {
             }
             self.screens.push(s);
         }
-        self.screens.sort_by_key(|s| (!s.builtin, s.frame.left() as i32, s.id));
+        self.screens
+            .sort_by_key(|s| (!s.builtin, s.frame.left() as i32, s.id));
         if self.reapply > 0 {
             self.reapply -= 1;
-            let all: Vec<(u32, bool)> = self.screens.iter().filter(|s| s.adjustable()).map(|s| (s.id, s.volume.is_some())).collect();
+            let all: Vec<(u32, bool)> = self
+                .screens
+                .iter()
+                .filter(|s| s.adjustable())
+                .map(|s| (s.id, s.volume.is_some()))
+                .collect();
             for (id, speakers) in all {
                 self.want(id, Ctl::Brightness);
                 if speakers {
@@ -421,7 +468,11 @@ impl<B: Bus> Engine<B> {
     }
 
     fn remember(&mut self, s: &Screen) {
-        let l = Levels { brightness: Some(s.brightness), volume: s.volume, muted: s.muted };
+        let l = Levels {
+            brightness: Some(s.brightness),
+            volume: s.volume,
+            muted: s.muted,
+        };
         if self.levels.get(&s.key) != Some(&l) {
             self.levels.insert(s.key.clone(), l);
             self.levels_dirty = true;
@@ -454,7 +505,9 @@ impl<B: Bus> Engine<B> {
             return;
         }
         let Some(id) = cmd.id() else { return };
-        let Some(i) = self.screens.iter().position(|s| s.id == id) else { return };
+        let Some(i) = self.screens.iter().position(|s| s.id == id) else {
+            return;
+        };
         if !self.screens[i].adjustable() {
             return;
         }
@@ -464,7 +517,9 @@ impl<B: Bus> Engine<B> {
         match cmd {
             Cmd::Brightness(..) => self.want(id, Ctl::Brightness),
             Cmd::Volume(..) if s.volume.is_some() => self.want(id, Ctl::Volume),
-            Cmd::Mute(..) if s.volume.is_some() => self.want(id, if s.has_mute { Ctl::Mute } else { Ctl::Volume }),
+            Cmd::Mute(..) if s.volume.is_some() => {
+                self.want(id, if s.has_mute { Ctl::Mute } else { Ctl::Volume })
+            }
             _ => {}
         }
     }
@@ -476,7 +531,9 @@ impl<B: Bus> Engine<B> {
             return;
         }
         for (id, c) in std::mem::take(&mut self.pending) {
-            let Some(s) = self.screens.iter().find(|s| s.id == id).cloned() else { continue };
+            let Some(s) = self.screens.iter().find(|s| s.id == id).cloned() else {
+                continue;
+            };
             match (s.how, c) {
                 (How::Native, _) => {}
                 (How::Dim, Ctl::Brightness) => {
@@ -484,14 +541,22 @@ impl<B: Bus> Engine<B> {
                 }
                 (How::Dim, _) => {}
                 (How::Ddc, Ctl::Brightness) => {
-                    self.bus.ddc_write(id, vcp::BRIGHTNESS, ddc::to_raw(s.brightness, s.max_brightness));
+                    self.bus.ddc_write(
+                        id,
+                        vcp::BRIGHTNESS,
+                        ddc::to_raw(s.brightness, s.max_brightness),
+                    );
                 }
                 (How::Ddc, Ctl::Volume) => {
                     self.bus.ddc_write(id, vcp::VOLUME, wire_volume(&s));
                 }
                 (How::Ddc, Ctl::Mute) => {
                     if s.has_mute {
-                        self.bus.ddc_write(id, vcp::MUTE, if s.muted { ddc::MUTE_ON } else { ddc::MUTE_OFF });
+                        self.bus.ddc_write(
+                            id,
+                            vcp::MUTE,
+                            if s.muted { ddc::MUTE_ON } else { ddc::MUTE_OFF },
+                        );
                     } else {
                         self.bus.ddc_write(id, vcp::VOLUME, wire_volume(&s));
                     }
@@ -551,7 +616,15 @@ pub mod tests {
     }
 
     pub fn found(id: u32, key: &str, x: f32) -> Found {
-        Found { id, key: key.into(), name: format!("Display {id}"), builtin: false, native: false, ddc: true, frame: Rect::from_min_size(Pos2::new(x, 0.0), Vec2::new(1000.0, 800.0)) }
+        Found {
+            id,
+            key: key.into(),
+            name: format!("Display {id}"),
+            builtin: false,
+            native: false,
+            ddc: true,
+            frame: Rect::from_min_size(Pos2::new(x, 0.0), Vec2::new(1000.0, 800.0)),
+        }
     }
 
     fn r(current: u16, max: u16) -> Reading {
@@ -657,7 +730,14 @@ pub mod tests {
     #[test]
     fn at_launch_the_monitor_keeps_its_own_levels_and_they_are_remembered() {
         let mut saved = HashMap::new();
-        saved.insert("dell".to_string(), Levels { brightness: Some(0.9), volume: Some(0.5), muted: false });
+        saved.insert(
+            "dell".to_string(),
+            Levels {
+                brightness: Some(0.9),
+                volume: Some(0.5),
+                muted: false,
+            },
+        );
         let mut e = Engine::new(desk(), saved);
         e.refresh(false);
         assert!(e.bus.writes.is_empty());
@@ -693,7 +773,14 @@ pub mod tests {
         let mut f = desk();
         f.ddc.clear();
         let mut saved = HashMap::new();
-        saved.insert("dell".to_string(), Levels { brightness: Some(0.5), volume: None, muted: false });
+        saved.insert(
+            "dell".to_string(),
+            Levels {
+                brightness: Some(0.5),
+                volume: None,
+                muted: false,
+            },
+        );
         let mut e = Engine::new(f, saved);
         e.refresh(false);
         assert_eq!(e.bus.dims, vec![(2, dim_scale(0.5))]);
@@ -781,7 +868,11 @@ pub mod tests {
     fn view() -> View {
         let mut e = Engine::new(desk(), HashMap::new());
         e.refresh(false);
-        View { screens: e.screens, settings: Settings::default(), osd: None }
+        View {
+            screens: e.screens,
+            settings: Settings::default(),
+            osd: None,
+        }
     }
 
     #[test]
@@ -789,15 +880,33 @@ pub mod tests {
         let v = view();
         let on_dell = Pos2::new(1500.0, 300.0);
         let on_panel = Pos2::new(200.0, 300.0);
-        assert_eq!(on_key(&v, Key::BrightnessUp, false, on_dell, &Audio::Elsewhere), Some(Cmd::Brightness(2, 0.4375)));
+        assert_eq!(
+            on_key(&v, Key::BrightnessUp, false, on_dell, &Audio::Elsewhere),
+            Some(Cmd::Brightness(2, 0.4375))
+        );
         // the built-in panel is macOS's
-        assert_eq!(on_key(&v, Key::BrightnessUp, false, on_panel, &Audio::Elsewhere), None);
+        assert_eq!(
+            on_key(&v, Key::BrightnessUp, false, on_panel, &Audio::Elsewhere),
+            None
+        );
         // nowhere
-        assert_eq!(on_key(&v, Key::BrightnessUp, false, Pos2::new(-50.0, 0.0), &Audio::Elsewhere), None);
+        assert_eq!(
+            on_key(
+                &v,
+                Key::BrightnessUp,
+                false,
+                Pos2::new(-50.0, 0.0),
+                &Audio::Elsewhere
+            ),
+            None
+        );
         // turned off in settings
         let mut off = view();
         off.settings.keys = false;
-        assert_eq!(on_key(&off, Key::BrightnessUp, false, on_dell, &Audio::Elsewhere), None);
+        assert_eq!(
+            on_key(&off, Key::BrightnessUp, false, on_dell, &Audio::Elsewhere),
+            None
+        );
     }
 
     #[test]
@@ -807,11 +916,20 @@ pub mod tests {
         assert_eq!(on_key(&v, Key::VolumeUp, false, p, &Audio::Elsewhere), None);
         // by name, wherever the pointer is
         let audio = Audio::Monitor("DISPLAY 2".into());
-        assert_eq!(on_key(&v, Key::VolumeUp, false, p, &audio), Some(Cmd::Volume(2, 0.25)));
-        assert_eq!(on_key(&v, Key::Mute, false, p, &audio), Some(Cmd::Mute(2, true)));
+        assert_eq!(
+            on_key(&v, Key::VolumeUp, false, p, &audio),
+            Some(Cmd::Volume(2, 0.25))
+        );
+        assert_eq!(
+            on_key(&v, Key::Mute, false, p, &audio),
+            Some(Cmd::Mute(2, true))
+        );
         // an unknown name: the only monitor with speakers
         let other = Audio::Monitor("LG HDR 4K".into());
-        assert_eq!(on_key(&v, Key::VolumeDown, false, p, &other), Some(Cmd::Volume(2, 0.125)));
+        assert_eq!(
+            on_key(&v, Key::VolumeDown, false, p, &other),
+            Some(Cmd::Volume(2, 0.125))
+        );
         // no monitor with speakers: macOS keeps the key
         v.screens[1].volume = None;
         assert_eq!(on_key(&v, Key::VolumeUp, false, p, &audio), None);
@@ -825,7 +943,11 @@ pub mod tests {
         let o = osd_for(&v, cmd, Instant::now()).unwrap();
         assert!(o.volume && !o.muted && (o.level - 0.25).abs() < 1e-6);
         v.apply(Cmd::Mute(2, true));
-        assert!(osd_for(&v, Cmd::Mute(2, true), Instant::now()).unwrap().muted);
+        assert!(
+            osd_for(&v, Cmd::Mute(2, true), Instant::now())
+                .unwrap()
+                .muted
+        );
         let o = osd_for(&v, Cmd::Brightness(2, 0.9), Instant::now()).unwrap();
         assert!(!o.volume && (o.level - 0.4).abs() < 1e-6);
         assert!(osd_for(&v, Cmd::Rescan, Instant::now()).is_none());
@@ -840,9 +962,16 @@ pub mod tests {
 
     #[test]
     fn levels_and_settings_survive_json() {
-        let l = Levels { brightness: Some(0.3), volume: None, muted: true };
+        let l = Levels {
+            brightness: Some(0.3),
+            volume: None,
+            muted: true,
+        };
         let s = serde_json::to_string(&l).unwrap();
         assert_eq!(serde_json::from_str::<Levels>(&s).unwrap(), l);
-        assert_eq!(serde_json::from_str::<Settings>("{}").unwrap(), Settings::default());
+        assert_eq!(
+            serde_json::from_str::<Settings>("{}").unwrap(),
+            Settings::default()
+        );
     }
 }

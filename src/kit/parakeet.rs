@@ -16,7 +16,12 @@ const URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-m
 /// About how big the download is.
 pub const BYTES: u64 = 487_211_443;
 /// The files the recognizer needs.
-const FILES: [&str; 4] = ["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"];
+const FILES: [&str; 4] = [
+    "encoder.int8.onnx",
+    "decoder.int8.onnx",
+    "joiner.int8.onnx",
+    "tokens.txt",
+];
 
 pub fn dir() -> PathBuf {
     crate::kit::whisper::models_dir().join(NAME)
@@ -72,7 +77,9 @@ fn fetch(p: &Progress) -> Result<(), String> {
     if have > 0 {
         req = req.header("Range", format!("bytes={have}-"));
     }
-    let resp = req.call().map_err(|e| format!("Couldn't reach the download: {e}"))?;
+    let resp = req
+        .call()
+        .map_err(|e| format!("Couldn't reach the download: {e}"))?;
     let status = resp.status().as_u16();
     if status == 416 && have > 0 {
         // the part is already whole (or the file changed): start over
@@ -83,11 +90,22 @@ fn fetch(p: &Progress) -> Result<(), String> {
     if status != 200 && !resumed {
         return Err(format!("The download answered {status}"));
     }
-    let len = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
+    let len = resp
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
     let start = if resumed { have } else { 0 };
-    p.total.store(len.map(|l| l + start).unwrap_or(BYTES), Ordering::Relaxed);
+    p.total
+        .store(len.map(|l| l + start).unwrap_or(BYTES), Ordering::Relaxed);
     p.done.store(start, Ordering::Relaxed);
-    let mut file = std::fs::OpenOptions::new().create(true).append(resumed).write(true).truncate(!resumed).open(&part).map_err(|e| e.to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(resumed)
+        .write(true)
+        .truncate(!resumed)
+        .open(&part)
+        .map_err(|e| e.to_string())?;
     let mut body = resp.into_body();
     let mut reader = body.as_reader();
     let mut buf = vec![0u8; 1 << 16];
@@ -96,7 +114,9 @@ fn fetch(p: &Progress) -> Result<(), String> {
         if p.cancelled() {
             return Err("Stopped".into());
         }
-        let n = reader.read(&mut buf).map_err(|e| format!("The download broke off: {e}"))?;
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("The download broke off: {e}"))?;
         if n == 0 {
             break;
         }
@@ -111,7 +131,9 @@ fn fetch(p: &Progress) -> Result<(), String> {
     }
     // a bzip2 stream starts with "BZh"
     let mut magic = [0u8; 3];
-    std::fs::File::open(&part).and_then(|mut f| f.read_exact(&mut magic)).map_err(|e| e.to_string())?;
+    std::fs::File::open(&part)
+        .and_then(|mut f| f.read_exact(&mut magic))
+        .map_err(|e| e.to_string())?;
     if &magic != b"BZh" {
         let _ = std::fs::remove_file(&part);
         return Err("That wasn't the speech model; try again".into());
@@ -127,18 +149,29 @@ fn unpack(p: &Progress, tmp: &std::path::Path) -> Result<(), String> {
     let f = std::fs::File::open(archive()).map_err(|e| e.to_string())?;
     let mut tar = tar::Archive::new(bzip2::read::BzDecoder::new(std::io::BufReader::new(f)));
     let mut got = 0;
-    for entry in tar.entries().map_err(|e| format!("The model archive is damaged: {e}"))? {
+    for entry in tar
+        .entries()
+        .map_err(|e| format!("The model archive is damaged: {e}"))?
+    {
         if p.cancelled() {
             let _ = std::fs::remove_dir_all(&tmp);
             return Err("Stopped".into());
         }
         let mut entry = entry.map_err(|e| format!("The model archive is damaged: {e}"))?;
         let path = entry.path().map_err(|e| e.to_string())?.into_owned();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
+        let Some(name) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
         if !FILES.contains(&name.as_str()) {
             continue;
         }
-        entry.unpack(tmp.join(&name)).map_err(|e| format!("Unpacking the model failed: {e}"))?;
+        entry
+            .unpack(tmp.join(&name))
+            .map_err(|e| format!("Unpacking the model failed: {e}"))?;
         got += 1;
     }
     if got < FILES.len() {
@@ -165,11 +198,17 @@ pub struct Loaded {
 impl Loaded {
     #[cfg(target_os = "macos")]
     pub fn load() -> Result<Loaded, String> {
-        use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig};
+        use sherpa_onnx::{
+            OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig,
+        };
         let d = dir();
         let s = |f: &str| Some(d.join(f).to_string_lossy().into_owned());
         let mut config = OfflineRecognizerConfig::default();
-        config.model_config.transducer = OfflineTransducerModelConfig { encoder: s(FILES[0]), decoder: s(FILES[1]), joiner: s(FILES[2]) };
+        config.model_config.transducer = OfflineTransducerModelConfig {
+            encoder: s(FILES[0]),
+            decoder: s(FILES[1]),
+            joiner: s(FILES[2]),
+        };
         config.model_config.tokens = s(FILES[3]);
         config.model_config.model_type = Some("nemo_transducer".into());
         config.model_config.num_threads = crate::kit::work_threads() as i32;

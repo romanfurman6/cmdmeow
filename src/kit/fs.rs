@@ -16,12 +16,21 @@ pub fn home() -> PathBuf {
 /// Access isn't granted. Background checks (a startup job's program, its
 /// signature) skip such paths, so no folder question comes before setup.
 pub fn behind_folder_prompt(p: &Path) -> bool {
-    is_guarded(&home(), p) && crate::kit::perms::Perm::FullDisk.status() != crate::kit::perms::Status::Allowed
+    is_guarded(&home(), p)
+        && crate::kit::perms::Perm::FullDisk.status() != crate::kit::perms::Status::Allowed
 }
 
 /// Is `p` in a folder macOS asks about (whatever is granted)?
 fn is_guarded(home: &Path, p: &Path) -> bool {
-    ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"].iter().any(|x| p.starts_with(home.join(x))) || p.starts_with("/Volumes")
+    [
+        "Desktop",
+        "Documents",
+        "Downloads",
+        "Library/Mobile Documents",
+    ]
+    .iter()
+    .any(|x| p.starts_with(home.join(x)))
+        || p.starts_with("/Volumes")
 }
 
 #[cfg(test)]
@@ -32,10 +41,22 @@ mod guarded_tests {
     #[test]
     fn guarded_folders() {
         let h = Path::new("/Users/me");
-        for p in ["/Users/me/Downloads", "/Users/me/Downloads/x.app", "/Users/me/Desktop/a", "/Users/me/Documents/p", "/Users/me/Library/Mobile Documents/com~apple~CloudDocs", "/Volumes/USB/x"] {
+        for p in [
+            "/Users/me/Downloads",
+            "/Users/me/Downloads/x.app",
+            "/Users/me/Desktop/a",
+            "/Users/me/Documents/p",
+            "/Users/me/Library/Mobile Documents/com~apple~CloudDocs",
+            "/Volumes/USB/x",
+        ] {
             assert!(is_guarded(h, Path::new(p)), "{p}");
         }
-        for p in ["/Applications/Zed.app", "/Users/me/Library/Caches", "/Users/me/DownloadsOld", "/Users/me/.claude/projects"] {
+        for p in [
+            "/Applications/Zed.app",
+            "/Users/me/Library/Caches",
+            "/Users/me/DownloadsOld",
+            "/Users/me/.claude/projects",
+        ] {
             assert!(!is_guarded(h, Path::new(p)), "{p}");
         }
     }
@@ -67,10 +88,14 @@ fn walk_size(path: &Path, max: usize) -> u64 {
         md.blocks() * 512
     }
     fn walk(p: &Path, depth: usize, max: usize, dev: u64, seen: &mut HashSet<(u64, u64)>) -> u64 {
-        let Ok(rd) = std::fs::read_dir(p) else { return 0 };
+        let Ok(rd) = std::fs::read_dir(p) else {
+            return 0;
+        };
         let mut total = 0;
         for e in rd.flatten() {
-            let Ok(md) = e.path().symlink_metadata() else { continue };
+            let Ok(md) = e.path().symlink_metadata() else {
+                continue;
+            };
             if md.dev() != dev {
                 continue;
             }
@@ -122,9 +147,19 @@ fn list_portable(dir: &Path) -> Option<(u64, Vec<Listed>)> {
     let rd = std::fs::read_dir(dir).ok()?;
     let mut out = Vec::new();
     for e in rd.flatten() {
-        let Ok(md) = e.path().symlink_metadata() else { continue };
+        let Ok(md) = e.path().symlink_metadata() else {
+            continue;
+        };
         let is_dir = md.is_dir();
-        out.push(Listed { name: e.file_name(), dir: is_dir, id: md.ino(), links: md.nlink() as u32, bytes: if is_dir { 0 } else { md.blocks() * 512 }, private: None, clone: None });
+        out.push(Listed {
+            name: e.file_name(),
+            dir: is_dir,
+            id: md.ino(),
+            links: md.nlink() as u32,
+            bytes: if is_dir { 0 } else { md.blocks() * 512 },
+            private: None,
+            clone: None,
+        });
     }
     Some((dev, out))
 }
@@ -187,7 +222,12 @@ mod bulk {
         attrlist {
             bitmapcount: libc::ATTR_BIT_MAP_COUNT,
             reserved: 0,
-            commonattr: libc::ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_ERROR | libc::ATTR_CMN_NAME | libc::ATTR_CMN_DEVID | libc::ATTR_CMN_OBJTYPE | libc::ATTR_CMN_FILEID,
+            commonattr: libc::ATTR_CMN_RETURNED_ATTRS
+                | ATTR_CMN_ERROR
+                | libc::ATTR_CMN_NAME
+                | libc::ATTR_CMN_DEVID
+                | libc::ATTR_CMN_OBJTYPE
+                | libc::ATTR_CMN_FILEID,
             volattr: 0,
             dirattr: 0,
             fileattr: libc::ATTR_FILE_LINKCOUNT | libc::ATTR_FILE_ALLOCSIZE,
@@ -196,10 +236,12 @@ mod bulk {
     }
 
     fn u32_at(b: &[u8], at: usize) -> Option<u32> {
-        b.get(at..at + 4).map(|v| u32::from_ne_bytes(v.try_into().unwrap()))
+        b.get(at..at + 4)
+            .map(|v| u32::from_ne_bytes(v.try_into().unwrap()))
     }
     fn u64_at(b: &[u8], at: usize) -> Option<u64> {
-        b.get(at..at + 8).map(|v| u64::from_ne_bytes(v.try_into().unwrap()))
+        b.get(at..at + 8)
+            .map(|v| u64::from_ne_bytes(v.try_into().unwrap()))
     }
 
     /// Parses one record: the attributes come in a fixed order (returned set,
@@ -260,7 +302,15 @@ mod bulk {
         let mut req = request();
         let bytes = buf.len() * 8;
         loop {
-            let n = unsafe { libc::getattrlistbulk(fd, &mut req as *mut _ as *mut _, buf.as_mut_ptr() as *mut _, bytes, libc::FSOPT_ATTR_CMN_EXTENDED as u64) };
+            let n = unsafe {
+                libc::getattrlistbulk(
+                    fd,
+                    &mut req as *mut _ as *mut _,
+                    buf.as_mut_ptr() as *mut _,
+                    bytes,
+                    libc::FSOPT_ATTR_CMN_EXTENDED as u64,
+                )
+            };
             if n < 0 {
                 return false;
             }
@@ -270,8 +320,12 @@ mod bulk {
             let b = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, bytes) };
             let mut at = 0;
             for _ in 0..n {
-                let Some(len) = u32_at(b, at).map(|l| l as usize).filter(|l| *l >= 4) else { return false };
-                let Some(rec) = b.get(at..at + len) else { return false };
+                let Some(len) = u32_at(b, at).map(|l| l as usize).filter(|l| *l >= 4) else {
+                    return false;
+                };
+                let Some(rec) = b.get(at..at + len) else {
+                    return false;
+                };
                 if let Some(e) = parse(rec) {
                     out.push(e);
                 }
@@ -281,7 +335,13 @@ mod bulk {
     }
 
     fn open_dir(parent: c_int, name: &CStr) -> Option<Fd> {
-        let fd = unsafe { libc::openat(parent, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
+        let fd = unsafe {
+            libc::openat(
+                parent,
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
         (fd >= 0).then_some(Fd(fd))
     }
 
@@ -291,7 +351,14 @@ mod bulk {
     }
 
     /// `None` when the folder can't be listed in bulk.
-    fn walk(fd: c_int, dev: i32, depth: usize, max: usize, buf: &mut [u64], seen: &mut HashSet<u64>) -> Option<u64> {
+    fn walk(
+        fd: c_int,
+        dev: i32,
+        depth: usize,
+        max: usize,
+        buf: &mut [u64],
+        seen: &mut HashSet<u64>,
+    ) -> Option<u64> {
         let mut entries = Vec::new();
         if !list(fd, buf, &mut entries) && entries.is_empty() {
             return None;
@@ -303,7 +370,9 @@ mod bulk {
             }
             total += e.bytes(seen);
             if e.kind == VDIR && depth < max && e.error == 0 {
-                let Ok(name) = CString::new(e.name) else { continue };
+                let Ok(name) = CString::new(e.name) else {
+                    continue;
+                };
                 if let Some(sub) = open_dir(fd, &name) {
                     // a volume mounted here is somebody else's space
                     if dev_of(sub.0) == Some(dev) {
@@ -334,7 +403,15 @@ mod bulk {
             .filter(|e| e.error == 0 && !e.name.is_empty())
             .map(|e| {
                 let dir = e.kind == VDIR;
-                super::Listed { name: std::ffi::OsStr::from_bytes(&e.name).to_os_string(), dir, id: e.id, links: e.links, bytes: if dir { 0 } else { e.alloc.unwrap_or(0) }, private: if dir { None } else { e.private }, clone: e.clone }
+                super::Listed {
+                    name: std::ffi::OsStr::from_bytes(&e.name).to_os_string(),
+                    dir,
+                    id: e.id,
+                    links: e.links,
+                    bytes: if dir { 0 } else { e.alloc.unwrap_or(0) },
+                    private: if dir { None } else { e.private },
+                    clone: e.clone,
+                }
             })
             .collect();
         Some((dev as u64, out))
@@ -371,7 +448,10 @@ mod bulk {
             let walk = super::super::walk_size(&dir, 64);
             std::fs::remove_dir_all(&dir).unwrap();
             assert!(bulk >= 300_000 + 300 * 5_000, "bulk {bulk}");
-            assert!(bulk.abs_diff(walk) <= 64 * 1024, "bulk {bulk} vs walk {walk}");
+            assert!(
+                bulk.abs_diff(walk) <= 64 * 1024,
+                "bulk {bulk} vs walk {walk}"
+            );
         }
 
         #[test]
@@ -400,7 +480,10 @@ mod bulk {
             assert_eq!(walk_linked, one, "the portable walk agrees");
             if cloned {
                 // on APFS a clone shares every block with its original
-                assert!(with_clone < one + 100_000, "clone counted again: {with_clone} vs {one}");
+                assert!(
+                    with_clone < one + 100_000,
+                    "clone counted again: {with_clone} vs {one}"
+                );
             }
         }
     }
@@ -436,31 +519,51 @@ fn data_root() -> PathBuf {
 /// data, window state and Keychain items apart from the installed app.
 pub fn is_dev() -> bool {
     static DEV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *DEV.get_or_init(|| std::env::current_exe().ok().is_some_and(|p| is_dev_bundle(&p)))
+    *DEV.get_or_init(|| {
+        std::env::current_exe()
+            .ok()
+            .is_some_and(|p| is_dev_bundle(&p))
+    })
 }
 
 /// True for a binary inside a "… Dev.app" bundle.
 fn is_dev_bundle(exe: &Path) -> bool {
-    exe.ancestors().any(|a| a.extension().is_some_and(|e| e == "app") && a.file_stem().is_some_and(|n| n.to_string_lossy().ends_with(" Dev")))
+    exe.ancestors().any(|a| {
+        a.extension().is_some_and(|e| e == "app")
+            && a.file_stem()
+                .is_some_and(|n| n.to_string_lossy().ends_with(" Dev"))
+    })
 }
 
 /// Rename `old` to `new` when only `old` exists.
 fn migrate_dir(old: &Path, new: &Path) {
     if old.is_dir() && !new.exists() {
         if let Err(e) = std::fs::rename(old, new) {
-            eprintln!("[data] couldn't move {} to {}: {e}", old.display(), new.display());
+            eprintln!(
+                "[data] couldn't move {} to {}: {e}",
+                old.display(),
+                new.display()
+            );
         }
     }
 }
 
 /// A JSON file's value, or the default when it is missing or unreadable.
 pub fn load_json<T: DeserializeOwned + Default>(path: &Path) -> T {
-    std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 /// `v` as JSON; `pretty` for files people may open.
 fn to_json<T: Serialize + ?Sized>(v: &T, pretty: bool) -> Option<Vec<u8>> {
-    if pretty { serde_json::to_vec_pretty(v) } else { serde_json::to_vec(v) }.ok()
+    if pretty {
+        serde_json::to_vec_pretty(v)
+    } else {
+        serde_json::to_vec(v)
+    }
+    .ok()
 }
 
 /// Write `bytes` through a temp file beside `path` and move it in place,
@@ -515,7 +618,10 @@ fn writer() -> &'static Mutex<Sender<Write>> {
     static TX: OnceLock<Mutex<Sender<Write>>> = OnceLock::new();
     TX.get_or_init(|| {
         let (tx, rx) = std::sync::mpsc::channel::<Write>();
-        std::thread::Builder::new().name("writer".into()).spawn(move || write_loop(rx)).ok();
+        std::thread::Builder::new()
+            .name("writer".into())
+            .spawn(move || write_loop(rx))
+            .ok();
         Mutex::new(tx)
     })
 }
@@ -546,19 +652,30 @@ fn write_loop(rx: Receiver<Write>) {
 /// Serializing happens here, so later changes to `v` don't leak in.
 pub fn save_json_later<T: Serialize + ?Sized>(path: &Path, v: &T, pretty: bool) {
     if let Some(b) = to_json(v, pretty) {
-        let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), b, false));
+        let _ = writer()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .send(Write::File(path.to_path_buf(), b, false));
     }
 }
 
 /// Write `bytes` to `path` owner-only ([`write_private`]) on the background writer.
 pub fn save_private_later(path: &Path, bytes: Vec<u8>) {
-    let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), bytes, true));
+    let _ = writer()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .send(Write::File(path.to_path_buf(), bytes, true));
 }
 
 /// Wait (up to 2 s) until every background save so far is on disk.
 pub fn flush_writes() {
     let (tx, rx) = std::sync::mpsc::channel();
-    if writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::Flush(tx)).is_ok() {
+    if writer()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .send(Write::Flush(tx))
+        .is_ok()
+    {
         let _ = rx.recv_timeout(std::time::Duration::from_secs(2));
     }
 }
@@ -572,7 +689,12 @@ pub fn volume_space(path: &str) -> (u64, u64) {
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
     static CACHE: Mutex<Option<HashMap<String, (Instant, (u64, u64))>>> = Mutex::new(None);
-    if let Some((at, v)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).get(path) {
+    if let Some((at, v)) = CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .get(path)
+    {
         if at.elapsed() < Duration::from_secs(5) {
             return *v;
         }
@@ -581,13 +703,19 @@ pub fn volume_space(path: &str) -> (u64, u64) {
     let v = finder_space(path).unwrap_or_else(|| statvfs_space(path));
     #[cfg(not(target_os = "macos"))]
     let v = statvfs_space(path);
-    CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(path.to_string(), (Instant::now(), v));
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(path.to_string(), (Instant::now(), v));
     v
 }
 
 /// Free space without purgeable: what `df` shows.
 fn statvfs_space(path: &str) -> (u64, u64) {
-    let Ok(c) = std::ffi::CString::new(path) else { return (0, 0) };
+    let Ok(c) = std::ffi::CString::new(path) else {
+        return (0, 0);
+    };
     let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::statvfs(c.as_ptr(), &mut st) } == 0 {
         let total = st.f_blocks as u64 * st.f_frsize as u64;
@@ -601,12 +729,25 @@ fn statvfs_space(path: &str) -> (u64, u64) {
 /// Total and "available for important usage" from the volume's URL keys.
 #[cfg(target_os = "macos")]
 fn finder_space(path: &str) -> Option<(u64, u64)> {
-    use objc2_foundation::{NSArray, NSNumber, NSString, NSURLVolumeAvailableCapacityForImportantUsageKey, NSURLVolumeTotalCapacityKey, NSURL};
+    use objc2_foundation::{
+        NSArray, NSNumber, NSString, NSURLVolumeAvailableCapacityForImportantUsageKey,
+        NSURLVolumeTotalCapacityKey, NSURL,
+    };
     let url = NSURL::fileURLWithPath(&NSString::from_str(path));
-    let (total_key, avail_key) = unsafe { (NSURLVolumeTotalCapacityKey, NSURLVolumeAvailableCapacityForImportantUsageKey) };
+    let (total_key, avail_key) = unsafe {
+        (
+            NSURLVolumeTotalCapacityKey,
+            NSURLVolumeAvailableCapacityForImportantUsageKey,
+        )
+    };
     let keys = NSArray::from_slice(&[total_key, avail_key]);
     let values = url.resourceValuesForKeys_error(&keys).ok()?;
-    let num = |k: &NSString| values.objectForKey(k).and_then(|o| o.downcast::<NSNumber>().ok()).map(|n| n.longLongValue().max(0) as u64);
+    let num = |k: &NSString| {
+        values
+            .objectForKey(k)
+            .and_then(|o| o.downcast::<NSNumber>().ok())
+            .map(|n| n.longLongValue().max(0) as u64)
+    };
     let (total, avail) = (num(total_key)?, num(avail_key)?);
     (total > 0).then_some((total, avail.min(total)))
 }
@@ -620,7 +761,10 @@ pub fn is_protected(p: &Path) -> Option<&'static str> {
 }
 
 fn is_protected_in(p: &Path, h: &Path) -> Option<&'static str> {
-    if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if !p.is_absolute()
+        || p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return Some("Not a plain full path");
     }
     if let Some(why) = protected_literal(p, h) {
@@ -633,7 +777,9 @@ fn is_protected_in(p: &Path, h: &Path) -> Option<&'static str> {
         if let Ok(rp) = parent.canonicalize() {
             let resolved = rp.join(name);
             if resolved != p {
-                if let Some(why) = protected_literal(&resolved, h).or_else(|| protected_literal(&resolved, &real_home)) {
+                if let Some(why) = protected_literal(&resolved, h)
+                    .or_else(|| protected_literal(&resolved, &real_home))
+                {
                     return Some(why);
                 }
             }
@@ -643,7 +789,21 @@ fn is_protected_in(p: &Path, h: &Path) -> Option<&'static str> {
 }
 
 fn protected_literal(p: &Path, h: &Path) -> Option<&'static str> {
-    let personal = ["Documents", "Desktop", "Pictures", "Movies", "Music", "Projects", "Developer", "Dropbox", "Library/Mobile Documents", "Library/Keychains", "Library/Messages", ".ssh", ".gnupg"];
+    let personal = [
+        "Documents",
+        "Desktop",
+        "Pictures",
+        "Movies",
+        "Music",
+        "Projects",
+        "Developer",
+        "Dropbox",
+        "Library/Mobile Documents",
+        "Library/Keychains",
+        "Library/Messages",
+        ".ssh",
+        ".gnupg",
+    ];
     for d in personal {
         if p.starts_with(h.join(d)) {
             return Some("Personal files and settings are never removed");
@@ -652,7 +812,19 @@ fn protected_literal(p: &Path, h: &Path) -> Option<&'static str> {
     if p.starts_with(h.join("Library/Mail")) {
         return Some("Mail data is never removed");
     }
-    let claude_keep = ["settings.json", "settings.local.json", "CLAUDE.md", "skills", "plugins/marketplaces", "plugins/repos", "agents", "commands", "history.jsonl", "scheduled-tasks", "sessions"];
+    let claude_keep = [
+        "settings.json",
+        "settings.local.json",
+        "CLAUDE.md",
+        "skills",
+        "plugins/marketplaces",
+        "plugins/repos",
+        "agents",
+        "commands",
+        "history.jsonl",
+        "scheduled-tasks",
+        "sessions",
+    ];
     for d in claude_keep {
         if p.starts_with(h.join(".claude").join(d)) {
             return Some("Your Claude settings, skills and history are kept");
@@ -682,14 +854,21 @@ mod tests {
     #[test]
     fn data_folder_moves_over_from_the_old_name() {
         let base = std::env::temp_dir().join(format!("cmdmeow-migrate-{}", std::process::id()));
-        assert!(is_dev_bundle(Path::new("/Applications/CmdMeow Dev.app/Contents/MacOS/cmdmeow")));
-        assert!(!is_dev_bundle(Path::new("/Applications/CmdMeow.app/Contents/MacOS/cmdmeow")));
+        assert!(is_dev_bundle(Path::new(
+            "/Applications/CmdMeow Dev.app/Contents/MacOS/cmdmeow"
+        )));
+        assert!(!is_dev_bundle(Path::new(
+            "/Applications/CmdMeow.app/Contents/MacOS/cmdmeow"
+        )));
         let (old, new) = (base.join("cleanmebro"), base.join("cmdmeow"));
         std::fs::create_dir_all(old.join("clipboard")).unwrap();
         std::fs::write(old.join("clipboard/history.json"), "[]").unwrap();
         migrate_dir(&old, &new);
         assert!(!old.exists());
-        assert_eq!(std::fs::read_to_string(new.join("clipboard/history.json")).unwrap(), "[]");
+        assert_eq!(
+            std::fs::read_to_string(new.join("clipboard/history.json")).unwrap(),
+            "[]"
+        );
         // an existing new folder is never overwritten
         std::fs::create_dir_all(&old).unwrap();
         migrate_dir(&old, &new);
@@ -756,7 +935,10 @@ mod tests {
         }
         flush_writes();
         assert_eq!(load_json::<Vec<i32>>(&f), vec![19]);
-        assert_eq!(load_json::<Vec<i32>>(&dir.join("missing.json")), Vec::<i32>::new());
+        assert_eq!(
+            load_json::<Vec<i32>>(&dir.join("missing.json")),
+            Vec::<i32>::new()
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

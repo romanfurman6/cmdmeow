@@ -4,10 +4,13 @@
 //! `claude -p /usage`, which spends no tokens) when that doesn't work.
 //! Local activity comes from counting usage fields in Claude Code's logs.
 
-use crate::kit::sync::LockExt;
 use super::account::{self, ApiError, ClaudeCreds, KeychainRead};
-use super::{balanced, find, recent_jsonl, Billing, Contrib, Limit, LocalTokens, LogCache, ParseCtx, Provider, Shared, UsageEntry, UsageInfo};
+use super::{
+    balanced, find, recent_jsonl, Billing, Contrib, Limit, LocalTokens, LogCache, ParseCtx,
+    Provider, Shared, UsageEntry, UsageInfo,
+};
 use crate::kit::claude_code::{self as cc, claude_bin, claude_cmd};
+use crate::kit::sync::LockExt;
 use chrono::{DateTime, Datelike, Local};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -48,7 +51,10 @@ impl ClaudeCode {
             return None;
         }
         self.creds_at = Some(Instant::now());
-        let c = account::claude_creds_file().filter(|c| c.fresh(now)).or_else(read_keychain).filter(|c| c.fresh(now))?;
+        let c = account::claude_creds_file()
+            .filter(|c| c.fresh(now))
+            .or_else(read_keychain)
+            .filter(|c| c.fresh(now))?;
         self.creds = Some(c.clone());
         Some(c)
     }
@@ -100,7 +106,10 @@ static HANDED: std::sync::Mutex<Option<ClaudeCreds>> = std::sync::Mutex::new(Non
 /// and only while a window is open, in case macOS asks again (someone is
 /// there to answer). A Deny is remembered until they connect again.
 fn read_keychain() -> Option<ClaudeCreds> {
-    if !may_read(&super::settings::get().claude_keychain, crate::kit::activity::visible()) {
+    if !may_read(
+        &super::settings::get().claude_keychain,
+        crate::kit::activity::visible(),
+    ) {
         return None;
     }
     match account::read_claude_keychain() {
@@ -165,7 +174,10 @@ impl Provider for ClaudeCode {
         // <project>/<session>.jsonl, and subagents' own logs in
         // <project>/<session>/subagents/, which count toward the limits too;
         // a reply copied into two folders counts once (`LogCache::entries`)
-        let files = cc::log_dirs().iter().flat_map(|d| recent_jsonl(d, 3)).collect();
+        let files = cc::log_dirs()
+            .iter()
+            .flat_map(|d| recent_jsonl(d, 3))
+            .collect();
         self.cache.update(files, usage_entry)
     }
     fn data_dir(&self) -> Option<PathBuf> {
@@ -183,20 +195,39 @@ fn fetch_cli(s: &Shared) {
         g.installed = false;
         g.signed_out = false;
         g.limits.clear();
-        g.error = Some(format!("Claude Code isn't installed on this Mac. {}", cc::Availability::NotInstalled.how()));
+        g.error = Some(format!(
+            "Claude Code isn't installed on this Mac. {}",
+            cc::Availability::NotInstalled.how()
+        ));
         return;
     };
     // plan + login
     let status = claude_cmd(&bin).args(["auth", "status", "--json"]).output();
-    let status: Value = status.ok().and_then(|o| serde_json::from_slice(&o.stdout).ok()).unwrap_or(Value::Null);
+    let status: Value = status
+        .ok()
+        .and_then(|o| serde_json::from_slice(&o.stdout).ok())
+        .unwrap_or(Value::Null);
     let known = status["loggedIn"].as_bool();
-    let plan = status["subscriptionType"].as_str().unwrap_or("").to_string();
-    let tier = ["rateLimitTier", "subscriptionTier", "tier"].iter().find_map(|k| status[*k].as_str()).unwrap_or("").to_string();
+    let plan = status["subscriptionType"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let tier = ["rateLimitTier", "subscriptionTier", "tier"]
+        .iter()
+        .find_map(|k| status[*k].as_str())
+        .unwrap_or("")
+        .to_string();
     let logged_in = known.unwrap_or(false);
     cc::set_signed_in(known);
     // limits (a local slash command: no model call, no tokens)
     let usage = claude_cmd(&bin)
-        .args(["-p", "/usage", "--output-format", "json", "--no-session-persistence"])
+        .args([
+            "-p",
+            "/usage",
+            "--output-format",
+            "json",
+            "--no-session-persistence",
+        ])
         .output();
     let mut g = s.lock_ok();
     g.installed = true;
@@ -215,7 +246,14 @@ fn fetch_cli(s: &Shared) {
             let text = v["result"].as_str().unwrap_or("").to_string();
             let (limits, contrib, note) = parse_usage(&text);
             if limits.is_empty() {
-                g.error = Some(if logged_in { "Claude didn't report limits right now.".into() } else { format!("Sign in to Claude Code to see your limits. {}", cc::Availability::SignedOut.how()) });
+                g.error = Some(if logged_in {
+                    "Claude didn't report limits right now.".into()
+                } else {
+                    format!(
+                        "Sign in to Claude Code to see your limits. {}",
+                        cc::Availability::SignedOut.how()
+                    )
+                });
                 if g.signed_out {
                     g.limits.clear();
                 }
@@ -249,17 +287,36 @@ pub fn parse_usage(text: &str) -> (Vec<Limit>, Vec<Contrib>, String) {
         if let Some(idx) = t.find("% used") {
             if let Some((label, rest)) = t[..idx].rsplit_once(':') {
                 let pct = rest.trim().parse::<f32>().unwrap_or(0.0);
-                let resets = t[idx..].split("resets").nth(1).map(|s| s.trim().to_string()).unwrap_or_default();
+                let resets = t[idx..]
+                    .split("resets")
+                    .nth(1)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
                 let label = label.trim().to_string();
                 let low = label.to_lowercase();
-                let window_secs = if low.contains("session") { 5 * 3600 } else if low.contains("week") { 7 * 86_400 } else { 0 };
+                let window_secs = if low.contains("session") {
+                    5 * 3600
+                } else if low.contains("week") {
+                    7 * 86_400
+                } else {
+                    0
+                };
                 let resets_at = parse_reset(&resets, Local::now());
-                limits.push(Limit { label, pct, resets, resets_at, window_secs });
+                limits.push(Limit {
+                    label,
+                    pct,
+                    resets,
+                    resets_at,
+                    window_secs,
+                });
                 continue;
             }
         }
         if t.starts_with("Last ") && t.contains('·') {
-            contrib.push(Contrib { title: t.to_string(), lines: vec![] });
+            contrib.push(Contrib {
+                title: t.to_string(),
+                lines: vec![],
+            });
             continue;
         }
         if line.starts_with("  ") && !t.is_empty() {
@@ -279,13 +336,20 @@ pub fn parse_usage(text: &str) -> (Vec<Limit>, Vec<Contrib>, String) {
 /// line of `/usage` ("You are currently using your subscription…").
 pub fn billing(status: &Value, note: &str) -> Billing {
     let note = note.to_lowercase();
-    if status["subscriptionType"].as_str().is_some_and(|s| !s.is_empty()) || note.contains("subscription") {
+    if status["subscriptionType"]
+        .as_str()
+        .is_some_and(|s| !s.is_empty())
+        || note.contains("subscription")
+    {
         return Billing::Subscription;
     }
-    let says_key = ["authMethod", "apiKeySource", "apiProvider", "source"].iter().filter_map(|k| status[*k].as_str()).any(|v| {
-        let v = v.to_lowercase();
-        v.contains("api") || v.contains("key") || v.contains("bedrock") || v.contains("vertex")
-    });
+    let says_key = ["authMethod", "apiKeySource", "apiProvider", "source"]
+        .iter()
+        .filter_map(|k| status[*k].as_str())
+        .any(|v| {
+            let v = v.to_lowercase();
+            v.contains("api") || v.contains("key") || v.contains("bedrock") || v.contains("vertex")
+        });
     if says_key || note.contains("api key") || note.contains("api usage") {
         Billing::Api
     } else {
@@ -297,7 +361,12 @@ pub fn billing(status: &Value, note: &str) -> Billing {
 /// followed by " (Europe/Madrid)") falls, as unix time. A bare time already
 /// past today means tomorrow.
 pub fn parse_reset(text: &str, now: DateTime<Local>) -> Option<i64> {
-    let t = text.split(" (").next().unwrap_or(text).trim().to_lowercase();
+    let t = text
+        .split(" (")
+        .next()
+        .unwrap_or(text)
+        .trim()
+        .to_lowercase();
     if t.is_empty() {
         return None;
     }
@@ -323,17 +392,27 @@ pub fn parse_reset(text: &str, now: DateTime<Local>) -> Option<i64> {
     let day = match date {
         Some(d) => {
             // "nov 8": this year, or next year when that's long past
-            let parsed = chrono::NaiveDate::parse_from_str(&format!("{d} {}", now.year()), "%b %d %Y").ok()?;
+            let parsed =
+                chrono::NaiveDate::parse_from_str(&format!("{d} {}", now.year()), "%b %d %Y")
+                    .ok()?;
             if parsed < now.date_naive() - chrono::Days::new(30) {
-                chrono::NaiveDate::parse_from_str(&format!("{d} {}", now.year() + 1), "%b %d %Y").ok()?
+                chrono::NaiveDate::parse_from_str(&format!("{d} {}", now.year() + 1), "%b %d %Y")
+                    .ok()?
             } else {
                 parsed
             }
         }
         None => now.date_naive(),
     };
-    let at = day.and_hms_opt(h24, m, 0)?.and_local_timezone(Local).earliest()?;
-    let at = if date_is_bare(&t) && at < now { at + chrono::Duration::days(1) } else { at };
+    let at = day
+        .and_hms_opt(h24, m, 0)?
+        .and_local_timezone(Local)
+        .earliest()?;
+    let at = if date_is_bare(&t) && at < now {
+        at + chrono::Duration::days(1)
+    } else {
+        at
+    };
     Some(at.timestamp())
 }
 
@@ -349,7 +428,8 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
         if let Some(ci) = find(line, b"\"cwd\":\"") {
             let rest = &line[ci + 7..];
             if let Some(e) = rest.iter().position(|&b| b == b'"') {
-                ctx.project = super::intern(&String::from_utf8_lossy(&rest[..e]).replace("\\\\", "\\"));
+                ctx.project =
+                    super::intern(&String::from_utf8_lossy(&rest[..e]).replace("\\\\", "\\"));
             }
         }
     }
@@ -357,7 +437,10 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
     let ti = find(line, b"\"timestamp\":\"")?;
     let ts_bytes = &line[ti + 13..];
     let te = ts_bytes.iter().position(|&b| b == b'"')?;
-    let ts = std::str::from_utf8(&ts_bytes[..te]).ok().and_then(|s| DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp())?;
+    let ts = std::str::from_utf8(&ts_bytes[..te])
+        .ok()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|d| d.timestamp())?;
     // one reply can be logged in several lines; count each message id once
     if let Some(mi) = find(line, b"\"id\":\"msg_") {
         let rest = &line[mi + 6..];
@@ -371,10 +454,15 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
     let v: Value = serde_json::from_slice(obj).unwrap_or(Value::Null);
     let g = |k: &str| v[k].as_u64().unwrap_or(0);
     let write = g("cache_creation_input_tokens");
-    let write_1h = v["cache_creation"]["ephemeral_1h_input_tokens"].as_u64().unwrap_or(0).min(write);
+    let write_1h = v["cache_creation"]["ephemeral_1h_input_tokens"]
+        .as_u64()
+        .unwrap_or(0)
+        .min(write);
     let model = find(line, b"\"model\":\"").and_then(|mi| {
         let rest = &line[mi + 9..];
-        rest.iter().position(|&b| b == b'"').map(|e| super::intern(&String::from_utf8_lossy(&rest[..e])))
+        rest.iter()
+            .position(|&b| b == b'"')
+            .map(|e| super::intern(&String::from_utf8_lossy(&rest[..e])))
     });
     Some(UsageEntry {
         ts,
@@ -399,7 +487,10 @@ pub fn demo_info() -> UsageInfo {
     // resets relative to now, so pace and forecast look like a real week
     let now = chrono::Utc::now().timestamp();
     let mut limits = limits;
-    for (l, (pct, left)) in limits.iter_mut().zip([(19.0, 10_200), (62.0, 314_000), (4.0, 314_000)]) {
+    for (l, (pct, left)) in limits
+        .iter_mut()
+        .zip([(19.0, 10_200), (62.0, 314_000), (4.0, 314_000)])
+    {
         l.pct = pct;
         l.resets_at = Some(now + left);
         l.resets = super::codex::reset_text(now + left);
@@ -407,16 +498,27 @@ pub fn demo_info() -> UsageInfo {
     // CMDMEOW_DEMO_LONG=1: the longest texts the widgets meet, for checking
     // nothing gets cut ("Resets tomorrow 23:40", "Out tomorrow 23:40")
     if std::env::var_os("CMDMEOW_DEMO_LONG").is_some() {
-        let late = (Local::now() + chrono::Duration::days(1)).date_naive().and_hms_opt(23, 40, 0).and_then(|t| t.and_local_timezone(Local).single()).map(|t| t.timestamp()).unwrap_or(now);
+        let late = (Local::now() + chrono::Duration::days(1))
+            .date_naive()
+            .and_hms_opt(23, 40, 0)
+            .and_then(|t| t.and_local_timezone(Local).single())
+            .map(|t| t.timestamp())
+            .unwrap_or(now);
         if let Some(s) = limits.first_mut() {
-            (s.pct, s.window_secs, s.resets_at, s.resets) = (2.0, late - now + 3600, Some(late), super::codex::reset_text(late));
+            (s.pct, s.window_secs, s.resets_at, s.resets) = (
+                2.0,
+                late - now + 3600,
+                Some(late),
+                super::codex::reset_text(late),
+            );
         }
         // week: ahead of pace, runs out tomorrow 23:40, resets two days later
         let end = late + 2 * 86_400;
         let start = end - 7 * 86_400;
         let pct = (100.0 * (now - start) as f64 / (late - start) as f64) as f32;
         for l in limits.iter_mut().skip(1) {
-            (l.pct, l.resets_at, l.resets) = (pct.min(99.0), Some(end), super::codex::reset_text(end));
+            (l.pct, l.resets_at, l.resets) =
+                (pct.min(99.0), Some(end), super::codex::reset_text(end));
         }
     }
     UsageInfo {
@@ -442,7 +544,20 @@ pub fn demo_info() -> UsageInfo {
 fn demo_local() -> LocalTokens {
     let home = dirs::home_dir().unwrap_or_default();
     let p = |rel: &str| home.join(rel).display().to_string();
-    super::demo_local(&[("claude-opus-4-6", 6), ("claude-sonnet-4-6", 3), ("claude-haiku-4-5", 1)], &[&p("Projects/cmdmeow"), &p("Projects/site"), &p("work/api-gateway"), &p("notes")], 3.0)
+    super::demo_local(
+        &[
+            ("claude-opus-4-6", 6),
+            ("claude-sonnet-4-6", 3),
+            ("claude-haiku-4-5", 1),
+        ],
+        &[
+            &p("Projects/cmdmeow"),
+            &p("Projects/site"),
+            &p("work/api-gateway"),
+            &p("notes"),
+        ],
+        3.0,
+    )
 }
 
 #[cfg(test)]
@@ -469,7 +584,10 @@ mod tests {
         assert_eq!(s.pct, 19.0);
         assert!(s.resets_at.is_some());
         let (l, _, _) = parse_usage("Current session: 19% used · resets 9:10pm");
-        assert_eq!((l[0].pct, l[0].resets.as_str(), l[0].window_secs), (19.0, "9:10pm", 5 * 3600));
+        assert_eq!(
+            (l[0].pct, l[0].resets.as_str(), l[0].window_secs),
+            (19.0, "9:10pm", 5 * 3600)
+        );
         assert_eq!(info.weekly().unwrap().label, "Current week (all models)");
         assert_eq!(info.contrib.len(), 1);
         assert_eq!(info.contrib[0].lines.len(), 2);
@@ -484,10 +602,16 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cmb-resume-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("p/s1/subagents")).unwrap();
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        let line = |id: &str, out: u64| format!("{{\"timestamp\":\"{now}\",\"message\":{{\"id\":\"{id}\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":{out}}}}}}}\n");
+        let line = |id: &str, out: u64| {
+            format!("{{\"timestamp\":\"{now}\",\"message\":{{\"id\":\"{id}\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":{out}}}}}}}\n")
+        };
         std::fs::write(dir.join("p/s1.jsonl"), line("msg_a", 1) + &line("msg_b", 2)).unwrap();
         // the resumed session starts with a copy of s1, then goes on
-        std::fs::write(dir.join("p/s2.jsonl"), line("msg_a", 1) + &line("msg_b", 2) + &line("msg_c", 3)).unwrap();
+        std::fs::write(
+            dir.join("p/s2.jsonl"),
+            line("msg_a", 1) + &line("msg_b", 2) + &line("msg_c", 3),
+        )
+        .unwrap();
         // a subagent's own replies count too
         std::fs::write(dir.join("p/s1/subagents/agent-x.jsonl"), line("msg_d", 4)).unwrap();
         let mut cache = LogCache::default();
@@ -501,9 +625,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cmb-usage-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("s.jsonl");
-        let line = |id: &str| format!(
+        let line = |id: &str| {
+            format!(
             "{{\"cwd\":\"/tmp/proj\",\"timestamp\":\"2026-11-08T10:00:00Z\",\"message\":{{\"id\":\"{id}\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":5,\"cache_creation_input_tokens\":100,\"cache_read_input_tokens\":9999}}}}}}\n"
-        );
+        )
+        };
         let body = line("msg_1") + &line("msg_1") + &line("msg_2") + "{\"type\":\"user\"}\n";
         // a half-written last line waits for the next read
         let partial = line("msg_3");
@@ -547,9 +673,20 @@ mod tests {
     fn reset_times() {
         use chrono::TimeZone;
         let now = Local.with_ymd_and_hms(2026, 11, 12, 15, 0, 0).unwrap();
-        let at = |t: &str| parse_reset(t, now).map(|ts| Local.timestamp_opt(ts, 0).unwrap().format("%Y-%m-%d %H:%M").to_string());
+        let at = |t: &str| {
+            parse_reset(t, now).map(|ts| {
+                Local
+                    .timestamp_opt(ts, 0)
+                    .unwrap()
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
+        };
         assert_eq!(at("9:10pm").as_deref(), Some("2026-11-12 21:10"));
-        assert_eq!(at("9:10pm (Europe/Madrid)").as_deref(), Some("2026-11-12 21:10"));
+        assert_eq!(
+            at("9:10pm (Europe/Madrid)").as_deref(),
+            Some("2026-11-12 21:10")
+        );
         // already past today: tomorrow
         assert_eq!(at("5am").as_deref(), Some("2026-11-13 05:00"));
         assert_eq!(at("Nov 18 at 5am").as_deref(), Some("2026-11-18 05:00"));
@@ -564,9 +701,24 @@ mod tests {
     #[test]
     fn subscription_or_api_key() {
         let v = |s: &str| serde_json::from_str::<Value>(s).unwrap();
-        assert_eq!(billing(&v("{\"subscriptionType\":\"max\"}"), ""), Billing::Subscription);
-        assert_eq!(billing(&Value::Null, "You are currently using your subscription to power your Claude Code usage"), Billing::Subscription);
-        assert_eq!(billing(&v("{\"loggedIn\":true,\"apiKeySource\":\"ANTHROPIC_API_KEY\"}"), ""), Billing::Api);
+        assert_eq!(
+            billing(&v("{\"subscriptionType\":\"max\"}"), ""),
+            Billing::Subscription
+        );
+        assert_eq!(
+            billing(
+                &Value::Null,
+                "You are currently using your subscription to power your Claude Code usage"
+            ),
+            Billing::Subscription
+        );
+        assert_eq!(
+            billing(
+                &v("{\"loggedIn\":true,\"apiKeySource\":\"ANTHROPIC_API_KEY\"}"),
+                ""
+            ),
+            Billing::Api
+        );
         assert_eq!(billing(&Value::Null, ""), Billing::Unknown);
     }
 }

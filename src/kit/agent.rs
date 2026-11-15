@@ -69,38 +69,76 @@ impl Agent {
     /// answer text and what it cost: tokens from the CLI's own report
     /// (Claude), or a size estimate when the CLI doesn't give one. Gives up
     /// (Err) when `cancel` is set, killing the CLI.
-    pub fn ask_usage(self, system: &str, lines: &str, cancel: &Arc<AtomicBool>) -> Result<(String, Usage), String> {
+    pub fn ask_usage(
+        self,
+        system: &str,
+        lines: &str,
+        cancel: &Arc<AtomicBool>,
+    ) -> Result<(String, Usage), String> {
         let bin = self.bin().ok_or_else(|| self.why_not())?;
         let tmp = std::env::temp_dir();
         let mut cmd = Command::new(&bin);
         cmd.current_dir(&tmp);
         let path = std::env::var("PATH").unwrap_or_default();
-        cmd.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{path}"));
+        cmd.env(
+            "PATH",
+            format!("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{path}"),
+        );
         let both = format!("{system}\n\n{lines}");
         let last = tmp.join(format!("cmdmeow-cleanup-{}.txt", std::process::id()));
         match self {
             Agent::Claude => {
-                cmd.args(["-p", lines, "--system-prompt", system, "--output-format", "json", "--no-session-persistence", "--model", m::AI_MODEL, "--tools", "", "--strict-mcp-config"]);
+                cmd.args([
+                    "-p",
+                    lines,
+                    "--system-prompt",
+                    system,
+                    "--output-format",
+                    "json",
+                    "--no-session-persistence",
+                    "--model",
+                    m::AI_MODEL,
+                    "--tools",
+                    "",
+                    "--strict-mcp-config",
+                ]);
             }
             Agent::Codex => {
                 // read-only sandbox, no repo needed; the last message goes to a file
                 let _ = std::fs::remove_file(&last);
-                cmd.args(["exec", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", "--output-last-message"]).arg(&last).arg(&both);
+                cmd.args([
+                    "exec",
+                    "--skip-git-repo-check",
+                    "--sandbox",
+                    "read-only",
+                    "--color",
+                    "never",
+                    "--output-last-message",
+                ])
+                .arg(&last)
+                .arg(&both);
             }
         }
         let out = run(cmd, cancel)?;
         if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap_or("").to_string();
+            let err = String::from_utf8_lossy(&out.stderr)
+                .trim()
+                .lines()
+                .last()
+                .unwrap_or("")
+                .to_string();
             return Err(err);
         }
         Ok(match self {
             Agent::Claude => {
-                let v = serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap_or_default();
+                let v =
+                    serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap_or_default();
                 let text = v["result"].as_str().unwrap_or_default().to_string();
                 (text, Usage::from_claude(&v))
             }
             Agent::Codex => {
-                let s = std::fs::read_to_string(&last).unwrap_or_else(|_| String::from_utf8_lossy(&out.stdout).into_owned());
+                let s = std::fs::read_to_string(&last)
+                    .unwrap_or_else(|_| String::from_utf8_lossy(&out.stdout).into_owned());
                 let _ = std::fs::remove_file(&last);
                 let u = Usage::estimate(both.len(), s.len());
                 (s, u)
@@ -127,7 +165,9 @@ impl Usage {
         let u = &v["usage"];
         let n = |k: &str| u[k].as_u64().unwrap_or(0);
         Usage {
-            input: n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens"),
+            input: n("input_tokens")
+                + n("cache_read_input_tokens")
+                + n("cache_creation_input_tokens"),
             output: n("output_tokens"),
             cost: v["total_cost_usd"].as_f64(),
             estimate: false,
@@ -136,7 +176,12 @@ impl Usage {
 
     /// About four characters a token.
     pub fn estimate(sent: usize, got: usize) -> Usage {
-        Usage { input: (sent / 4) as u64, output: (got / 4) as u64, cost: None, estimate: true }
+        Usage {
+            input: (sent / 4) as u64,
+            output: (got / 4) as u64,
+            cost: None,
+            estimate: true,
+        }
     }
 
     pub fn tokens(&self) -> u64 {
@@ -148,7 +193,12 @@ impl Usage {
 fn run(mut cmd: Command, cancel: &Arc<AtomicBool>) -> Result<std::process::Output, String> {
     use std::io::Read;
     use std::process::Stdio;
-    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
     // read both pipes on their own threads so a big answer can't block the CLI
     let mut so = child.stdout.take();
     let mut se = child.stderr.take();
@@ -178,19 +228,24 @@ fn run(mut cmd: Command, cancel: &Arc<AtomicBool>) -> Result<std::process::Outpu
             Err(e) => return Err(e.to_string()),
         }
     };
-    Ok(std::process::Output { status, stdout: ot.join().unwrap_or_default(), stderr: et.join().unwrap_or_default() })
+    Ok(std::process::Output {
+        status,
+        stdout: ot.join().unwrap_or_default(),
+        stderr: et.join().unwrap_or_default(),
+    })
 }
 
 /// An executable named `exe` in the usual install places, even when the app
 /// was started from Finder (no shell PATH).
 fn find_bin(exe: &str) -> Option<PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
-    let mut dirs_: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    let mut dirs_: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
     dirs_.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
     dirs_.extend([".local/bin", ".npm-global/bin", ".bun/bin", ".volta/bin"].map(|d| home.join(d)));
     dirs_.into_iter().map(|d| d.join(exe)).find(|p| p.is_file())
 }
-
 
 // ---------------------------------------------------------------- the choice
 
@@ -237,7 +292,10 @@ mod tests {
         assert_eq!(u.cost, Some(0.0123));
         assert!(!u.estimate);
         let e = Usage::estimate(400, 80);
-        assert_eq!((e.input, e.output, e.cost, e.estimate), (100, 20, None, true));
+        assert_eq!(
+            (e.input, e.output, e.cost, e.estimate),
+            (100, 20, None, true)
+        );
     }
 
     #[test]

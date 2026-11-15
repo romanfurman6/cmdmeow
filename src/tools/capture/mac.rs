@@ -17,7 +17,10 @@ mod imp {
     use super::TextLine;
     use objc2::rc::Retained;
     use objc2::{AnyThread, MainThreadMarker};
-    use objc2_app_kit::{NSApplication, NSImage, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString, NSPasteboardTypeTIFF, NSScreen, NSWindowCollectionBehavior};
+    use objc2_app_kit::{
+        NSApplication, NSImage, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
+        NSPasteboardTypeTIFF, NSScreen, NSWindowCollectionBehavior,
+    };
     use objc2_foundation::{NSArray, NSData, NSDictionary, NSString, NSURL};
     use std::path::Path;
 
@@ -68,24 +71,41 @@ mod imp {
     /// `fast`: Vision's quick pass, good for where text is (blur and erase
     /// only need its boxes), rougher on the words themselves.
     pub fn recognize(path: &Path, w: f32, h: f32, fast: bool) -> Vec<TextLine> {
-        use objc2_vision::{VNImageRequestHandler, VNRecognizeTextRequest, VNRequest, VNRequestTextRecognitionLevel};
-        let Some(path) = path.to_str() else { return Vec::new() };
+        use objc2_vision::{
+            VNImageRequestHandler, VNRecognizeTextRequest, VNRequest, VNRequestTextRecognitionLevel,
+        };
+        let Some(path) = path.to_str() else {
+            return Vec::new();
+        };
         let url = NSURL::fileURLWithPath(&NSString::from_str(path));
         unsafe {
-            let handler = VNImageRequestHandler::initWithURL_options(VNImageRequestHandler::alloc(), &url, &NSDictionary::new());
+            let handler = VNImageRequestHandler::initWithURL_options(
+                VNImageRequestHandler::alloc(),
+                &url,
+                &NSDictionary::new(),
+            );
             let req = VNRecognizeTextRequest::new();
-            req.setRecognitionLevel(if fast { VNRequestTextRecognitionLevel::Fast } else { VNRequestTextRecognitionLevel::Accurate });
+            req.setRecognitionLevel(if fast {
+                VNRequestTextRecognitionLevel::Fast
+            } else {
+                VNRequestTextRecognitionLevel::Accurate
+            });
             req.setUsesLanguageCorrection(!fast);
             req.setAutomaticallyDetectsLanguage(!fast);
-            let as_req: Retained<VNRequest> = Retained::into_super(Retained::into_super(req.clone()));
+            let as_req: Retained<VNRequest> =
+                Retained::into_super(Retained::into_super(req.clone()));
             let list = NSArray::from_retained_slice(&[as_req]);
             if handler.performRequests_error(&list).is_err() {
                 return Vec::new();
             }
-            let Some(results) = req.results() else { return Vec::new() };
+            let Some(results) = req.results() else {
+                return Vec::new();
+            };
             let mut out = Vec::new();
             for obs in results.iter() {
-                let Some(best) = obs.topCandidates(1).firstObject() else { continue };
+                let Some(best) = obs.topCandidates(1).firstObject() else {
+                    continue;
+                };
                 let text = best.string().to_string();
                 // normalized, bottom-left origin → pixels, top-left origin
                 let b = obs.boundingBox();
@@ -93,7 +113,10 @@ mod imp {
                 let x1 = (b.origin.x + b.size.width) as f32 * w;
                 let y0 = (1.0 - (b.origin.y + b.size.height) as f32) * h;
                 let y1 = (1.0 - b.origin.y as f32) * h;
-                out.push(TextLine { text, rect: egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)) });
+                out.push(TextLine {
+                    text,
+                    rect: egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)),
+                });
             }
             out
         }
@@ -102,7 +125,9 @@ mod imp {
     /// Put our window titled `title` above the menu bar and on every Space,
     /// optionally covering the whole main screen.
     pub fn float_window(title: &str, cover_screen: bool) {
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         let app = NSApplication::sharedApplication(mtm);
         for w in app.windows().iter() {
             if w.title().to_string() != title {
@@ -111,7 +136,10 @@ mod imp {
             // kCGScreenSaverWindowLevel for the full-screen overlay, the
             // status-bar level for small floating windows
             w.setLevel(if cover_screen { 1000 } else { 25 });
-            w.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary);
+            w.setCollectionBehavior(
+                NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary,
+            );
             if cover_screen {
                 if let Some(screen) = NSScreen::mainScreen(mtm) {
                     w.setFrame_display(screen.frame(), true);
@@ -182,7 +210,11 @@ pub fn text_boxes(img: &image::RgbaImage) -> Vec<TextLine> {
 }
 
 fn recognize_image_inner(img: &image::RgbaImage, fast: bool) -> Vec<TextLine> {
-    let path = std::env::temp_dir().join(format!("cmdmeow-ocr-{}-{}.png", std::process::id(), rand_id()));
+    let path = std::env::temp_dir().join(format!(
+        "cmdmeow-ocr-{}-{}.png",
+        std::process::id(),
+        rand_id()
+    ));
     if std::fs::write(&path, super::store::png_bytes(img)).is_err() {
         return Vec::new();
     }
@@ -198,7 +230,9 @@ pub fn recognize_file(path: &Path) -> Vec<TextLine> {
 }
 
 fn recognize_path(path: &Path, fast: bool) -> Vec<TextLine> {
-    let Ok((w, h)) = image::image_dimensions(path) else { return Vec::new() };
+    let Ok((w, h)) = image::image_dimensions(path) else {
+        return Vec::new();
+    };
     let mut lines = imp::recognize(path, w as f32, h as f32, fast);
     sort_reading_order(&mut lines);
     OCR_READY.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -211,7 +245,12 @@ pub fn sort_reading_order(lines: &mut Vec<TextLine>) {
     let mut rows: Vec<Vec<TextLine>> = Vec::new();
     for l in lines.drain(..) {
         match rows.last_mut() {
-            Some(row) if (l.rect.center().y - row[0].rect.center().y).abs() < row[0].rect.height().min(l.rect.height()) * 0.5 => row.push(l),
+            Some(row)
+                if (l.rect.center().y - row[0].rect.center().y).abs()
+                    < row[0].rect.height().min(l.rect.height()) * 0.5 =>
+            {
+                row.push(l)
+            }
             _ => rows.push(vec![l]),
         }
     }
@@ -229,12 +268,17 @@ pub fn join_lines(lines: &[TextLine], keep_breaks: bool) -> String {
 
 /// Open System Settings on the Screen Recording list.
 pub fn open_privacy_settings() {
-    let _ = std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture").spawn();
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        .spawn();
 }
 
 /// Show a file in Finder.
 pub fn reveal(path: &Path) {
-    let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    let _ = std::process::Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .spawn();
 }
 
 /// The system's screenshot sound, if it's there.
@@ -250,7 +294,10 @@ pub fn play_shutter() {
 
 fn rand_id() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -259,12 +306,19 @@ mod tests {
     use egui::{pos2, Rect};
 
     fn line(t: &str, x: f32, y: f32) -> TextLine {
-        TextLine { text: t.into(), rect: Rect::from_min_max(pos2(x, y), pos2(x + 40.0, y + 10.0)) }
+        TextLine {
+            text: t.into(),
+            rect: Rect::from_min_max(pos2(x, y), pos2(x + 40.0, y + 10.0)),
+        }
     }
 
     #[test]
     fn lines_read_top_down_then_left_right() {
-        let mut v = vec![line("c", 0.0, 40.0), line("b", 60.0, 1.0), line("a", 0.0, 0.0)];
+        let mut v = vec![
+            line("c", 0.0, 40.0),
+            line("b", 60.0, 1.0),
+            line("a", 0.0, 0.0),
+        ];
         sort_reading_order(&mut v);
         assert_eq!(join_lines(&v, true), "a\nb\nc");
         assert_eq!(join_lines(&v, false), "a b c");

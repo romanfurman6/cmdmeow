@@ -57,11 +57,16 @@ struct Turn {
 
 impl Turn {
     fn angle_at(&self, t: f64) -> f64 {
-        (self.angle0 + (t - self.t0).max(0.0) * self.tps * std::f64::consts::TAU).rem_euclid(std::f64::consts::TAU)
+        (self.angle0 + (t - self.t0).max(0.0) * self.tps * std::f64::consts::TAU)
+            .rem_euclid(std::f64::consts::TAU)
     }
     /// Carry on from where the blades are at `t`, at a new speed.
     fn retimed(&self, t: f64, tps: f64) -> Turn {
-        Turn { angle0: self.angle_at(t), t0: t, tps }
+        Turn {
+            angle0: self.angle_at(t),
+            t0: t,
+            tps,
+        }
     }
 }
 
@@ -94,15 +99,43 @@ pub fn blades(p: &Painter, key: &str, c: Pos2, r: f32, rpm: f32, color: Color32,
     // CMDMEOW_SPIN_RPM=<n>: turn at n rpm whatever the fans do (to check
     // the blades on a cool Mac)
     static TEST_RPM: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
-    let rpm = TEST_RPM.get_or_init(|| std::env::var("CMDMEOW_SPIN_RPM").ok().and_then(|v| v.parse().ok())).unwrap_or(rpm);
+    let rpm = TEST_RPM
+        .get_or_init(|| {
+            std::env::var("CMDMEOW_SPIN_RPM")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
+        .unwrap_or(rpm);
     let rect = Rect::from_center_size(c, Vec2::splat(r * 2.0));
-    push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Blades { hub }, tps: turns_per_sec(rpm), always: false });
+    push(
+        p,
+        Request {
+            painter: p.clone(),
+            key: key.to_string(),
+            rect,
+            color,
+            look: Look::Blades { hub },
+            tps: turns_per_sec(rpm),
+            always: false,
+        },
+    );
 }
 
 /// A turning arc of radius `r` at `c`: something is being worked on.
 pub fn arc(p: &Painter, key: &str, c: Pos2, r: f32, color: Color32) {
     let rect = Rect::from_center_size(c, Vec2::splat(r * 2.0));
-    push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Arc, tps: ARC_TPS, always: true });
+    push(
+        p,
+        Request {
+            painter: p.clone(),
+            key: key.to_string(),
+            rect,
+            color,
+            look: Look::Arc,
+            tps: ARC_TPS,
+            always: true,
+        },
+    );
 }
 
 /// A work spinner keyed by where it's drawn from (`at`, the caller's line)
@@ -110,18 +143,42 @@ pub fn arc(p: &Painter, key: &str, c: Pos2, r: f32, color: Color32) {
 /// name of their own (`glass::spinner`): a spinner that moves (a growing
 /// Disk Map bubble, a scrolled row) keeps its one layer instead of getting
 /// a new layer every frame.
-pub fn arc_at(p: &Painter, c: Pos2, r: f32, color: Color32, at: &'static std::panic::Location<'static>) {
+pub fn arc_at(
+    p: &Painter,
+    c: Pos2,
+    r: f32,
+    color: Color32,
+    at: &'static std::panic::Location<'static>,
+) {
     let id = p.ctx().viewport_id();
     let site = egui::Id::NULL.with(("spin-arc", at.file(), at.line(), at.column(), p.layer_id()));
     let prefix = format!("arc-{}-", site.value());
-    let n = PENDING.with(|q| q.borrow().iter().filter(|(v, r)| *v == id && r.key.starts_with(&prefix)).count());
+    let n = PENDING.with(|q| {
+        q.borrow()
+            .iter()
+            .filter(|(v, r)| *v == id && r.key.starts_with(&prefix))
+            .count()
+    });
     arc(p, &format!("{prefix}{n}"), c, r, color);
 }
 
 /// A progress bar filled to `frac` (as `glass::bar`); natively it eases
 /// from one value to the next, so a few frames a second look smooth.
 pub fn bar(p: &Painter, key: &str, rect: Rect, frac: f32, color: Color32) {
-    push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Bar { frac: frac.clamp(0.0, 1.0) }, tps: 0.0, always: false });
+    push(
+        p,
+        Request {
+            painter: p.clone(),
+            key: key.to_string(),
+            rect,
+            color,
+            look: Look::Bar {
+                frac: frac.clamp(0.0, 1.0),
+            },
+            tps: 0.0,
+            always: false,
+        },
+    );
 }
 
 /// Draw blades with egui this pass (the widget editor: its widgets jiggle
@@ -139,7 +196,12 @@ pub fn set_allowed(on: bool) {
 
 fn native_wanted() -> bool {
     static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    ALLOWED.with(|a| a.get()) && *ENV.get_or_init(|| std::env::var("CMDMEOW_NATIVE_SPIN").map(|v| v != "0").unwrap_or(true))
+    ALLOWED.with(|a| a.get())
+        && *ENV.get_or_init(|| {
+            std::env::var("CMDMEOW_NATIVE_SPIN")
+                .map(|v| v != "0")
+                .unwrap_or(true)
+        })
 }
 
 /// The shape egui draws for blades at `angle`.
@@ -148,7 +210,12 @@ pub fn draw(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32, hub: Color
         p.add(Shape::convex_polygon(pts, color, Stroke::NONE));
     }
     p.circle_filled(c, r * 0.24, hub);
-    crate::kit::glass::stroke_circle(p, c, r * 0.24, Stroke::new(1.0, crate::kit::glass::white(46)));
+    crate::kit::glass::stroke_circle(
+        p,
+        c,
+        r * 0.24,
+        Stroke::new(1.0, crate::kit::glass::white(46)),
+    );
 }
 
 /// What egui draws for `req` at `angle`.
@@ -157,7 +224,10 @@ fn draw_req(req: &Request, angle: f32) {
     match req.look {
         Look::Blades { hub } => draw(p, c, r, angle, req.color, hub),
         Look::Arc => {
-            p.add(egui::epaint::PathShape::line(crate::kit::glass::arc_points(c, r, angle, angle + ARC_SPAN, 40), egui::epaint::PathStroke::new(ARC_WIDTH, req.color)));
+            p.add(egui::epaint::PathShape::line(
+                crate::kit::glass::arc_points(c, r, angle, angle + ARC_SPAN, 40),
+                egui::epaint::PathStroke::new(ARC_WIDTH, req.color),
+            ));
         }
         Look::Bar { frac } => crate::kit::glass::bar(p, req.rect, frac, req.color),
     }
@@ -186,7 +256,10 @@ fn blade_outlines(c: Pos2, r: f32, angle: f32) -> Vec<Vec<Pos2>> {
             let a = angle + k as f32 * TAU / 5.0;
             let center = c + Vec2::angled(a) * r * 0.52;
             let lean = a + 0.35;
-            let (ax, ay) = (Vec2::angled(lean) * r * 0.46, Vec2::angled(lean + PI / 2.0) * r * 0.19);
+            let (ax, ay) = (
+                Vec2::angled(lean) * r * 0.46,
+                Vec2::angled(lean + PI / 2.0) * r * 0.19,
+            );
             (0..16)
                 .map(|i| {
                     let u = i as f32 / 16.0 * TAU;
@@ -203,9 +276,14 @@ fn covered(ctx: &egui::Context, layer: LayerId, rect: Rect) -> bool {
         let order: Vec<LayerId> = m.layer_ids().collect();
         let above: Vec<LayerId> = match order.iter().position(|l| *l == layer) {
             Some(i) => order[i + 1..].to_vec(),
-            None => order.into_iter().filter(|l| l.order > layer.order).collect(),
+            None => order
+                .into_iter()
+                .filter(|l| l.order > layer.order)
+                .collect(),
         };
-        above.iter().any(|l| m.areas().is_visible(l) && m.area_rect(l.id).is_some_and(|a| a.intersects(rect)))
+        above.iter().any(|l| {
+            m.areas().is_visible(l) && m.area_rect(l.id).is_some_and(|a| a.intersects(rect))
+        })
     })
 }
 
@@ -234,7 +312,11 @@ pub fn flush(ctx: &egui::Context) {
         let tps = if req.always || live { req.tps } else { 0.0 };
         let turn = TURNS.with(|t| {
             let mut t = t.borrow_mut();
-            let e = t.entry(req.key.clone()).or_insert(Turn { angle0: 0.0, t0: now, tps });
+            let e = t.entry(req.key.clone()).or_insert(Turn {
+                angle0: 0.0,
+                t0: now,
+                tps,
+            });
             if e.tps != tps {
                 *e = e.retimed(now, tps);
             }
@@ -313,7 +395,16 @@ mod native {
         fn CGPathCreateMutable() -> *mut c_void;
         fn CGPathMoveToPoint(path: *mut c_void, m: *const c_void, x: f64, y: f64);
         fn CGPathAddLineToPoint(path: *mut c_void, m: *const c_void, x: f64, y: f64);
-        fn CGPathAddArc(path: *mut c_void, m: *const c_void, x: f64, y: f64, radius: f64, start: f64, end: f64, clockwise: bool);
+        fn CGPathAddArc(
+            path: *mut c_void,
+            m: *const c_void,
+            x: f64,
+            y: f64,
+            radius: f64,
+            start: f64,
+            end: f64,
+            clockwise: bool,
+        );
         fn CGPathCloseSubpath(path: *mut c_void);
         fn CGPathAddEllipseInRect(path: *mut c_void, m: *const c_void, rect: NSRect);
         fn CGPathRelease(path: *mut c_void);
@@ -355,11 +446,20 @@ mod native {
     /// (Display P3 when unknown), not sRGB, or the native layers look paler.
     fn ns_color(c: Color32, space: Option<&AnyObject>) -> Retained<AnyObject> {
         let [r, g, b, a] = c.to_srgba_unmultiplied();
-        let comps = [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0, a as f64 / 255.0];
+        let comps = [
+            r as f64 / 255.0,
+            g as f64 / 255.0,
+            b as f64 / 255.0,
+            a as f64 / 255.0,
+        ];
         unsafe {
             match space {
-                Some(s) => msg_send![class!(NSColor), colorWithColorSpace: s, components: comps.as_ptr(), count: 4isize],
-                None => msg_send![class!(NSColor), colorWithDisplayP3Red: comps[0], green: comps[1], blue: comps[2], alpha: comps[3]],
+                Some(s) => {
+                    msg_send![class!(NSColor), colorWithColorSpace: s, components: comps.as_ptr(), count: 4isize]
+                }
+                None => {
+                    msg_send![class!(NSColor), colorWithDisplayP3Red: comps[0], green: comps[1], blue: comps[2], alpha: comps[3]]
+                }
             }
         }
     }
@@ -409,7 +509,11 @@ mod native {
         let hr = (r * 0.24) as f64 - 0.5;
         unsafe {
             let path = CGPathCreateMutable();
-            CGPathAddEllipseInRect(path, std::ptr::null(), ns_rect(r as f64 - hr, r as f64 - hr, hr * 2.0, hr * 2.0));
+            CGPathAddEllipseInRect(
+                path,
+                std::ptr::null(),
+                ns_rect(r as f64 - hr, r as f64 - hr, hr * 2.0, hr * 2.0),
+            );
             path
         }
     }
@@ -419,7 +523,16 @@ mod native {
     fn arc_path(r: f32) -> *mut c_void {
         unsafe {
             let path = CGPathCreateMutable();
-            CGPathAddArc(path, std::ptr::null(), r as f64, r as f64, r as f64, 0.0, super::ARC_SPAN as f64, false);
+            CGPathAddArc(
+                path,
+                std::ptr::null(),
+                r as f64,
+                r as f64,
+                r as f64,
+                0.0,
+                super::ARC_SPAN as f64,
+                false,
+            );
             path
         }
     }
@@ -450,7 +563,9 @@ mod native {
     }
 
     /// The view's root layer for viewport `id`, its window's scale and colour space.
-    fn root_of(id: egui::ViewportId) -> Option<(Retained<AnyObject>, f64, Option<Retained<AnyObject>>)> {
+    fn root_of(
+        id: egui::ViewportId,
+    ) -> Option<(Retained<AnyObject>, f64, Option<Retained<AnyObject>>)> {
         let view = eframe::viewport_ns_view(id)? as *const AnyObject;
         unsafe {
             let view: &AnyObject = view.as_ref()?;
@@ -472,7 +587,9 @@ mod native {
     pub fn hide(id: egui::ViewportId, key: &str) -> bool {
         LAYERS.with(|all| {
             let mut all = all.borrow_mut();
-            let Some(b) = all.iter_mut().find(|b| b.viewport == id && b.key == key) else { return false };
+            let Some(b) = all.iter_mut().find(|b| b.viewport == id && b.key == key) else {
+                return false;
+            };
             if !b.hidden {
                 unsafe {
                     let _: () = msg_send![class!(CATransaction), begin];
@@ -500,9 +617,19 @@ mod native {
     /// Show `key`'s layers in viewport `id` (`clip` and `rect` in egui
     /// points): Some(true) when they're on screen, Some(false) while a fresh
     /// or moved layer waits a pass, None if the window can't be reached.
-    pub fn show(id: egui::ViewportId, key: &str, clip: Rect, rect: Rect, color: Color32, look: Look, turn: Turn) -> Option<bool> {
+    pub fn show(
+        id: egui::ViewportId,
+        key: &str,
+        clip: Rect,
+        rect: Rect,
+        color: Color32,
+        look: Look,
+        turn: Turn,
+    ) -> Option<bool> {
         let (root, scale, space) = root_of(id)?;
-        let space_ptr: *const AnyObject = space.as_deref().map_or(std::ptr::null(), |s| s as *const AnyObject);
+        let space_ptr: *const AnyObject = space
+            .as_deref()
+            .map_or(std::ptr::null(), |s| s as *const AnyObject);
         let root_ptr: *const AnyObject = &*root;
         LAYERS.with(|all| {
             let mut all = all.borrow_mut();
@@ -668,12 +795,15 @@ mod native {
         if turn.tps <= 0.0 {
             return;
         }
-        let anim: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
+        let anim: Retained<AnyObject> =
+            msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
         let _: () = msg_send![&*anim, setFromValue: &*NSNumber::new_f64(turn.angle0)];
-        let _: () = msg_send![&*anim, setToValue: &*NSNumber::new_f64(turn.angle0 + std::f64::consts::TAU)];
+        let _: () =
+            msg_send![&*anim, setToValue: &*NSNumber::new_f64(turn.angle0 + std::f64::consts::TAU)];
         let _: () = msg_send![&*anim, setDuration: 1.0 / turn.tps];
         let _: () = msg_send![&*anim, setRepeatCount: f32::INFINITY];
-        let begin: f64 = msg_send![layer, convertTime: turn.t0, fromLayer: Option::<&AnyObject>::None];
+        let begin: f64 =
+            msg_send![layer, convertTime: turn.t0, fromLayer: Option::<&AnyObject>::None];
         let _: () = msg_send![&*anim, setBeginTime: begin];
         let _: () = msg_send![layer, addAnimation: &*anim, forKey: &*anim_key];
     }
@@ -702,9 +832,20 @@ mod native {
 
     pub fn media_time() -> f64 {
         static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-        START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+        START
+            .get_or_init(std::time::Instant::now)
+            .elapsed()
+            .as_secs_f64()
     }
-    pub fn show(_id: egui::ViewportId, _key: &str, _clip: Rect, _rect: Rect, _color: Color32, _look: Look, _turn: Turn) -> Option<bool> {
+    pub fn show(
+        _id: egui::ViewportId,
+        _key: &str,
+        _clip: Rect,
+        _rect: Rect,
+        _color: Color32,
+        _look: Look,
+        _turn: Turn,
+    ) -> Option<bool> {
         None
     }
     pub fn hide(_id: egui::ViewportId, _key: &str) -> bool {
@@ -719,11 +860,19 @@ mod tests {
 
     #[test]
     fn a_new_speed_carries_on_from_the_same_angle() {
-        let t = Turn { angle0: 1.0, t0: 10.0, tps: 0.5 };
+        let t = Turn {
+            angle0: 1.0,
+            t0: 10.0,
+            tps: 0.5,
+        };
         let at = t.angle_at(12.0);
         let r = t.retimed(12.0, 0.25);
         assert!((r.angle_at(12.0) - at).abs() < 1e-9);
-        assert!((r.angle_at(14.0) - (at + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)).abs() < 1e-9);
+        assert!(
+            (r.angle_at(14.0) - (at + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU))
+                .abs()
+                < 1e-9
+        );
         // resting holds the angle
         let still = r.retimed(13.0, 0.0);
         assert_eq!(still.angle_at(13.0), still.angle_at(99.0));
@@ -753,16 +902,35 @@ mod tests {
     fn a_spinner_without_native_layers_is_drawn_by_egui_and_keeps_turning() {
         set_allowed(false);
         let ctx = egui::Context::default();
-        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0))), ..Default::default() };
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0))),
+            ..Default::default()
+        };
         let mut out = ctx.run_ui(input, |ui| {
-            crate::kit::glass::spinner(ui.painter(), Pos2::new(50.0, 50.0), 8.0, 0.0, Color32::WHITE);
+            crate::kit::glass::spinner(
+                ui.painter(),
+                Pos2::new(50.0, 50.0),
+                8.0,
+                0.0,
+                Color32::WHITE,
+            );
             flush(ui.ctx());
         });
         out.textures_delta.clear();
         set_allowed(true);
-        assert!(out.shapes.iter().any(|s| matches!(s.shape, Shape::Path(_))), "the arc is drawn");
-        let next = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay).unwrap();
-        assert!(next <= std::time::Duration::from_millis(40), "and asks for the next frame: {next:?}");
+        assert!(
+            out.shapes.iter().any(|s| matches!(s.shape, Shape::Path(_))),
+            "the arc is drawn"
+        );
+        let next = out
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.repaint_delay)
+            .unwrap();
+        assert!(
+            next <= std::time::Duration::from_millis(40),
+            "and asks for the next frame: {next:?}"
+        );
     }
 
     #[test]
@@ -772,7 +940,13 @@ mod tests {
             let mut keys = Vec::new();
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 for i in 0..2 {
-                    crate::kit::glass::spinner(ui.painter(), Pos2::new(20.0 + 30.0 * i as f32, 20.0), 6.0, 0.0, Color32::WHITE);
+                    crate::kit::glass::spinner(
+                        ui.painter(),
+                        Pos2::new(20.0 + 30.0 * i as f32, 20.0),
+                        6.0,
+                        0.0,
+                        Color32::WHITE,
+                    );
                 }
                 keys = PENDING.with(|q| q.borrow().iter().map(|(_, r)| r.key.clone()).collect());
                 drop_unflushed();
@@ -792,13 +966,19 @@ mod tests {
         let blades = Rect::from_min_size(Pos2::new(20.0, 20.0), Vec2::splat(40.0));
         let pass = |tip_at: Option<Pos2>| -> LayerId {
             let mut layer = None;
-            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(300.0))), ..Default::default() };
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(300.0))),
+                ..Default::default()
+            };
             let mut out = ctx.run_ui(input, |ui| {
                 layer = Some(ui.layer_id());
                 if let Some(at) = tip_at {
-                    egui::Area::new(egui::Id::NULL.with("tip")).order(egui::Order::Tooltip).fixed_pos(at).show(ui.ctx(), |ui| {
-                        ui.set_min_size(Vec2::splat(30.0));
-                    });
+                    egui::Area::new(egui::Id::NULL.with("tip"))
+                        .order(egui::Order::Tooltip)
+                        .fixed_pos(at)
+                        .show(ui.ctx(), |ui| {
+                            ui.set_min_size(Vec2::splat(30.0));
+                        });
                 }
             });
             out.textures_delta.clear();
@@ -810,9 +990,15 @@ mod tests {
         assert!(!covered(&ctx, layer, blades));
         pass(Some(Pos2::new(200.0, 200.0)));
         pass(Some(Pos2::new(200.0, 200.0)));
-        assert!(!covered(&ctx, layer, blades), "a popup elsewhere leaves them native");
+        assert!(
+            !covered(&ctx, layer, blades),
+            "a popup elsewhere leaves them native"
+        );
         pass(Some(Pos2::new(30.0, 30.0)));
         pass(Some(Pos2::new(30.0, 30.0)));
-        assert!(covered(&ctx, layer, blades), "a popup over them hands them to egui");
+        assert!(
+            covered(&ctx, layer, blades),
+            "a popup over them hands them to egui"
+        );
     }
 }

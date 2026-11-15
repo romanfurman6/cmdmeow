@@ -18,12 +18,24 @@ pub struct Price {
 
 const fn claude(input: f64, output: f64, cache_read: f64) -> Price {
     // cache writes cost 1.25x input (5 minutes) and 2x input (1 hour)
-    Price { input, output, cache_write: input * 1.25, cache_write_1h: input * 2.0, cache_read }
+    Price {
+        input,
+        output,
+        cache_write: input * 1.25,
+        cache_write_1h: input * 2.0,
+        cache_read,
+    }
 }
 
 const fn openai(input: f64, output: f64, cache_read: f64) -> Price {
     // OpenAI has no cache write charge
-    Price { input, output, cache_write: input, cache_write_1h: input, cache_read }
+    Price {
+        input,
+        output,
+        cache_write: input,
+        cache_write_1h: input,
+        cache_read,
+    }
 }
 
 /// Model id prefixes, most specific first.
@@ -74,13 +86,31 @@ pub fn of(model: &str) -> Option<Price> {
     let m = model.trim().to_ascii_lowercase();
     // provider prefixes ("anthropic/", "openai/") and Bedrock/Vertex forms
     let m = m.rsplit('/').next().unwrap_or(&m);
-    let m = m.strip_prefix("anthropic.").or_else(|| m.strip_prefix("us.anthropic.")).unwrap_or(m);
-    TABLE.iter().find(|(p, _)| m.starts_with(p)).map(|(_, price)| *price)
+    let m = m
+        .strip_prefix("anthropic.")
+        .or_else(|| m.strip_prefix("us.anthropic."))
+        .unwrap_or(m);
+    TABLE
+        .iter()
+        .find(|(p, _)| m.starts_with(p))
+        .map(|(_, price)| *price)
 }
 
 /// What one reply's tokens cost at `price`.
-pub fn cost(price: &Price, input: u64, output: u64, cache_write: u64, cache_write_1h: u64, cache_read: u64) -> f64 {
-    (input as f64 * price.input + output as f64 * price.output + cache_write as f64 * price.cache_write + cache_write_1h as f64 * price.cache_write_1h + cache_read as f64 * price.cache_read) / 1e6
+pub fn cost(
+    price: &Price,
+    input: u64,
+    output: u64,
+    cache_write: u64,
+    cache_write_1h: u64,
+    cache_read: u64,
+) -> f64 {
+    (input as f64 * price.input
+        + output as f64 * price.output
+        + cache_write as f64 * price.cache_write
+        + cache_write_1h as f64 * price.cache_write_1h
+        + cache_read as f64 * price.cache_read)
+        / 1e6
 }
 
 /// A short, readable model name: "claude-opus-4-6-20260101" → "Opus 4.6",
@@ -90,32 +120,53 @@ pub fn display_name(model: &str) -> String {
     if let Some(rest) = m.strip_prefix("claude-") {
         // family and version in either order: "opus-4-6" or "3-5-sonnet"
         let parts: Vec<&str> = rest.split('-').filter(|p| p.len() < 8).collect();
-        let family = parts.iter().find(|p| p.chars().all(|c| c.is_ascii_alphabetic()));
-        let version: Vec<&str> = parts.iter().copied().filter(|p| p.chars().all(|c| c.is_ascii_digit())).collect();
+        let family = parts
+            .iter()
+            .find(|p| p.chars().all(|c| c.is_ascii_alphabetic()));
+        let version: Vec<&str> = parts
+            .iter()
+            .copied()
+            .filter(|p| p.chars().all(|c| c.is_ascii_digit()))
+            .collect();
         if let Some(f) = family {
             let mut f = f.to_string();
             f[..1].make_ascii_uppercase();
-            return if version.is_empty() { f } else { format!("{f} {}", version.join(".")) };
+            return if version.is_empty() {
+                f
+            } else {
+                format!("{f} {}", version.join("."))
+            };
         }
         return m.to_string();
     }
     if let Some(rest) = m.strip_prefix("gpt-") {
         let mut words = rest.split('-');
         let v = words.next().unwrap_or("");
-        let tail: Vec<String> = words.map(|w| {
-            let mut w = w.to_string();
-            if let Some(f) = w.get_mut(0..1) {
-                f.make_ascii_uppercase();
-            }
-            w
-        }).collect();
-        return if tail.is_empty() { format!("GPT-{v}") } else { format!("GPT-{v} {}", tail.join(" ")) };
+        let tail: Vec<String> = words
+            .map(|w| {
+                let mut w = w.to_string();
+                if let Some(f) = w.get_mut(0..1) {
+                    f.make_ascii_uppercase();
+                }
+                w
+            })
+            .collect();
+        return if tail.is_empty() {
+            format!("GPT-{v}")
+        } else {
+            format!("GPT-{v} {}", tail.join(" "))
+        };
     }
     if let Some(rest) = m.strip_prefix("gemini-") {
-        let words: Vec<String> = rest.split('-').map(|w| {
-            let mut c = w.chars();
-            c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
-        }).collect();
+        let words: Vec<String> = rest
+            .split('-')
+            .map(|w| {
+                let mut c = w.chars();
+                c.next()
+                    .map(|f| f.to_uppercase().chain(c).collect())
+                    .unwrap_or_default()
+            })
+            .collect();
         return format!("Gemini {}", words.join(" "));
     }
     m.to_string()

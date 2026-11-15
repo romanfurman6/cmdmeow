@@ -10,7 +10,7 @@
 const PREFIXES: [(&str, usize); 22] = [
     ("sk-ant-", 20), // Anthropic
     ("sk-proj-", 20),
-    ("sk-", 20), // OpenAI and the like
+    ("sk-", 20),  // OpenAI and the like
     ("ghp_", 30), // GitHub
     ("gho_", 30),
     ("ghu_", 30),
@@ -27,7 +27,7 @@ const PREFIXES: [(&str, usize); 22] = [
     ("AIza", 35), // Google
     ("npm_", 30),
     ("pypi-", 40),
-    ("hf_", 30), // Hugging Face
+    ("hf_", 30),     // Hugging Face
     ("dop_v1_", 40), // DigitalOcean
     ("SG.", 40),     // SendGrid
 ];
@@ -38,19 +38,32 @@ fn token_char(c: char) -> bool {
 
 /// AWS access key ids: AKIA/ASIA and 16 upper-case letters or digits.
 fn aws_key(s: &str) -> bool {
-    (s.starts_with("AKIA") || s.starts_with("ASIA")) && s.len() == 20 && s[4..].chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    (s.starts_with("AKIA") || s.starts_with("ASIA"))
+        && s.len() == 20
+        && s[4..]
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
 /// A JSON Web Token: three base64url parts, the first one a JSON header.
 fn jwt(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
-    parts.len() == 3 && s.starts_with("eyJ") && s.len() >= 40 && parts.iter().all(|p| !p.is_empty() && p.chars().all(token_char))
+    parts.len() == 3
+        && s.starts_with("eyJ")
+        && s.len() >= 40
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.chars().all(token_char))
 }
 
 fn prefixed_token(s: &str) -> bool {
     PREFIXES.iter().any(|(pre, min)| {
         s.strip_prefix(pre).is_some_and(|rest| {
-            let body_ok = if *pre == "SG." { rest.chars().all(|c| token_char(c) || c == '.') } else { rest.chars().all(token_char) };
+            let body_ok = if *pre == "SG." {
+                rest.chars().all(|c| token_char(c) || c == '.')
+            } else {
+                rest.chars().all(token_char)
+            };
             rest.len() >= *min && body_ok
         })
     })
@@ -63,7 +76,10 @@ fn private_key(s: &str) -> bool {
 
 /// 13–19 digits (spaces or dashes between groups allowed) that pass the Luhn check.
 pub fn card_number(s: &str) -> bool {
-    if !s.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '-') {
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == ' ' || c == '-')
+    {
         return false;
     }
     let digits: Vec<u32> = s.chars().filter_map(|c| c.to_digit(10)).collect();
@@ -77,7 +93,11 @@ pub fn card_number(s: &str) -> bool {
         .map(|(i, d)| {
             if i % 2 == 1 {
                 let x = d * 2;
-                if x > 9 { x - 9 } else { x }
+                if x > 9 {
+                    x - 9
+                } else {
+                    x
+                }
             } else {
                 *d
             }
@@ -132,11 +152,15 @@ mod tests {
     fn tokens() {
         assert!(is_secret("sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz012345"));
         assert!(is_secret("  ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789\n"));
-        assert!(is_secret("github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz"));
+        assert!(is_secret(
+            "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz"
+        ));
         assert!(is_secret("AKIAIOSFODNN7EXAMPLE"));
         assert!(is_secret("AIzaSyA-1234567890abcdefghijklmnopqrstu"));
         assert!(is_secret("xoxb-123456789012-1234567890123-AbCdEfGhIjKl"));
-        assert!(is_secret("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"));
+        assert!(is_secret(
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        ));
         assert!(is_secret("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----"));
     }
 

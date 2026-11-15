@@ -68,13 +68,18 @@ impl ProjectType {
     /// `dir` holds one of the marker files ("*.csproj" = any file ending so).
     pub fn is_in(&self, dir: &Path, names: &[String]) -> bool {
         self.markers.iter().any(|m| match m.strip_prefix('*') {
-            Some(suffix) => names.iter().any(|n| n.ends_with(suffix) && n.len() > suffix.len()),
+            Some(suffix) => names
+                .iter()
+                .any(|n| n.ends_with(suffix) && n.len() > suffix.len()),
             None if m.contains('/') => dir.join(m).is_file(),
             None => names.iter().any(|n| n == m),
         })
     }
     pub fn all_dirs(&self) -> impl Iterator<Item = (&str, bool)> {
-        self.dirs.iter().map(|d| (d.as_str(), false)).chain(self.careful.iter().map(|d| (d.as_str(), true)))
+        self.dirs
+            .iter()
+            .map(|d| (d.as_str(), false))
+            .chain(self.careful.iter().map(|d| (d.as_str(), true)))
     }
 }
 
@@ -94,12 +99,19 @@ fn parse_verdict(s: &str) -> Verdict {
 
 pub fn catalog() -> &'static Catalog {
     static C: OnceLock<Catalog> = OnceLock::new();
-    C.get_or_init(|| serde_json::from_str(include_str!("rules.json")).expect("cleanup/rules.json is valid (checked by a test)"))
+    C.get_or_init(|| {
+        serde_json::from_str(include_str!("rules.json"))
+            .expect("cleanup/rules.json is valid (checked by a test)")
+    })
 }
 
 /// Every folder name any project type rebuilds.
 pub fn artifact_names() -> Vec<&'static str> {
-    let mut v: Vec<&str> = catalog().projects.iter().flat_map(|p| p.all_dirs().map(|(d, _)| d)).collect();
+    let mut v: Vec<&str> = catalog()
+        .projects
+        .iter()
+        .flat_map(|p| p.all_dirs().map(|(d, _)| d))
+        .collect();
     v.sort();
     v.dedup();
     v
@@ -114,20 +126,41 @@ mod tests {
         let c = catalog();
         assert!(!c.app_caches.is_empty() && !c.developer.is_empty() && !c.projects.is_empty());
         for p in c.app_caches.iter().chain(c.developer.iter()) {
-            assert!(!p.path.starts_with('/') && !p.path.contains(".."), "{} must be relative to home", p.path);
-            assert!(["safe", "ask", "keep"].contains(&p.verdict.as_str()), "{}: verdict {}", p.title, p.verdict);
+            assert!(
+                !p.path.starts_with('/') && !p.path.contains(".."),
+                "{} must be relative to home",
+                p.path
+            );
+            assert!(
+                ["safe", "ask", "keep"].contains(&p.verdict.as_str()),
+                "{}: verdict {}",
+                p.title,
+                p.verdict
+            );
             assert!(!p.title.is_empty() && !p.reason.is_empty());
             // personal folders are never offered
-            assert!(crate::kit::fs::is_protected(&crate::kit::fs::home().join(&p.path)).is_none(), "{} is protected", p.path);
+            assert!(
+                crate::kit::fs::is_protected(&crate::kit::fs::home().join(&p.path)).is_none(),
+                "{} is protected",
+                p.path
+            );
         }
         for k in &c.keep_caches {
-            assert!(["exact", "prefix", "contains"].contains(&k.how.as_str()), "{}", k.name);
+            assert!(
+                ["exact", "prefix", "contains"].contains(&k.how.as_str()),
+                "{}",
+                k.name
+            );
         }
         for t in &c.projects {
             assert!(!t.markers.is_empty(), "{}", t.name);
             assert!(t.dirs.len() + t.careful.len() > 0, "{}", t.name);
             for (d, _) in t.all_dirs() {
-                assert!(!d.contains('/') && d != "." && d != ".." && d != ".git", "{}: {d}", t.name);
+                assert!(
+                    !d.contains('/') && d != "." && d != ".." && d != ".git",
+                    "{}: {d}",
+                    t.name
+                );
             }
         }
         assert!(c.installers.min_age_days >= 1);

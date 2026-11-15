@@ -46,16 +46,39 @@ const DOCK_LAYER: i32 = 20;
 /// processes of ordinary Dock apps: their windows (the Finder window Full
 /// Disk Access points to) are never prompts.
 pub fn read(list: &[Win], settings_pid: Option<i32>, me: i32, apps: &[i32]) -> Scene {
-    let others: Vec<(usize, &Win)> = list.iter().enumerate().filter(|(_, w)| w.pid != me && w.frame.width() >= 40.0 && w.frame.height() >= 40.0).collect();
-    let main = settings_pid.and_then(|pid| others.iter().filter(|(_, w)| w.pid == pid && w.layer == 0).max_by(|a, b| area(a.1.frame).total_cmp(&area(b.1.frame))).copied());
+    let others: Vec<(usize, &Win)> = list
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.pid != me && w.frame.width() >= 40.0 && w.frame.height() >= 40.0)
+        .collect();
+    let main = settings_pid.and_then(|pid| {
+        others
+            .iter()
+            .filter(|(_, w)| w.pid == pid && w.layer == 0)
+            .max_by(|a, b| area(a.1.frame).total_cmp(&area(b.1.frame)))
+            .copied()
+    });
     let settings = main.map(|(_, w)| w.frame);
-    let named = others.iter().any(|(_, w)| PROMPT_OWNERS.contains(&w.owner.as_str()));
+    let named = others
+        .iter()
+        .any(|(_, w)| PROMPT_OWNERS.contains(&w.owner.as_str()));
     // a dialog in front of Settings: smaller, its middle on Settings (a sheet
     // of Settings itself counts too, e.g. "Quit & Reopen")
     let on_top = main.is_some_and(|(at, s)| {
-        others.iter().any(|&(i, w)| i < at && (w.pid == s.pid || !apps.contains(&w.pid)) && (0..DOCK_LAYER).contains(&w.layer) && w.frame.width() < s.frame.width() && w.frame.height() < s.frame.height() && s.frame.contains(w.frame.center()))
+        others.iter().any(|&(i, w)| {
+            i < at
+                && (w.pid == s.pid || !apps.contains(&w.pid))
+                && (0..DOCK_LAYER).contains(&w.layer)
+                && w.frame.width() < s.frame.width()
+                && w.frame.height() < s.frame.height()
+                && s.frame.contains(w.frame.center())
+        })
     });
-    Scene { settings, screen: None, prompt: named || on_top }
+    Scene {
+        settings,
+        screen: None,
+        prompt: named || on_top,
+    }
 }
 
 fn area(r: Rect) -> f32 {
@@ -69,8 +92,18 @@ const GAP: f32 = 16.0;
 /// right, else its left, else under it, else over it; with no room at all,
 /// in the screen's bottom-right corner.
 pub fn place(settings: Rect, screen: Rect, size: Vec2) -> Pos2 {
-    let clamp_y = |y: f32| y.clamp(screen.top() + GAP, (screen.bottom() - GAP - size.y).max(screen.top() + GAP));
-    let clamp_x = |x: f32| x.clamp(screen.left() + GAP, (screen.right() - GAP - size.x).max(screen.left() + GAP));
+    let clamp_y = |y: f32| {
+        y.clamp(
+            screen.top() + GAP,
+            (screen.bottom() - GAP - size.y).max(screen.top() + GAP),
+        )
+    };
+    let clamp_x = |x: f32| {
+        x.clamp(
+            screen.left() + GAP,
+            (screen.right() - GAP - size.x).max(screen.left() + GAP),
+        )
+    };
     // level with the top of Settings' list, where the switch is
     let y = clamp_y(settings.top() + 72.0);
     if settings.right() + GAP + size.x <= screen.right() - GAP {
@@ -86,7 +119,10 @@ pub fn place(settings: Rect, screen: Rect, size: Vec2) -> Pos2 {
     if settings.top() - GAP - size.y >= screen.top() + GAP {
         return Pos2::new(x, settings.top() - GAP - size.y);
     }
-    Pos2::new(screen.right() - GAP - size.x, screen.bottom() - GAP - size.y)
+    Pos2::new(
+        screen.right() - GAP - size.x,
+        screen.bottom() - GAP - size.y,
+    )
 }
 
 /// The scene now, read at most four times a second.
@@ -112,7 +148,9 @@ mod imp {
     use objc2::rc::Retained;
     use objc2::runtime::AnyObject;
     use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSScreen, NSWorkspace};
+    use objc2_app_kit::{
+        NSApplicationActivationPolicy, NSRunningApplication, NSScreen, NSWorkspace,
+    };
     use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString};
     use std::ffi::c_void;
 
@@ -122,11 +160,16 @@ mod imp {
     }
 
     fn num(d: &NSDictionary<NSString, AnyObject>, key: &str) -> Option<f64> {
-        d.objectForKey(&NSString::from_str(key)).and_then(|o| o.downcast::<NSNumber>().ok()).map(|n| n.doubleValue())
+        d.objectForKey(&NSString::from_str(key))
+            .and_then(|o| o.downcast::<NSNumber>().ok())
+            .map(|n| n.doubleValue())
     }
 
     fn text(d: &NSDictionary<NSString, AnyObject>, key: &str) -> String {
-        d.objectForKey(&NSString::from_str(key)).and_then(|o| o.downcast::<NSString>().ok()).map(|s| s.to_string()).unwrap_or_default()
+        d.objectForKey(&NSString::from_str(key))
+            .and_then(|o| o.downcast::<NSString>().ok())
+            .map(|s| s.to_string())
+            .unwrap_or_default()
     }
 
     /// Every on-screen window, front to back. Owner names, layers and
@@ -136,30 +179,54 @@ mod imp {
         if raw.is_null() {
             return Vec::new();
         }
-        let list: Retained<NSArray<NSDictionary<NSString, AnyObject>>> = unsafe { Retained::from_raw(raw.cast()) }.expect("window list");
+        let list: Retained<NSArray<NSDictionary<NSString, AnyObject>>> =
+            unsafe { Retained::from_raw(raw.cast()) }.expect("window list");
         let mut out = Vec::new();
         for d in list.iter() {
-            let Some(b) = d.objectForKey(&NSString::from_str("kCGWindowBounds")).and_then(|o| o.downcast::<NSDictionary>().ok()) else { continue };
-            let b: Retained<NSDictionary<NSString, AnyObject>> = unsafe { Retained::cast_unchecked(b) };
-            let (x, y, w, h) = (num(&b, "X").unwrap_or(0.0), num(&b, "Y").unwrap_or(0.0), num(&b, "Width").unwrap_or(0.0), num(&b, "Height").unwrap_or(0.0));
+            let Some(b) = d
+                .objectForKey(&NSString::from_str("kCGWindowBounds"))
+                .and_then(|o| o.downcast::<NSDictionary>().ok())
+            else {
+                continue;
+            };
+            let b: Retained<NSDictionary<NSString, AnyObject>> =
+                unsafe { Retained::cast_unchecked(b) };
+            let (x, y, w, h) = (
+                num(&b, "X").unwrap_or(0.0),
+                num(&b, "Y").unwrap_or(0.0),
+                num(&b, "Width").unwrap_or(0.0),
+                num(&b, "Height").unwrap_or(0.0),
+            );
             out.push(Win {
                 pid: num(&d, "kCGWindowOwnerPID").unwrap_or(-1.0) as i32,
                 owner: text(&d, "kCGWindowOwnerName"),
                 layer: num(&d, "kCGWindowLayer").unwrap_or(0.0) as i32,
-                frame: Rect::from_min_size(Pos2::new(x as f32, y as f32), Vec2::new(w as f32, h as f32)),
+                frame: Rect::from_min_size(
+                    Pos2::new(x as f32, y as f32),
+                    Vec2::new(w as f32, h as f32),
+                ),
             });
         }
         out
     }
 
     fn settings_pid() -> Option<i32> {
-        let apps = NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str("com.apple.systempreferences"));
-        apps.iter().find(|a| !a.isTerminated()).map(|a| a.processIdentifier())
+        let apps = NSRunningApplication::runningApplicationsWithBundleIdentifier(
+            &NSString::from_str("com.apple.systempreferences"),
+        );
+        apps.iter()
+            .find(|a| !a.isTerminated())
+            .map(|a| a.processIdentifier())
     }
 
     /// Processes of ordinary apps (the ones with a Dock icon).
     fn app_pids() -> Vec<i32> {
-        NSWorkspace::sharedWorkspace().runningApplications().iter().filter(|a| a.activationPolicy() == NSApplicationActivationPolicy::Regular).map(|a| a.processIdentifier()).collect()
+        NSWorkspace::sharedWorkspace()
+            .runningApplications()
+            .iter()
+            .filter(|a| a.activationPolicy() == NSApplicationActivationPolicy::Regular)
+            .map(|a| a.processIdentifier())
+            .collect()
     }
 
     /// The visible frame of the display holding `p`, top-left origin.
@@ -167,13 +234,29 @@ mod imp {
         let mtm = MainThreadMarker::new()?;
         let screens = NSScreen::screens(mtm);
         let top = screens.firstObject()?.frame().size.height;
-        let flip = |f: objc2_foundation::NSRect| Rect::from_min_size(Pos2::new(f.origin.x as f32, (top - (f.origin.y + f.size.height)) as f32), Vec2::new(f.size.width as f32, f.size.height as f32));
-        let s = screens.iter().find(|s| flip(s.frame()).contains(p)).or_else(|| screens.firstObject())?;
+        let flip = |f: objc2_foundation::NSRect| {
+            Rect::from_min_size(
+                Pos2::new(
+                    f.origin.x as f32,
+                    (top - (f.origin.y + f.size.height)) as f32,
+                ),
+                Vec2::new(f.size.width as f32, f.size.height as f32),
+            )
+        };
+        let s = screens
+            .iter()
+            .find(|s| flip(s.frame()).contains(p))
+            .or_else(|| screens.firstObject())?;
         Some(flip(s.visibleFrame()))
     }
 
     pub fn scene() -> Scene {
-        let mut s = super::read(&windows(), settings_pid(), std::process::id() as i32, &app_pids());
+        let mut s = super::read(
+            &windows(),
+            settings_pid(),
+            std::process::id() as i32,
+            &app_pids(),
+        );
         s.screen = s.settings.and_then(|r| screen_at(r.center()));
         s
     }
@@ -191,7 +274,12 @@ mod tests {
     use super::*;
 
     fn win(pid: i32, owner: &str, layer: i32, x: f32, y: f32, w: f32, h: f32) -> Win {
-        Win { pid, owner: owner.into(), layer, frame: Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h)) }
+        Win {
+            pid,
+            owner: owner.into(),
+            layer,
+            frame: Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h)),
+        }
     }
 
     const ME: i32 = 1;
@@ -203,7 +291,12 @@ mod tests {
 
     #[test]
     fn finds_the_settings_window_and_no_prompt() {
-        let list = vec![win(0, "Window Server", 25, 0.0, 0.0, 1512.0, 24.0), win(ME, "CmdMeow Dev", 3, 600.0, 400.0, 360.0, 132.0), settings(), win(9, "Finder", 0, 0.0, 0.0, 800.0, 600.0)];
+        let list = vec![
+            win(0, "Window Server", 25, 0.0, 0.0, 1512.0, 24.0),
+            win(ME, "CmdMeow Dev", 3, 600.0, 400.0, 360.0, 132.0),
+            settings(),
+            win(9, "Finder", 0, 0.0, 0.0, 800.0, 600.0),
+        ];
         let s = read(&list, Some(SET), ME, &[]);
         assert_eq!(s.settings, Some(settings().frame));
         assert!(!s.prompt);
@@ -212,20 +305,39 @@ mod tests {
     #[test]
     fn a_password_sheet_over_settings_is_a_prompt() {
         // the photo: macOS's "Privacy & Security" password sheet on Settings
-        let list = vec![win(ME, "CmdMeow Dev", 3, 450.0, 820.0, 360.0, 132.0), win(77, "SomeAuthAgent", 0, 480.0, 330.0, 345.0, 430.0), settings()];
+        let list = vec![
+            win(ME, "CmdMeow Dev", 3, 450.0, 820.0, 360.0, 132.0),
+            win(77, "SomeAuthAgent", 0, 480.0, 330.0, 345.0, 430.0),
+            settings(),
+        ];
         assert!(read(&list, Some(SET), ME, &[]).prompt);
     }
 
     #[test]
     fn known_prompt_processes_count_anywhere() {
-        let list = vec![win(77, "universalAccessAuthWarn", 8, 1000.0, 100.0, 260.0, 300.0), settings()];
+        let list = vec![
+            win(
+                77,
+                "universalAccessAuthWarn",
+                8,
+                1000.0,
+                100.0,
+                260.0,
+                300.0,
+            ),
+            settings(),
+        ];
         assert!(read(&list, Some(SET), ME, &[]).prompt);
         assert!(read(&list, None, ME, &[]).prompt);
     }
 
     #[test]
     fn our_own_windows_and_windows_behind_settings_dont_count() {
-        let list = vec![win(ME, "CmdMeow Dev", 3, 400.0, 300.0, 360.0, 132.0), settings(), win(9, "Notes", 0, 300.0, 300.0, 200.0, 200.0)];
+        let list = vec![
+            win(ME, "CmdMeow Dev", 3, 400.0, 300.0, 360.0, 132.0),
+            settings(),
+            win(9, "Notes", 0, 300.0, 300.0, 200.0, 200.0),
+        ];
         assert!(!read(&list, Some(SET), ME, &[]).prompt);
     }
 
@@ -237,7 +349,10 @@ mod tests {
 
     #[test]
     fn a_sheet_of_settings_itself_is_a_prompt() {
-        let list = vec![win(SET, "Системні параметри", 0, 400.0, 300.0, 300.0, 180.0), settings()];
+        let list = vec![
+            win(SET, "Системні параметри", 0, 400.0, 300.0, 300.0, 180.0),
+            settings(),
+        ];
         let s = read(&list, Some(SET), ME, &[]);
         assert_eq!(s.settings, Some(settings().frame));
         assert!(s.prompt);

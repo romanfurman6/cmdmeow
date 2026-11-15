@@ -6,12 +6,12 @@
 //! drains in amber while it winds down. Nothing loops: the ring is the only
 //! thing that moves, and only because time passes.
 
-use crate::kit::sync::LockExt;
 use super::engine::{Engine, Span, State, GRACE_CHOICES};
 use super::{KeepAwake, KeyRec, ID};
-use crate::kit::hotkeys::{listen, Heard};
 use crate::core::tool::Size;
 use crate::kit::glass::*;
+use crate::kit::hotkeys::{listen, Heard};
+use crate::kit::sync::LockExt;
 use crate::kit::tile;
 use egui::epaint::{PathShape, PathStroke};
 use egui::{Align2, Color32, Mesh, Painter, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
@@ -37,7 +37,9 @@ struct Look {
 
 /// The agent's time on the Today strip: the accent, it's what the tool is for.
 #[allow(non_snake_case)]
-fn AGENT_TINT() -> Color32 { tint::KEEP_AWAKE() }
+fn AGENT_TINT() -> Color32 {
+    tint::KEEP_AWAKE()
+}
 /// Time kept awake by hand on the Today strip: a neutral step.
 const HAND: Color32 = Color32::from_rgb(0x8E, 0x8E, 0x93);
 
@@ -45,9 +47,24 @@ fn look(st: State) -> Look {
     let cup = white(235);
     let soft = white(190);
     match st {
-        State::Off => Look { ring: tint::NEUTRAL(), body: tint::NEUTRAL(), soft, bg: CARD() },
-        State::Manual | State::Agent => Look { ring: GREEN(), body: cup, soft, bg: CARD() },
-        State::WindDown { .. } => Look { ring: AMBER(), body: cup, soft, bg: CARD() },
+        State::Off => Look {
+            ring: tint::NEUTRAL(),
+            body: tint::NEUTRAL(),
+            soft,
+            bg: CARD(),
+        },
+        State::Manual | State::Agent => Look {
+            ring: GREEN(),
+            body: cup,
+            soft,
+            bg: CARD(),
+        },
+        State::WindDown { .. } => Look {
+            ring: AMBER(),
+            body: cup,
+            soft,
+            bg: CARD(),
+        },
     }
 }
 
@@ -93,7 +110,11 @@ fn ago(secs: i64) -> String {
 
 fn time_of_day(t: i64) -> String {
     use chrono::{Local, TimeZone};
-    Local.timestamp_opt(t, 0).single().map(|d| d.format("%H:%M").to_string()).unwrap_or_default()
+    Local
+        .timestamp_opt(t, 0)
+        .single()
+        .map(|d| d.format("%H:%M").to_string())
+        .unwrap_or_default()
 }
 
 /// How far around the ring is filled.
@@ -103,10 +124,15 @@ fn ring_frac(e: &Engine, st: State, now: i64) -> f32 {
         State::Manual => 1.0,
         // fills once an hour
         State::Agent => {
-            let mins = e.awake_since.map(|s| (now - s) as f32 / 60.0).unwrap_or(0.0);
+            let mins = e
+                .awake_since
+                .map(|s| (now - s) as f32 / 60.0)
+                .unwrap_or(0.0);
             (0.06 + (mins % 60.0) / 60.0).min(1.0)
         }
-        State::WindDown { left } => (left as f32 / (e.settings.grace_min.max(1) as f32 * 60.0)).clamp(0.02, 1.0),
+        State::WindDown { left } => {
+            (left as f32 / (e.settings.grace_min.max(1) as f32 * 60.0)).clamp(0.02, 1.0)
+        }
     }
 }
 
@@ -131,8 +157,14 @@ fn crescent(p: &Painter, c1: Pos2, r1: f32, c2: Pos2, r2: f32, color: Color32) {
         let s = (ta - c).angle();
         let e = (tb - c).angle();
         let ccw = (e - s).rem_euclid(TAU);
-        let sweep = if (away - s).rem_euclid(TAU) < ccw { ccw } else { ccw - TAU };
-        (0..=n).map(|i| c + Vec2::angled(s + sweep * i as f32 / n as f32) * r).collect()
+        let sweep = if (away - s).rem_euclid(TAU) < ccw {
+            ccw
+        } else {
+            ccw - TAU
+        };
+        (0..=n)
+            .map(|i| c + Vec2::angled(s + sweep * i as f32 / n as f32) * r)
+            .collect()
     };
     let n = 40;
     let (outer, inner) = (arc(c1, r1, n), arc(c2, r2, n));
@@ -165,7 +197,10 @@ fn scene(p: &Painter, rect: Rect, st: State, frac: f32, t: f64) {
     if frac >= 0.999 {
         crate::kit::glass::stroke_circle(&p, c, rr, Stroke::new(4.0 * s, lk.ring));
     } else if frac > 0.0 {
-        p.add(PathShape::line(arc_points(c, rr, a0, a1, 72), PathStroke::new(4.0 * s, lk.ring)));
+        p.add(PathShape::line(
+            arc_points(c, rr, a0, a1, 72),
+            PathStroke::new(4.0 * s, lk.ring),
+        ));
         for a in [a0, a1] {
             p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * rr, 2.0 * s, lk.ring);
         }
@@ -173,21 +208,39 @@ fn scene(p: &Painter, rect: Rect, st: State, frac: f32, t: f64) {
 
     if st == State::Off {
         // crescent moon, nothing else
-        crescent(p, at(52.0, 50.0), 22.0 * s, at(62.0, 41.0), 18.5 * s, lk.body);
+        crescent(
+            p,
+            at(52.0, 50.0),
+            22.0 * s,
+            at(62.0, 41.0),
+            18.5 * s,
+            lk.body,
+        );
         return;
     }
 
     // steam: still wisps, two while awake, one while cooling
-    let wisps: &[(f32, f32)] = if matches!(st, State::WindDown { .. }) { &[(46.0, 36.0)] } else { &[(42.0, 37.0), (50.0, 37.0)] };
+    let wisps: &[(f32, f32)] = if matches!(st, State::WindDown { .. }) {
+        &[(46.0, 36.0)]
+    } else {
+        &[(42.0, 37.0), (50.0, 37.0)]
+    };
     for (x0, y0) in wisps.iter() {
-        let (alpha, dy) = if matches!(st, State::WindDown { .. }) { (0.35, 0.0) } else { (0.6, 0.0) };
+        let (alpha, dy) = if matches!(st, State::WindDown { .. }) {
+            (0.35, 0.0)
+        } else {
+            (0.6, 0.0)
+        };
         let pts: Vec<Pos2> = (0..=12)
             .map(|i| {
                 let u = i as f32 / 12.0;
                 at(x0 + 2.2 * (u * PI * 1.6).sin(), y0 + dy - 11.0 * u)
             })
             .collect();
-        p.add(PathShape::line(pts, PathStroke::new(2.5 * s, with_alpha(lk.soft, alpha * 0.9))));
+        p.add(PathShape::line(
+            pts,
+            PathStroke::new(2.5 * s, with_alpha(lk.soft, alpha * 0.9)),
+        ));
     }
 
     // cup: straight top, rounded bottom
@@ -199,7 +252,10 @@ fn scene(p: &Painter, rect: Rect, st: State, frac: f32, t: f64) {
     handle.extend(arc_points(at(64.0, 54.0), 6.0 * s, -PI / 2.0, PI / 2.0, 14));
     handle.push(at(60.0, 60.0));
     p.add(PathShape::line(handle, PathStroke::new(4.0 * s, lk.body)));
-    p.line_segment([at(27.0, 74.0), at(65.0, 74.0)], Stroke::new(3.0 * s, lk.body));
+    p.line_segment(
+        [at(27.0, 74.0), at(65.0, 74.0)],
+        Stroke::new(3.0 * s, lk.body),
+    );
     p.circle_filled(at(27.0, 74.0), 1.5 * s, lk.body);
     p.circle_filled(at(65.0, 74.0), 1.5 * s, lk.body);
 
@@ -208,7 +264,10 @@ fn scene(p: &Painter, rect: Rect, st: State, frac: f32, t: f64) {
 
 /// Lines of text beside the scene: title, reason, detail.
 fn hero_text(e: &Engine, st: State, now: i64) -> (String, String, String) {
-    let since = e.awake_since.map(|s| format!("since {} · {}", time_of_day(s), span_text(now - s))).unwrap_or_default();
+    let since = e
+        .awake_since
+        .map(|s| format!("since {} · {}", time_of_day(s), span_text(now - s)))
+        .unwrap_or_default();
     match st {
         State::Off => (
             "Off".into(),
@@ -220,20 +279,41 @@ fn hero_text(e: &Engine, st: State, now: i64) -> (String, String, String) {
             },
         ),
         State::Manual => {
-            let screen = if e.settings.manual_screen { "screen on" } else { "screen can sleep" };
-            ("Awake".into(), "Until you turn it off".into(), format!("{since} · {screen}"))
+            let screen = if e.settings.manual_screen {
+                "screen on"
+            } else {
+                "screen can sleep"
+            };
+            (
+                "Awake".into(),
+                "Until you turn it off".into(),
+                format!("{since} · {screen}"),
+            )
         }
         State::Agent => {
             let n = e.working(now).len();
-            let screen = if e.settings.agent_screen { "screen on" } else { "screen can sleep" };
+            let screen = if e.settings.agent_screen {
+                "screen on"
+            } else {
+                "screen can sleep"
+            };
             // says who holds it: the Keep awake switch is off in this state
             (
                 format!("Awake for {}", e.agent_name()),
                 format!("{n} session{} working", if n == 1 { "" } else { "s" }),
-                format!("{} · {screen}", e.awake_since.map(|s| span_text(now - s)).unwrap_or_default()),
+                format!(
+                    "{} · {screen}",
+                    e.awake_since
+                        .map(|s| span_text(now - s))
+                        .unwrap_or_default()
+                ),
             )
         }
-        State::WindDown { left } => (clock(left), format!("{} finished · sleep in", e.agent_name()), String::new()),
+        State::WindDown { left } => (
+            clock(left),
+            format!("{} finished · sleep in", e.agent_name()),
+            String::new(),
+        ),
     }
 }
 
@@ -245,28 +325,71 @@ fn hero(p: &Painter, r: Rect, e: &Engine, st: State, now: i64, t: f64, big: bool
     p.rect_filled(r, radius, lk.bg);
     let size = if big { 150.0 } else { 96.0 };
     let pad = if big { 28.0 } else { 14.0 };
-    let sr = Rect::from_min_size(Pos2::new(r.left() + pad, r.center().y - size / 2.0), Vec2::splat(size));
+    let sr = Rect::from_min_size(
+        Pos2::new(r.left() + pad, r.center().y - size / 2.0),
+        Vec2::splat(size),
+    );
     scene(p, sr, st, ring_frac(e, st, now), t);
 
     let (title, reason, detail) = hero_text(e, st, now);
     let x = sr.right() + if big { 28.0 } else { 14.0 };
     let w = r.right() - x - 12.0;
-    let (tf, lf) = if big { (bold(34.0), font(15.0)) } else { (bold(22.0), font(12.0)) };
+    let (tf, lf) = if big {
+        (bold(34.0), font(15.0))
+    } else {
+        (bold(22.0), font(12.0))
+    };
     // the third line: how long it has been up (window) or the detail (panel);
     // winding down puts the "Keep awake" button there
     let wind = matches!(st, State::WindDown { .. });
-    let third = if big { e.awake_since.map(|s| format!("since {} · {}", time_of_day(s), span_text(now - s))).unwrap_or_default() } else { detail };
-    let (h1, h2, h3) = (line_h(p, &tf), line_h(p, &lf), if wind { if big { 28.0 } else { 24.0 } } else if third.is_empty() { 0.0 } else { line_h(p, &font(12.0)) });
+    let third = if big {
+        e.awake_since
+            .map(|s| format!("since {} · {}", time_of_day(s), span_text(now - s)))
+            .unwrap_or_default()
+    } else {
+        detail
+    };
+    let (h1, h2, h3) = (
+        line_h(p, &tf),
+        line_h(p, &lf),
+        if wind {
+            if big {
+                28.0
+            } else {
+                24.0
+            }
+        } else if third.is_empty() {
+            0.0
+        } else {
+            line_h(p, &font(12.0))
+        },
+    );
     let block = h1 + sp::LINE_GAP + h2 + if h3 > 0.0 { sp::M + h3 } else { 0.0 };
     let mut y = r.center().y - block / 2.0;
     text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &title, tf, TEXT(), w);
     y += h1 + sp::LINE_GAP;
-    text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &reason, lf, lk.soft, w);
+    text_fit(
+        p,
+        Pos2::new(x, y),
+        Align2::LEFT_TOP,
+        &reason,
+        lf,
+        lk.soft,
+        w,
+    );
     y += h2 + sp::M;
     if wind {
         return Some(Rect::from_min_size(Pos2::new(x, y), Vec2::new(96.0, 24.0)));
     }
-    text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &third, font(12.0), TEXT_DIM(), w);
+    text_fit(
+        p,
+        Pos2::new(x, y),
+        Align2::LEFT_TOP,
+        &third,
+        font(12.0),
+        TEXT_DIM(),
+        w,
+    );
     None
 }
 
@@ -274,7 +397,13 @@ fn hero(p: &Painter, r: Rect, e: &Engine, st: State, now: i64, t: f64, big: bool
 
 /// The Keep Awake widget at `size`. A click on the small ones flips the
 /// switch; Large is the full card.
-pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut crate::core::tool::Cx) {
+pub fn widget(
+    k: &mut KeepAwake,
+    size: Size,
+    ui: &mut Ui,
+    rect: Rect,
+    cx: &mut crate::core::tool::Cx,
+) {
     if size == Size::S44 {
         card(k, ui, rect, cx);
         return;
@@ -285,11 +414,21 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
     let (st, frac, (title, reason, _), manual, agent) = {
         let e = k.engine.lock_ok();
         let st = e.state(now);
-        (st, ring_frac(&e, st, now), hero_text(&e, st, now), e.manual_since.is_some(), e.agent_name())
+        (
+            st,
+            ring_frac(&e, st, now),
+            hero_text(&e, st, now),
+            e.manual_since.is_some(),
+            e.agent_name(),
+        )
     };
     // a widget's switch shows the agent's hold itself, so its title stays
     // short ("Awake for Claude" is the page's, where the switch is manual)
-    let (title, reason) = if st == State::Agent { ("Awake".to_string(), format!("{agent} · {reason}")) } else { (title, reason) };
+    let (title, reason) = if st == State::Agent {
+        ("Awake".to_string(), format!("{agent} · {reason}"))
+    } else {
+        (title, reason)
+    };
     let lk = look(st);
     // the ring carries the state; the card stays the same as every other one
     let resp = tile::card(ui, rect, id, false);
@@ -298,40 +437,83 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
     let (sw_on, sw_enabled) = (st.awake(), manual || !st.awake());
     let p = ui.painter().clone();
     let working = format!("{agent} is working");
-    let tip = if manual { "Let the Mac sleep" } else if st.awake() { working.as_str() } else { "Keep the Mac awake" };
+    let tip = if manual {
+        "Let the Mac sleep"
+    } else if st.awake() {
+        working.as_str()
+    } else {
+        "Keep the Mac awake"
+    };
     match size {
         Size::S11 => {
-            let sr = Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 32.0), Vec2::splat(50.0));
+            let sr = Rect::from_center_size(
+                Pos2::new(rect.center().x, rect.top() + 32.0),
+                Vec2::splat(50.0),
+            );
             scene(&p, sr, st, frac, t);
-            p.text(Pos2::new(rect.center().x, rect.bottom() - 9.0), Align2::CENTER_BOTTOM, short_state(st, agent), bold(11.0), if st.awake() { lk.soft } else { TEXT_DIM() });
+            p.text(
+                Pos2::new(rect.center().x, rect.bottom() - 9.0),
+                Align2::CENTER_BOTTOM,
+                short_state(st, agent),
+                bold(11.0),
+                if st.awake() { lk.soft } else { TEXT_DIM() },
+            );
         }
         Size::S24 => {
             let mut e = k.engine.lock_ok();
             // the state on top, today's awake time along the bottom
             let strip_h = 14.0;
-            let hr = Rect::from_min_max(rect.min + Vec2::splat(1.0), Pos2::new(rect.right() - 1.0, rect.bottom() - strip_h - 22.0));
-            let sr = Rect::from_min_max(Pos2::new(rect.left() + 14.0, rect.bottom() - strip_h - 12.0), Pos2::new(rect.right() - 14.0, rect.bottom() - 12.0));
+            let hr = Rect::from_min_max(
+                rect.min + Vec2::splat(1.0),
+                Pos2::new(rect.right() - 1.0, rect.bottom() - strip_h - 22.0),
+            );
+            let sr = Rect::from_min_max(
+                Pos2::new(rect.left() + 14.0, rect.bottom() - strip_h - 12.0),
+                Pos2::new(rect.right() - 14.0, rect.bottom() - 12.0),
+            );
             today_strip(&p, sr, &e.today(now), now);
             if let Some(br) = hero(&p, hr, &e, st, now, t, false) {
                 if pill_button(ui, br, "Keep awake", BTN_SECONDARY, true).clicked() {
                     e.set_manual(true, now);
                 }
             }
-            let sw = Rect::from_min_size(Pos2::new(rect.right() - 12.0 - 38.0, rect.top() + 12.0), Vec2::new(38.0, 22.0));
-            if switch(ui, sw, id.with("sw"), sw_on, true).on_hover_text(tip).clicked() && sw_enabled {
+            let sw = Rect::from_min_size(
+                Pos2::new(rect.right() - 12.0 - 38.0, rect.top() + 12.0),
+                Vec2::new(38.0, 22.0),
+            );
+            if switch(ui, sw, id.with("sw"), sw_on, true)
+                .on_hover_text(tip)
+                .clicked()
+                && sw_enabled
+            {
                 e.set_manual(!manual, now);
             }
             return;
         }
         _ => {
             let side = rect.height() - 16.0;
-            let sr = Rect::from_min_size(Pos2::new(rect.left() + 10.0, rect.center().y - side / 2.0), Vec2::splat(side));
+            let sr = Rect::from_min_size(
+                Pos2::new(rect.left() + 10.0, rect.center().y - side / 2.0),
+                Vec2::splat(side),
+            );
             scene(&p, sr, st, frac, t);
             let x = sr.right() + 10.0;
-            let right = if size == Size::S14 { rect.right() - 60.0 } else { rect.right() - 8.0 };
+            let right = if size == Size::S14 {
+                rect.right() - 60.0
+            } else {
+                rect.right() - 8.0
+            };
             let tf = bold(if size == Size::S14 { 17.0 } else { 14.0 });
             let (ly1, ly2) = two_lines_y(&p, rect.center().y, &tf, &font(11.0));
-            text_fit(&p, Pos2::new(x, ly1), Align2::LEFT_CENTER, &title, tf, TEXT(), right - x);
+            text_fit(
+                &p,
+                Pos2::new(x, ly1),
+                Align2::LEFT_CENTER,
+                &title,
+                tf,
+                TEXT(),
+                right - x,
+            );
             // Wide has room for a few words only
             let short = match st {
                 State::Off => "Sleeps as usual".to_string(),
@@ -340,10 +522,25 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
                 State::WindDown { .. } => "Then sleeps".to_string(),
             };
             let reason = if size == Size::S12 { short } else { reason };
-            text_fit(&p, Pos2::new(x, ly2), Align2::LEFT_CENTER, &reason, font(11.0), lk.soft, right - x);
+            text_fit(
+                &p,
+                Pos2::new(x, ly2),
+                Align2::LEFT_CENTER,
+                &reason,
+                font(11.0),
+                lk.soft,
+                right - x,
+            );
             if size == Size::S14 {
-                let sw = Rect::from_min_size(Pos2::new(rect.right() - 12.0 - 38.0, rect.center().y - 11.0), Vec2::new(38.0, 22.0));
-                if switch(ui, sw, id.with("sw"), sw_on, true).on_hover_text(tip).clicked() && sw_enabled {
+                let sw = Rect::from_min_size(
+                    Pos2::new(rect.right() - 12.0 - 38.0, rect.center().y - 11.0),
+                    Vec2::new(38.0, 22.0),
+                );
+                if switch(ui, sw, id.with("sw"), sw_on, true)
+                    .on_hover_text(tip)
+                    .clicked()
+                    && sw_enabled
+                {
                     k.toggle();
                 }
                 return;
@@ -370,14 +567,38 @@ pub fn card(k: &mut KeepAwake, ui: &mut Ui, rect: Rect, cx: &mut crate::core::to
     let manual = e.manual_since.is_some();
 
     // header: chip, name (opens the page), the switch
-    tool_chip(&p, Rect::from_min_size(Pos2::new(x0, y), Vec2::splat(20.0)), Icon::Cup, tint::KEEP_AWAKE());
-    let name = p.text(Pos2::new(x0 + 28.0, y + 10.0), Align2::LEFT_CENTER, "Keep Awake", bold(13.0), TEXT());
-    if ui.interact(name, id.with("name"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+    tool_chip(
+        &p,
+        Rect::from_min_size(Pos2::new(x0, y), Vec2::splat(20.0)),
+        Icon::Cup,
+        tint::KEEP_AWAKE(),
+    );
+    let name = p.text(
+        Pos2::new(x0 + 28.0, y + 10.0),
+        Align2::LEFT_CENTER,
+        "Keep Awake",
+        bold(13.0),
+        TEXT(),
+    );
+    if ui
+        .interact(name, id.with("name"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         cx.open_page(ID, "");
     }
     let sw = Rect::from_min_size(Pos2::new(x1 - 38.0, y - 1.0), Vec2::new(38.0, 22.0));
-    p.text(Pos2::new(sw.left() - 8.0, sw.center().y), Align2::RIGHT_CENTER, if manual { "On" } else { "Off" }, font(12.0), TEXT_DIM());
-    if switch(ui, sw, id.with("manual"), manual, true).on_hover_text("Keep the Mac awake until you turn this off").clicked() {
+    p.text(
+        Pos2::new(sw.left() - 8.0, sw.center().y),
+        Align2::RIGHT_CENTER,
+        if manual { "On" } else { "Off" },
+        font(12.0),
+        TEXT_DIM(),
+    );
+    if switch(ui, sw, id.with("manual"), manual, true)
+        .on_hover_text("Keep the Mac awake until you turn this off")
+        .clicked()
+    {
         e.set_manual(!manual, now);
     }
     y += 30.0;
@@ -395,10 +616,32 @@ pub fn card(k: &mut KeepAwake, ui: &mut Ui, rect: Rect, cx: &mut crate::core::to
     let agent = e.agent_name();
     if !agent.is_empty() {
         let r = row(y);
-        icon(&p, Icon::Gauge, Rect::from_center_size(Pos2::new(x0 + 8.0, r.center().y), Vec2::splat(16.0)), TEXT_DIM());
-        p.text(Pos2::new(x0 + 26.0, r.center().y), Align2::LEFT_CENTER, format!("While {agent} works"), font(13.0), TEXT());
+        icon(
+            &p,
+            Icon::Gauge,
+            Rect::from_center_size(Pos2::new(x0 + 8.0, r.center().y), Vec2::splat(16.0)),
+            TEXT_DIM(),
+        );
+        p.text(
+            Pos2::new(x0 + 26.0, r.center().y),
+            Align2::LEFT_CENTER,
+            format!("While {agent} works"),
+            font(13.0),
+            TEXT(),
+        );
         let on = e.settings.agent;
-        if switch(ui, Rect::from_min_size(Pos2::new(x1 - 30.0, r.center().y - 9.0), Vec2::new(30.0, 18.0)), id.with("claude"), on, true).clicked() {
+        if switch(
+            ui,
+            Rect::from_min_size(
+                Pos2::new(x1 - 30.0, r.center().y - 9.0),
+                Vec2::new(30.0, 18.0),
+            ),
+            id.with("claude"),
+            on,
+            true,
+        )
+        .clicked()
+        {
             e.change(now, |s| s.agent = !on);
         }
         y += ROW_H;
@@ -406,14 +649,34 @@ pub fn card(k: &mut KeepAwake, ui: &mut Ui, rect: Rect, cx: &mut crate::core::to
     if e.watching() {
         let working = e.working(now);
         if working.is_empty() {
-            p.text(Pos2::new(x0 + 26.0, y + SESSION_H / 2.0), Align2::LEFT_CENTER, "No session working right now", font(12.0), TEXT_FAINT());
+            p.text(
+                Pos2::new(x0 + 26.0, y + SESSION_H / 2.0),
+                Align2::LEFT_CENTER,
+                "No session working right now",
+                font(12.0),
+                TEXT_FAINT(),
+            );
             y += SESSION_H;
         } else {
             for s in working.iter().take(CARD_SESSIONS) {
                 let cy = y + SESSION_H / 2.0;
                 p.circle_filled(Pos2::new(x0 + 29.0, cy), 3.0, GREEN());
-                text_fit(&p, Pos2::new(x0 + 40.0, cy), Align2::LEFT_CENTER, &s.project, font(12.0), TEXT_SOFT(), x1 - x0 - 170.0);
-                p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("working · {}", ago(now - s.last_write)), font(12.0), TEXT_FAINT());
+                text_fit(
+                    &p,
+                    Pos2::new(x0 + 40.0, cy),
+                    Align2::LEFT_CENTER,
+                    &s.project,
+                    font(12.0),
+                    TEXT_SOFT(),
+                    x1 - x0 - 170.0,
+                );
+                p.text(
+                    Pos2::new(x1, cy),
+                    Align2::RIGHT_CENTER,
+                    format!("working · {}", ago(now - s.last_write)),
+                    font(12.0),
+                    TEXT_FAINT(),
+                );
                 y += SESSION_H;
             }
         }
@@ -423,13 +686,49 @@ pub fn card(k: &mut KeepAwake, ui: &mut Ui, rect: Rect, cx: &mut crate::core::to
 
     // screen: the setting that applies to what's keeping the Mac up
     let r = row(y);
-    icon(&p, Icon::Monitor, Rect::from_center_size(Pos2::new(x0 + 8.0, r.center().y), Vec2::splat(16.0)), TEXT_DIM());
+    icon(
+        &p,
+        Icon::Monitor,
+        Rect::from_center_size(Pos2::new(x0 + 8.0, r.center().y), Vec2::splat(16.0)),
+        TEXT_DIM(),
+    );
     let for_agent = matches!(st, State::Agent | State::WindDown { .. });
-    let label = if for_agent { format!("Keep screen on while {agent} works") } else { "Keep screen on".into() };
-    p.text(Pos2::new(x0 + 26.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT());
-    let on = if for_agent { e.settings.agent_screen } else { e.settings.manual_screen };
-    if switch(ui, Rect::from_min_size(Pos2::new(x1 - 30.0, r.center().y - 9.0), Vec2::new(30.0, 18.0)), id.with("screen"), on, true).clicked() {
-        e.change(now, |s| if for_agent { s.agent_screen = !on } else { s.manual_screen = !on });
+    let label = if for_agent {
+        format!("Keep screen on while {agent} works")
+    } else {
+        "Keep screen on".into()
+    };
+    p.text(
+        Pos2::new(x0 + 26.0, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font(13.0),
+        TEXT(),
+    );
+    let on = if for_agent {
+        e.settings.agent_screen
+    } else {
+        e.settings.manual_screen
+    };
+    if switch(
+        ui,
+        Rect::from_min_size(
+            Pos2::new(x1 - 30.0, r.center().y - 9.0),
+            Vec2::new(30.0, 18.0),
+        ),
+        id.with("screen"),
+        on,
+        true,
+    )
+    .clicked()
+    {
+        e.change(now, |s| {
+            if for_agent {
+                s.agent_screen = !on
+            } else {
+                s.manual_screen = !on
+            }
+        });
     }
 }
 
@@ -455,9 +754,21 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
         }
     }
     let manual = e.manual_since.is_some();
-    let sw = Rect::from_min_size(Pos2::new(hr.right() - 28.0 - 64.0, hr.center().y - 18.0), Vec2::new(64.0, 36.0));
-    p.text(Pos2::new(sw.left() - 12.0, sw.center().y), Align2::RIGHT_CENTER, "Keep awake", font(13.0), TEXT_SOFT());
-    if switch(ui, sw, id.with("manual"), manual, true).on_hover_text("Keep the Mac awake until you turn this off").clicked() {
+    let sw = Rect::from_min_size(
+        Pos2::new(hr.right() - 28.0 - 64.0, hr.center().y - 18.0),
+        Vec2::new(64.0, 36.0),
+    );
+    p.text(
+        Pos2::new(sw.left() - 12.0, sw.center().y),
+        Align2::RIGHT_CENTER,
+        "Keep awake",
+        font(13.0),
+        TEXT_SOFT(),
+    );
+    if switch(ui, sw, id.with("manual"), manual, true)
+        .on_hover_text("Keep the Mac awake until you turn this off")
+        .clicked()
+    {
         e.set_manual(!manual, now);
     }
     y = hr.bottom() + 18.0;
@@ -465,18 +776,37 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     // today
     let spans = e.today(now);
     let total: i64 = spans.iter().map(|s| s.end - s.start).sum();
-    p.text(Pos2::new(x0, y), Align2::LEFT_TOP, "Today", bold(15.0), TEXT());
+    p.text(
+        Pos2::new(x0, y),
+        Align2::LEFT_TOP,
+        "Today",
+        bold(15.0),
+        TEXT(),
+    );
     // each agent's own time, also after the main agent changed
-    let mut summary = if total == 0 { "Not kept awake yet".to_string() } else { format!("{} awake", span_text(total)) };
+    let mut summary = if total == 0 {
+        "Not kept awake yet".to_string()
+    } else {
+        format!("{} awake", span_text(total))
+    };
     for (a, secs) in super::engine::agent_time(&spans) {
         summary += &format!(" · {} for {}", span_text(secs), a.name());
     }
-    p.text(Pos2::new(x1, y + 2.0), Align2::RIGHT_TOP, summary, font(12.0), TEXT_DIM());
+    p.text(
+        Pos2::new(x1, y + 2.0),
+        Align2::RIGHT_TOP,
+        summary,
+        font(12.0),
+        TEXT_DIM(),
+    );
     y += 26.0;
     let strip = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 28.0));
     today_strip(&p, strip, &spans, now);
     y = strip.bottom() + 6.0;
-    for (i, l) in ["00:00", "06:00", "12:00", "18:00", "24:00"].iter().enumerate() {
+    for (i, l) in ["00:00", "06:00", "12:00", "18:00", "24:00"]
+        .iter()
+        .enumerate()
+    {
         let x = strip.left() + strip.width() * i as f32 / 4.0;
         let align = match i {
             0 => Align2::LEFT_TOP,
@@ -493,10 +823,27 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     if let Some(a) = e.agent.filter(|a| !agents.contains(a)) {
         agents.push(a);
     }
-    let names = agents.iter().map(|a| a.name()).collect::<Vec<_>>().join(", ");
-    for (label, c) in [("You", HAND), (names.as_str(), AGENT_TINT())].into_iter().take(if agents.is_empty() { 1 } else { 2 }) {
-        p.rect_filled(Rect::from_min_size(Pos2::new(lx, y + 1.0), Vec2::splat(10.0)), 3.0, c);
-        let tr = p.text(Pos2::new(lx + 16.0, y + 6.0), Align2::LEFT_CENTER, label, font(12.0), TEXT_DIM());
+    let names = agents
+        .iter()
+        .map(|a| a.name())
+        .collect::<Vec<_>>()
+        .join(", ");
+    for (label, c) in [("You", HAND), (names.as_str(), AGENT_TINT())]
+        .into_iter()
+        .take(if agents.is_empty() { 1 } else { 2 })
+    {
+        p.rect_filled(
+            Rect::from_min_size(Pos2::new(lx, y + 1.0), Vec2::splat(10.0)),
+            3.0,
+            c,
+        );
+        let tr = p.text(
+            Pos2::new(lx + 16.0, y + 6.0),
+            Align2::LEFT_CENTER,
+            label,
+            font(12.0),
+            TEXT_DIM(),
+        );
         lx = tr.right() + 16.0;
     }
     y += 30.0;
@@ -505,9 +852,16 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     // main agent isn't on this Mac
     let gap = sp::L + sp::XS;
     let has_agent = e.agent.is_some();
-    let lw = if has_agent { (x1 - x0 - gap) * 0.5 } else { x1 - x0 };
+    let lw = if has_agent {
+        (x1 - x0 - gap) * 0.5
+    } else {
+        x1 - x0
+    };
     let left = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x0 + lw, r.bottom() - 20.0));
-    let right = Rect::from_min_max(Pos2::new(left.right() + gap, y), Pos2::new(x1, r.bottom() - 20.0));
+    let right = Rect::from_min_max(
+        Pos2::new(left.right() + gap, y),
+        Pos2::new(x1, r.bottom() - 20.0),
+    );
     options(ui, &p, left, &mut e, &mut k.keys, now, id);
     let rows = option_rows(&e);
     let mut h = ROW * rows;
@@ -519,7 +873,11 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     let wy = y + 26.0 + h + 20.0;
     // only when the bars get a real height (the chart is this less ~100)
     if r.bottom() - 20.0 - wy > 180.0 {
-        week(&p, Rect::from_min_max(Pos2::new(x0, wy), Pos2::new(x1, r.bottom() - 20.0)), &e.week(now));
+        week(
+            &p,
+            Rect::from_min_max(Pos2::new(x0, wy), Pos2::new(x1, r.bottom() - 20.0)),
+            &e.week(now),
+        );
     }
 }
 
@@ -527,11 +885,20 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
 fn week(p: &Painter, r: Rect, days: &[(i64, i64, i64)]) {
     let total: i64 = days.iter().map(|d| d.1 + d.2).sum();
     p.text(r.min, Align2::LEFT_TOP, "Last 7 days", bold(15.0), TEXT());
-    p.text(Pos2::new(r.right(), r.top() + 2.0), Align2::RIGHT_TOP, format!("{} awake", span_text(total)), font(12.0), TEXT_DIM());
+    p.text(
+        Pos2::new(r.right(), r.top() + 2.0),
+        Align2::RIGHT_TOP,
+        format!("{} awake", span_text(total)),
+        font(12.0),
+        TEXT_DIM(),
+    );
     let card = Rect::from_min_max(r.min + Vec2::new(0.0, 26.0), r.max);
     section_card(p, card);
     let ci = card.shrink2(Vec2::new(16.0, 14.0));
-    let chart = Rect::from_min_max(ci.min + Vec2::new(0.0, 16.0 + sp::S), ci.max - Vec2::new(0.0, 18.0 + sp::XS));
+    let chart = Rect::from_min_max(
+        ci.min + Vec2::new(0.0, 16.0 + sp::S),
+        ci.max - Vec2::new(0.0, 18.0 + sp::XS),
+    );
     let max = days.iter().map(|d| d.1 + d.2).max().unwrap_or(0).max(3600) as f32;
     let n = days.len().max(1) as f32;
     let bw = ((chart.width() - (n - 1.0) * 12.0) / n).min(72.0);
@@ -541,12 +908,46 @@ fn week(p: &Painter, r: Rect, days: &[(i64, i64, i64)]) {
         let hh = chart.height() * (*h as f32 / max);
         let ch = chart.height() * (*c as f32 / max);
         if c + h > 0 {
-            p.rect_filled(Rect::from_min_max(Pos2::new(x, chart.bottom() - ch - hh), Pos2::new(x + bw, chart.bottom() - ch)), 4.0, HAND);
-            p.rect_filled(Rect::from_min_max(Pos2::new(x, chart.bottom() - ch), Pos2::new(x + bw, chart.bottom())), 4.0, AGENT_TINT());
-            text_fit(p, Pos2::new(x + bw / 2.0, chart.bottom() - ch - hh - sp::S), Align2::CENTER_BOTTOM, &span_text(c + h), font(11.0), TEXT_DIM(), bw + 10.0);
+            p.rect_filled(
+                Rect::from_min_max(
+                    Pos2::new(x, chart.bottom() - ch - hh),
+                    Pos2::new(x + bw, chart.bottom() - ch),
+                ),
+                4.0,
+                HAND,
+            );
+            p.rect_filled(
+                Rect::from_min_max(
+                    Pos2::new(x, chart.bottom() - ch),
+                    Pos2::new(x + bw, chart.bottom()),
+                ),
+                4.0,
+                AGENT_TINT(),
+            );
+            text_fit(
+                p,
+                Pos2::new(x + bw / 2.0, chart.bottom() - ch - hh - sp::S),
+                Align2::CENTER_BOTTOM,
+                &span_text(c + h),
+                font(11.0),
+                TEXT_DIM(),
+                bw + 10.0,
+            );
         }
-        let day = chrono::DateTime::from_timestamp(*d0, 0).map(|d| d.with_timezone(&chrono::Local).format("%a").to_string()).unwrap_or_default();
-        p.text(Pos2::new(x + bw / 2.0, chart.bottom() + sp::S), Align2::CENTER_TOP, if i + 1 == days.len() { "Today".to_string() } else { day }, font(11.0), TEXT_FAINT());
+        let day = chrono::DateTime::from_timestamp(*d0, 0)
+            .map(|d| d.with_timezone(&chrono::Local).format("%a").to_string())
+            .unwrap_or_default();
+        p.text(
+            Pos2::new(x + bw / 2.0, chart.bottom() + sp::S),
+            Align2::CENTER_TOP,
+            if i + 1 == days.len() {
+                "Today".to_string()
+            } else {
+                day
+            },
+            font(11.0),
+            TEXT_FAINT(),
+        );
     }
 }
 
@@ -557,10 +958,17 @@ fn today_strip(p: &Painter, r: Rect, spans: &[Span], now: i64) {
     for s in spans {
         let (a, b) = (x_of(s.start), x_of(s.end).max(x_of(s.start) + 3.0));
         let c = if s.agent { AGENT_TINT() } else { HAND };
-        p.rect_filled(Rect::from_min_max(Pos2::new(a, r.top() + 4.0), Pos2::new(b, r.bottom() - 4.0)), 4.0, c);
+        p.rect_filled(
+            Rect::from_min_max(Pos2::new(a, r.top() + 4.0), Pos2::new(b, r.bottom() - 4.0)),
+            4.0,
+            c,
+        );
     }
     let nx = x_of(now);
-    p.line_segment([Pos2::new(nx, r.top()), Pos2::new(nx, r.bottom())], Stroke::new(2.0, TEXT()));
+    p.line_segment(
+        [Pos2::new(nx, r.top()), Pos2::new(nx, r.bottom())],
+        Stroke::new(2.0, TEXT()),
+    );
 }
 
 fn section_card(p: &Painter, r: Rect) {
@@ -569,33 +977,82 @@ fn section_card(p: &Painter, r: Rect) {
 
 /// A row with a label and a switch. Returns true when clicked.
 fn switch_row(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, label: &str, on: bool) -> bool {
-    text_fit(p, Pos2::new(r.left() + 12.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), r.width() - 70.0);
-    switch(ui, Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0)), id, on, true).clicked()
+    text_fit(
+        p,
+        Pos2::new(r.left() + 12.0, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        font(13.0),
+        TEXT(),
+        r.width() - 70.0,
+    );
+    switch(
+        ui,
+        Rect::from_min_size(
+            Pos2::new(r.right() - 42.0, r.center().y - 9.0),
+            Vec2::new(30.0, 18.0),
+        ),
+        id,
+        on,
+        true,
+    )
+    .clicked()
 }
 
 const ROW: f32 = sp::ROW_H;
 
 /// Rows in the options card: the agent's three only when there's an agent.
 fn option_rows(e: &Engine) -> f32 {
-    if e.agent.is_some() { 5.0 } else { 2.0 }
+    if e.agent.is_some() {
+        5.0
+    } else {
+        2.0
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec, now: i64, id: egui::Id) {
+fn options(
+    ui: &mut Ui,
+    p: &Painter,
+    r: Rect,
+    e: &mut Engine,
+    keys: &mut KeyRec,
+    now: i64,
+    id: egui::Id,
+) {
     p.text(r.min, Align2::LEFT_TOP, "Options", bold(15.0), TEXT());
-    let card = Rect::from_min_size(r.min + Vec2::new(0.0, 26.0), Vec2::new(r.width(), ROW * option_rows(e)));
+    let card = Rect::from_min_size(
+        r.min + Vec2::new(0.0, 26.0),
+        Vec2::new(r.width(), ROW * option_rows(e)),
+    );
     section_card(p, card);
-    let row = |i: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + ROW * i as f32), Vec2::new(card.width(), ROW));
+    let row = |i: usize| {
+        Rect::from_min_size(
+            Pos2::new(card.left(), card.top() + ROW * i as f32),
+            Vec2::new(card.width(), ROW),
+        )
+    };
     let line = |i: usize| {
         let y = card.top() + ROW * i as f32;
-        hairline(p, Pos2::new(card.left() + sp::M, y), Pos2::new(card.right(), y));
+        hairline(
+            p,
+            Pos2::new(card.left() + sp::M, y),
+            Pos2::new(card.right(), y),
+        );
     };
     // the agent's rows only when there's an agent to watch
     let agent = e.agent_name();
     let mut i = 0;
     if !agent.is_empty() {
         let on = e.settings.agent;
-        if switch_row(ui, p, row(i), id.with("claude"), &format!("Stay awake while {agent} works"), on) {
+        if switch_row(
+            ui,
+            p,
+            row(i),
+            id.with("claude"),
+            &format!("Stay awake while {agent} works"),
+            on,
+        ) {
             e.change(now, |s| s.agent = !on);
         }
         i += 1;
@@ -603,7 +1060,14 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         // its screen switch right under it, so the two screen rows don't read
         // as one setting twice
         let c = e.settings.agent_screen;
-        if switch_row(ui, p, row(i), id.with("cscreen"), &format!("Keep the screen on for {agent}"), c) {
+        if switch_row(
+            ui,
+            p,
+            row(i),
+            id.with("cscreen"),
+            &format!("Keep the screen on for {agent}"),
+            c,
+        ) {
             e.change(now, |s| s.agent_screen = !c);
         }
         i += 1;
@@ -611,9 +1075,23 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         let r1 = row(i);
         let labels: Vec<String> = GRACE_CHOICES.iter().map(|m| format!("{m} min")).collect();
         let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-        let sel = GRACE_CHOICES.iter().position(|m| *m == e.settings.grace_min).unwrap_or(1);
-        let seg = Rect::from_min_size(Pos2::new(r1.right() - sp::M - 168.0, r1.center().y - 12.0), Vec2::new(168.0, 24.0));
-        text_fit(p, Pos2::new(r1.left() + sp::M, r1.center().y), Align2::LEFT_CENTER, &format!("Sleep after {agent} stops"), font(13.0), TEXT(), seg.left() - r1.left() - sp::M - sp::COL_GAP);
+        let sel = GRACE_CHOICES
+            .iter()
+            .position(|m| *m == e.settings.grace_min)
+            .unwrap_or(1);
+        let seg = Rect::from_min_size(
+            Pos2::new(r1.right() - sp::M - 168.0, r1.center().y - 12.0),
+            Vec2::new(168.0, 24.0),
+        );
+        text_fit(
+            p,
+            Pos2::new(r1.left() + sp::M, r1.center().y),
+            Align2::LEFT_CENTER,
+            &format!("Sleep after {agent} stops"),
+            font(13.0),
+            TEXT(),
+            seg.left() - r1.left() - sp::M - sp::COL_GAP,
+        );
         if let Some(k) = segmented(ui, seg, id.with("grace"), &refs, sel) {
             e.change(now, |s| s.grace_min = GRACE_CHOICES[k]);
         }
@@ -621,7 +1099,14 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
         line(i);
     }
     let m = e.settings.manual_screen;
-    if switch_row(ui, p, row(i), id.with("mscreen"), "Keep the screen on with Keep awake", m) {
+    if switch_row(
+        ui,
+        p,
+        row(i),
+        id.with("mscreen"),
+        "Keep the screen on with Keep awake",
+        m,
+    ) {
         e.change(now, |s| s.manual_screen = !m);
     }
     i += 1;
@@ -631,7 +1116,15 @@ fn options(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec,
 
 /// The switch's shortcut: click, then press the keys. Esc keeps the old
 /// one, ⌫ removes it.
-fn shortcut_row(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut KeyRec, now: i64, id: egui::Id) {
+fn shortcut_row(
+    ui: &mut Ui,
+    p: &Painter,
+    r: Rect,
+    e: &mut Engine,
+    keys: &mut KeyRec,
+    now: i64,
+    id: egui::Id,
+) {
     if keys.recording {
         keys.seen = Some(std::time::Instant::now());
         match listen(ui.ctx()) {
@@ -648,35 +1141,87 @@ fn shortcut_row(ui: &mut Ui, p: &Painter, r: Rect, e: &mut Engine, keys: &mut Ke
         }
         ui.ctx().request_repaint();
     }
-    p.text(Pos2::new(r.left() + 12.0, r.center().y), Align2::LEFT_CENTER, "Shortcut", font(13.0), TEXT());
+    p.text(
+        Pos2::new(r.left() + 12.0, r.center().y),
+        Align2::LEFT_CENTER,
+        "Shortcut",
+        font(13.0),
+        TEXT(),
+    );
     let rec = keys.recording;
     let cur = e.settings.shortcut.clone();
-    let text = if rec { "Type a shortcut…".to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| "Record".into()) };
+    let text = if rec {
+        "Type a shortcut…".to_string()
+    } else {
+        cur.as_ref()
+            .map(|s| s.display())
+            .unwrap_or_else(|| "Record".into())
+    };
     let g = p.layout_no_wrap(text.clone(), font(12.0), TEXT());
     let bw = (g.size().x + 20.0).max(76.0);
-    let br = Rect::from_min_max(Pos2::new(r.right() - 12.0 - bw, r.center().y - 12.0), Pos2::new(r.right() - 12.0, r.center().y + 12.0));
+    let br = Rect::from_min_max(
+        Pos2::new(r.right() - 12.0 - bw, r.center().y - 12.0),
+        Pos2::new(r.right() - 12.0, r.center().y + 12.0),
+    );
     let resp = ui.interact(br, id, Sense::click());
     if rec {
         p.rect_filled(br, 6.0, with_alpha(BLUE(), 0.22));
-        p.rect_stroke(br, 6.0, Stroke::new(1.0, ACCENT()), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            br,
+            6.0,
+            Stroke::new(1.0, ACCENT()),
+            egui::StrokeKind::Inside,
+        );
     } else if cur.is_some() {
         p.rect_filled(br, 6.0, white(if resp.hovered() { 30 } else { 20 }));
-        p.rect_stroke(br, 6.0, Stroke::new(1.0, white(26)), egui::StrokeKind::Inside);
+        p.rect_stroke(
+            br,
+            6.0,
+            Stroke::new(1.0, white(26)),
+            egui::StrokeKind::Inside,
+        );
     } else {
         dashed_rect(p, br, 6.0, white(60));
     }
-    p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it.").clicked() {
+    p.text(
+        br.center(),
+        Align2::CENTER_CENTER,
+        text,
+        font(12.0),
+        if cur.is_some() || rec {
+            TEXT()
+        } else {
+            TEXT_FAINT()
+        },
+    );
+    if resp
+        .on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it.")
+        .clicked()
+    {
         keys.recording = !rec;
         keys.seen = Some(std::time::Instant::now());
     }
     if let Some(err) = &keys.error {
-        text_fit(p, Pos2::new(br.left() - 10.0, r.center().y), Align2::RIGHT_CENTER, err, font(11.0), AMBER(), br.left() - r.left() - 90.0);
+        text_fit(
+            p,
+            Pos2::new(br.left() - 10.0, r.center().y),
+            Align2::RIGHT_CENTER,
+            err,
+            font(11.0),
+            AMBER(),
+            br.left() - r.left() - 90.0,
+        );
     }
 }
 
 fn sessions(p: &Painter, r: Rect, e: &Engine, now: i64, option_rows: f32) {
-    p.text(r.min, Align2::LEFT_TOP, format!("{} sessions", e.agent_name()), bold(15.0), TEXT());
+    p.text(
+        r.min,
+        Align2::LEFT_TOP,
+        format!("{} sessions", e.agent_name()),
+        bold(15.0),
+        TEXT(),
+    );
     let shown: Vec<_> = e.sessions.iter().take(6).cloned().collect();
     let rows = shown.len().max(1) as f32;
     let h = (rows * 32.0 + 12.0).max(ROW * option_rows);
@@ -684,15 +1229,51 @@ fn sessions(p: &Painter, r: Rect, e: &Engine, now: i64, option_rows: f32) {
     section_card(p, card);
     let mut y = card.top() + 6.0;
     if shown.is_empty() {
-        p.text(card.center(), Align2::CENTER_CENTER, if e.settings.agent { "None today" } else { "Monitoring off" }, font(12.0), TEXT_FAINT());
+        p.text(
+            card.center(),
+            Align2::CENTER_CENTER,
+            if e.settings.agent {
+                "None today"
+            } else {
+                "Monitoring off"
+            },
+            font(12.0),
+            TEXT_FAINT(),
+        );
     }
     for s in &shown {
         let cy = y + 16.0;
         let working = s.working(now);
-        p.circle_filled(Pos2::new(card.left() + 16.0, cy), 3.0, if working { GREEN() } else { Color32::from_rgb(0x63, 0x63, 0x66) });
-        text_fit(p, Pos2::new(card.left() + 28.0, cy), Align2::LEFT_CENTER, &s.project, mono(11.5), TEXT_SOFT(), card.width() - 140.0);
-        let when = if working { "working".to_string() } else { ago(now - s.last_write) };
-        p.text(Pos2::new(card.right() - 12.0, cy), Align2::RIGHT_CENTER, when, font(12.0), TEXT_FAINT());
+        p.circle_filled(
+            Pos2::new(card.left() + 16.0, cy),
+            3.0,
+            if working {
+                GREEN()
+            } else {
+                Color32::from_rgb(0x63, 0x63, 0x66)
+            },
+        );
+        text_fit(
+            p,
+            Pos2::new(card.left() + 28.0, cy),
+            Align2::LEFT_CENTER,
+            &s.project,
+            mono(11.5),
+            TEXT_SOFT(),
+            card.width() - 140.0,
+        );
+        let when = if working {
+            "working".to_string()
+        } else {
+            ago(now - s.last_write)
+        };
+        p.text(
+            Pos2::new(card.right() - 12.0, cy),
+            Align2::RIGHT_CENTER,
+            when,
+            font(12.0),
+            TEXT_FAINT(),
+        );
         y += 32.0;
     }
 }

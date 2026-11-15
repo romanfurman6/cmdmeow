@@ -4,15 +4,15 @@
 //! whatever it can't tell stays empty, so one UI shows any of them.
 
 pub mod account;
+pub mod alerts;
 pub mod claude;
 pub mod codex;
 pub mod gemini;
-pub mod opencode;
 pub mod history;
+pub mod opencode;
 pub mod pace;
 pub mod price;
 pub mod settings;
-pub mod alerts;
 pub mod status;
 pub mod statusline;
 
@@ -95,7 +95,10 @@ pub struct UsageInfo {
 
 impl UsageInfo {
     pub fn new(provider: &'static str) -> Self {
-        UsageInfo { provider, ..Default::default() }
+        UsageInfo {
+            provider,
+            ..Default::default()
+        }
     }
     /// The assistant is missing or signed out (known only after the first check).
     pub fn unavailable(&self) -> Option<Availability> {
@@ -110,18 +113,29 @@ impl UsageInfo {
         }
     }
     pub fn session(&self) -> Option<&Limit> {
-        self.limits.iter().find(|l| l.label.to_lowercase().contains("session"))
+        self.limits
+            .iter()
+            .find(|l| l.label.to_lowercase().contains("session"))
     }
     pub fn weekly(&self) -> Option<&Limit> {
         self.limits
             .iter()
             .find(|l| l.label.to_lowercase().contains("all models"))
-            .or_else(|| self.limits.iter().find(|l| l.label.to_lowercase().contains("week")))
+            .or_else(|| {
+                self.limits
+                    .iter()
+                    .find(|l| l.label.to_lowercase().contains("week"))
+            })
     }
     /// "Claude Max", or just the provider name when the plan is unknown.
     /// Monthly price of the plan in dollars, when known.
     pub fn plan_usd(&self) -> Option<f64> {
-        settings::get().plan_usd.get(self.provider).copied().or_else(|| price::plan_usd(self.provider, &self.tier)).or_else(|| price::plan_usd(self.provider, &self.plan))
+        settings::get()
+            .plan_usd
+            .get(self.provider)
+            .copied()
+            .or_else(|| price::plan_usd(self.provider, &self.tier))
+            .or_else(|| price::plan_usd(self.provider, &self.plan))
     }
     /// Pays per token (API key), so dollars matter more than limits.
     pub fn is_api(&self) -> bool {
@@ -184,8 +198,16 @@ pub const PROVIDERS: &[Meta] = &[
         name: claude::NAME,
         cli: "claude",
         install_url: "https://claude.com/claude-code",
-        install_steps: &["Install Claude Code from claude.com/claude-code", "Open Terminal and run claude once to sign in", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run claude", "Sign in with your Claude account", "Come back and press Check again"],
+        install_steps: &[
+            "Install Claude Code from claude.com/claude-code",
+            "Open Terminal and run claude once to sign in",
+            "Come back and press Check again",
+        ],
+        sign_in_steps: &[
+            "Open Terminal and run claude",
+            "Sign in with your Claude account",
+            "Come back and press Check again",
+        ],
         limits: true,
         status_url: "https://status.anthropic.com/api/v2/status.json",
     },
@@ -194,8 +216,16 @@ pub const PROVIDERS: &[Meta] = &[
         name: codex::NAME,
         cli: "codex",
         install_url: "https://developers.openai.com/codex/cli",
-        install_steps: &["Install Codex: npm i -g @openai/codex or brew install codex", "Open Terminal and run codex once to sign in", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run codex", "Sign in with your ChatGPT account", "Come back and press Check again"],
+        install_steps: &[
+            "Install Codex: npm i -g @openai/codex or brew install codex",
+            "Open Terminal and run codex once to sign in",
+            "Come back and press Check again",
+        ],
+        sign_in_steps: &[
+            "Open Terminal and run codex",
+            "Sign in with your ChatGPT account",
+            "Come back and press Check again",
+        ],
         limits: true,
         status_url: "https://status.openai.com/api/v2/status.json",
     },
@@ -204,8 +234,16 @@ pub const PROVIDERS: &[Meta] = &[
         name: gemini::NAME,
         cli: "gemini",
         install_url: "https://github.com/google-gemini/gemini-cli",
-        install_steps: &["Install Gemini CLI: npm i -g @google/gemini-cli or brew install gemini-cli", "Run gemini once in Terminal", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run gemini", "Sign in with your Google account", "Come back and press Check again"],
+        install_steps: &[
+            "Install Gemini CLI: npm i -g @google/gemini-cli or brew install gemini-cli",
+            "Run gemini once in Terminal",
+            "Come back and press Check again",
+        ],
+        sign_in_steps: &[
+            "Open Terminal and run gemini",
+            "Sign in with your Google account",
+            "Come back and press Check again",
+        ],
         limits: false,
         status_url: "",
     },
@@ -214,8 +252,16 @@ pub const PROVIDERS: &[Meta] = &[
         name: opencode::NAME,
         cli: "opencode",
         install_url: "https://opencode.ai",
-        install_steps: &["Install OpenCode from opencode.ai", "Run opencode once in Terminal", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run opencode", "Connect a provider", "Come back and press Check again"],
+        install_steps: &[
+            "Install OpenCode from opencode.ai",
+            "Run opencode once in Terminal",
+            "Come back and press Check again",
+        ],
+        sign_in_steps: &[
+            "Open Terminal and run opencode",
+            "Connect a provider",
+            "Come back and press Check again",
+        ],
         limits: false,
         status_url: "",
     },
@@ -256,7 +302,10 @@ pub fn selected_meta() -> &'static Meta {
 
 /// The meta for a provider by display name (Claude when unknown).
 pub fn meta(name: &str) -> &'static Meta {
-    PROVIDERS.iter().find(|m| m.name == name).unwrap_or(&PROVIDERS[0])
+    PROVIDERS
+        .iter()
+        .find(|m| m.name == name)
+        .unwrap_or(&PROVIDERS[0])
 }
 
 /// Make `i` the main provider and save it (unless `save` is false, for
@@ -266,7 +315,9 @@ pub fn select(i: usize, save: bool) {
     if SELECTED.swap(i, Ordering::Relaxed) == i || !save {
         return;
     }
-    settings::update(true, |s| s.provider = PROVIDERS.get(i).map(|m| m.id).unwrap_or("all").into());
+    settings::update(true, |s| {
+        s.provider = PROVIDERS.get(i).map(|m| m.id).unwrap_or("all").into()
+    });
 }
 
 /// A fresh provider for index `i`.
@@ -306,7 +357,14 @@ impl UsageEntry {
     /// What this reply costs at API prices, if the model is known.
     pub fn usd(&self) -> Option<f64> {
         let p = price::of(&name(self.model))?;
-        Some(price::cost(&p, self.input, self.output, self.cache_write, self.cache_write_1h, self.cache_read))
+        Some(price::cost(
+            &p,
+            self.input,
+            self.output,
+            self.cache_write,
+            self.cache_write_1h,
+            self.cache_read,
+        ))
     }
 }
 
@@ -330,7 +388,12 @@ pub fn name(id: u32) -> String {
     if id == 0 {
         return String::new();
     }
-    NAMES.lock().unwrap_or_else(|e| e.into_inner()).get(id as usize - 1).cloned().unwrap_or_default()
+    NAMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(id as usize - 1)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// What a parser remembers while reading one log: message ids seen (so a
@@ -371,7 +434,9 @@ impl LogCache {
     pub fn update(&mut self, files: Vec<PathBuf>, parse: Parser) -> LocalTokens {
         let mut seen = HashSet::new();
         for p in files {
-            let Ok(md) = std::fs::metadata(&p) else { continue };
+            let Ok(md) = std::fs::metadata(&p) else {
+                continue;
+            };
             let Ok(mt) = md.modified() else { continue };
             seen.insert(p.clone());
             let log = self.0.entry(p.clone()).or_default();
@@ -387,7 +452,20 @@ impl LogCache {
     /// copy of the old one, so the same reply in two files counts once.
     pub fn entries(&self) -> Vec<UsageEntry> {
         let mut once = HashSet::new();
-        self.0.values().flat_map(|l| l.entries.iter().copied()).filter(|e| once.insert((e.ts, e.input, e.output, e.cache_write, e.cache_write_1h, e.cache_read))).collect()
+        self.0
+            .values()
+            .flat_map(|l| l.entries.iter().copied())
+            .filter(|e| {
+                once.insert((
+                    e.ts,
+                    e.input,
+                    e.output,
+                    e.cache_write,
+                    e.cache_write_1h,
+                    e.cache_read,
+                ))
+            })
+            .collect()
     }
 }
 
@@ -399,10 +477,16 @@ pub struct FileCache(HashMap<PathBuf, (Option<SystemTime>, u64, Vec<UsageEntry>)
 impl FileCache {
     /// Bring the cache up to date with `files`, parsing changed ones with
     /// `parse`, and return every entry.
-    pub fn update(&mut self, files: Vec<PathBuf>, parse: fn(&Path, &[u8]) -> Vec<UsageEntry>) -> Vec<UsageEntry> {
+    pub fn update(
+        &mut self,
+        files: Vec<PathBuf>,
+        parse: fn(&Path, &[u8]) -> Vec<UsageEntry>,
+    ) -> Vec<UsageEntry> {
         let mut seen = HashSet::new();
         for p in files {
-            let Ok(md) = std::fs::metadata(&p) else { continue };
+            let Ok(md) = std::fs::metadata(&p) else {
+                continue;
+            };
             let mt = md.modified().ok();
             seen.insert(p.clone());
             let e = self.0.entry(p.clone()).or_default();
@@ -439,7 +523,13 @@ pub fn recent_files(dir: &Path, depth: usize, ext: &str) -> Vec<PathBuf> {
             if p.extension().map(|x| x != ext).unwrap_or(true) {
                 continue;
             }
-            let mts = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+            let mts = e
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
             if mts >= since {
                 out.push(p);
             }
@@ -457,7 +547,9 @@ pub fn read_on(p: &Path, len: u64, log: &mut LogTail, parse: Parser) {
     if len < log.read {
         *log = LogTail::default();
     }
-    let Ok(mut f) = std::fs::File::open(p) else { return };
+    let Ok(mut f) = std::fs::File::open(p) else {
+        return;
+    };
     if f.seek(SeekFrom::Start(log.read)).is_err() {
         return;
     }
@@ -529,8 +621,14 @@ pub const DAYS: usize = 31;
 impl LocalTokens {
     /// This calendar month's days, from the 1st to today.
     pub fn month(&self) -> &[Day] {
-        let Some(last) = self.days.last() else { return &[] };
-        let start = self.days.iter().position(|d| d.date.month() == last.date.month() && d.date.year() == last.date.year()).unwrap_or(0);
+        let Some(last) = self.days.last() else {
+            return &[];
+        };
+        let start = self
+            .days
+            .iter()
+            .position(|d| d.date.month() == last.date.month() && d.date.year() == last.date.year())
+            .unwrap_or(0);
         &self.days[start..]
     }
 }
@@ -543,13 +641,26 @@ pub fn sum(entries: impl IntoIterator<Item = UsageEntry>) -> LocalTokens {
 
 pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local>) -> LocalTokens {
     let today = now.date_naive();
-    let midnight = |d: NaiveDate| d.and_hms_opt(0, 0, 0).and_then(|t| t.and_local_timezone(Local).earliest()).map(|t| t.timestamp()).unwrap_or(0);
+    let midnight = |d: NaiveDate| {
+        d.and_hms_opt(0, 0, 0)
+            .and_then(|t| t.and_local_timezone(Local).earliest())
+            .map(|t| t.timestamp())
+            .unwrap_or(0)
+    };
     let today_start = midnight(today);
     let first = today - chrono::Days::new(DAYS as u64 - 1);
     let first_start = midnight(first);
     let now_ts = now.timestamp();
-    let mut l = LocalTokens { daily: vec![0; 7], ..Default::default() };
-    l.days = (0..DAYS).map(|i| Day { date: first + chrono::Days::new(i as u64), ..Default::default() }).collect();
+    let mut l = LocalTokens {
+        daily: vec![0; 7],
+        ..Default::default()
+    };
+    l.days = (0..DAYS)
+        .map(|i| Day {
+            date: first + chrono::Days::new(i as u64),
+            ..Default::default()
+        })
+        .collect();
     let mut models: HashMap<u32, Share> = HashMap::new();
     let mut projects: HashMap<u32, Share> = HashMap::new();
     for e in entries {
@@ -559,7 +670,11 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
         let tokens = e.tokens();
         let usd = e.usd();
         // the local day it fell on
-        let date = Local.timestamp_opt(e.ts, 0).single().map(|t| t.date_naive()).unwrap_or(today);
+        let date = Local
+            .timestamp_opt(e.ts, 0)
+            .single()
+            .map(|t| t.date_naive())
+            .unwrap_or(today);
         let idx = (date - first).num_days().clamp(0, DAYS as i64 - 1) as usize;
         let d = &mut l.days[idx];
         d.tokens += tokens;
@@ -591,15 +706,39 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
             l.usd_today += usd.unwrap_or(0.0);
         }
     }
-    l.usd_month = l.days.iter().filter(|d| d.date.month() == today.month() && d.date.year() == today.year()).map(|d| d.usd).sum();
+    l.usd_month = l
+        .days
+        .iter()
+        .filter(|d| d.date.month() == today.month() && d.date.year() == today.year())
+        .map(|d| d.usd)
+        .sum();
     l.daily = l.days[DAYS - 7..].iter().map(|d| d.tokens).collect();
     let rank = |m: HashMap<u32, Share>, named: fn(&str) -> String| {
-        let mut v: Vec<Share> = m.into_iter().filter(|(_, s)| s.tokens > 0).map(|(k, s)| Share { name: named(&name(k)), ..s }).collect();
+        let mut v: Vec<Share> = m
+            .into_iter()
+            .filter(|(_, s)| s.tokens > 0)
+            .map(|(k, s)| Share {
+                name: named(&name(k)),
+                ..s
+            })
+            .collect();
         v.sort_by(|a, b| b.usd.total_cmp(&a.usd).then(b.tokens.cmp(&a.tokens)));
         v
     };
-    l.models = merge_same(rank(models, |m| if m.is_empty() { "Other".into() } else { price::display_name(m) }));
-    l.projects = rank(projects, |p| if p.is_empty() { "Unknown folder".into() } else { p.to_string() });
+    l.models = merge_same(rank(models, |m| {
+        if m.is_empty() {
+            "Other".into()
+        } else {
+            price::display_name(m)
+        }
+    }));
+    l.projects = rank(projects, |p| {
+        if p.is_empty() {
+            "Unknown folder".into()
+        } else {
+            p.to_string()
+        }
+    });
     l
 }
 
@@ -624,14 +763,38 @@ pub fn demo_local(models: &[(&str, u32)], projects: &[&str], per_day: f64) -> Lo
         let weekend = matches!(date.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
         let mult = if weekend { 0.35 } else { 1.0 } * (0.55 + rnd() * 0.9);
         let replies = 40;
-        let hours = if day == 0 { (now.timestamp() % 86_400) / 3600 + 1 } else { 12 };
+        let hours = if day == 0 {
+            (now.timestamp() % 86_400) / 3600 + 1
+        } else {
+            12
+        };
         for k in 0..replies {
             let ts = date.timestamp() - (k as i64 * hours * 3600 / replies as i64);
             let mut pick = (rnd() * total_w as f64) as u32;
-            let model = mids.iter().find(|(_, w)| { let hit = pick < *w; pick = pick.saturating_sub(*w); hit }).map(|m| m.0).unwrap_or(0);
-            let project = pids.get(((rnd() * rnd()) * pids.len() as f64) as usize).copied().unwrap_or(0);
+            let model = mids
+                .iter()
+                .find(|(_, w)| {
+                    let hit = pick < *w;
+                    pick = pick.saturating_sub(*w);
+                    hit
+                })
+                .map(|m| m.0)
+                .unwrap_or(0);
+            let project = pids
+                .get(((rnd() * rnd()) * pids.len() as f64) as usize)
+                .copied()
+                .unwrap_or(0);
             let t = per_day * 1e6 * mult / replies as f64;
-            out.push(UsageEntry { ts, input: (t * 0.05) as u64, output: (t * 0.08) as u64, cache_write: (t * 0.87) as u64, cache_write_1h: 0, cache_read: (t * 9.0) as u64, model, project });
+            out.push(UsageEntry {
+                ts,
+                input: (t * 0.05) as u64,
+                output: (t * 0.08) as u64,
+                cache_write: (t * 0.87) as u64,
+                cache_write_1h: 0,
+                cache_read: (t * 9.0) as u64,
+                model,
+                project,
+            });
         }
     }
     sum_at(out, now)
@@ -708,7 +871,10 @@ mod tests {
 
     #[test]
     fn unknown_until_the_first_check() {
-        let mut i = UsageInfo { loading: true, ..UsageInfo::new(codex::NAME) };
+        let mut i = UsageInfo {
+            loading: true,
+            ..UsageInfo::new(codex::NAME)
+        };
         assert_eq!(i.unavailable(), None);
         i.scanned = true;
         assert_eq!(i.unavailable(), Some(Availability::NotInstalled));
@@ -753,14 +919,22 @@ mod tests {
 
     #[test]
     fn balanced_object() {
-        assert_eq!(balanced(b"{\"a\":{\"b\":1}},\"x\":2}"), b"{\"a\":{\"b\":1}}");
+        assert_eq!(
+            balanced(b"{\"a\":{\"b\":1}},\"x\":2}"),
+            b"{\"a\":{\"b\":1}}"
+        );
         assert_eq!(balanced(b"{open"), b"{open");
     }
 
     #[test]
     fn sums_by_window() {
         let now = Utc::now().timestamp();
-        let e = |ts: i64, input: u64, output: u64| UsageEntry { ts, input, output, ..Default::default() };
+        let e = |ts: i64, input: u64, output: u64| UsageEntry {
+            ts,
+            input,
+            output,
+            ..Default::default()
+        };
         let l = sum([e(now - 60, 9, 1), e(now - 8 * 86_400, 90, 9)]);
         assert_eq!(l.tokens_5h, 10);
         assert_eq!(l.tokens_7d, 10);

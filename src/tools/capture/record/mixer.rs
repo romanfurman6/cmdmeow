@@ -46,7 +46,10 @@ pub struct Mixer {
 
 impl Mixer {
     pub fn new(system: bool, mic: bool) -> Mixer {
-        let mut m = Mixer { mic_gain: 1.0, ..Default::default() };
+        let mut m = Mixer {
+            mic_gain: 1.0,
+            ..Default::default()
+        };
         m.sys.on = system;
         m.mic.on = mic;
         m
@@ -81,7 +84,8 @@ impl Mixer {
         if t.buf.is_empty() && at > t.start {
             t.start = at;
         } else if at > end {
-            t.buf.extend(std::iter::repeat_n(0.0, ((at - end) * 2) as usize));
+            t.buf
+                .extend(std::iter::repeat_n(0.0, ((at - end) * 2) as usize));
         } else if at < end {
             skip = ((end - at) * 2) as usize;
         }
@@ -108,17 +112,34 @@ impl Mixer {
     /// Like [`Mixer::pull`], plus each source on its own (system, mic),
     /// over the same stretch; a source that's off is all silence.
     pub fn pull_split(&mut self, flush: bool) -> Option<(i64, Vec<f32>, [Vec<f32>; 2])> {
-        let live: Vec<&Track> = [&self.sys, &self.mic].into_iter().filter(|t| t.on).collect();
+        let live: Vec<&Track> = [&self.sys, &self.mic]
+            .into_iter()
+            .filter(|t| t.on)
+            .collect();
         if live.is_empty() {
             return None;
         }
-        let ends: Vec<i64> = live.iter().filter(|t| !t.buf.is_empty()).map(|t| t.end()).collect();
+        let ends: Vec<i64> = live
+            .iter()
+            .filter(|t| !t.buf.is_empty())
+            .map(|t| t.end())
+            .collect();
         let furthest = ends.iter().copied().max()?;
         let until = if flush {
             furthest
         } else {
             // every live source has to get there, unless it lags too far
-            let slowest = live.iter().map(|t| if t.buf.is_empty() { t.start.min(self.pos) } else { t.end() }).min().unwrap_or(furthest);
+            let slowest = live
+                .iter()
+                .map(|t| {
+                    if t.buf.is_empty() {
+                        t.start.min(self.pos)
+                    } else {
+                        t.end()
+                    }
+                })
+                .min()
+                .unwrap_or(furthest);
             slowest.max(furthest - MAX_LAG)
         };
         if until <= self.pos {
@@ -126,7 +147,10 @@ impl Mixer {
         }
         let n = (until - self.pos) as usize;
         let mut parts = [vec![0.0f32; n * 2], vec![0.0f32; n * 2]];
-        for (t, out) in [&mut self.sys, &mut self.mic].into_iter().zip(parts.iter_mut()) {
+        for (t, out) in [&mut self.sys, &mut self.mic]
+            .into_iter()
+            .zip(parts.iter_mut())
+        {
             if !t.on {
                 continue;
             }
@@ -139,7 +163,9 @@ impl Mixer {
             let offset = (t.start - self.pos).max(0) as usize;
             let mut i = offset * 2;
             while i < out.len() {
-                let (Some(l), Some(r)) = (t.buf.pop_front(), t.buf.pop_front()) else { break };
+                let (Some(l), Some(r)) = (t.buf.pop_front(), t.buf.pop_front()) else {
+                    break;
+                };
                 out[i] = l;
                 out[i + 1] = r;
                 i += 2;
@@ -149,7 +175,11 @@ impl Mixer {
                 t.start = until;
             }
         }
-        let mix: Vec<f32> = parts[0].iter().zip(&parts[1]).map(|(a, b)| (a + b).clamp(-1.0, 1.0)).collect();
+        let mix: Vec<f32> = parts[0]
+            .iter()
+            .zip(&parts[1])
+            .map(|(a, b)| (a + b).clamp(-1.0, 1.0))
+            .collect();
         for part in &mut parts {
             for v in part.iter_mut() {
                 *v = v.clamp(-1.0, 1.0);
@@ -182,9 +212,16 @@ impl Pcm<'_> {
     fn sample(&self, frame: usize, ch: usize) -> f32 {
         let ch = ch.min(self.channels.saturating_sub(1));
         if self.interleaved {
-            self.planes[0].get(frame * self.channels + ch).copied().unwrap_or(0.0)
+            self.planes[0]
+                .get(frame * self.channels + ch)
+                .copied()
+                .unwrap_or(0.0)
         } else {
-            self.planes.get(ch).and_then(|p| p.get(frame)).copied().unwrap_or(0.0)
+            self.planes
+                .get(ch)
+                .and_then(|p| p.get(frame))
+                .copied()
+                .unwrap_or(0.0)
         }
     }
 }
@@ -197,7 +234,11 @@ pub fn to_stereo(pcm: &Pcm) -> Vec<f32> {
         return Vec::new();
     }
     let ratio = pcm.rate / RATE as f64;
-    let out_n = if (ratio - 1.0).abs() < 1e-9 { n } else { ((n as f64) / ratio).floor().max(1.0) as usize };
+    let out_n = if (ratio - 1.0).abs() < 1e-9 {
+        n
+    } else {
+        ((n as f64) / ratio).floor().max(1.0) as usize
+    };
     let mut out = Vec::with_capacity(out_n * 2);
     for i in 0..out_n {
         let x = i as f64 * ratio;
@@ -264,7 +305,10 @@ mod tests {
         m.push(Src::System, 100, &tone(0.1, MAX_LAG as usize));
         let (at, out) = m.pull(false).unwrap();
         assert_eq!((at, out.len() / 2), (0, 100));
-        assert!(out.iter().all(|&v| (v - 0.1).abs() < 1e-6), "missing mic = silence");
+        assert!(
+            out.iter().all(|&v| (v - 0.1).abs() < 1e-6),
+            "missing mic = silence"
+        );
     }
 
     #[test]
@@ -311,13 +355,23 @@ mod tests {
     #[test]
     fn mono_and_other_rates_become_stereo_48k() {
         let mono: Vec<f32> = (0..441).map(|i| i as f32).collect();
-        let pcm = Pcm { rate: 44_100.0, channels: 1, planes: vec![&mono], interleaved: true };
+        let pcm = Pcm {
+            rate: 44_100.0,
+            channels: 1,
+            planes: vec![&mono],
+            interleaved: true,
+        };
         let out = to_stereo(&pcm);
         assert_eq!(out.len() / 2, 480);
         assert_eq!(out[0], out[1]);
         let l = [1.0f32, 1.0, 1.0];
         let r = [2.0f32, 2.0, 2.0];
-        let planar = Pcm { rate: 48_000.0, channels: 2, planes: vec![&l, &r], interleaved: false };
+        let planar = Pcm {
+            rate: 48_000.0,
+            channels: 2,
+            planes: vec![&l, &r],
+            interleaved: false,
+        };
         assert_eq!(to_stereo(&planar), vec![1.0, 2.0, 1.0, 2.0, 1.0, 2.0]);
     }
 }

@@ -48,7 +48,13 @@ impl Shortcut {
 
     /// From a key press in our own window (the shortcut recorder).
     pub fn from_press(key: egui::Key, m: egui::Modifiers) -> Option<Shortcut> {
-        let s = Shortcut { cmd: m.mac_cmd || m.command, shift: m.shift, alt: m.alt, ctrl: m.ctrl && !m.command, key: key.name().to_string() };
+        let s = Shortcut {
+            cmd: m.mac_cmd || m.command,
+            shift: m.shift,
+            alt: m.alt,
+            ctrl: m.ctrl && !m.command,
+            key: key.name().to_string(),
+        };
         (s.has_modifier() && key_code(&s.key).is_some()).then_some(s)
     }
 
@@ -57,7 +63,11 @@ impl Shortcut {
         let mac = self.cmd && self.shift && !self.alt && !self.ctrl;
         match self.key.as_str() {
             "3" | "4" | "5" if mac => Some("macOS uses this for its own screenshots"),
-            "Q" | "W" | "C" | "V" | "X" | "Z" | "A" | "S" | "Tab" if self.cmd && !self.shift && !self.alt && !self.ctrl => Some("apps use this; pick another"),
+            "Q" | "W" | "C" | "V" | "X" | "Z" | "A" | "S" | "Tab"
+                if self.cmd && !self.shift && !self.alt && !self.ctrl =>
+            {
+                Some("apps use this; pick another")
+            }
             _ => None,
         }
     }
@@ -79,8 +89,15 @@ pub fn listen(ctx: &egui::Context) -> Heard {
     ctx.input(|i| {
         let mut heard = Heard::Nothing;
         for e in &i.events {
-            if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
-                let plain = !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
+            if let egui::Event::Key {
+                key,
+                pressed: true,
+                modifiers,
+                ..
+            } = e
+            {
+                let plain =
+                    !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
                 heard = if *key == egui::Key::Escape && plain {
                     Heard::Cancel
                 } else if (*key == egui::Key::Backspace || *key == egui::Key::Delete) && plain {
@@ -190,7 +207,12 @@ fn with_hub<T>(f: impl FnOnce(&mut Hub) -> T) -> Option<T> {
                     }
                 }
             }));
-            *h = Some(Hub { mgr, rx, pressed: Vec::new(), released: Vec::new() });
+            *h = Some(Hub {
+                mgr,
+                rx,
+                pressed: Vec::new(),
+                released: Vec::new(),
+            });
         }
         let hub = h.as_mut()?;
         while let Ok(e) = hub.rx.try_recv() {
@@ -256,13 +278,15 @@ impl<C: Copy> Keys<C> {
     pub fn poll(&self) -> Vec<C> {
         with_hub(|h| {
             let mut out = Vec::new();
-            h.pressed.retain(|id| match self.bound.iter().find(|(hk, _)| hk.id() == *id) {
-                Some((_, c)) => {
-                    out.push(*c);
-                    false
-                }
-                None => true,
-            });
+            h.pressed.retain(
+                |id| match self.bound.iter().find(|(hk, _)| hk.id() == *id) {
+                    Some((_, c)) => {
+                        out.push(*c);
+                        false
+                    }
+                    None => true,
+                },
+            );
             out
         })
         .unwrap_or_default()
@@ -273,13 +297,15 @@ impl<C: Copy> Keys<C> {
     pub fn poll_released(&self) -> Vec<C> {
         with_hub(|h| {
             let mut out = Vec::new();
-            h.released.retain(|id| match self.bound.iter().find(|(hk, _)| hk.id() == *id) {
-                Some((_, c)) => {
-                    out.push(*c);
-                    false
-                }
-                None => true,
-            });
+            h.released.retain(
+                |id| match self.bound.iter().find(|(hk, _)| hk.id() == *id) {
+                    Some((_, c)) => {
+                        out.push(*c);
+                        false
+                    }
+                    None => true,
+                },
+            );
             out
         })
         .unwrap_or_default()
@@ -292,10 +318,34 @@ mod tests {
 
     #[test]
     fn maps_to_the_library_hotkey() {
-        let k = Shortcut { cmd: true, shift: true, alt: false, ctrl: false, key: "2".into() };
-        assert_eq!(to_hotkey(&k), Some(HotKey::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Digit2)));
-        let v = Shortcut { cmd: true, shift: false, alt: true, ctrl: false, key: "V".into() };
-        assert_eq!(to_hotkey(&v), Some(HotKey::new(Some(Modifiers::SUPER | Modifiers::ALT), Code::KeyV)));
+        let k = Shortcut {
+            cmd: true,
+            shift: true,
+            alt: false,
+            ctrl: false,
+            key: "2".into(),
+        };
+        assert_eq!(
+            to_hotkey(&k),
+            Some(HotKey::new(
+                Some(Modifiers::SUPER | Modifiers::SHIFT),
+                Code::Digit2
+            ))
+        );
+        let v = Shortcut {
+            cmd: true,
+            shift: false,
+            alt: true,
+            ctrl: false,
+            key: "V".into(),
+        };
+        assert_eq!(
+            to_hotkey(&v),
+            Some(HotKey::new(
+                Some(Modifiers::SUPER | Modifiers::ALT),
+                Code::KeyV
+            ))
+        );
         assert_eq!(v.display(), "⌥⌘V");
     }
 }

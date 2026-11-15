@@ -24,7 +24,11 @@ pub fn atten_db(strength: f32) -> f32 {
 /// Take the noise out of `mono` (48 kHz). The output lines up with the
 /// input (the model's delay is taken back out).
 pub fn denoise(mono: &[f32], strength: f32, p: &Progress) -> Result<Vec<f32>, String> {
-    let mut df = DfTract::new(DfParams::default(), &RuntimeParams::default_with_ch(1).with_atten_lim(atten_db(strength))).map_err(|e| e.to_string())?;
+    let mut df = DfTract::new(
+        DfParams::default(),
+        &RuntimeParams::default_with_ch(1).with_atten_lim(atten_db(strength)),
+    )
+    .map_err(|e| e.to_string())?;
     let hop = df.hop_size;
     let delay = df.delay();
     let frames = (mono.len() + delay).div_ceil(hop);
@@ -39,7 +43,8 @@ pub fn denoise(mono: &[f32], strength: f32, p: &Progress) -> Result<Vec<f32>, St
         for i in 0..hop {
             noisy[[0, i]] = mono.get(f * hop + i).copied().unwrap_or(0.0);
         }
-        df.process(noisy.view(), clean.view_mut()).map_err(|e| e.to_string())?;
+        df.process(noisy.view(), clean.view_mut())
+            .map_err(|e| e.to_string())?;
         out.extend(clean.row(0).iter().copied());
         p.done.store(f as u64 + 1, Ordering::Relaxed);
     }
@@ -47,7 +52,10 @@ pub fn denoise(mono: &[f32], strength: f32, p: &Progress) -> Result<Vec<f32>, St
 }
 
 fn to_mono(stereo: &[f32]) -> Vec<f32> {
-    stereo.chunks_exact(2).map(|c| (c[0] + c[1]) * 0.5).collect()
+    stereo
+        .chunks_exact(2)
+        .map(|c| (c[0] + c[1]) * 0.5)
+        .collect()
 }
 
 fn to_stereo(mono: &[f32]) -> Vec<f32> {
@@ -56,7 +64,11 @@ fn to_stereo(mono: &[f32]) -> Vec<f32> {
 
 /// `a + b`, sample by sample (the longer one sets the length).
 pub fn mix(a: &[f32], b: &[f32]) -> Vec<f32> {
-    (0..a.len().max(b.len())).map(|i| (a.get(i).copied().unwrap_or(0.0) + b.get(i).copied().unwrap_or(0.0)).clamp(-1.0, 1.0)).collect()
+    (0..a.len().max(b.len()))
+        .map(|i| {
+            (a.get(i).copied().unwrap_or(0.0) + b.get(i).copied().unwrap_or(0.0)).clamp(-1.0, 1.0)
+        })
+        .collect()
 }
 
 /// Where a video's cleaned sound is kept while it's being edited.
@@ -76,9 +88,17 @@ pub fn clean(video: &Path, strength: f32, p: &Progress) -> Result<PathBuf, Strin
     }
     let voice = sound::read_audio(video, sound::voice_track(n), 48_000, 2)?;
     if voice.iter().all(|v| v.abs() < 1e-4) {
-        return Err(if n >= 3 { "The microphone track is silent: nothing to clean up".into() } else { "The sound is silent: nothing to clean up".into() });
+        return Err(if n >= 3 {
+            "The microphone track is silent: nothing to clean up".into()
+        } else {
+            "The sound is silent: nothing to clean up".into()
+        });
     }
-    let system = if n >= 3 { Some(sound::read_audio(video, Track::System, 48_000, 2)?) } else { None };
+    let system = if n >= 3 {
+        Some(sound::read_audio(video, Track::System, 48_000, 2)?)
+    } else {
+        None
+    };
     let cleaned = to_stereo(&denoise(&to_mono(&voice), strength, p)?);
     let mixed = match &system {
         Some(sys) => mix(sys, &cleaned),
@@ -95,7 +115,10 @@ pub fn peaks(samples: &[f32], n: usize) -> Vec<f32> {
         return Vec::new();
     }
     let per = samples.len().div_ceil(n).max(1);
-    samples.chunks(per).map(|c| c.iter().fold(0.0f32, |m, v| m.max(v.abs())).min(1.0)).collect()
+    samples
+        .chunks(per)
+        .map(|c| c.iter().fold(0.0f32, |m, v| m.max(v.abs())).min(1.0))
+        .collect()
 }
 
 /// The voice's loudness over the whole video, for the timeline.
@@ -109,7 +132,9 @@ pub fn voice_peaks(video: &Path, n: usize) -> Vec<f32> {
 
 /// The cleaned voice's loudness (the second track of the cleaned sound).
 pub fn cleaned_peaks(sound_file: &Path, n: usize) -> Vec<f32> {
-    sound::read_nth(sound_file, 1, 8_000, 1).map(|s| peaks(&s, n)).unwrap_or_default()
+    sound::read_nth(sound_file, 1, 8_000, 1)
+        .map(|s| peaks(&s, n))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -137,7 +162,12 @@ mod tests {
         let y = denoise(&x, 1.0, &p).unwrap();
         assert_eq!(y.len(), x.len());
         let rms = |s: &[f32]| (s.iter().map(|v| v * v).sum::<f32>() / s.len() as f32).sqrt();
-        assert!(rms(&y[24_000..]) < rms(&x[24_000..]) * 0.5, "noise alone is turned down: {} vs {}", rms(&y), rms(&x));
+        assert!(
+            rms(&y[24_000..]) < rms(&x[24_000..]) * 0.5,
+            "noise alone is turned down: {} vs {}",
+            rms(&y),
+            rms(&x)
+        );
     }
 
     #[test]

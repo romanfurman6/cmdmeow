@@ -14,9 +14,9 @@ mod ui;
 
 use crate::core::tool::{Badge, Cx, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM};
 use crate::kit::glass::{tint, Icon};
+use crate::kit::hotkeys::{Keys, Shortcut};
 use egui::{Rect, Ui};
 use engine::{now, Engine, State};
-use crate::kit::hotkeys::{Keys, Shortcut};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -52,7 +52,11 @@ pub struct KeyRec {
 impl KeyRec {
     /// Bind `want` (None while recording or off). Cheap when nothing changed.
     fn bind(&mut self, ctx: &egui::Context, want: Option<Shortcut>) {
-        if self.recording && self.seen.is_some_and(|t| t.elapsed() > Duration::from_secs(1)) {
+        if self.recording
+            && self
+                .seen
+                .is_some_and(|t| t.elapsed() > Duration::from_secs(1))
+        {
             self.recording = false;
         }
         let want = if self.recording { None } else { want };
@@ -68,7 +72,13 @@ impl KeyRec {
         };
         self.error = None;
         match &want {
-            Some(s) => self.error = keys.apply(&[((), s.clone())]).into_iter().next().map(|(_, e)| e),
+            Some(s) => {
+                self.error = keys
+                    .apply(&[((), s.clone())])
+                    .into_iter()
+                    .next()
+                    .map(|(_, e)| e)
+            }
             None => keys.clear(),
         }
         self.bound = want;
@@ -91,7 +101,11 @@ impl KeepAwake {
     pub fn new(env: &ToolEnv) -> Self {
         if env.demo {
             let (engine, t) = demo_engine(State::Agent);
-            return KeepAwake { engine: Arc::new(Mutex::new(engine)), demo_now: Some(t), keys: KeyRec::default() };
+            return KeepAwake {
+                engine: Arc::new(Mutex::new(engine)),
+                demo_now: Some(t),
+                keys: KeyRec::default(),
+            };
         }
         let engine: Shared = Arc::new(Mutex::new(Engine::new(Some(engine::data_dir()))));
         url_routes(&engine, &env.ctx);
@@ -101,7 +115,11 @@ impl KeepAwake {
             .name("keep-awake".into())
             .spawn(move || watch(shared, ctx))
             .ok();
-        KeepAwake { engine, demo_now: None, keys: KeyRec::default() }
+        KeepAwake {
+            engine,
+            demo_now: None,
+            keys: KeyRec::default(),
+        }
     }
 
     fn now(&self) -> i64 {
@@ -191,7 +209,10 @@ fn watch(engine: Shared, ctx: egui::Context) {
 }
 
 fn badge() -> Badge {
-    Badge { icon: Icon::Cup, color: tint::KEEP_AWAKE() }
+    Badge {
+        icon: Icon::Cup,
+        color: tint::KEEP_AWAKE(),
+    }
 }
 
 /// Sample data for screenshots, showing `state`.
@@ -207,22 +228,61 @@ fn demo_engine_for(state: State, agent: Option<sessions::Source>) -> (Engine, i6
     e.agent = agent;
     let h = |x: f64| t - ((13.0 + 7.0 / 60.0 - x) * 3600.0) as i64;
     e.log = vec![
-        engine::Span { start: h(9.2), end: h(9.9), agent: false, by: None },
-        engine::Span { start: h(10.7), end: h(11.3), agent: agent.is_some(), by: agent },
-        engine::Span { start: h(11.3), end: h(11.9), agent: false, by: None },
+        engine::Span {
+            start: h(9.2),
+            end: h(9.9),
+            agent: false,
+            by: None,
+        },
+        engine::Span {
+            start: h(10.7),
+            end: h(11.3),
+            agent: agent.is_some(),
+            by: agent,
+        },
+        engine::Span {
+            start: h(11.3),
+            end: h(11.9),
+            agent: false,
+            by: None,
+        },
     ];
     // earlier days of the week
-    for (d, c, m) in [(6, 2.5, 0.5), (5, 4.0, 1.0), (4, 1.0, 0.0), (3, 5.5, 0.8), (2, 0.0, 1.5), (1, 3.2, 0.4)] {
+    for (d, c, m) in [
+        (6, 2.5, 0.5),
+        (5, 4.0, 1.0),
+        (4, 1.0, 0.0),
+        (3, 5.5, 0.8),
+        (2, 0.0, 1.5),
+        (1, 3.2, 0.4),
+    ] {
         let base = t - d * 86_400;
         if agent.is_some() {
-            e.log.insert(0, engine::Span { start: base - ((c + m) * 3600.0) as i64, end: base - (m * 3600.0) as i64, agent: true, by: agent });
+            e.log.insert(
+                0,
+                engine::Span {
+                    start: base - ((c + m) * 3600.0) as i64,
+                    end: base - (m * 3600.0) as i64,
+                    agent: true,
+                    by: agent,
+                },
+            );
         }
         if m > 0.0 {
-            e.log.push(engine::Span { start: base - (m * 3600.0) as i64, end: base, agent: false, by: None });
+            e.log.push(engine::Span {
+                start: base - (m * 3600.0) as i64,
+                end: base,
+                agent: false,
+                by: None,
+            });
         }
     }
     e.log.sort_by_key(|s| s.start);
-    let idle = Session { project: "notes".into(), last_write: t - 3 * 3600, tool_running: false };
+    let idle = Session {
+        project: "notes".into(),
+        last_write: t - 3 * 3600,
+        tool_running: false,
+    };
     match state {
         State::Off => {
             e.sessions = vec![idle];
@@ -234,8 +294,16 @@ fn demo_engine_for(state: State, agent: Option<sessions::Source>) -> (Engine, i6
         }
         State::Agent => {
             e.sessions = vec![
-                Session { project: "cmdmeow".into(), last_write: h(11.9), tool_running: false },
-                Session { project: "api-server".into(), last_write: h(11.9), tool_running: false },
+                Session {
+                    project: "cmdmeow".into(),
+                    last_write: h(11.9),
+                    tool_running: false,
+                },
+                Session {
+                    project: "api-server".into(),
+                    last_write: h(11.9),
+                    tool_running: false,
+                },
                 idle.clone(),
             ];
             e.step(h(11.9));
@@ -243,7 +311,14 @@ fn demo_engine_for(state: State, agent: Option<sessions::Source>) -> (Engine, i6
             e.sessions[1].last_write = t - 48;
         }
         State::WindDown { .. } => {
-            e.sessions = vec![Session { project: "cmdmeow".into(), last_write: t - 300, tool_running: false }, idle];
+            e.sessions = vec![
+                Session {
+                    project: "cmdmeow".into(),
+                    last_write: t - 300,
+                    tool_running: false,
+                },
+                idle,
+            ];
             e.step(t - 300);
         }
     }
@@ -271,7 +346,14 @@ impl Tool for KeepAwake {
         "Keep the Mac awake, or only while your AI agent works"
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Keep Awake", about: "The switch, and what keeps your Mac up.", sizes: UP_TO_MEDIUM, size: Size::S12, default_on: true }]
+        vec![WidgetSpec {
+            id: CARD,
+            title: "Keep Awake",
+            about: "The switch, and what keeps your Mac up.",
+            sizes: UP_TO_MEDIUM,
+            size: Size::S12,
+            default_on: true,
+        }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);
@@ -332,10 +414,15 @@ mod tests {
     #[test]
     fn demo_states_show_what_they_say() {
         for (want, matches) in [
-            (State::Off, (|s: State| s == State::Off) as fn(State) -> bool),
+            (
+                State::Off,
+                (|s: State| s == State::Off) as fn(State) -> bool,
+            ),
             (State::Manual, |s| s == State::Manual),
             (State::Agent, |s| s == State::Agent),
-            (State::WindDown { left: 0 }, |s| matches!(s, State::WindDown { .. })),
+            (State::WindDown { left: 0 }, |s| {
+                matches!(s, State::WindDown { .. })
+            }),
         ] {
             let (e, t) = demo_engine(want);
             assert!(matches(e.state(t)), "{want:?} → {:?}", e.state(t));

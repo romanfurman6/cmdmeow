@@ -37,14 +37,20 @@ pub fn bgra_to_rgba(src: &[u8], w: usize, h: usize, row: usize) -> Vec<u8> {
 
 /// Where an edited file goes before it replaces `path`.
 pub fn temp_beside(path: &Path) -> PathBuf {
-    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "video.mp4".into());
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "video.mp4".into());
     path.with_file_name(format!(".{name}.edit.mp4"))
 }
 
 /// "Recording 1.mp4" → "Recording 1 edited.mp4" (not taken yet).
 pub fn copy_name(path: &Path) -> PathBuf {
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
-    let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Video".into());
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Video".into());
     crate::tools::capture::record::free_path(&dir, &format!("{stem} edited.mp4"))
 }
 
@@ -59,8 +65,9 @@ mod imp {
     use objc2::runtime::AnyObject;
     use objc2::{AnyThread, MainThreadMarker};
     use objc2_av_foundation::{
-        AVAsset, AVAssetExportPresetPassthrough, AVAssetExportSession, AVAssetExportSessionStatus, AVAssetImageGenerator, AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo, AVMutableComposition, AVPlayer, AVPlayerItem,
-        AVPlayerItemVideoOutput, AVURLAsset,
+        AVAsset, AVAssetExportPresetPassthrough, AVAssetExportSession, AVAssetExportSessionStatus,
+        AVAssetImageGenerator, AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo,
+        AVMutableComposition, AVPlayer, AVPlayerItem, AVPlayerItemVideoOutput, AVURLAsset,
     };
     use objc2_core_foundation::CGSize;
     use objc2_core_media::{CMTime, CMTimeFlags, CMTimeRange};
@@ -94,7 +101,15 @@ mod imp {
         fn CGImageGetHeight(img: *const c_void) -> usize;
         fn CGColorSpaceCreateDeviceRGB() -> *mut c_void;
         fn CGColorSpaceRelease(cs: *mut c_void);
-        fn CGBitmapContextCreate(data: *mut c_void, w: usize, h: usize, bits: usize, row: usize, cs: *mut c_void, info: u32) -> *mut c_void;
+        fn CGBitmapContextCreate(
+            data: *mut c_void,
+            w: usize,
+            h: usize,
+            bits: usize,
+            row: usize,
+            cs: *mut c_void,
+            info: u32,
+        ) -> *mut c_void;
         fn CGContextDrawImage(ctx: *mut c_void, r: Rect64, img: *const c_void);
         fn CGContextRelease(ctx: *mut c_void);
     }
@@ -103,7 +118,12 @@ mod imp {
     unsafe impl<T> Send for SendBox<T> {}
 
     fn cm(secs: f64) -> CMTime {
-        CMTime { value: (secs.max(0.0) * 60_000.0).round() as i64, timescale: 60_000, flags: CMTimeFlags::Valid, epoch: 0 }
+        CMTime {
+            value: (secs.max(0.0) * 60_000.0).round() as i64,
+            timescale: 60_000,
+            flags: CMTimeFlags::Valid,
+            epoch: 0,
+        }
     }
 
     fn secs(t: CMTime) -> f64 {
@@ -143,17 +163,39 @@ mod imp {
     #[allow(deprecated)]
     fn source(path: &Path, voice: Option<&Path>) -> Result<Retained<AVAsset>, String> {
         let orig = asset(path);
-        let Some(voice) = voice else { return Ok(Retained::into_super(orig)) };
+        let Some(voice) = voice else {
+            return Ok(Retained::into_super(orig));
+        };
         unsafe {
             let snd = asset(voice);
-            let (vm, am) = (AVMediaTypeVideo.ok_or("no video")?, AVMediaTypeAudio.ok_or("no audio")?);
+            let (vm, am) = (
+                AVMediaTypeVideo.ok_or("no video")?,
+                AVMediaTypeAudio.ok_or("no audio")?,
+            );
             let d = orig.duration();
             let comp = AVMutableComposition::composition();
-            let add = |media: &objc2_av_foundation::AVMediaType, from: &objc2_av_foundation::AVAssetTrack, on: bool| -> Result<(), String> {
-                let t = comp.addMutableTrackWithMediaType_preferredTrackID(media, 0).ok_or("can't add a track")?;
+            let add = |media: &objc2_av_foundation::AVMediaType,
+                       from: &objc2_av_foundation::AVAssetTrack,
+                       on: bool|
+             -> Result<(), String> {
+                let t = comp
+                    .addMutableTrackWithMediaType_preferredTrackID(media, 0)
+                    .ok_or("can't add a track")?;
                 let r = from.timeRange();
-                let len = if secs(r.duration) > secs(d) { d } else { r.duration };
-                t.insertTimeRange_ofTrack_atTime_error(CMTimeRange { start: r.start, duration: len }, from, cm(0.0)).map_err(|e| ns_err(&e))?;
+                let len = if secs(r.duration) > secs(d) {
+                    d
+                } else {
+                    r.duration
+                };
+                t.insertTimeRange_ofTrack_atTime_error(
+                    CMTimeRange {
+                        start: r.start,
+                        duration: len,
+                    },
+                    from,
+                    cm(0.0),
+                )
+                .map_err(|e| ns_err(&e))?;
                 t.setEnabled(on);
                 Ok(())
             };
@@ -195,18 +237,34 @@ mod imp {
                 let duration = secs(a.duration());
                 let (w, h) = video_size(&a).ok_or("No video in this file")?;
                 let scale = (super::VIEW_W / w).min(1.0);
-                let (ow, oh) = (((w * scale) as u32 & !1).max(2), ((h * scale) as u32 & !1).max(2));
+                let (ow, oh) = (
+                    ((w * scale) as u32 & !1).max(2),
+                    ((h * scale) as u32 & !1).max(2),
+                );
                 let fmt = NSNumber::new_u32(u32::from_be_bytes(*b"BGRA"));
                 let (nw, nh) = (NSNumber::new_u32(ow), NSNumber::new_u32(oh));
-                let keys = [NSString::from_str("PixelFormatType"), NSString::from_str("Width"), NSString::from_str("Height")];
+                let keys = [
+                    NSString::from_str("PixelFormatType"),
+                    NSString::from_str("Width"),
+                    NSString::from_str("Height"),
+                ];
                 let key_refs: Vec<&NSString> = keys.iter().map(|k| &**k).collect();
                 let vals: [&AnyObject; 3] = [&fmt, &nw, &nh];
                 let attrs = NSDictionary::from_slices(&key_refs, &vals);
-                let output = AVPlayerItemVideoOutput::initWithPixelBufferAttributes(AVPlayerItemVideoOutput::alloc(), Some(&attrs));
+                let output = AVPlayerItemVideoOutput::initWithPixelBufferAttributes(
+                    AVPlayerItemVideoOutput::alloc(),
+                    Some(&attrs),
+                );
                 let item = AVPlayerItem::playerItemWithAsset(&a, mtm);
                 item.addOutput(&output);
                 let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
-                Ok(Player { player, item, output, duration, size: (w as u32, h as u32) })
+                Ok(Player {
+                    player,
+                    item,
+                    output,
+                    duration,
+                    size: (w as u32, h as u32),
+                })
             }
         }
 
@@ -230,7 +288,10 @@ mod imp {
         /// Jump to `t` exactly.
         pub fn seek(&self, t: f64) {
             let zero = cm(0.0);
-            unsafe { self.player.seekToTime_toleranceBefore_toleranceAfter(cm(t), zero, zero) };
+            unsafe {
+                self.player
+                    .seekToTime_toleranceBefore_toleranceAfter(cm(t), zero, zero)
+            };
         }
 
         /// The frame to show now, when there's a new one.
@@ -240,14 +301,22 @@ mod imp {
                 if !self.output.hasNewPixelBufferForItemTime(t) {
                     return None;
                 }
-                let pb = self.output.copyPixelBufferForItemTime_itemTimeForDisplay(t, std::ptr::null_mut())?;
+                let pb = self
+                    .output
+                    .copyPixelBufferForItemTime_itemTimeForDisplay(t, std::ptr::null_mut())?;
                 let raw = &*pb as *const CVPixelBuffer as *mut c_void;
                 if CVPixelBufferLockBaseAddress(raw, 1) != 0 {
                     return None;
                 }
-                let (w, h, row) = (CVPixelBufferGetWidth(raw), CVPixelBufferGetHeight(raw), CVPixelBufferGetBytesPerRow(raw));
+                let (w, h, row) = (
+                    CVPixelBufferGetWidth(raw),
+                    CVPixelBufferGetHeight(raw),
+                    CVPixelBufferGetBytesPerRow(raw),
+                );
                 let base = CVPixelBufferGetBaseAddress(raw);
-                let out = (!base.is_null() && w > 0 && h > 0).then(|| super::bgra_to_rgba(std::slice::from_raw_parts(base, row * h), w, h, row));
+                let out = (!base.is_null() && w > 0 && h > 0).then(|| {
+                    super::bgra_to_rgba(std::slice::from_raw_parts(base, row * h), w, h, row)
+                });
                 CVPixelBufferUnlockBaseAddress(raw, 1);
                 out.map(|rgba| Frame { w, h, rgba })
             }
@@ -275,7 +344,16 @@ mod imp {
             if ctx.is_null() {
                 return None;
             }
-            CGContextDrawImage(ctx, Rect64 { x: 0.0, y: 0.0, w: w as f64, h: h as f64 }, img);
+            CGContextDrawImage(
+                ctx,
+                Rect64 {
+                    x: 0.0,
+                    y: 0.0,
+                    w: w as f64,
+                    h: h as f64,
+                },
+                img,
+            );
             CGContextRelease(ctx);
             image::RgbaImage::from_raw(w as u32, h as u32, buf)
         }
@@ -293,14 +371,21 @@ mod imp {
         unsafe {
             let a = asset(path);
             let d = secs(a.duration());
-            let Some((w, h)) = video_size(&a) else { return Vec::new() };
+            let Some((w, h)) = video_size(&a) else {
+                return Vec::new();
+            };
             let gen = AVAssetImageGenerator::assetImageGeneratorWithAsset(&a);
             gen.setAppliesPreferredTrackTransform(true);
-            gen.setMaximumSize(CGSize { width: (height * w / h).ceil(), height });
+            gen.setMaximumSize(CGSize {
+                width: (height * w / h).ceil(),
+                height,
+            });
             (0..n)
                 .filter_map(|k| {
                     let t = d * (k as f64 + 0.5) / n as f64;
-                    let img = gen.copyCGImageAtTime_actualTime_error(cm(t), std::ptr::null_mut()).ok()?;
+                    let img = gen
+                        .copyCGImageAtTime_actualTime_error(cm(t), std::ptr::null_mut())
+                        .ok()?;
                     cg_rgba(&*img as *const _ as *const c_void)
                 })
                 .collect()
@@ -310,15 +395,25 @@ mod imp {
     /// Write the kept pieces of `src` to `dest` (no re-encoding). `done`
     /// runs on a background thread.
     #[allow(deprecated)]
-    pub fn export(src: &Path, voice: Option<&Path>, edl: &Edl, dest: PathBuf, done: Reply<PathBuf>) {
+    pub fn export(
+        src: &Path,
+        voice: Option<&Path>,
+        edl: &Edl,
+        dest: PathBuf,
+        done: Reply<PathBuf>,
+    ) {
         let run = || -> Result<Retained<AVAssetExportSession>, String> {
             unsafe {
                 let a = source(src, voice)?;
                 let comp = AVMutableComposition::composition();
                 let mut at = 0.0;
                 for &(s, e) in &edl.keep {
-                    let r = CMTimeRange { start: cm(s), duration: cm(e - s) };
-                    comp.insertTimeRange_ofAsset_atTime_error(r, &a, cm(at)).map_err(|e| ns_err(&e))?;
+                    let r = CMTimeRange {
+                        start: cm(s),
+                        duration: cm(e - s),
+                    };
+                    comp.insertTimeRange_ofAsset_atTime_error(r, &a, cm(at))
+                        .map_err(|e| ns_err(&e))?;
                     at += e - s;
                 }
                 // keep each track on or off as it was (the separate voice tracks are off)
@@ -327,7 +422,11 @@ mod imp {
                         t.setEnabled(st.isEnabled());
                     }
                 }
-                let session = AVAssetExportSession::exportSessionWithAsset_presetName(&comp, AVAssetExportPresetPassthrough).ok_or("This video can't be saved that way")?;
+                let session = AVAssetExportSession::exportSessionWithAsset_presetName(
+                    &comp,
+                    AVAssetExportPresetPassthrough,
+                )
+                .ok_or("This video can't be saved that way")?;
                 let _ = std::fs::remove_file(&dest);
                 session.setOutputURL(Some(&url(&dest)));
                 session.setOutputFileType(AVFileTypeMPEG4);
@@ -340,13 +439,18 @@ mod imp {
         };
         let cell = Mutex::new(Some(SendBox((done, session.clone(), dest))));
         let block = RcBlock::new(move || {
-            let Some(SendBox((done, session, dest))) = cell.lock().ok().and_then(|mut c| c.take()) else { return };
+            let Some(SendBox((done, session, dest))) = cell.lock().ok().and_then(|mut c| c.take())
+            else {
+                return;
+            };
             let status = unsafe { session.status() };
             if status == AVAssetExportSessionStatus::Completed {
                 done(Ok(dest));
             } else {
                 let _ = std::fs::remove_file(&dest);
-                done(Err(unsafe { session.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| "the video couldn't be written".into())));
+                done(Err(unsafe { session.error() }
+                    .map(|e| ns_err(&e))
+                    .unwrap_or_else(|| "the video couldn't be written".into())));
             }
         });
         unsafe { session.exportAsynchronouslyWithCompletionHandler(&block) };
@@ -392,7 +496,13 @@ mod other {
         Vec::new()
     }
 
-    pub fn export(_src: &Path, _voice: Option<&Path>, _edl: &Edl, _dest: PathBuf, done: Reply<PathBuf>) {
+    pub fn export(
+        _src: &Path,
+        _voice: Option<&Path>,
+        _edl: &Edl,
+        _dest: PathBuf,
+        done: Reply<PathBuf>,
+    ) {
         done(Err("Saving video needs macOS".into()))
     }
 }
@@ -405,7 +515,10 @@ mod tests {
     fn bgra_rows_lose_their_padding() {
         // 2×1 with 4 bytes of padding
         let src = [1, 2, 3, 0, 4, 5, 6, 0, 9, 9, 9, 9];
-        assert_eq!(bgra_to_rgba(&src, 2, 1, 12), vec![3, 2, 1, 255, 6, 5, 4, 255]);
+        assert_eq!(
+            bgra_to_rgba(&src, 2, 1, 12),
+            vec![3, 2, 1, 255, 6, 5, 4, 255]
+        );
     }
 
     #[test]

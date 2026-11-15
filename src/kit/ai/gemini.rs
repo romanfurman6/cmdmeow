@@ -5,7 +5,9 @@
 //! plan that still serves it (`account::gemini_usage`); otherwise tokens only.
 
 use super::account::ApiError;
-use super::{intern, recent_files, FileCache, LocalTokens, Provider, Shared, UsageEntry, UsageInfo};
+use super::{
+    intern, recent_files, FileCache, LocalTokens, Provider, Shared, UsageEntry, UsageInfo,
+};
 use crate::kit::sync::LockExt;
 use chrono::{DateTime, Local};
 use serde_json::Value;
@@ -23,7 +25,9 @@ pub struct Gemini {
 
 /// Where Gemini CLI keeps its data (`$GEMINI_DATA_DIR`, else `~/.gemini`).
 pub fn home() -> PathBuf {
-    std::env::var_os("GEMINI_DATA_DIR").map(PathBuf::from).unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".gemini"))
+    std::env::var_os("GEMINI_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".gemini"))
 }
 
 impl Provider for Gemini {
@@ -57,7 +61,9 @@ impl Provider for Gemini {
                 g.billing = super::Billing::Subscription;
             }
             // the last quotas known stay up, marked as old
-            Some(Err(ApiError::Other(_))) | None if !g.limits.is_empty() && installed => g.stale = true,
+            Some(Err(ApiError::Other(_))) | None if !g.limits.is_empty() && installed => {
+                g.stale = true
+            }
             _ => {
                 g.source = "Local";
                 g.limits.clear();
@@ -69,7 +75,11 @@ impl Provider for Gemini {
         let tmp = home().join("tmp");
         let mut files = recent_files(&tmp, 3, "json");
         files.extend(recent_files(&tmp, 3, "jsonl"));
-        files.retain(|p| p.parent().and_then(|d| d.file_name()).is_some_and(|n| n == "chats"));
+        files.retain(|p| {
+            p.parent()
+                .and_then(|d| d.file_name())
+                .is_some_and(|n| n == "chats")
+        });
         super::sum(self.cache.update(files, parse))
     }
     fn data_dir(&self) -> Option<PathBuf> {
@@ -83,7 +93,11 @@ impl Provider for Gemini {
             logged_in: true,
             source: "Local",
             fetched: Some(Local::now()),
-            local: super::demo_local(&[("gemini-2.5-pro", 3), ("gemini-2.5-flash", 2)], &[&home.join("Projects/site").display().to_string()], 0.8),
+            local: super::demo_local(
+                &[("gemini-2.5-pro", 3), ("gemini-2.5-flash", 2)],
+                &[&home.join("Projects/site").display().to_string()],
+                0.8,
+            ),
             ..Default::default()
         }
     }
@@ -126,16 +140,32 @@ fn entry(rec: &Value, project: u32) -> Option<UsageEntry> {
     if input == 0 && n("output") == 0 {
         return None;
     }
-    let ts = rec["timestamp"].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok())?.timestamp();
+    let ts = rec["timestamp"]
+        .as_str()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())?
+        .timestamp();
     let cached = n("cached").min(input);
-    Some(UsageEntry { ts, input: input - cached, output: n("output") + n("thoughts"), cache_read: cached, model: intern(rec["model"].as_str().unwrap_or("")), project, ..Default::default() })
+    Some(UsageEntry {
+        ts,
+        input: input - cached,
+        output: n("output") + n("thoughts"),
+        cache_read: cached,
+        model: intern(rec["model"].as_str().unwrap_or("")),
+        project,
+        ..Default::default()
+    })
 }
 
 /// The project folder of `~/.gemini/tmp/<project>/chats/<file>`, when Gemini
 /// wrote it down (`.project_root`).
 fn project_of(chat: &Path) -> u32 {
-    let Some(dir) = chat.parent().and_then(|c| c.parent()) else { return 0 };
-    std::fs::read_to_string(dir.join(".project_root")).ok().map(|s| intern(s.trim())).unwrap_or(0)
+    let Some(dir) = chat.parent().and_then(|c| c.parent()) else {
+        return 0;
+    };
+    std::fs::read_to_string(dir.join(".project_root"))
+        .ok()
+        .map(|s| intern(s.trim()))
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

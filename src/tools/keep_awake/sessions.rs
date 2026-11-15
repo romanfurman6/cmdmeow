@@ -62,7 +62,12 @@ pub enum Source {
 }
 
 impl Source {
-    pub const ALL: [Source; 4] = [Source::Claude, Source::Codex, Source::Gemini, Source::OpenCode];
+    pub const ALL: [Source; 4] = [
+        Source::Claude,
+        Source::Codex,
+        Source::Gemini,
+        Source::OpenCode,
+    ];
 
     /// By provider id ("claude", "codex", …), as `ai::settings` keeps it.
     pub fn of(id: &str) -> Option<Source> {
@@ -130,7 +135,9 @@ impl Scanner {
 
     fn scan_claude(&mut self, root: &Path, now: i64) -> Vec<Session> {
         let mut out = Vec::new();
-        let Ok(rd) = std::fs::read_dir(root) else { return out };
+        let Ok(rd) = std::fs::read_dir(root) else {
+            return out;
+        };
         for e in rd.flatten() {
             let folder = e.path();
             if !folder.is_dir() {
@@ -138,11 +145,21 @@ impl Scanner {
             }
             // session id → (newest write, a log to read the project from)
             let mut by_session: HashMap<String, (i64, PathBuf)> = HashMap::new();
-            let Ok(files) = std::fs::read_dir(&folder) else { continue };
+            let Ok(files) = std::fs::read_dir(&folder) else {
+                continue;
+            };
             for f in files.flatten() {
                 let p = f.path();
-                let Some(stem) = p.file_stem().map(|s| s.to_string_lossy().into_owned()) else { continue };
-                let newest = if p.is_dir() { newest_log(&p, 2) } else if is_log(&p) { mtime(&p).map(|t| (t, p.clone())) } else { None };
+                let Some(stem) = p.file_stem().map(|s| s.to_string_lossy().into_owned()) else {
+                    continue;
+                };
+                let newest = if p.is_dir() {
+                    newest_log(&p, 2)
+                } else if is_log(&p) {
+                    mtime(&p).map(|t| (t, p.clone()))
+                } else {
+                    None
+                };
                 if let Some((t, log)) = newest {
                     let slot = by_session.entry(stem).or_insert((t, log.clone()));
                     if t > slot.0 {
@@ -156,7 +173,11 @@ impl Scanner {
                 }
                 let project = self.name(&folder, &log);
                 let tool_running = now - t <= TOOL_CAP_SECS && self.tool_open(&log, t);
-                out.push(Session { project, last_write: t, tool_running });
+                out.push(Session {
+                    project,
+                    last_write: t,
+                    tool_running,
+                });
             }
         }
         out
@@ -172,7 +193,9 @@ impl Scanner {
             }
             let project = match self.names.get(&log) {
                 Some(n) => n.clone(),
-                None => match crate::kit::claude_code::first_cwd(&log).and_then(|c| c.file_name().map(|s| s.to_string_lossy().into_owned())) {
+                None => match crate::kit::claude_code::first_cwd(&log)
+                    .and_then(|c| c.file_name().map(|s| s.to_string_lossy().into_owned()))
+                {
                     Some(n) => {
                         self.names.insert(log.clone(), n.clone());
                         n
@@ -180,8 +203,13 @@ impl Scanner {
                     None => Source::Codex.name().into(),
                 },
             };
-            let tool_running = now - t <= TOOL_CAP_SECS && self.cached_open(&log, t, codex_open_call);
-            out.push(Session { project, last_write: t, tool_running });
+            let tool_running =
+                now - t <= TOOL_CAP_SECS && self.cached_open(&log, t, codex_open_call);
+            out.push(Session {
+                project,
+                last_write: t,
+                tool_running,
+            });
         }
         out
     }
@@ -190,10 +218,14 @@ impl Scanner {
     /// after the folder Gemini wrote down for the project.
     fn scan_gemini(&mut self, root: &Path, now: i64) -> Vec<Session> {
         let mut out = Vec::new();
-        let Ok(rd) = std::fs::read_dir(root) else { return out };
+        let Ok(rd) = std::fs::read_dir(root) else {
+            return out;
+        };
         for e in rd.flatten() {
             let dir = e.path();
-            let Ok(chats) = std::fs::read_dir(dir.join("chats")) else { continue };
+            let Ok(chats) = std::fs::read_dir(dir.join("chats")) else {
+                continue;
+            };
             for c in chats.flatten() {
                 let p = c.path();
                 if !p.extension().is_some_and(|x| x == "json" || x == "jsonl") {
@@ -205,9 +237,17 @@ impl Scanner {
                 }
                 let project = std::fs::read_to_string(dir.join(".project_root"))
                     .ok()
-                    .and_then(|r| Path::new(r.trim()).file_name().map(|s| s.to_string_lossy().into_owned()))
+                    .and_then(|r| {
+                        Path::new(r.trim())
+                            .file_name()
+                            .map(|s| s.to_string_lossy().into_owned())
+                    })
                     .unwrap_or_else(|| Source::Gemini.name().into());
-                out.push(Session { project, last_write: t, tool_running: false });
+                out.push(Session {
+                    project,
+                    last_write: t,
+                    tool_running: false,
+                });
             }
         }
         out
@@ -229,8 +269,15 @@ impl Scanner {
         // older versions: storage/message/<session>/<message>.json
         for f in crate::kit::ai::recent_files(&root.join("storage/message"), 1, "json") {
             if mtime(&f).is_some_and(|t| now - t <= RECENT_SECS) {
-                let v: serde_json::Value = std::fs::read(&f).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
-                let session = f.parent().and_then(|d| d.file_name()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let v: serde_json::Value = std::fs::read(&f)
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or_default();
+                let session = f
+                    .parent()
+                    .and_then(|d| d.file_name())
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 msgs.extend(Msg::from_json(&v, &session, 0));
             }
         }
@@ -257,7 +304,9 @@ impl Scanner {
             return n.clone();
         }
         // only a name read from a log is kept; the folder's guess is retried
-        match crate::kit::claude_code::first_cwd(log).and_then(|c| c.file_name().map(|s| s.to_string_lossy().into_owned())) {
+        match crate::kit::claude_code::first_cwd(log)
+            .and_then(|c| c.file_name().map(|s| s.to_string_lossy().into_owned()))
+        {
             Some(n) => {
                 self.names.insert(folder.to_path_buf(), n.clone());
                 n
@@ -270,9 +319,13 @@ impl Scanner {
 /// The end of a log, where an open tool call would be.
 fn tail(log: &Path) -> Vec<u8> {
     use std::io::{Read, Seek, SeekFrom};
-    let Ok(mut f) = std::fs::File::open(log) else { return Vec::new() };
+    let Ok(mut f) = std::fs::File::open(log) else {
+        return Vec::new();
+    };
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
-    if f.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES))).is_err() {
+    if f.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES)))
+        .is_err()
+    {
         return Vec::new();
     }
     let mut buf = Vec::new();
@@ -303,13 +356,21 @@ fn open_tool_call(text: &[u8]) -> bool {
 fn codex_open_call(text: &[u8]) -> bool {
     let has = |l: &[u8], pat: &[u8]| l.windows(pat.len()).any(|w| w == pat);
     for line in text.split(|b| *b == b'\n').rev() {
-        if has(line, b"\"type\":\"function_call_output\"") || has(line, b"\"type\":\"custom_tool_call_output\"") {
+        if has(line, b"\"type\":\"function_call_output\"")
+            || has(line, b"\"type\":\"custom_tool_call_output\"")
+        {
             return false;
         }
-        if has(line, b"\"type\":\"function_call\"") || has(line, b"\"type\":\"custom_tool_call\"") || has(line, b"\"type\":\"local_shell_call\"") {
+        if has(line, b"\"type\":\"function_call\"")
+            || has(line, b"\"type\":\"custom_tool_call\"")
+            || has(line, b"\"type\":\"local_shell_call\"")
+        {
             return true;
         }
-        if has(line, b"\"type\":\"message\"") || has(line, b"\"type\":\"task_complete\"") || has(line, b"\"type\":\"turn_aborted\"") {
+        if has(line, b"\"type\":\"message\"")
+            || has(line, b"\"type\":\"task_complete\"")
+            || has(line, b"\"type\":\"turn_aborted\"")
+        {
             return false;
         }
     }
@@ -339,10 +400,22 @@ impl Msg {
         let created = t["created"].as_i64()?;
         let completed = t["completed"].as_i64();
         let at = created.max(completed.unwrap_or(0)).max(updated_ms) / 1000;
-        let cwd = m["path"]["cwd"].as_str().or_else(|| m["path"]["root"].as_str()).unwrap_or("");
-        let project = Path::new(cwd).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let running = m["role"].as_str() == Some("assistant") && completed.is_none() && m["error"].is_null();
-        Some(Msg { session: session.to_string(), project, at, running })
+        let cwd = m["path"]["cwd"]
+            .as_str()
+            .or_else(|| m["path"]["root"].as_str())
+            .unwrap_or("");
+        let project = Path::new(cwd)
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let running =
+            m["role"].as_str() == Some("assistant") && completed.is_none() && m["error"].is_null();
+        Some(Msg {
+            session: session.to_string(),
+            project,
+            at,
+            running,
+        })
     }
 }
 
@@ -351,7 +424,12 @@ impl Msg {
 fn read_opencode_db(db: &Path, now: i64) -> Option<Vec<Msg>> {
     let since_ms = (now - RECENT_SECS) * 1000;
     let sql = format!("SELECT * FROM message WHERE time_created >= {since_ms}");
-    let out = std::process::Command::new("/usr/bin/sqlite3").args(["-readonly", "-json"]).arg(db).arg(sql).output().ok()?;
+    let out = std::process::Command::new("/usr/bin/sqlite3")
+        .args(["-readonly", "-json"])
+        .arg(db)
+        .arg(sql)
+        .output()
+        .ok()?;
     out.status.success().then(|| opencode_rows(&out.stdout))
 }
 
@@ -363,7 +441,10 @@ fn opencode_rows(json: &[u8]) -> Vec<Msg> {
         .flatten()
         .filter_map(|r| {
             let data: serde_json::Value = serde_json::from_str(r["data"].as_str()?).ok()?;
-            let session = r["session_id"].as_str().or_else(|| r["sessionID"].as_str()).unwrap_or("");
+            let session = r["session_id"]
+                .as_str()
+                .or_else(|| r["sessionID"].as_str())
+                .unwrap_or("");
             Msg::from_json(&data, session, r["time_updated"].as_i64().unwrap_or(0))
         })
         .collect()
@@ -376,7 +457,15 @@ fn opencode_sessions(msgs: &[Msg], now: i64) -> Vec<Session> {
     for m in msgs {
         let slot = by.entry(&m.session).or_insert((i64::MIN, false, ""));
         if m.at >= slot.0 {
-            *slot = (m.at, m.running, if m.project.is_empty() { slot.2 } else { &m.project });
+            *slot = (
+                m.at,
+                m.running,
+                if m.project.is_empty() {
+                    slot.2
+                } else {
+                    &m.project
+                },
+            );
         } else if slot.2.is_empty() {
             slot.2 = &m.project;
         }
@@ -384,7 +473,11 @@ fn opencode_sessions(msgs: &[Msg], now: i64) -> Vec<Session> {
     by.into_values()
         .filter(|(t, ..)| now - t <= RECENT_SECS)
         .map(|(t, running, project)| Session {
-            project: if project.is_empty() { Source::OpenCode.name().into() } else { project.into() },
+            project: if project.is_empty() {
+                Source::OpenCode.name().into()
+            } else {
+                project.into()
+            },
             last_write: t,
             tool_running: running && now - t <= TOOL_CAP_SECS,
         })
@@ -393,8 +486,14 @@ fn opencode_sessions(msgs: &[Msg], now: i64) -> Vec<Session> {
 
 /// The last dash-separated part of the encoded folder name.
 fn fallback_name(folder: &Path) -> String {
-    let enc = folder.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    enc.rsplit('-').find(|s| !s.is_empty()).unwrap_or(&enc).to_string()
+    let enc = folder
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    enc.rsplit('-')
+        .find(|s| !s.is_empty())
+        .unwrap_or(&enc)
+        .to_string()
 }
 
 fn is_log(p: &Path) -> bool {
@@ -412,7 +511,11 @@ fn newest_log(dir: &Path, depth: u32) -> Option<(i64, PathBuf)> {
     for e in std::fs::read_dir(dir).ok()?.flatten() {
         let p = e.path();
         let found = if p.is_dir() {
-            if depth > 0 { newest_log(&p, depth - 1) } else { None }
+            if depth > 0 {
+                newest_log(&p, depth - 1)
+            } else {
+                None
+            }
         } else if is_log(&p) {
             mtime(&p).map(|t| (t, p))
         } else {
@@ -436,11 +539,18 @@ mod tests {
         let root = std::env::temp_dir().join(format!("cmb-awake-sessions-{}", std::process::id()));
         let proj = root.join("-Users-me-work-cmdmeow");
         std::fs::create_dir_all(proj.join("abc/subagents")).unwrap();
-        std::fs::write(proj.join("abc.jsonl"), "{\"cwd\":\"/Users/me/work/cmdmeow\"}\n").unwrap();
+        std::fs::write(
+            proj.join("abc.jsonl"),
+            "{\"cwd\":\"/Users/me/work/cmdmeow\"}\n",
+        )
+        .unwrap();
         std::fs::write(proj.join("abc/subagents/agent-1.jsonl"), "{}\n").unwrap();
         std::fs::write(proj.join("def.jsonl"), "{}\n").unwrap();
         std::fs::write(proj.join("notes.txt"), "x").unwrap();
-        let now = std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
         let mut s = Scanner::default();
         let found = s.scan_claude(&root, now);
         assert_eq!(found.len(), 2, "{found:?}");
@@ -452,17 +562,28 @@ mod tests {
     #[test]
     fn an_open_tool_call_counts_as_working() {
         let a_tool = br#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash"}]}}"#;
-        let its_result = br#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}"#;
+        let its_result =
+            br#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}"#;
         let text = br#"{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"#;
         let log = |ls: &[&[u8]]| ls.join(&b'\n');
         assert!(open_tool_call(&log(&[text, a_tool, b""])));
         assert!(!open_tool_call(&log(&[a_tool, its_result])));
         assert!(!open_tool_call(&log(&[a_tool, its_result, text])));
         assert!(!open_tool_call(b""));
-        let s = Session { project: "x".into(), last_write: 1000, tool_running: true };
+        let s = Session {
+            project: "x".into(),
+            last_write: 1000,
+            tool_running: true,
+        };
         assert!(s.working(1000 + 1800), "a long build keeps it working");
-        assert!(!s.working(1000 + TOOL_CAP_SECS + 200), "an abandoned call stops counting");
-        let quiet = Session { tool_running: false, ..s };
+        assert!(
+            !s.working(1000 + TOOL_CAP_SECS + 200),
+            "an abandoned call stops counting"
+        );
+        let quiet = Session {
+            tool_running: false,
+            ..s
+        };
         assert!(!quiet.working(1000 + 1800));
     }
 
@@ -474,19 +595,26 @@ mod tests {
     }
 
     fn unix_now() -> i64 {
-        std::time::SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+        std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
     }
 
     #[test]
     fn codex_open_calls() {
         let call = br#"{"timestamp":"t","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{}","call_id":"c1"}}"#;
         let output = br#"{"timestamp":"t","type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"ok"}}"#;
-        let tokens = br#"{"timestamp":"t","type":"event_msg","payload":{"type":"token_count","info":null}}"#;
+        let tokens =
+            br#"{"timestamp":"t","type":"event_msg","payload":{"type":"token_count","info":null}}"#;
         let reasoning = br#"{"timestamp":"t","type":"response_item","payload":{"type":"reasoning","summary":[]}}"#;
         let answer = br#"{"timestamp":"t","type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}"#;
         let patch = br#"{"timestamp":"t","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"c2"}}"#;
         let log = |ls: &[&[u8]]| ls.join(&b'\n');
-        assert!(codex_open_call(&log(&[reasoning, call, tokens, b""])), "a call, then only token counts");
+        assert!(
+            codex_open_call(&log(&[reasoning, call, tokens, b""])),
+            "a call, then only token counts"
+        );
         assert!(!codex_open_call(&log(&[call, output, tokens])));
         assert!(!codex_open_call(&log(&[call, output, answer])));
         assert!(codex_open_call(&log(&[answer, patch])));
@@ -506,8 +634,14 @@ mod tests {
         let mut found = s.scan_codex(&root, unix_now());
         found.sort_by(|a, b| a.project.cmp(&b.project));
         assert_eq!(found.len(), 2, "{found:?}");
-        assert_eq!((found[0].project.as_str(), found[0].tool_running), ("Codex", false));
-        assert_eq!((found[1].project.as_str(), found[1].tool_running), ("api-server", true));
+        assert_eq!(
+            (found[0].project.as_str(), found[0].tool_running),
+            ("Codex", false)
+        );
+        assert_eq!(
+            (found[1].project.as_str(), found[1].tool_running),
+            ("api-server", true)
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -532,16 +666,21 @@ mod tests {
         let ms = |t: i64| t * 1000;
         let row = |sid: &str, data: String| serde_json::json!({ "id": "m", "session_id": sid, "time_updated": 0, "data": data });
         let done = serde_json::json!({ "role": "assistant", "time": { "created": ms(now - 4000), "completed": ms(now - 3900) }, "path": { "cwd": "/w/site" } }).to_string();
-        let asked = serde_json::json!({ "role": "user", "time": { "created": ms(now - 600) } }).to_string();
+        let asked =
+            serde_json::json!({ "role": "user", "time": { "created": ms(now - 600) } }).to_string();
         let running = serde_json::json!({ "role": "assistant", "time": { "created": ms(now - 590) }, "path": { "cwd": "/w/app" } }).to_string();
-        let rows = serde_json::Value::Array(vec![row("s1", done), row("s2", asked), row("s2", running)]);
+        let rows =
+            serde_json::Value::Array(vec![row("s1", done), row("s2", asked), row("s2", running)]);
         let msgs = opencode_rows(rows.to_string().as_bytes());
         assert_eq!(msgs.len(), 3);
         let mut found = opencode_sessions(&msgs, now);
         found.sort_by(|a, b| a.project.cmp(&b.project));
         assert_eq!(found.len(), 2, "{found:?}");
         assert_eq!(found[0].project, "app");
-        assert!(found[0].working(now), "a reply without a completed time is still running");
+        assert!(
+            found[0].working(now),
+            "a reply without a completed time is still running"
+        );
         assert_eq!(found[1].project, "site");
         assert!(!found[1].working(now));
         assert!(opencode_rows(b"garbage").is_empty());
@@ -554,12 +693,17 @@ mod tests {
         assert_eq!(Source::of("cursor"), None);
         assert!(Source::ALL.iter().all(|s| Source::of(s.id()) == Some(*s)));
         // every agent a person can pick in setup can be watched
-        assert!(crate::kit::ai::PROVIDERS.iter().all(|m| Source::of(m.id).is_some()));
+        assert!(crate::kit::ai::PROVIDERS
+            .iter()
+            .all(|m| Source::of(m.id).is_some()));
     }
 
     #[test]
     fn name_from_folder_when_log_has_no_cwd() {
-        assert_eq!(fallback_name(Path::new("/x/-Users-me-api-server")), "server");
+        assert_eq!(
+            fallback_name(Path::new("/x/-Users-me-api-server")),
+            "server"
+        );
         assert_eq!(fallback_name(Path::new("/x/-Users-me-app-")), "app");
     }
 }

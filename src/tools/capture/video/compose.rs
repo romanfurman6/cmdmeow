@@ -38,15 +38,25 @@ pub struct Project {
 
 /// FNV-1a: a stable short name for a path (std's hasher may change).
 fn fnv(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x0100_0000_01b3))
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ *b as u64).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 impl Project {
     /// The folder for the framed file `out` (two files with one name in
     /// different folders get different projects).
     pub fn for_output(root: &Path, out: &Path) -> Project {
-        let stem = out.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Video".into());
-        Project { dir: root.join(format!("{stem} {:016x}", fnv(out.as_os_str().as_encoded_bytes()))) }
+        let stem = out
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Video".into());
+        Project {
+            dir: root.join(format!(
+                "{stem} {:016x}",
+                fnv(out.as_os_str().as_encoded_bytes())
+            )),
+        }
     }
 
     /// The project of a framed file, if it has one this version can use.
@@ -71,7 +81,8 @@ impl Project {
     }
 
     pub fn save(&self, meta: &Meta) -> bool {
-        std::fs::create_dir_all(&self.dir).is_ok() && crate::kit::fs::save_json(&self.dir.join("meta.json"), meta, true)
+        std::fs::create_dir_all(&self.dir).is_ok()
+            && crate::kit::fs::save_json(&self.dir.join("meta.json"), meta, true)
     }
 
     pub fn remove(&self) {
@@ -81,14 +92,21 @@ impl Project {
 
 /// Seconds since `p` last changed.
 fn age(p: &Path) -> Option<u64> {
-    std::fs::metadata(p).and_then(|m| m.modified()).ok()?.elapsed().ok().map(|d| d.as_secs())
+    std::fs::metadata(p)
+        .and_then(|m| m.modified())
+        .ok()?
+        .elapsed()
+        .ok()
+        .map(|d| d.as_secs())
 }
 
 /// Removes projects whose framed file is gone (deleted from the folder or
 /// History) or that an older version wrote, and scratch files a crash left.
 /// Returns how many.
 pub fn prune(root: &Path) -> usize {
-    let Ok(rd) = std::fs::read_dir(root) else { return 0 };
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return 0;
+    };
     let mut n = 0;
     for e in rd.flatten() {
         let path = e.path();
@@ -116,7 +134,10 @@ pub fn prune(root: &Path) -> usize {
 /// moves into a project without copying).
 pub fn scratch(root: &Path) -> PathBuf {
     let _ = std::fs::create_dir_all(root);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     root.join(format!(".cut {} {nanos}.mp4", std::process::id()))
 }
 
@@ -136,7 +157,13 @@ fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 /// otherwise the one it had, or (framed for the first time) the file as it
 /// was. The file is only replaced once its picture is safe; a project that
 /// can't be written is dropped (the framed file stands on its own).
-pub fn commit_over(root: &Path, path: &Path, written: &Path, cut: Option<&Path>, style: Style) -> Result<(), String> {
+pub fn commit_over(
+    root: &Path,
+    path: &Path,
+    written: &Path,
+    cut: Option<&Path>,
+    style: Style,
+) -> Result<(), String> {
     let p = Project::for_output(root, path);
     let had = Project::find(root, path).is_some();
     let fail = |why: String, staged: Option<&Path>| -> Result<(), String> {
@@ -165,17 +192,28 @@ pub fn commit_over(root: &Path, path: &Path, written: &Path, cut: Option<&Path>,
     let staged = p.staged();
     let stage = match cut {
         Some(c) => Some(std::fs::create_dir_all(&p.dir).and_then(|_| move_file(c, &staged))),
-        None if !had => Some(std::fs::create_dir_all(&p.dir).and_then(|_| std::fs::copy(path, &staged).map(|_| ()))),
+        None if !had => Some(
+            std::fs::create_dir_all(&p.dir).and_then(|_| std::fs::copy(path, &staged).map(|_| ())),
+        ),
         None => None,
     };
     if let Some(Err(e)) = stage {
-        return fail(format!("Couldn't keep the unframed video: {e}"), Some(&staged));
+        return fail(
+            format!("Couldn't keep the unframed video: {e}"),
+            Some(&staged),
+        );
     }
     if let Err(e) = std::fs::rename(written, path) {
         return fail(e.to_string(), stage.is_some().then_some(staged.as_path()));
     }
     let placed = stage.is_none() || std::fs::rename(&staged, p.raw()).is_ok();
-    if !(placed && p.save(&Meta { version: VERSION, out: path.to_path_buf(), style })) {
+    if !(placed
+        && p.save(&Meta {
+            version: VERSION,
+            out: path.to_path_buf(),
+            style,
+        }))
+    {
         p.remove();
     }
     Ok(())
@@ -218,11 +256,15 @@ mod imp {
     use objc2::runtime::AnyObject;
     use objc2::AllocAnyThread;
     use objc2_av_foundation::{
-        AVAssetReader, AVAssetReaderStatus, AVAssetReaderTrackOutput, AVAssetTrack, AVAssetWriter, AVAssetWriterInput, AVAssetWriterInputPixelBufferAdaptor, AVAssetWriterStatus, AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo,
-        AVURLAsset,
+        AVAssetReader, AVAssetReaderStatus, AVAssetReaderTrackOutput, AVAssetTrack, AVAssetWriter,
+        AVAssetWriterInput, AVAssetWriterInputPixelBufferAdaptor, AVAssetWriterStatus,
+        AVFileTypeMPEG4, AVMediaTypeAudio, AVMediaTypeVideo, AVURLAsset,
     };
     use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
-    use objc2_core_image::{kCIContextCacheIntermediates, kCIContextOutputColorSpace, kCIContextWorkingColorSpace, kCIImageColorSpace, CIContext, CIImage, CIRenderDestination, CIRenderTask};
+    use objc2_core_image::{
+        kCIContextCacheIntermediates, kCIContextOutputColorSpace, kCIContextWorkingColorSpace,
+        kCIImageColorSpace, CIContext, CIImage, CIRenderDestination, CIRenderTask,
+    };
     use objc2_core_media::{CMFormatDescription, CMTime, CMTimeFlags};
     use objc2_core_video::CVPixelBuffer;
     use objc2_foundation::{NSDictionary, NSError, NSNull, NSNumber, NSString, NSURL};
@@ -247,14 +289,25 @@ mod imp {
 
     #[link(name = "CoreVideo", kind = "framework")]
     unsafe extern "C" {
-        fn CVPixelBufferCreate(alloc: *const c_void, w: usize, h: usize, format: u32, attrs: *const c_void, out: *mut *mut c_void) -> i32;
+        fn CVPixelBufferCreate(
+            alloc: *const c_void,
+            w: usize,
+            h: usize,
+            format: u32,
+            attrs: *const c_void,
+            out: *mut *mut c_void,
+        ) -> i32;
         fn CVPixelBufferLockBaseAddress(pb: *mut c_void, flags: u64) -> i32;
         fn CVPixelBufferUnlockBaseAddress(pb: *mut c_void, flags: u64) -> i32;
         fn CVPixelBufferGetBaseAddress(pb: *mut c_void) -> *const u8;
         fn CVPixelBufferGetBytesPerRow(pb: *mut c_void) -> usize;
         fn CVPixelBufferGetWidth(pb: *mut c_void) -> usize;
         fn CVPixelBufferGetHeight(pb: *mut c_void) -> usize;
-        fn CVPixelBufferPoolCreatePixelBuffer(alloc: *const c_void, pool: *const c_void, out: *mut *mut c_void) -> i32;
+        fn CVPixelBufferPoolCreatePixelBuffer(
+            alloc: *const c_void,
+            pool: *const c_void,
+            out: *mut *mut c_void,
+        ) -> i32;
         fn CVBufferPropagateAttachments(src: *mut c_void, dst: *mut c_void);
     }
 
@@ -268,7 +321,12 @@ mod imp {
     const YUV: u32 = u32::from_be_bytes(*b"420v");
 
     fn cm(secs: f64) -> CMTime {
-        CMTime { value: (secs.max(0.0) * 60_000.0).round() as i64, timescale: 60_000, flags: CMTimeFlags::Valid, epoch: 0 }
+        CMTime {
+            value: (secs.max(0.0) * 60_000.0).round() as i64,
+            timescale: 60_000,
+            flags: CMTimeFlags::Valid,
+            epoch: 0,
+        }
     }
 
     fn secs(t: CMTime) -> f64 {
@@ -289,23 +347,37 @@ mod imp {
     }
 
     fn dict(pairs: &[(&str, &AnyObject)]) -> Retained<NSDictionary<NSString, AnyObject>> {
-        let keys: Vec<Retained<NSString>> = pairs.iter().map(|(k, _)| NSString::from_str(k)).collect();
+        let keys: Vec<Retained<NSString>> =
+            pairs.iter().map(|(k, _)| NSString::from_str(k)).collect();
         let key_refs: Vec<&NSString> = keys.iter().map(|k| &**k).collect();
         let vals: Vec<&AnyObject> = pairs.iter().map(|(_, v)| *v).collect();
         NSDictionary::from_slices(&key_refs, &vals)
     }
 
     /// A pixel buffer the GPU can draw from and into (IOSurface-backed).
-    fn gpu_attrs(format: u32, size: Option<(u32, u32)>) -> Retained<NSDictionary<NSString, AnyObject>> {
+    fn gpu_attrs(
+        format: u32,
+        size: Option<(u32, u32)>,
+    ) -> Retained<NSDictionary<NSString, AnyObject>> {
         let fmt = NSNumber::new_u32(format);
         let surface = dict(&[]);
         let metal = NSNumber::new_bool(true);
         match size {
             Some((w, h)) => {
                 let (w, h) = (NSNumber::new_u32(w), NSNumber::new_u32(h));
-                dict(&[("PixelFormatType", any(&*fmt)), ("Width", any(&*w)), ("Height", any(&*h)), ("IOSurfaceProperties", any(&*surface)), ("MetalCompatibility", any(&*metal))])
+                dict(&[
+                    ("PixelFormatType", any(&*fmt)),
+                    ("Width", any(&*w)),
+                    ("Height", any(&*h)),
+                    ("IOSurfaceProperties", any(&*surface)),
+                    ("MetalCompatibility", any(&*metal)),
+                ])
             }
-            None => dict(&[("PixelFormatType", any(&*fmt)), ("IOSurfaceProperties", any(&*surface)), ("MetalCompatibility", any(&*metal))]),
+            None => dict(&[
+                ("PixelFormatType", any(&*fmt)),
+                ("IOSurfaceProperties", any(&*surface)),
+                ("MetalCompatibility", any(&*metal)),
+            ]),
         }
     }
 
@@ -322,19 +394,34 @@ mod imp {
         }
     }
 
-    unsafe fn still(pm: &tiny_skia::Pixmap, opts: &NSDictionary<NSString, AnyObject>) -> Option<Still> {
+    unsafe fn still(
+        pm: &tiny_skia::Pixmap,
+        opts: &NSDictionary<NSString, AnyObject>,
+    ) -> Option<Still> {
         unsafe {
             let (w, h) = (pm.width() as usize, pm.height() as usize);
             let attrs = gpu_attrs(BGRA, None);
             let mut pb: *mut c_void = std::ptr::null_mut();
-            if CVPixelBufferCreate(std::ptr::null(), w, h, BGRA, Retained::as_ptr(&attrs) as *const c_void, &mut pb) != 0 || pb.is_null() {
+            if CVPixelBufferCreate(
+                std::ptr::null(),
+                w,
+                h,
+                BGRA,
+                Retained::as_ptr(&attrs) as *const c_void,
+                &mut pb,
+            ) != 0
+                || pb.is_null()
+            {
                 return None;
             }
             if CVPixelBufferLockBaseAddress(pb, 0) != 0 {
                 CFRelease(pb);
                 return None;
             }
-            let (row, base) = (CVPixelBufferGetBytesPerRow(pb), CVPixelBufferGetBaseAddress(pb));
+            let (row, base) = (
+                CVPixelBufferGetBytesPerRow(pb),
+                CVPixelBufferGetBaseAddress(pb),
+            );
             if !base.is_null() {
                 // locked for writing: ours until unlocked
                 let dst = std::slice::from_raw_parts_mut(base as *mut u8, row * h);
@@ -343,7 +430,8 @@ mod imp {
                 }
             }
             CVPixelBufferUnlockBaseAddress(pb, 0);
-            let img = CIImage::imageWithCVPixelBuffer_options(&*(pb as *const CVPixelBuffer), Some(opts));
+            let img =
+                CIImage::imageWithCVPixelBuffer_options(&*(pb as *const CVPixelBuffer), Some(opts));
             Some(Still { pb, img })
         }
     }
@@ -371,8 +459,17 @@ mod imp {
 
     impl Knobs {
         fn get() -> Knobs {
-            let env = |k: &str, d: usize| std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(d);
-            Knobs { yuv: env("CMDMEOW_FRAME_YUV", 1) == 1, hq: env("CMDMEOW_FRAME_HQ", 1) == 1, depth: env("CMDMEOW_FRAME_DEPTH", 3).clamp(1, 8) }
+            let env = |k: &str, d: usize| {
+                std::env::var(k)
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(d)
+            };
+            Knobs {
+                yuv: env("CMDMEOW_FRAME_YUV", 1) == 1,
+                hq: env("CMDMEOW_FRAME_HQ", 1) == 1,
+                depth: env("CMDMEOW_FRAME_DEPTH", 3).clamp(1, 8),
+            }
         }
     }
 
@@ -451,39 +548,75 @@ mod imp {
     }
 
     #[allow(deprecated)]
-    unsafe fn run(job: &Job, progress: &Progress, knobs: Knobs, spent: &mut Spent) -> Result<((u32, u32), u64, f64), String> {
+    unsafe fn run(
+        job: &Job,
+        progress: &Progress,
+        knobs: Knobs,
+        spent: &mut Spent,
+    ) -> Result<((u32, u32), u64, f64), String> {
         unsafe {
-            let asset = AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&job.src.to_string_lossy())), None);
-            let (vm, am) = (AVMediaTypeVideo.ok_or("no video")?, AVMediaTypeAudio.ok_or("no audio")?);
+            let asset = AVURLAsset::URLAssetWithURL_options(
+                &NSURL::fileURLWithPath(&NSString::from_str(&job.src.to_string_lossy())),
+                None,
+            );
+            let (vm, am) = (
+                AVMediaTypeVideo.ok_or("no video")?,
+                AVMediaTypeAudio.ok_or("no audio")?,
+            );
             let duration = secs(asset.duration());
             if duration <= 0.0 {
                 return Err("The video is empty".into());
             }
-            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or("No picture in the video")?;
+            let track: Retained<AVAssetTrack> = asset
+                .tracksWithMediaType(vm)
+                .firstObject()
+                .ok_or("No picture in the video")?;
             let ns = track.naturalSize();
-            let src = ((ns.width.round() as u32).max(2), (ns.height.round() as u32).max(2));
+            let src = (
+                (ns.width.round() as u32).max(2),
+                (ns.height.round() as u32).max(2),
+            );
             let lay = scene::layout(src, Some(&job.frame));
             let (ow, oh) = lay.out;
             let chrome = scene::chrome(&job.frame, &lay).ok_or("The frame couldn't be drawn")?;
             // a screen recording sends frames only when something moved:
             // the rate is a hint for the encoder, the frames keep their times
-            let fps = if track.nominalFrameRate() > 31.0 { 60 } else { 30 };
+            let fps = if track.nominalFrameRate() > 31.0 {
+                60
+            } else {
+                30
+            };
 
             // the GPU, without colour conversions: pixels go out as they came in
             let null = NSNull::null();
             let no = NSNumber::new_bool(false);
-            let ctx_opts = NSDictionary::from_slices(&[kCIContextWorkingColorSpace, kCIContextOutputColorSpace, kCIContextCacheIntermediates], &[any(&*null), any(&*null), any(&*no)]);
+            let ctx_opts = NSDictionary::from_slices(
+                &[
+                    kCIContextWorkingColorSpace,
+                    kCIContextOutputColorSpace,
+                    kCIContextCacheIntermediates,
+                ],
+                &[any(&*null), any(&*null), any(&*no)],
+            );
             let ctx = CIContext::contextWithOptions(Some(&ctx_opts));
             let img_opts = NSDictionary::from_slices(&[kCIImageColorSpace], &[any(&*null)]);
             let under = still(&chrome.under, &img_opts).ok_or("No memory for the frame")?;
             let over = still(&chrome.over, &img_opts).ok_or("No memory for the frame")?;
             // the picture's place, in Core Image's space (y up from the bottom)
             let s = lay.screen;
-            let hole = CGRect::new(CGPoint::new(s.left() as f64, (oh as f32 - s.bottom()) as f64), CGSize::new(s.width() as f64, s.height() as f64));
+            let hole = CGRect::new(
+                CGPoint::new(s.left() as f64, (oh as f32 - s.bottom()) as f64),
+                CGSize::new(s.width() as f64, s.height() as f64),
+            );
 
             // reading
-            let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| ns_err(&e))?;
-            let video_out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(&gpu_attrs(YUV, None)));
+            let reader =
+                AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| ns_err(&e))?;
+            let video_out =
+                AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(
+                    &track,
+                    Some(&gpu_attrs(YUV, None)),
+                );
             video_out.setAlwaysCopiesSampleData(false);
             if !reader.canAddOutput(&video_out) {
                 return Err("The video can't be read".into());
@@ -493,14 +626,34 @@ mod imp {
             // writing
             let _ = std::fs::remove_file(&job.out);
             let url = NSURL::fileURLWithPath(&NSString::from_str(&job.out.to_string_lossy()));
-            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(&url, AVFileTypeMPEG4.ok_or("mp4 isn't available")?).map_err(|e| ns_err(&e))?;
+            let writer = AVAssetWriter::assetWriterWithURL_fileType_error(
+                &url,
+                AVFileTypeMPEG4.ok_or("mp4 isn't available")?,
+            )
+            .map_err(|e| ns_err(&e))?;
             let num = |v: f64| NSNumber::new_f64(v);
-            let (bitrate, nfps, keys) = (num(timeline::bitrate(ow, oh, fps, RecQuality::High) as f64), num(fps as f64), num((fps * 2) as f64));
+            let (bitrate, nfps, keys) = (
+                num(timeline::bitrate(ow, oh, fps, RecQuality::High) as f64),
+                num(fps as f64),
+                num((fps * 2) as f64),
+            );
             let profile = NSString::from_str("H264_High_AutoLevel");
-            let compression = dict(&[("AverageBitRate", any(&*bitrate)), ("ExpectedFrameRate", any(&*nfps)), ("MaxKeyFrameInterval", any(&*keys)), ("ProfileLevel", any(&*profile)), ("AllowFrameReordering", any(&*no))]);
+            let compression = dict(&[
+                ("AverageBitRate", any(&*bitrate)),
+                ("ExpectedFrameRate", any(&*nfps)),
+                ("MaxKeyFrameInterval", any(&*keys)),
+                ("ProfileLevel", any(&*profile)),
+                ("AllowFrameReordering", any(&*no)),
+            ]);
             let (w, h, codec) = (num(ow as f64), num(oh as f64), NSString::from_str("avc1"));
-            let vset = dict(&[("AVVideoCodecKey", any(&*codec)), ("AVVideoWidthKey", any(&*w)), ("AVVideoHeightKey", any(&*h)), ("AVVideoCompressionPropertiesKey", any(&*compression))]);
-            let video = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset));
+            let vset = dict(&[
+                ("AVVideoCodecKey", any(&*codec)),
+                ("AVVideoWidthKey", any(&*w)),
+                ("AVVideoHeightKey", any(&*h)),
+                ("AVVideoCompressionPropertiesKey", any(&*compression)),
+            ]);
+            let video =
+                AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset));
             video.setExpectsMediaDataInRealTime(false);
             if !writer.canAddInput(&video) {
                 return Err("This Mac can't encode video at that size".into());
@@ -510,27 +663,41 @@ mod imp {
 
             let mut lanes = Vec::new();
             for t in asset.tracksWithMediaType(am).iter() {
-                let o = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&t, None);
+                let o = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(
+                    &t, None,
+                );
                 let descs = t.formatDescriptions();
                 let first = descs.firstObject();
                 // the array holds CMFormatDescriptions
-                let hint = first.as_ref().map(|d| &*(Retained::as_ptr(d) as *const CMFormatDescription));
+                let hint = first
+                    .as_ref()
+                    .map(|d| &*(Retained::as_ptr(d) as *const CMFormatDescription));
                 let input = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings_sourceFormatHint(am, None, hint);
                 input.setExpectsMediaDataInRealTime(false);
                 input.setMarksOutputTrackAsEnabled(t.isEnabled());
                 if reader.canAddOutput(&o) && writer.canAddInput(&input) {
                     reader.addOutput(&o);
                     writer.addInput(&input);
-                    lanes.push(Lane { out: o, input, done: false });
+                    lanes.push(Lane {
+                        out: o,
+                        input,
+                        done: false,
+                    });
                 }
             }
 
             if !reader.startReading() {
-                return Err(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video can't be read".into()));
+                return Err(reader
+                    .error()
+                    .map(|e| ns_err(&e))
+                    .unwrap_or_else(|| "The video can't be read".into()));
             }
             if !writer.startWriting() {
                 reader.cancelReading();
-                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into()));
+                return Err(writer
+                    .error()
+                    .map(|e| ns_err(&e))
+                    .unwrap_or_else(|| "Couldn't start the video file".into()));
             }
             writer.startSessionAtSourceTime(cm(0.0));
             let Some(pool) = adaptor.pixelBufferPool() else {
@@ -555,10 +722,20 @@ mod imp {
                     return fail("Cancelled".into());
                 }
                 if writer.status() == AVAssetWriterStatus::Failed {
-                    return fail(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be written".into()));
+                    return fail(
+                        writer
+                            .error()
+                            .map(|e| ns_err(&e))
+                            .unwrap_or_else(|| "The video couldn't be written".into()),
+                    );
                 }
                 if reader.status() == AVAssetReaderStatus::Failed {
-                    return fail(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be read".into()));
+                    return fail(
+                        reader
+                            .error()
+                            .map(|e| ns_err(&e))
+                            .unwrap_or_else(|| "The video couldn't be read".into()),
+                    );
                 }
                 let mut moved = false;
                 // keep the GPU busy: a few frames drawing while the encoder
@@ -589,20 +766,44 @@ mod imp {
                         }
                         spent.first.get_or_insert(t);
                         let t1 = std::time::Instant::now();
-                        let (pw, ph) = (CVPixelBufferGetWidth(pic_pb).max(1) as f64, CVPixelBufferGetHeight(pic_pb).max(1) as f64);
-                        let pic = CIImage::imageWithCVPixelBuffer_options(&*(pic_pb as *const CVPixelBuffer), Some(&img_opts));
-                        let fit = CGAffineTransform { a: hole.size.width / pw, b: 0.0, c: 0.0, d: hole.size.height / ph, tx: hole.origin.x, ty: hole.origin.y };
+                        let (pw, ph) = (
+                            CVPixelBufferGetWidth(pic_pb).max(1) as f64,
+                            CVPixelBufferGetHeight(pic_pb).max(1) as f64,
+                        );
+                        let pic = CIImage::imageWithCVPixelBuffer_options(
+                            &*(pic_pb as *const CVPixelBuffer),
+                            Some(&img_opts),
+                        );
+                        let fit = CGAffineTransform {
+                            a: hole.size.width / pw,
+                            b: 0.0,
+                            c: 0.0,
+                            d: hole.size.height / ph,
+                            tx: hole.origin.x,
+                            ty: hole.origin.y,
+                        };
                         // clamped first, so the picture's edge pixels are whole (no seam)
-                        let pic = pic.imageByClampingToExtent().imageByApplyingTransform_highQualityDownsample(fit, knobs.hq).imageByCroppingToRect(hole);
-                        let frame = over.img.imageByCompositingOverImage(&pic.imageByCompositingOverImage(&under.img));
+                        let pic = pic
+                            .imageByClampingToExtent()
+                            .imageByApplyingTransform_highQualityDownsample(fit, knobs.hq)
+                            .imageByCroppingToRect(hole);
+                        let frame = over.img.imageByCompositingOverImage(
+                            &pic.imageByCompositingOverImage(&under.img),
+                        );
                         let mut out: *mut c_void = std::ptr::null_mut();
-                        if CVPixelBufferPoolCreatePixelBuffer(std::ptr::null(), pool_ptr, &mut out) != 0 || out.is_null() {
+                        if CVPixelBufferPoolCreatePixelBuffer(std::ptr::null(), pool_ptr, &mut out)
+                            != 0
+                            || out.is_null()
+                        {
                             return Err("Out of memory for frames".into());
                         }
                         // the recording's colour tags, and the matrix a 420v
                         // frame is converted with
                         CVBufferPropagateAttachments(pic_pb, out);
-                        let dest = CIRenderDestination::initWithPixelBuffer(CIRenderDestination::alloc(), &*(out as *const CVPixelBuffer));
+                        let dest = CIRenderDestination::initWithPixelBuffer(
+                            CIRenderDestination::alloc(),
+                            &*(out as *const CVPixelBuffer),
+                        );
                         dest.setColorSpace(None);
                         let task = match ctx.startTaskToRender_toDestination_error(&frame, &dest) {
                             Ok(task) => task,
@@ -613,9 +814,24 @@ mod imp {
                         };
                         spent.draw += t1.elapsed().as_secs_f64();
                         // the first frame shows from the start, whenever it came
-                        let at = if last.is_none() { cm(0.0) } else { CMTime { value: pts.value, timescale: pts.timescale, flags: CMTimeFlags(pts.flags), epoch: pts.epoch } };
+                        let at = if last.is_none() {
+                            cm(0.0)
+                        } else {
+                            CMTime {
+                                value: pts.value,
+                                timescale: pts.timescale,
+                                flags: CMTimeFlags(pts.flags),
+                                epoch: pts.epoch,
+                            }
+                        };
                         last = Some(t);
-                        Ok(Next::Frame(Flight { task, _dest: dest, out, at, t }))
+                        Ok(Next::Frame(Flight {
+                            task,
+                            _dest: dest,
+                            out,
+                            at,
+                            t,
+                        }))
                     });
                     match next {
                         Ok(Next::Frame(f)) => flights.push_back(f),
@@ -626,7 +842,9 @@ mod imp {
                 }
                 if !flights.is_empty() && video.isReadyForMoreMediaData() {
                     moved = true;
-                    let Some(f) = flights.pop_front() else { continue };
+                    let Some(f) = flights.pop_front() else {
+                        continue;
+                    };
                     let step = autoreleasepool(|_| -> Result<(), String> {
                         let t0 = std::time::Instant::now();
                         let drawn = f.task.waitUntilCompletedAndReturnError();
@@ -635,10 +853,16 @@ mod imp {
                             return Err(format!("The frame couldn't be drawn: {}", ns_err(&e)));
                         }
                         let t1 = std::time::Instant::now();
-                        let ok = adaptor.appendPixelBuffer_withPresentationTime(&*(f.out as *const CVPixelBuffer), f.at);
+                        let ok = adaptor.appendPixelBuffer_withPresentationTime(
+                            &*(f.out as *const CVPixelBuffer),
+                            f.at,
+                        );
                         spent.write += t1.elapsed().as_secs_f64();
                         if !ok {
-                            return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "A frame couldn't be written".into()));
+                            return Err(writer
+                                .error()
+                                .map(|e| ns_err(&e))
+                                .unwrap_or_else(|| "A frame couldn't be written".into()));
                         }
                         Ok(())
                     });
@@ -646,7 +870,10 @@ mod imp {
                         return fail(e);
                     }
                     frames += 1;
-                    progress.done.store(((f.t / duration) * 1000.0).clamp(0.0, 999.0) as u32, Ordering::Relaxed);
+                    progress.done.store(
+                        ((f.t / duration) * 1000.0).clamp(0.0, 999.0) as u32,
+                        Ordering::Relaxed,
+                    );
                 }
                 if !video_done && src_done && flights.is_empty() {
                     video.markAsFinished();
@@ -658,7 +885,11 @@ mod imp {
                         match l.out.copyNextSampleBuffer() {
                             Some(sb) => {
                                 if !l.input.appendSampleBuffer(&sb) {
-                                    return fail(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The sound couldn't be written".into()));
+                                    return fail(
+                                        writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| {
+                                            "The sound couldn't be written".into()
+                                        }),
+                                    );
                                 }
                             }
                             None => {
@@ -708,7 +939,10 @@ mod imp {
             if writer.status() == AVAssetWriterStatus::Completed {
                 Ok(((ow, oh), frames, duration))
             } else {
-                Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be finished".into()))
+                Err(writer
+                    .error()
+                    .map(|e| ns_err(&e))
+                    .unwrap_or_else(|| "The video couldn't be finished".into()))
             }
         }
     }
@@ -744,7 +978,9 @@ mod tests {
     }
 
     fn framed() -> Style {
-        Style { frame: Some(Frame::default()) }
+        Style {
+            frame: Some(Frame::default()),
+        }
     }
 
     fn read(p: &Path) -> String {
@@ -756,16 +992,27 @@ mod tests {
         let t = Tmp::new("find");
         let out = t.video("Recording 1.mp4", "framed");
         let p = Project::for_output(&t.root(), &out);
-        assert!(p.save(&Meta { version: VERSION, out: out.clone(), style: framed() }));
+        assert!(p.save(&Meta {
+            version: VERSION,
+            out: out.clone(),
+            style: framed()
+        }));
         std::fs::write(p.raw(), b"raw").unwrap();
         let (found, meta) = Project::find(&t.root(), &out).expect("found");
         assert_eq!(found.dir, p.dir);
         assert_eq!(meta.style, framed());
         assert!(Project::find(&t.root(), &t.0.join("other.mp4")).is_none());
         // the same name in another folder is another project
-        assert_ne!(Project::for_output(&t.root(), &t.0.join("Recording 1.mp4")).dir, p.dir);
+        assert_ne!(
+            Project::for_output(&t.root(), &t.0.join("Recording 1.mp4")).dir,
+            p.dir
+        );
         // an older version's project isn't used
-        assert!(p.save(&Meta { version: 1, out: out.clone(), style: framed() }));
+        assert!(p.save(&Meta {
+            version: 1,
+            out: out.clone(),
+            style: framed()
+        }));
         assert!(Project::find(&t.root(), &out).is_none());
     }
 
@@ -777,7 +1024,11 @@ mod tests {
         let old = t.video("Old.mp4", "x");
         for (out, version) in [(&keep, VERSION), (&gone, VERSION), (&old, 1)] {
             let p = Project::for_output(&t.root(), out);
-            assert!(p.save(&Meta { version, out: out.clone(), style: framed() }));
+            assert!(p.save(&Meta {
+                version,
+                out: out.clone(),
+                style: framed()
+            }));
             std::fs::write(p.raw(), b"raw").unwrap();
         }
         std::fs::remove_file(&gone).unwrap();
@@ -815,20 +1066,42 @@ mod tests {
         assert_eq!(read(&path), "framed, cut");
         assert!(!cut.exists());
         // a new frame on the same picture keeps it
-        let other = Style { frame: Some(Frame { bg: 3, ..Frame::default() }) };
+        let other = Style {
+            frame: Some(Frame {
+                bg: 3,
+                ..Frame::default()
+            }),
+        };
         let again = t.video(".Rec.mp4.edit.mp4", "framed 2");
         commit_over(&t.root(), &path, &again, None, other).unwrap();
         let (p, meta) = Project::find(&t.root(), &path).expect("still a project");
-        assert_eq!((read(&p.raw()).as_str(), read(&path).as_str(), meta.style), ("plain, cut", "framed 2", other));
+        assert_eq!(
+            (read(&p.raw()).as_str(), read(&path).as_str(), meta.style),
+            ("plain, cut", "framed 2", other)
+        );
     }
 
     #[test]
     fn taking_the_frame_off_drops_the_project() {
         let t = Tmp::new("off");
         let path = t.video("Rec.mp4", "plain");
-        commit_over(&t.root(), &path, &t.video(".w.mp4", "framed"), None, framed()).unwrap();
+        commit_over(
+            &t.root(),
+            &path,
+            &t.video(".w.mp4", "framed"),
+            None,
+            framed(),
+        )
+        .unwrap();
         let (p, _) = Project::find(&t.root(), &path).unwrap();
-        commit_over(&t.root(), &path, &t.video(".w.mp4", "plain again"), None, Style::default()).unwrap();
+        commit_over(
+            &t.root(),
+            &path,
+            &t.video(".w.mp4", "plain again"),
+            None,
+            Style::default(),
+        )
+        .unwrap();
         assert_eq!(read(&path), "plain again");
         assert!(!p.dir.exists());
     }
@@ -844,7 +1117,10 @@ mod tests {
         assert!(commit_over(&t.root(), &path, &missing, Some(&cut), framed()).is_err());
         assert_eq!(read(&path), "plain");
         assert!(Project::find(&t.root(), &path).is_none());
-        assert!(!Project::for_output(&t.root(), &path).dir.exists(), "no half-made project");
+        assert!(
+            !Project::for_output(&t.root(), &path).dir.exists(),
+            "no half-made project"
+        );
         assert!(!cut.exists());
     }
 }

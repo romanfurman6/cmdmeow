@@ -24,9 +24,13 @@ fn red_wash(a: f32) -> Color32 {
     with_alpha(tint::STARTUP(), a)
 }
 #[allow(non_snake_case)]
-fn SUGGEST_TEXT() -> Color32 { AMBER() }
+fn SUGGEST_TEXT() -> Color32 {
+    AMBER()
+}
 #[allow(non_snake_case)]
-fn ORPHAN_TEXT() -> Color32 { AMBER() }
+fn ORPHAN_TEXT() -> Color32 {
+    AMBER()
+}
 
 fn letter_color(name: &str) -> Color32 {
     const PALETTE: [Color32; 8] = [
@@ -39,30 +43,70 @@ fn letter_color(name: &str) -> Color32 {
         Color32::from_rgb(0x5B, 0x2C, 0x6F),
         Color32::from_rgb(0x48, 0x48, 0x4E),
     ];
-    let h = name.bytes().fold(5381u32, |h, b| h.wrapping_mul(33) ^ b as u32);
+    let h = name
+        .bytes()
+        .fold(5381u32, |h, b| h.wrapping_mul(33) ^ b as u32);
     PALETTE[(h % PALETTE.len() as u32) as usize]
 }
 
 /// The owning app's icon (macOS), else a colored square with a letter.
 #[allow(clippy::too_many_arguments)]
-fn app_icon(s: &mut Startup, ctx: &egui::Context, p: &egui::Painter, r: Rect, path: Option<&Path>, name: &str, dim: bool, budget: &mut usize) {
+fn app_icon(
+    s: &mut Startup,
+    ctx: &egui::Context,
+    p: &egui::Painter,
+    r: Rect,
+    path: Option<&Path>,
+    name: &str,
+    dim: bool,
+    budget: &mut usize,
+) {
     let a = if dim { 0.5 } else { 1.0 };
     if let Some(path) = path {
         // an app in Downloads etc. isn't read (nor cached) before Full Disk Access
-        if !s.icons.contains_key(path) && *budget > 0 && !s.demo && !crate::kit::fs::behind_folder_prompt(path) {
+        if !s.icons.contains_key(path)
+            && *budget > 0
+            && !s.demo
+            && !crate::kit::fs::behind_folder_prompt(path)
+        {
             *budget -= 1;
-            let tex = macos::app_icon(path, 64).map(|(n, rgba)| ctx.load_texture(format!("startup-icon:{}", path.display()), egui::ColorImage::from_rgba_unmultiplied([n, n], &rgba), egui::TextureOptions::LINEAR));
+            let tex = macos::app_icon(path, 64).map(|(n, rgba)| {
+                ctx.load_texture(
+                    format!("startup-icon:{}", path.display()),
+                    egui::ColorImage::from_rgba_unmultiplied([n, n], &rgba),
+                    egui::TextureOptions::LINEAR,
+                )
+            });
             s.icons.insert(path.to_path_buf(), tex);
             ctx.request_repaint();
         }
         if let Some(Some(t)) = s.icons.get(path) {
-            p.image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), with_alpha(Color32::WHITE, a));
+            p.image(
+                t.id(),
+                r,
+                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                with_alpha(Color32::WHITE, a),
+            );
             return;
         }
     }
-    p.rect_filled(r, (r.width() * 0.27).round(), with_alpha(letter_color(name), a));
-    let l: String = name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
-    p.text(r.center(), Align2::CENTER_CENTER, l, bold(r.width() * 0.5), with_alpha(Color32::WHITE, a));
+    p.rect_filled(
+        r,
+        (r.width() * 0.27).round(),
+        with_alpha(letter_color(name), a),
+    );
+    let l: String = name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().collect())
+        .unwrap_or_default();
+    p.text(
+        r.center(),
+        Align2::CENTER_CENTER,
+        l,
+        bold(r.width() * 0.5),
+        with_alpha(Color32::WHITE, a),
+    );
 }
 
 fn outline_chip(p: &egui::Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {
@@ -74,7 +118,11 @@ fn outline_chip(p: &egui::Painter, pos: Pos2, align: Align2, label: &str, col: C
 }
 
 fn flag_color(f: Flag) -> Color32 {
-    if f.strong() { RED() } else { AMBER() }
+    if f.strong() {
+        RED()
+    } else {
+        AMBER()
+    }
 }
 
 /// "3h ago", "2 days ago".
@@ -89,12 +137,18 @@ fn ago(at: u64) -> String {
 }
 
 fn why_color(w: Why) -> Color32 {
-    if w == Why::Removed { ORPHAN_TEXT() } else { SUGGEST_TEXT() }
+    if w == Why::Removed {
+        ORPHAN_TEXT()
+    } else {
+        SUGGEST_TEXT()
+    }
 }
 
 /// The outermost app around a program.
 fn owner_of(p: &Path) -> Option<&Path> {
-    p.ancestors().filter(|a| a.extension().is_some_and(|e| e == "app")).last()
+    p.ancestors()
+        .filter(|a| a.extension().is_some_and(|e| e == "app"))
+        .last()
 }
 
 /// An app in /Applications that the Uninstaller can show.
@@ -136,11 +190,30 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let events_ok = s.events_allowed();
     let (loaded, jobs, apps, apps_loaded, apps_err, new_labels, changed_labels, undo, busy, notify) = {
         let g = s.state();
-        (g.jobs_loaded, g.jobs.clone(), g.apps.clone(), g.apps_loaded, g.apps_error.clone(), g.new_labels.clone(), g.changed_labels.clone(), g.undoable(), g.busy.clone(), g.settings.notify_new)
+        (
+            g.jobs_loaded,
+            g.jobs.clone(),
+            g.apps.clone(),
+            g.apps_loaded,
+            g.apps_error.clone(),
+            g.new_labels.clone(),
+            g.changed_labels.clone(),
+            g.undoable(),
+            g.busy.clone(),
+            g.settings.notify_new,
+        )
     };
     let (cron, new_cron, sysext, btm, btm_busy, gone, trusted) = {
         let g = s.state();
-        (g.cron.clone(), g.new_cron.clone(), g.sysext.clone(), g.btm.clone(), g.btm_busy, g.settings.gone.clone(), g.settings.trusted.clone())
+        (
+            g.cron.clone(),
+            g.new_cron.clone(),
+            g.sysext.clone(),
+            g.btm.clone(),
+            g.btm_busy,
+            g.settings.gone.clone(),
+            g.settings.trusted.clone(),
+        )
     };
     let is_trusted = |j: &Job| trusted.get(&trust_key(j)).is_some_and(|fp| *fp == j.fp);
     let flags_of = |j: &Job| if is_trusted(j) { Vec::new() } else { j.flags() };
@@ -148,11 +221,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let total = jobs.len() + apps.len() + cron.len() + sysext.len();
     let running = jobs.iter().filter(|j| j.pid.is_some()).count();
     let suggested: Vec<&Job> = jobs.iter().filter(|j| is_suggested(j)).collect();
-    let flagged = jobs.iter().filter(|j| !flags_of(j).is_empty()).count() + cron.iter().filter(|c| !c.flags().is_empty()).count();
+    let flagged = jobs.iter().filter(|j| !flags_of(j).is_empty()).count()
+        + cron.iter().filter(|c| !c.flags().is_empty()).count();
     if flagged == 0 && s.filter == Filter::Flagged && loaded {
         s.filter = Filter::All;
     }
-    let off = jobs.iter().filter(|j| !j.on).count() + apps.iter().filter(|a| !a.on).count() + cron.iter().filter(|c| !c.on).count();
+    let off = jobs.iter().filter(|j| !j.on).count()
+        + apps.iter().filter(|a| !a.on).count()
+        + cron.iter().filter(|c| !c.on).count();
     let sub = if !loaded {
         "Reading what starts with your Mac…".to_string()
     } else {
@@ -168,27 +244,43 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let (btns, chip_at) = page_header_room(&p, r, "Startup", &sub, TEXT_DIM(), cw, sub_right);
 
     // filter + search on the right of the header
-    let mut tabs = vec![(Filter::All, format!("All {total}")), (Filter::Suggested, format!("Suggested {}", suggested.len()))];
+    let mut tabs = vec![
+        (Filter::All, format!("All {total}")),
+        (Filter::Suggested, format!("Suggested {}", suggested.len())),
+    ];
     if flagged > 0 {
         tabs.push((Filter::Flagged, format!("Flagged {flagged}")));
     }
     tabs.push((Filter::Off, format!("Off {off}")));
     let labels: Vec<&str> = tabs.iter().map(|(_, x)| x.as_str()).collect();
-    let tr = Rect::from_min_max(Pos2::new(btns.right() - 100.0 * tabs.len() as f32, btns.top()), btns.max);
+    let tr = Rect::from_min_max(
+        Pos2::new(btns.right() - 100.0 * tabs.len() as f32, btns.top()),
+        btns.max,
+    );
     let cur = tabs.iter().position(|(f, _)| *f == s.filter).unwrap_or(0);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("su-filter"), &labels, cur) {
         s.filter = tabs[i].0;
     }
-    let sr = Rect::from_min_max(Pos2::new(tr.left() - sp::M - 180.0, tr.top()), Pos2::new(tr.left() - sp::M, tr.bottom()));
+    let sr = Rect::from_min_max(
+        Pos2::new(tr.left() - sp::M - 180.0, tr.top()),
+        Pos2::new(tr.left() - sp::M, tr.bottom()),
+    );
     let mut q = std::mem::take(&mut s.search);
     search_field(ui, sr, &mut q, "Search", false);
     s.search = q;
 
-    let body = Rect::from_min_max(Pos2::new(r.left() + 24.0, r.top() + PAGE_HEADER_H + 1.0), Pos2::new(r.right() - 24.0, r.bottom()));
+    let body = Rect::from_min_max(
+        Pos2::new(r.left() + 24.0, r.top() + PAGE_HEADER_H + 1.0),
+        Pos2::new(r.right() - 24.0, r.bottom()),
+    );
     if loaded {
         if ai_n > 0 {
             // again only when something new starts at login, not after a turn off or remove
-            let on = jobs.iter().filter(|j| j.on).map(|j| j.label.clone()).chain(apps.iter().filter(|a| a.on).map(|a| format!("app:{}", a.name)));
+            let on = jobs.iter().filter(|j| j.on).map(|j| j.label.clone()).chain(
+                apps.iter()
+                    .filter(|a| a.on)
+                    .map(|a| format!("app:{}", a.name)),
+            );
             s.ai.auto_new(&ctx, on, || startup_ask(&jobs, &apps));
         }
         match aicheck::ui::chip(&mut s.ai, ui, chip_at, ai_data) {
@@ -210,19 +302,40 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 s.ai.done(&rec);
             }
+            // the row may be behind a tab or the search: show the whole list
+            Some(Event::Show(_)) => {
+                s.filter = Filter::All;
+                s.search.clear();
+            }
             None => {}
         }
     }
     if !loaded {
-        spinner(&p, Pos2::new(body.left() + 8.0, body.top() + 30.0), 7.0, ctx.input(|i| i.time), ACCENT());
-        p.text(Pos2::new(body.left() + 24.0, body.top() + 30.0), Align2::LEFT_CENTER, "Reading what starts with your Mac…", font(13.0), TEXT_DIM());
+        spinner(
+            &p,
+            Pos2::new(body.left() + 8.0, body.top() + 30.0),
+            7.0,
+            ctx.input(|i| i.time),
+            ACCENT(),
+        );
+        p.text(
+            Pos2::new(body.left() + 24.0, body.top() + 30.0),
+            Align2::LEFT_CENTER,
+            "Reading what starts with your Mac…",
+            font(13.0),
+            TEXT_DIM(),
+        );
         crate::kit::glass::poll(&ctx);
         return;
     }
 
     // what passes the filter and the search
     let needle = s.search.trim().to_lowercase();
-    let hit = |name: &str, label: &str| needle.is_empty() || name.to_lowercase().contains(&needle) || label.to_lowercase().contains(&needle);
+    let hit = |name: &str, label: &str| {
+        needle.is_empty()
+            || name.to_lowercase().contains(&needle)
+            || label.to_lowercase().contains(&needle)
+    };
     let job_ok = |j: &Job| {
         (hit(&j.name, &j.label) || hit(&j.command(), ""))
             && match s.filter {
@@ -264,8 +377,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             }
         }
     }
-    for (scopes, title) in [(&[Scope::User, Scope::AllUsers][..], "Background agents"), (&[Scope::System][..], "System daemons")] {
-        let js: Vec<&Job> = jobs.iter().filter(|j| scopes.contains(&j.scope) && job_ok(j)).collect();
+    for (scopes, title) in [
+        (&[Scope::User, Scope::AllUsers][..], "Background agents"),
+        (&[Scope::System][..], "System daemons"),
+    ] {
+        let js: Vec<&Job> = jobs
+            .iter()
+            .filter(|j| scopes.contains(&j.scope) && job_ok(j))
+            .collect();
         if js.is_empty() {
             continue;
         }
@@ -278,7 +397,10 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         rows.extend(cs.into_iter().cloned().map(Row::Cron));
     }
     if all {
-        let xs: Vec<&SysExt> = sysext.iter().filter(|x| hit(&x.name, &x.bundle_id)).collect();
+        let xs: Vec<&SysExt> = sysext
+            .iter()
+            .filter(|x| hit(&x.name, &x.bundle_id))
+            .collect();
         if !xs.is_empty() {
             rows.push(Row::Head("System extensions", HeadLink::Settings));
             rows.extend(xs.into_iter().cloned().map(Row::Ext));
@@ -289,14 +411,25 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         let app_paths: Vec<PathBuf> = apps.iter().map(|a| a.path.clone()).collect();
         match &btm {
             None if needle.is_empty() => {
-                rows.push(Row::Head("Background items", if btm_busy { HeadLink::None } else { HeadLink::ShowAll }));
+                rows.push(Row::Head(
+                    "Background items",
+                    if btm_busy {
+                        HeadLink::None
+                    } else {
+                        HeadLink::ShowAll
+                    },
+                ));
                 if btm_busy {
                     rows.push(Row::Note("Reading…".into()));
                 }
             }
             None => {}
             Some(list) => {
-                let extra: Vec<BtmItem> = super::extra::btm_extra(list, macos::uid(), &labels, &programs, &app_paths).into_iter().filter(|b| hit(&b.name, &b.developer)).collect();
+                let extra: Vec<BtmItem> =
+                    super::extra::btm_extra(list, macos::uid(), &labels, &programs, &app_paths)
+                        .into_iter()
+                        .filter(|b| hit(&b.name, &b.developer))
+                        .collect();
                 if !extra.is_empty() || needle.is_empty() {
                     rows.push(Row::Head("Background items", HeadLink::Settings));
                     if extra.is_empty() {
@@ -306,7 +439,11 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
             }
         }
-        let gs: Vec<&Gone> = gone.iter().rev().filter(|g| hit(&g.name, &g.label)).collect();
+        let gs: Vec<&Gone> = gone
+            .iter()
+            .rev()
+            .filter(|g| hit(&g.name, &g.label))
+            .collect();
         if !gs.is_empty() {
             rows.push(Row::Head("Removed", HeadLink::None));
             rows.extend(gs.into_iter().cloned().map(Row::Gone));
@@ -321,15 +458,28 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }));
     }
 
-    let top_h = if busy.is_some() || undo.is_some() || (!suggested.is_empty() && matches!(s.filter, Filter::All | Filter::Suggested)) { TOP_CARD_H } else { 0.0 };
-    let list_h: f32 = rows.iter().map(|r| match r {
-        Row::Head(..) => HEAD_H,
-        Row::Note(_) => 40.0,
-        Row::Allow => 62.0,
-        _ => ROW_H + ROW_GAP,
-    }).sum::<f32>()
+    let top_h = if busy.is_some()
+        || undo.is_some()
+        || (!suggested.is_empty() && matches!(s.filter, Filter::All | Filter::Suggested))
+    {
+        TOP_CARD_H
+    } else {
+        0.0
+    };
+    let list_h: f32 = rows
+        .iter()
+        .map(|r| match r {
+            Row::Head(..) => HEAD_H,
+            Row::Note(_) => 40.0,
+            Row::Allow => 62.0,
+            _ => ROW_H + ROW_GAP,
+        })
+        .sum::<f32>()
         + 56.0;
-    let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 12.0), Pos2::new(body.right(), body.bottom() - 12.0));
+    let area = Rect::from_min_max(
+        Pos2::new(body.left(), body.top() + 12.0),
+        Pos2::new(body.right(), body.bottom() - 12.0),
+    );
     let mut child = ui.new_child(UiBuilder::new().max_rect(area));
     child.set_clip_rect(area);
     let mut flip_app: Option<LoginApp> = None;
@@ -538,7 +688,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::App(la) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
+                    let key = format!("app:{}", la.name);
+                    if s.ai.take_scroll(&key) {
+                        ui.scroll_to_rect(r, Some(egui::Align::Center));
+                    }
                     glass_card(&p, r, 10.0, 0.0, false);
+                    reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &key));
                     let cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, Some(&la.path), &la.name, !la.on, &mut budget);
                     name_line(&p, &cols, &la.name, if la.on { TEXT() } else { TEXT_DIM() }, &[]);
@@ -558,10 +713,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     let trusted_now = is_trusted(j);
                     let why = j.why().filter(|_| j.on && !trusted_now);
                     let fl = flags_of(j);
+                    if s.ai.take_scroll(&j.label) {
+                        ui.scroll_to_rect(r, Some(egui::Align::Center));
+                    }
                     glass_card(&p, r, 10.0, 0.0, false);
                     if why.is_some() || fl.iter().any(|f| f.strong()) {
                         p.rect_filled(r, 10.0, red_wash(0.05));
                     }
+                    reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &j.label));
                     let mut cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, j.owner.as_deref(), &j.name, !j.on, &mut budget);
                     let (sw, more) = (cols.sw, cols.more);
@@ -714,7 +873,17 @@ fn startup_ask(jobs: &[Job], apps: &[LoginApp]) -> aicheck::Ask {
     let mut items: Vec<aicheck::Item> = apps
         .iter()
         .filter(|a| a.on)
-        .map(|a| aicheck::Item { key: format!("app:{}", a.name), line: format!("login app {} ({}){}", a.name, a.path.display(), if a.hidden { ", opens hidden" } else { "" }), icon: Some(a.path.clone()), name: a.name.clone() })
+        .map(|a| aicheck::Item {
+            key: format!("app:{}", a.name),
+            line: format!(
+                "login app {} ({}){}",
+                a.name,
+                a.path.display(),
+                if a.hidden { ", opens hidden" } else { "" }
+            ),
+            icon: Some(a.path.clone()),
+            name: a.name.clone(),
+        })
         .collect();
     for j in jobs.iter().filter(|j| j.on && !j.apple()) {
         let kind = match j.scope {
@@ -733,7 +902,14 @@ fn startup_ask(jobs: &[Job], apps: &[LoginApp]) -> aicheck::Ask {
         }
         items.push(aicheck::Item {
             key: j.label.clone(),
-            line: format!("{kind} {} · label {} · runs {} · {} · {}", j.name, j.label, j.command(), j.when.label(j.scope), notes.join(", ")),
+            line: format!(
+                "{kind} {} · label {} · runs {} · {} · {}",
+                j.name,
+                j.label,
+                j.command(),
+                j.when.label(j.scope),
+                notes.join(", ")
+            ),
             icon: j.owner.clone(),
             name: j.name.clone(),
         });
@@ -758,7 +934,11 @@ fn why_line(list: &[&Job]) -> String {
         1 => parts.push("1 updater that checks in the background".to_string()),
         k => parts.push(format!("{k} updaters that check in the background")),
     }
-    let extra: Vec<String> = list.iter().filter(|j| j.why() == Some(Why::NotNeeded)).map(|j| j.name.clone()).collect();
+    let extra: Vec<String> = list
+        .iter()
+        .filter(|j| j.why() == Some(Why::NotNeeded))
+        .map(|j| j.name.clone())
+        .collect();
     if !extra.is_empty() {
         parts.push(extra.join(", "));
     }
@@ -770,10 +950,17 @@ fn why_line(list: &[&Job]) -> String {
     let s = match parts.len() {
         0 => String::new(),
         1 => parts[0].clone(),
-        _ => format!("{}, and {}", parts[..parts.len() - 1].join(", "), parts[parts.len() - 1]),
+        _ => format!(
+            "{}, and {}",
+            parts[..parts.len() - 1].join(", "),
+            parts[parts.len() - 1]
+        ),
     };
     let mut c = s.chars();
-    let s: String = c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default();
+    let s: String = c
+        .next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default();
     s
 }
 
@@ -798,23 +985,65 @@ const STATE_W: f32 = 72.0;
 
 fn columns(p: &egui::Painter, r: Rect, switch: bool) -> Cols {
     let cy = r.center().y;
-    let sw = Rect::from_min_size(Pos2::new(r.right() - sp::L - 36.0, cy - 10.0), Vec2::new(36.0, 20.0));
-    let right = if switch { sw.left() - sp::S } else { r.right() - sp::M };
+    let sw = Rect::from_min_size(
+        Pos2::new(r.right() - sp::L - 36.0, cy - 10.0),
+        Vec2::new(36.0, 20.0),
+    );
+    let right = if switch {
+        sw.left() - sp::S
+    } else {
+        r.right() - sp::M
+    };
     let more = Rect::from_min_size(Pos2::new(right - 24.0, cy - 12.0), Vec2::splat(24.0));
     let icon = Rect::from_center_size(Pos2::new(r.left() + sp::M + 14.0, cy), Vec2::splat(28.0));
     let text_x = icon.right() + sp::M;
     let state = more.left() - sp::COL_GAP - STATE_W;
     let when = state - sp::COL_GAP - WHEN_W;
     let (y1, y2) = two_lines_y(p, cy, &bold(13.0), &font(11.0));
-    let (when, name_max) = if when - sp::COL_GAP - text_x >= 200.0 { (Some(when), when - sp::COL_GAP - text_x) } else { (None, state - sp::COL_GAP - text_x) };
-    Cols { icon, text_x, name_max, when, state, more, sw, y1, y2 }
+    let (when, name_max) = if when - sp::COL_GAP - text_x >= 200.0 {
+        (Some(when), when - sp::COL_GAP - text_x)
+    } else {
+        (None, state - sp::COL_GAP - text_x)
+    };
+    Cols {
+        icon,
+        text_x,
+        name_max,
+        when,
+        state,
+        more,
+        sw,
+        y1,
+        y2,
+    }
 }
 
 /// The name, then its tags on the same line; the name gives way to the tags.
-fn name_line(p: &egui::Painter, c: &Cols, name: &str, col: Color32, tags: &[(&str, Color32)]) -> Rect {
-    let tags_w: f32 = tags.iter().map(|(t, _)| p.layout_no_wrap(t.to_string(), font(11.0), TEXT()).size().x + 10.0 + sp::XS).sum();
-    let max = if tags.is_empty() { c.name_max } else { (c.name_max - tags_w - sp::XS).max(c.name_max * 0.4) };
-    let nr = text_fit(p, Pos2::new(c.text_x, c.y1), Align2::LEFT_CENTER, name, bold(13.0), col, max);
+fn name_line(
+    p: &egui::Painter,
+    c: &Cols,
+    name: &str,
+    col: Color32,
+    tags: &[(&str, Color32)],
+) -> Rect {
+    let tags_w: f32 = tags
+        .iter()
+        .map(|(t, _)| p.layout_no_wrap(t.to_string(), font(11.0), TEXT()).size().x + 10.0 + sp::XS)
+        .sum();
+    let max = if tags.is_empty() {
+        c.name_max
+    } else {
+        (c.name_max - tags_w - sp::XS).max(c.name_max * 0.4)
+    };
+    let nr = text_fit(
+        p,
+        Pos2::new(c.text_x, c.y1),
+        Align2::LEFT_CENTER,
+        name,
+        bold(13.0),
+        col,
+        max,
+    );
     let mut x = nr.right() + sp::XS;
     for (t, tc) in tags {
         if x > c.text_x + c.name_max {
@@ -827,7 +1056,15 @@ fn name_line(p: &egui::Painter, c: &Cols, name: &str, col: Color32, tags: &[(&st
 
 /// The detail line under the name.
 fn detail_line(p: &egui::Painter, c: &Cols, text: &str) -> Rect {
-    text_fit(p, Pos2::new(c.text_x, c.y2), Align2::LEFT_CENTER, text, font(11.0), TEXT_FAINT(), c.name_max)
+    text_fit(
+        p,
+        Pos2::new(c.text_x, c.y2),
+        Align2::LEFT_CENTER,
+        text,
+        font(11.0),
+        TEXT_FAINT(),
+        c.name_max,
+    )
 }
 
 fn when_icon(j: &Job) -> Icon {
@@ -842,14 +1079,37 @@ fn when_icon(j: &Job) -> Icon {
 
 fn when_cell(p: &egui::Painter, c: &Cols, cy: f32, ic: Icon, label: &str) {
     let Some(x) = c.when else { return };
-    icon(p, ic, Rect::from_center_size(Pos2::new(x + 6.0, cy), Vec2::splat(12.0)), TEXT_DIM());
-    text_fit(p, Pos2::new(x + 12.0 + sp::S, cy), Align2::LEFT_CENTER, label, font(12.0), TEXT_DIM(), WHEN_W - 12.0 - sp::S);
+    icon(
+        p,
+        ic,
+        Rect::from_center_size(Pos2::new(x + 6.0, cy), Vec2::splat(12.0)),
+        TEXT_DIM(),
+    );
+    text_fit(
+        p,
+        Pos2::new(x + 12.0 + sp::S, cy),
+        Align2::LEFT_CENTER,
+        label,
+        font(12.0),
+        TEXT_DIM(),
+        WHEN_W - 12.0 - sp::S,
+    );
 }
 
 /// `label` None = running (green dot).
 fn state_cell(p: &egui::Painter, x: f32, cy: f32, label: Option<&str>, running: bool) {
-    p.circle_filled(Pos2::new(x + 4.0, cy), 3.5, if running { GREEN() } else { white(56) });
-    p.text(Pos2::new(x + 8.0 + sp::S, cy), Align2::LEFT_CENTER, label.unwrap_or("running"), font(12.0), TEXT_DIM());
+    p.circle_filled(
+        Pos2::new(x + 4.0, cy),
+        3.5,
+        if running { GREEN() } else { white(56) },
+    );
+    p.text(
+        Pos2::new(x + 8.0 + sp::S, cy),
+        Align2::LEFT_CENTER,
+        label.unwrap_or("running"),
+        font(12.0),
+        TEXT_DIM(),
+    );
 }
 
 /// The ⋯ button of a row.
@@ -872,18 +1132,40 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
     let id = ui.scope_id().with("w-startup");
     let (loaded, total, running, suggested, undo, busy) = {
         let g = s.state();
-        (g.jobs_loaded, g.total(), g.running(), g.suggested(), g.undoable(), g.busy.is_some())
+        (
+            g.jobs_loaded,
+            g.total(),
+            g.running(),
+            g.suggested(),
+            g.undoable(),
+            g.busy.is_some(),
+        )
     };
     let n = suggested.len();
     match size {
         Size::S11 => {
             let resp = tile::card(ui, rect, id, false);
             let p = ui.painter();
-            tool_chip(p, Rect::from_min_size(rect.min + Vec2::splat(9.0), Vec2::splat(24.0)), Icon::Power, tint::STARTUP());
+            tool_chip(
+                p,
+                Rect::from_min_size(rect.min + Vec2::splat(9.0), Vec2::splat(24.0)),
+                Icon::Power,
+                tint::STARTUP(),
+            );
             if n > 0 {
                 count_badge(p, Pos2::new(rect.right() - 9.0, rect.top() + 9.0), n);
             }
-            tile::small_text(p, rect, &if loaded { total.to_string() } else { "…".into() }, "at startup", TEXT_DIM());
+            tile::small_text(
+                p,
+                rect,
+                &if loaded {
+                    total.to_string()
+                } else {
+                    "…".into()
+                },
+                "at startup",
+                TEXT_DIM(),
+            );
             if resp.clicked() {
                 cx.open_page(super::ID, if n > 0 { "suggested" } else { "" });
             }
@@ -892,24 +1174,61 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
             let resp = tile::card(ui, rect, id, false);
             let p = ui.painter().clone();
             let (x0, x1) = (rect.left() + tile::PAD, rect.right() - tile::PAD);
-            tool_chip(&p, Rect::from_min_size(Pos2::new(x0, rect.top() + 9.0), Vec2::splat(18.0)), Icon::Power, tint::STARTUP());
-            p.text(Pos2::new(x0 + 24.0, rect.top() + 18.0), Align2::LEFT_CENTER, "Startup", bold(12.0), TEXT());
-            p.text(Pos2::new(x1, rect.top() + 18.0), Align2::RIGHT_CENTER, total.to_string(), font(11.0), TEXT_DIM());
+            tool_chip(
+                &p,
+                Rect::from_min_size(Pos2::new(x0, rect.top() + 9.0), Vec2::splat(18.0)),
+                Icon::Power,
+                tint::STARTUP(),
+            );
+            p.text(
+                Pos2::new(x0 + 24.0, rect.top() + 18.0),
+                Align2::LEFT_CENTER,
+                "Startup",
+                bold(12.0),
+                TEXT(),
+            );
+            p.text(
+                Pos2::new(x1, rect.top() + 18.0),
+                Align2::RIGHT_CENTER,
+                total.to_string(),
+                font(11.0),
+                TEXT_DIM(),
+            );
             let cy = rect.bottom() - 21.0;
             if let Some(k) = undo {
-                p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, format!("{k} off"), font(12.0), GREEN());
-                let br = Rect::from_min_max(Pos2::new(x1 - 54.0, cy - 12.0), Pos2::new(x1, cy + 12.0));
+                p.text(
+                    Pos2::new(x0, cy),
+                    Align2::LEFT_CENTER,
+                    format!("{k} off"),
+                    font(12.0),
+                    GREEN(),
+                );
+                let br =
+                    Rect::from_min_max(Pos2::new(x1 - 54.0, cy - 12.0), Pos2::new(x1, cy + 12.0));
                 if pill_button(ui, br, "Undo", BTN_SECONDARY, !busy).clicked() {
                     s.undo();
                 }
             } else if n > 0 {
-                p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, format!("{n} can go"), font(12.0), TEXT_SOFT());
-                let br = Rect::from_min_max(Pos2::new(x1 - 64.0, cy - 12.0), Pos2::new(x1, cy + 12.0));
+                p.text(
+                    Pos2::new(x0, cy),
+                    Align2::LEFT_CENTER,
+                    format!("{n} can go"),
+                    font(12.0),
+                    TEXT_SOFT(),
+                );
+                let br =
+                    Rect::from_min_max(Pos2::new(x1 - 64.0, cy - 12.0), Pos2::new(x1, cy + 12.0));
                 if pill_button(ui, br, "Turn off", BTN_PRIMARY, !busy).clicked() {
                     s.turn_off_suggested();
                 }
             } else {
-                p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, format!("{running} running · all needed"), font(12.0), TEXT_DIM());
+                p.text(
+                    Pos2::new(x0, cy),
+                    Align2::LEFT_CENTER,
+                    format!("{running} running · all needed"),
+                    font(12.0),
+                    TEXT_DIM(),
+                );
             }
             if resp.clicked() {
                 cx.open_page(super::ID, "");
@@ -918,56 +1237,146 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
         _ => {
             let resp = tile::card(ui, rect, id, false);
             let p = ui.painter().clone();
-            let note = if loaded { format!("{} · {running} running", plural(total, "item")) } else { "Reading…".into() };
+            let note = if loaded {
+                format!("{} · {running} running", plural(total, "item"))
+            } else {
+                "Reading…".into()
+            };
             let (x0, x1) = (rect.left() + tile::PAD, rect.right() - tile::PAD);
             let cy = rect.top() + tile::PAD + 10.0;
-            let tr = p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, "Startup", ty::title(), TEXT());
+            let tr = p.text(
+                Pos2::new(x0, cy),
+                Align2::LEFT_CENTER,
+                "Startup",
+                ty::title(),
+                TEXT(),
+            );
             let mut right = x1;
             if undo.is_none() && n > 0 {
                 let label = format!("Turn off {n}");
                 let bw = button_width(&p, &label, BTN_PRIMARY) - 6.0;
-                let br = Rect::from_min_max(Pos2::new(x1 - bw, cy - 12.0), Pos2::new(x1, cy + 12.0));
+                let br =
+                    Rect::from_min_max(Pos2::new(x1 - bw, cy - 12.0), Pos2::new(x1, cy + 12.0));
                 if pill_button(ui, br, &label, BTN_PRIMARY, !busy).clicked() {
                     s.turn_off_suggested();
                 }
                 right = br.left() - 8.0;
             }
-            text_fit(&p, Pos2::new(tr.right() + 8.0, cy), Align2::LEFT_CENTER, &note, ty::caption(), ty::caption_color(), right - tr.right() - 8.0);
-            let body = Rect::from_min_max(Pos2::new(x0, rect.top() + tile::PAD + 20.0 + sp::S), Pos2::new(x1, rect.bottom() - tile::PAD));
+            text_fit(
+                &p,
+                Pos2::new(tr.right() + 8.0, cy),
+                Align2::LEFT_CENTER,
+                &note,
+                ty::caption(),
+                ty::caption_color(),
+                right - tr.right() - 8.0,
+            );
+            let body = Rect::from_min_max(
+                Pos2::new(x0, rect.top() + tile::PAD + 20.0 + sp::S),
+                Pos2::new(x1, rect.bottom() - tile::PAD),
+            );
             if let Some(k) = undo {
                 let c = Pos2::new(body.left() + 20.0, body.center().y);
                 p.circle_filled(c, 18.0, with_alpha(GREEN(), 0.16));
-                icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(18.0)), GREEN());
-                let br = Rect::from_min_max(Pos2::new(body.right() - 64.0, c.y - 13.0), Pos2::new(body.right(), c.y + 13.0));
+                icon(
+                    &p,
+                    Icon::Check,
+                    Rect::from_center_size(c, Vec2::splat(18.0)),
+                    GREEN(),
+                );
+                let br = Rect::from_min_max(
+                    Pos2::new(body.right() - 64.0, c.y - 13.0),
+                    Pos2::new(body.right(), c.y + 13.0),
+                );
                 if pill_button(ui, br, "Undo", BTN_SECONDARY, !busy).clicked() {
                     s.undo();
                 }
                 let (y1, y2) = two_lines_y(&p, c.y, &bold(13.0), &font(12.0));
-                p.text(Pos2::new(c.x + 30.0, y1), Align2::LEFT_CENTER, format!("{} turned off", plural(k, "item")), bold(13.0), TEXT());
-                text_fit(&p, Pos2::new(c.x + 30.0, y2), Align2::LEFT_CENTER, "The apps still open", font(12.0), TEXT_DIM(), br.left() - c.x - 40.0);
+                p.text(
+                    Pos2::new(c.x + 30.0, y1),
+                    Align2::LEFT_CENTER,
+                    format!("{} turned off", plural(k, "item")),
+                    bold(13.0),
+                    TEXT(),
+                );
+                text_fit(
+                    &p,
+                    Pos2::new(c.x + 30.0, y2),
+                    Align2::LEFT_CENTER,
+                    "The apps still open",
+                    font(12.0),
+                    TEXT_DIM(),
+                    br.left() - c.x - 40.0,
+                );
             } else if n == 0 {
-                let msg = if loaded { "Nothing to turn off" } else { "Reading what starts with your Mac…" };
+                let msg = if loaded {
+                    "Nothing to turn off"
+                } else {
+                    "Reading what starts with your Mac…"
+                };
                 tile::empty_note(&p, body.shrink2(Vec2::new(0.0, 6.0)), msg);
             } else {
                 let lh = 28.0;
                 let fit = ((body.height() - 14.0) / lh).floor().max(1.0) as usize;
-                let show = if n > fit { fit.saturating_sub(0).min(n) } else { n };
+                let show = if n > fit {
+                    fit.saturating_sub(0).min(n)
+                } else {
+                    n
+                };
                 let mut budget = ICONS_PER_FRAME;
                 let ctx = ui.ctx().clone();
                 for (k, j) in suggested.iter().take(show.min(3)).enumerate() {
-                    let r = Rect::from_min_size(Pos2::new(body.left(), body.top() + k as f32 * lh), Vec2::new(body.width(), lh));
-                    let ir = Rect::from_center_size(Pos2::new(r.left() + 10.0, r.center().y), Vec2::splat(20.0));
-                    app_icon(s, &ctx, &p, ir, j.owner.as_deref(), &j.name, false, &mut budget);
+                    let r = Rect::from_min_size(
+                        Pos2::new(body.left(), body.top() + k as f32 * lh),
+                        Vec2::new(body.width(), lh),
+                    );
+                    let ir = Rect::from_center_size(
+                        Pos2::new(r.left() + 10.0, r.center().y),
+                        Vec2::splat(20.0),
+                    );
+                    app_icon(
+                        s,
+                        &ctx,
+                        &p,
+                        ir,
+                        j.owner.as_deref(),
+                        &j.name,
+                        false,
+                        &mut budget,
+                    );
                     let why = j.why().map(|w| w.short()).unwrap_or("");
-                    let wr = p.text(Pos2::new(r.right() - 42.0, r.center().y), Align2::RIGHT_CENTER, why, font(11.0), TEXT_FAINT());
-                    text_fit(&p, Pos2::new(ir.right() + 8.0, r.center().y), Align2::LEFT_CENTER, &j.name, font(12.0), TEXT(), wr.left() - ir.right() - 16.0);
-                    let sw = Rect::from_center_size(Pos2::new(r.right() - 15.0, r.center().y), Vec2::new(30.0, 18.0));
+                    let wr = p.text(
+                        Pos2::new(r.right() - 42.0, r.center().y),
+                        Align2::RIGHT_CENTER,
+                        why,
+                        font(11.0),
+                        TEXT_FAINT(),
+                    );
+                    text_fit(
+                        &p,
+                        Pos2::new(ir.right() + 8.0, r.center().y),
+                        Align2::LEFT_CENTER,
+                        &j.name,
+                        font(12.0),
+                        TEXT(),
+                        wr.left() - ir.right() - 16.0,
+                    );
+                    let sw = Rect::from_center_size(
+                        Pos2::new(r.right() - 15.0, r.center().y),
+                        Vec2::new(30.0, 18.0),
+                    );
                     if switch(ui, sw, id.with(("w-sw", &j.label)), true, !busy).clicked() {
                         s.toggle_job(j);
                     }
                 }
                 if n > 3 {
-                    p.text(Pos2::new(body.left(), body.bottom() - 4.0), Align2::LEFT_BOTTOM, format!("+{} more · open Startup", n - 3), font(11.0), TEXT_FAINT());
+                    p.text(
+                        Pos2::new(body.left(), body.bottom() - 4.0),
+                        Align2::LEFT_BOTTOM,
+                        format!("+{} more · open Startup", n - 3),
+                        font(11.0),
+                        TEXT_FAINT(),
+                    );
                 }
             }
             if resp.clicked() {
@@ -1003,16 +1412,36 @@ mod tests {
     fn demo_views_draw() {
         use crate::core::tool::{Tool, ToolEnv};
         let ctx = egui::Context::default();
-        let mut s = Startup::new(&ToolEnv { ctx: ctx.clone(), demo: true });
+        let mut s = Startup::new(&ToolEnv {
+            ctx: ctx.clone(),
+            demo: true,
+        });
         for v in ["startup", "startup-done", "startup-suggested"] {
             assert!(s.demo_view(v).is_some());
-            ctx.run_ui(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 700.0))), ..Default::default() }, |ui| {
-                let mut cx = Cx::new(None);
-                page(&mut s, ui, Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 700.0)), &mut cx);
-                for z in [Size::S11, Size::S12, Size::S24] {
-                    widget(&mut s, z, ui, Rect::from_min_size(Pos2::ZERO, Vec2::new(356.0, 174.0)), &mut cx);
-                }
-            })
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 700.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    let mut cx = Cx::new(None);
+                    page(
+                        &mut s,
+                        ui,
+                        Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 700.0)),
+                        &mut cx,
+                    );
+                    for z in [Size::S11, Size::S12, Size::S24] {
+                        widget(
+                            &mut s,
+                            z,
+                            ui,
+                            Rect::from_min_size(Pos2::ZERO, Vec2::new(356.0, 174.0)),
+                            &mut cx,
+                        );
+                    }
+                },
+            )
             .textures_delta
             .clear();
         }

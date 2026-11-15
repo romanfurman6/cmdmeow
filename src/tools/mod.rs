@@ -5,12 +5,12 @@
 
 pub mod capture;
 pub mod claude;
+pub mod cleanup;
 pub mod clipboard;
 pub mod dictation;
 pub mod displays;
-pub mod cleanup;
-pub mod keep_awake;
 pub mod fan;
+pub mod keep_awake;
 pub mod lens;
 pub mod startup;
 pub mod system;
@@ -64,7 +64,10 @@ pub const DEFAULT_WIDGET_ORDER: &[&str] = &[
 mod tests {
     #[test]
     fn tool_ids_and_widget_ids_are_unique() {
-        let env = crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true };
+        let env = crate::core::tool::ToolEnv {
+            ctx: egui::Context::default(),
+            demo: true,
+        };
         let tools = super::all(&env);
         let mut ids: Vec<&str> = tools.iter().map(|t| t.id()).collect();
         ids.sort();
@@ -77,9 +80,24 @@ mod tests {
             w.dedup();
             assert_eq!(w.len(), n, "duplicate widget id in {}", t.id());
             for spec in t.widgets() {
-                assert!(!spec.sizes.is_empty(), "{}/{} offers no size", t.id(), spec.id);
-                assert!(spec.sizes.contains(&spec.size), "{}/{} default size not offered", t.id(), spec.id);
-                assert!(spec.sizes.windows(2).all(|w| w[0].dims() < w[1].dims()), "{}/{} sizes not smallest first", t.id(), spec.id);
+                assert!(
+                    !spec.sizes.is_empty(),
+                    "{}/{} offers no size",
+                    t.id(),
+                    spec.id
+                );
+                assert!(
+                    spec.sizes.contains(&spec.size),
+                    "{}/{} default size not offered",
+                    t.id(),
+                    spec.id
+                );
+                assert!(
+                    spec.sizes.windows(2).all(|w| w[0].dims() < w[1].dims()),
+                    "{}/{} sizes not smallest first",
+                    t.id(),
+                    spec.id
+                );
                 assert!(!spec.about.is_empty());
             }
         }
@@ -89,7 +107,12 @@ mod tests {
     #[test]
     fn tools_do_not_import_each_other() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools");
-        let names: Vec<String> = std::fs::read_dir(&root).unwrap().flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        let names: Vec<String> = std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
         // every file of a tool, sub-folders too
         fn files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             for e in std::fs::read_dir(dir).unwrap().flatten() {

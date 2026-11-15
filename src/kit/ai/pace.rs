@@ -49,7 +49,11 @@ pub fn of(used: f32, start: i64, end: i64, now: i64) -> Option<Pace> {
     } else {
         None
     };
-    Some(Pace { expected, state, out_at })
+    Some(Pace {
+        expected,
+        state,
+        out_at,
+    })
 }
 
 /// Pace of a plan limit, when its reset time and length are known.
@@ -94,8 +98,20 @@ mod tests {
         // the window just started: no forecast yet
         assert_eq!(of(5.0, 0, 1000, 10).unwrap().out_at, None);
         assert_eq!(of(100.0, 0, 1000, 500).unwrap().out_at, Some(500));
-        let l = Limit { pct: 30.0, resets_at: Some(1000), window_secs: 1000, ..Default::default() };
+        let l = Limit {
+            pct: 30.0,
+            resets_at: Some(1000),
+            window_secs: 1000,
+            ..Default::default()
+        };
         assert_eq!(of_limit(&l, 500).unwrap().expected, 50.0);
-        assert!(of_limit(&Limit { pct: 30.0, ..Default::default() }, 500).is_none());
+        assert!(of_limit(
+            &Limit {
+                pct: 30.0,
+                ..Default::default()
+            },
+            500
+        )
+        .is_none());
     }
 }

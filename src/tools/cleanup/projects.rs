@@ -28,7 +28,12 @@ pub struct Found {
 
 pub(super) fn scan(c: &mut Ctx) {
     let h = home();
-    let mut roots: Vec<PathBuf> = catalog().project_roots.iter().map(|r| h.join(r)).filter(|p| p.is_dir() && !is_link(p)).collect();
+    let mut roots: Vec<PathBuf> = catalog()
+        .project_roots
+        .iter()
+        .map(|r| h.join(r))
+        .filter(|p| p.is_dir() && !is_link(p))
+        .collect();
     // a root inside another root is walked once
     roots.sort();
     roots.dedup_by(|b, a| b.starts_with(&*a));
@@ -37,10 +42,27 @@ pub(super) fn scan(c: &mut Ctx) {
             return;
         }
         for f in find(&root, &|| c.stopped()) {
-            let Some((v, why)) = verdict(&f) else { continue };
-            let name = f.project.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            let dir = f.dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            c.add(Group::Projects, &format!("{name} · {dir}"), f.dir, "Build Data", v, &why);
+            let Some((v, why)) = verdict(&f) else {
+                continue;
+            };
+            let name = f
+                .project
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let dir = f
+                .dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            c.add(
+                Group::Projects,
+                &format!("{name} · {dir}"),
+                f.dir,
+                "Build Data",
+                v,
+                &why,
+            );
         }
     }
 }
@@ -52,20 +74,39 @@ pub fn verdict(f: &Found) -> Option<(Verdict, String)> {
     }
     let days = f.idle_days as u64;
     Some(if f.careful {
-        (Verdict::Ask, format!("{} build output, idle {days} days, may be kept on purpose", f.kind))
+        (
+            Verdict::Ask,
+            format!(
+                "{} build output, idle {days} days, may be kept on purpose",
+                f.kind
+            ),
+        )
     } else if f.idle_days >= IDLE_DAYS {
-        (Verdict::Safe, format!("{} build output, idle {days} days, rebuilds itself", f.kind))
+        (
+            Verdict::Safe,
+            format!("{} build output, idle {days} days, rebuilds itself", f.kind),
+        )
     } else {
-        (Verdict::Ask, format!("{} build output, used {days} days ago", f.kind))
+        (
+            Verdict::Ask,
+            format!("{} build output, used {days} days ago", f.kind),
+        )
     })
 }
 
 fn is_link(p: &Path) -> bool {
-    p.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink())
+    p.symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
 }
 
 fn names(dir: &Path) -> Vec<String> {
-    std::fs::read_dir(dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default()
+    std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Every project build folder below `root`.
@@ -79,7 +120,11 @@ pub fn find(root: &Path, stop: &dyn Fn() -> bool) -> Vec<Found> {
         }
         let ns = names(&dir);
         let mut skip: Vec<String> = Vec::new();
-        let types: Vec<&ProjectType> = catalog().projects.iter().filter(|t| t.is_in(&dir, &ns)).collect();
+        let types: Vec<&ProjectType> = catalog()
+            .projects
+            .iter()
+            .filter(|t| t.is_in(&dir, &ns))
+            .collect();
         if !types.is_empty() {
             let mut here: Vec<(PathBuf, String, bool)> = Vec::new();
             for t in &types {
@@ -95,8 +140,17 @@ pub fn find(root: &Path, stop: &dyn Fn() -> bool) -> Vec<Found> {
                 let idle = idle_days(&dir, &artifacts);
                 for (p, kind, careful) in here {
                     // a folder one type rebuilds but another treats with care stays careful
-                    let careful = careful || types.iter().any(|t| t.careful.iter().any(|c| dir.join(c) == p));
-                    out.push(Found { project: dir.clone(), kind, dir: p, careful, idle_days: idle });
+                    let careful = careful
+                        || types
+                            .iter()
+                            .any(|t| t.careful.iter().any(|c| dir.join(c) == p));
+                    out.push(Found {
+                        project: dir.clone(),
+                        kind,
+                        dir: p,
+                        careful,
+                        idle_days: idle,
+                    });
                 }
             }
         }
@@ -105,7 +159,12 @@ pub fn find(root: &Path, stop: &dyn Fn() -> bool) -> Vec<Found> {
         }
         for n in ns {
             // hidden folders, build output and app bundles hold no projects worth walking
-            if n.starts_with('.') || skip.contains(&n) || artifacts.contains(&n.as_str()) || n.ends_with(".app") || n == "Library" {
+            if n.starts_with('.')
+                || skip.contains(&n)
+                || artifacts.contains(&n.as_str())
+                || n.ends_with(".app")
+                || n == "Library"
+            {
                 continue;
             }
             let p = dir.join(&n);
@@ -125,36 +184,52 @@ fn is_artifact_dir(p: &Path) -> bool {
 
 /// The project's guard at removal time: still a build folder of a project.
 pub fn still_build_output(p: &Path) -> Option<&'static str> {
-    let (Some(parent), Some(name)) = (p.parent(), p.file_name()) else { return Some("Not a build folder") };
+    let (Some(parent), Some(name)) = (p.parent(), p.file_name()) else {
+        return Some("Not a build folder");
+    };
     let name = name.to_string_lossy();
     if !is_artifact_dir(p) {
         return Some("Not a plain build folder any more");
     }
     let ns = names(parent);
-    let known = catalog().projects.iter().any(|t| t.is_in(parent, &ns) && t.all_dirs().any(|(d, _)| d == name));
+    let known = catalog()
+        .projects
+        .iter()
+        .any(|t| t.is_in(parent, &ns) && t.all_dirs().any(|(d, _)| d == name));
     (!known).then_some("Its project files are gone; not sure it's build output")
 }
 
 /// Days since anything in the project (outside its build output) changed.
 pub fn idle_days(project: &Path, artifacts: &[&str]) -> f64 {
-    let mut newest = project.symlink_metadata().and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
+    let mut newest = project
+        .symlink_metadata()
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
     // git touches its index on every commit, checkout and add
     for f in [".git/index", ".git/HEAD", ".git/FETCH_HEAD"] {
-        if let Ok(t) = project.join(f).symlink_metadata().and_then(|m| m.modified()) {
+        if let Ok(t) = project
+            .join(f)
+            .symlink_metadata()
+            .and_then(|m| m.modified())
+        {
             newest = newest.max(t);
         }
     }
     let mut seen = 0usize;
     let mut stack = vec![project.to_path_buf()];
     'walk: while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in rd.flatten() {
             seen += 1;
             if seen > ACTIVITY_FILES {
                 break 'walk;
             }
             let n = e.file_name().to_string_lossy().into_owned();
-            let Ok(md) = e.path().symlink_metadata() else { continue };
+            let Ok(md) = e.path().symlink_metadata() else {
+                continue;
+            };
             if md.is_dir() {
                 if n != ".git" && !artifacts.contains(&n.as_str()) {
                     stack.push(e.path());
@@ -164,7 +239,10 @@ pub fn idle_days(project: &Path, artifacts: &[&str]) -> f64 {
             }
         }
     }
-    SystemTime::now().duration_since(newest).map(|d| d.as_secs_f64() / 86_400.0).unwrap_or(0.0)
+    SystemTime::now()
+        .duration_since(newest)
+        .map(|d| d.as_secs_f64() / 86_400.0)
+        .unwrap_or(0.0)
 }
 
 #[cfg(test)]
@@ -182,15 +260,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(base);
         // an old Node app, a fresh Rust crate, a PHP app with vendor, and a
         // plain folder with node_modules but no package.json
-        for (d, f) in [("old-web", "package.json"), ("old-web/src", "index.js"), ("fresh/sub", "Cargo.toml"), ("php", "composer.json"), ("loose", "notes.txt")] {
+        for (d, f) in [
+            ("old-web", "package.json"),
+            ("old-web/src", "index.js"),
+            ("fresh/sub", "Cargo.toml"),
+            ("php", "composer.json"),
+            ("loose", "notes.txt"),
+        ] {
             std::fs::create_dir_all(base.join(d)).unwrap();
             std::fs::write(base.join(d).join(f), "x").unwrap();
         }
-        for d in ["old-web/node_modules/left-pad", "old-web/.next", "fresh/sub/target/debug", "php/vendor", "loose/node_modules"] {
+        for d in [
+            "old-web/node_modules/left-pad",
+            "old-web/.next",
+            "fresh/sub/target/debug",
+            "php/vendor",
+            "loose/node_modules",
+        ] {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }
         std::fs::write(base.join("old-web/node_modules/left-pad/index.js"), "x").unwrap();
-        for p in ["old-web/package.json", "old-web/src/index.js", "old-web/src", "old-web", "php/composer.json", "php"] {
+        for p in [
+            "old-web/package.json",
+            "old-web/src/index.js",
+            "old-web/src",
+            "old-web",
+            "php/composer.json",
+            "php",
+        ] {
             age(&base.join(p), 60);
         }
         // a vendored repository inside a build folder name stays
@@ -202,10 +299,21 @@ mod tests {
         let base = std::env::temp_dir().join(format!("cmdmeow-proj-{}", std::process::id()));
         tree(&base);
         let f = find(&base, &|| false);
-        let rel: Vec<String> = f.iter().map(|x| x.dir.strip_prefix(&base).unwrap().display().to_string()).collect();
-        assert_eq!(rel, vec!["fresh/sub/target", "old-web/.next", "old-web/node_modules"], "{f:?}");
+        let rel: Vec<String> = f
+            .iter()
+            .map(|x| x.dir.strip_prefix(&base).unwrap().display().to_string())
+            .collect();
+        assert_eq!(
+            rel,
+            vec!["fresh/sub/target", "old-web/.next", "old-web/node_modules"],
+            "{f:?}"
+        );
         let web = f.iter().find(|x| x.dir.ends_with("node_modules")).unwrap();
-        assert!(web.idle_days > 50.0, "build output doesn't count as activity: {}", web.idle_days);
+        assert!(
+            web.idle_days > 50.0,
+            "build output doesn't count as activity: {}",
+            web.idle_days
+        );
         assert!(!web.careful);
         let fresh = f.iter().find(|x| x.dir.ends_with("target")).unwrap();
         assert!(fresh.idle_days < 1.0);
@@ -221,9 +329,21 @@ mod tests {
 
     #[test]
     fn careful_folders_always_ask() {
-        let f = Found { project: "/p".into(), kind: "PHP".into(), dir: "/p/vendor".into(), careful: true, idle_days: 400.0 };
+        let f = Found {
+            project: "/p".into(),
+            kind: "PHP".into(),
+            dir: "/p/vendor".into(),
+            careful: true,
+            idle_days: 400.0,
+        };
         assert_eq!(verdict(&f).unwrap().0, Verdict::Ask);
-        let f = Found { project: "/p".into(), kind: "Node".into(), dir: "/p/node_modules".into(), careful: false, idle_days: 10.0 };
+        let f = Found {
+            project: "/p".into(),
+            kind: "Node".into(),
+            dir: "/p/node_modules".into(),
+            careful: false,
+            idle_days: 10.0,
+        };
         assert_eq!(verdict(&f).unwrap().0, Verdict::Ask);
     }
 
