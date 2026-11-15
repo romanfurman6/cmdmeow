@@ -17,6 +17,9 @@ pub enum Event {
     Power { pct: u8, plugged: bool },
     /// The Mac woke from sleep.
     Wake,
+    /// The lid was opened. On a charger or with a monitor the Mac stays
+    /// awake under a closed lid, so this is not always a wake.
+    LidOpen,
     /// The screen got locked or unlocked.
     Locked(bool),
     /// The pointer moved: how far the eyes turn to it and whether it is
@@ -60,6 +63,9 @@ const WAKE_QUIET: f64 = 5.0;
 /// The hello comes this long after the wake, or after the unlock.
 const HELLO_AFTER_WAKE: f64 = 1.0;
 const HELLO_AFTER_UNLOCK: f64 = 0.8;
+/// One opening of the lid can be told twice (the wake, then the lid): no
+/// second hello this soon after one.
+const HELLO_GAP: f64 = 10.0;
 /// The eyes close most of the way to the pointer in this time.
 const LOOK_EASE: f64 = 0.07;
 /// The eyes move in steps of this much of the 1024 box (a seventh of a
@@ -108,6 +114,8 @@ pub struct Engine {
     quiet_until: f64,
     locked: bool,
     hello: Hello,
+    /// When it last said hello.
+    greeted: f64,
     look: (f32, f32),
     target: (f32, f32),
     near: bool,
@@ -130,6 +138,7 @@ impl Engine {
             quiet_until: 0.0,
             locked: false,
             hello: Hello::No,
+            greeted: f64::NEG_INFINITY,
             look: (0.0, 0.0),
             target: (0.0, 0.0),
             near: false,
@@ -202,10 +211,9 @@ impl Engine {
             }
             Event::Wake => {
                 self.quiet_until = now + WAKE_QUIET;
-                if self.prefs.greet {
-                    self.hello = if self.locked { Hello::AfterUnlock } else { Hello::At(now + HELLO_AFTER_WAKE) };
-                }
+                self.greet(now);
             }
+            Event::LidOpen => self.greet(now),
             Event::Locked(locked) => {
                 self.locked = locked;
                 self.hello = match (self.hello, locked) {
@@ -241,6 +249,14 @@ impl Engine {
         out
     }
 
+    /// A hello is due: after the unlock if the screen is locked.
+    fn greet(&mut self, now: f64) {
+        if !self.prefs.greet || self.hello != Hello::No || now - self.greeted < HELLO_GAP {
+            return;
+        }
+        self.hello = if self.locked { Hello::AfterUnlock } else { Hello::At(now + HELLO_AFTER_WAKE) };
+    }
+
     /// What is due at `now`: a reaction ends, the hello comes, the eyes turn.
     pub fn tick(&mut self, now: f64) -> Vec<Cmd> {
         let mut out = Vec::new();
@@ -250,6 +266,7 @@ impl Engine {
         if let Hello::At(t) = self.hello {
             if now >= t {
                 self.hello = Hello::No;
+                self.greeted = now;
                 self.begin(now, Kind::Hello, Why::Felt, &mut out);
             }
         }
@@ -534,6 +551,36 @@ mod tests {
         assert!(e.tick(12.0).is_empty());
         e.handle(20.0, Event::Locked(false));
         assert_eq!(sounds(&e.tick(20.8)), [Kind::Hello]);
+    }
+
+    #[test]
+    fn hello_when_the_lid_opens_on_a_mac_that_stayed_awake() {
+        let mut e = cat();
+        assert!(e.handle(20.0, Event::LidOpen).is_empty());
+        assert_eq!(sounds(&e.tick(21.0)), [Kind::Hello]);
+
+        // the wake and the lid tell of the same opening: one hello
+        let mut e = cat();
+        e.handle(20.0, Event::Wake);
+        assert_eq!(sounds(&e.tick(21.0)), [Kind::Hello]);
+        e.handle(22.5, Event::LidOpen);
+        e.tick(26.0);
+        assert!(e.tick(40.0).is_empty());
+        let mut e = cat();
+        e.handle(20.0, Event::LidOpen);
+        e.handle(20.4, Event::Wake);
+        assert_eq!(sounds(&e.tick(21.0)), [Kind::Hello]);
+        e.tick(26.0);
+        assert!(e.tick(40.0).is_empty());
+
+        // opened again later: hello again
+        e.handle(60.0, Event::LidOpen);
+        assert_eq!(sounds(&e.tick(61.0)), [Kind::Hello]);
+
+        // switched off
+        let mut e = Engine::new(Prefs { greet: false, ..Prefs::default() }, 7);
+        e.handle(20.0, Event::LidOpen);
+        assert!(e.tick(30.0).is_empty());
     }
 
     #[test]

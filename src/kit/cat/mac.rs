@@ -187,6 +187,7 @@ extern "C" {
     fn CFRelease(cf: *const c_void);
     fn CFArrayGetCount(array: *const c_void) -> isize;
     fn CFArrayGetValueAtIndex(array: *const c_void, i: isize) -> *const c_void;
+    fn CFBooleanGetValue(boolean: *const c_void) -> bool;
     fn CFRunLoopGetMain() -> *mut c_void;
     fn CFRunLoopAddSource(run_loop: *const c_void, source: *const c_void, mode: *const c_void);
     static kCFRunLoopCommonModes: *const c_void;
@@ -691,6 +692,12 @@ extern "C" {
     fn IOPSCopyPowerSourcesInfo() -> *const c_void;
     fn IOPSCopyPowerSourcesList(blob: *const c_void) -> *const c_void;
     fn IOPSGetPowerSourceDescription(blob: *const c_void, source: *const c_void) -> *const c_void;
+    fn IOServiceMatching(name: *const c_char) -> *mut c_void;
+    fn IOServiceGetMatchingService(main_port: u32, matching: *mut c_void) -> u32;
+    fn IORegistryEntryCreateCFProperty(entry: u32, key: *const c_void, alloc: *const c_void, options: u32) -> *const c_void;
+    fn IONotificationPortCreate(main_port: u32) -> *mut c_void;
+    fn IONotificationPortGetRunLoopSource(port: *mut c_void) -> *const c_void;
+    fn IOServiceAddInterestNotification(port: *mut c_void, service: u32, kind: *const c_char, callback: extern "C" fn(*mut c_void, u32, u32, *mut c_void), context: *mut c_void, notification: *mut u32) -> i32;
 }
 
 /// The built-in battery's charge in percent and whether the charger is in.
@@ -742,6 +749,75 @@ extern "C" fn power_changed(_context: *mut c_void) {
             eprintln!("[cat] power {pct}% plugged {plugged}");
         }
         send(Event::Power { pct, plugged });
+    }
+}
+
+// ------------------------------------------------------------------ the lid
+
+/// The power manager's word that the lid moved
+/// (`kIOPMMessageClamshellStateChange`); its argument's first bit says closed.
+const LID_MOVED: u32 = 0xE003_4100;
+/// The power manager (`IOPMrootDomain`), kept for the app's whole life.
+static POWER_ROOT: AtomicU32 = AtomicU32::new(0);
+static LID_CLOSED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the lid is closed, as the power manager has it. `None` on a Mac
+/// without a lid.
+fn lid_closed() -> Option<bool> {
+    let root = POWER_ROOT.load(Ordering::SeqCst);
+    if root == 0 {
+        return None;
+    }
+    unsafe {
+        let key = NSString::from_str("AppleClamshellState");
+        let v = IORegistryEntryCreateCFProperty(root, &*key as *const NSString as *const c_void, std::ptr::null(), 0);
+        if v.is_null() {
+            return None;
+        }
+        let closed = CFBooleanGetValue(v);
+        CFRelease(v);
+        Some(closed)
+    }
+}
+
+/// The lid is `closed` now: opening it is news. A Mac on a charger or with
+/// a monitor stays awake under a closed lid, so no wake tells of it.
+fn lid_is(closed: bool) {
+    let was = LID_CLOSED.swap(closed, Ordering::SeqCst);
+    if was != closed {
+        if log() {
+            eprintln!("[cat] lid {}", if closed { "closed" } else { "open" });
+        }
+        if !closed {
+            send(Event::LidOpen);
+        }
+    }
+}
+
+extern "C" fn lid_moved(_context: *mut c_void, _service: u32, message: u32, argument: *mut c_void) {
+    if message == LID_MOVED {
+        lid_is(argument as usize & 1 == 1);
+    }
+}
+
+/// Hear of the lid from the power manager, on the main thread.
+fn watch_lid() {
+    unsafe {
+        let root = IOServiceGetMatchingService(0, IOServiceMatching(c"IOPMrootDomain".as_ptr()));
+        if root == 0 {
+            return;
+        }
+        POWER_ROOT.store(root, Ordering::SeqCst);
+        let Some(closed) = lid_closed() else { return };
+        LID_CLOSED.store(closed, Ordering::SeqCst);
+        let port = IONotificationPortCreate(0);
+        if port.is_null() {
+            return;
+        }
+        let mut notification = 0u32;
+        if IOServiceAddInterestNotification(port, root, c"IOGeneralInterest".as_ptr(), lid_moved, std::ptr::null_mut(), &mut notification) == 0 {
+            CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(port), kCFRunLoopCommonModes);
+        }
     }
 }
 
@@ -924,7 +1000,20 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         }
     }
     power_changed(std::ptr::null_mut());
-    observe("NSWorkspaceDidWakeNotification", false, || send(Event::Wake));
+    watch_lid();
+    observe("NSWorkspaceDidWakeNotification", false, || {
+        send(Event::Wake);
+        // a lid opened while the Mac slept
+        if let Some(closed) = lid_closed() {
+            lid_is(closed);
+        }
+    });
+    // the screens come back when the lid opens, asleep or not
+    observe("NSWorkspaceScreensDidWakeNotification", false, || {
+        if let Some(closed) = lid_closed() {
+            lid_is(closed);
+        }
+    });
     observe("com.apple.screenIsLocked", true, || send(Event::Locked(true)));
     observe("com.apple.screenIsUnlocked", true, || send(Event::Locked(false)));
 
