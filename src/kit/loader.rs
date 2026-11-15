@@ -225,11 +225,6 @@ fn finish_count(s: &Status) -> Status {
     }
 }
 
-/// The scrim's colour: black 45% in dark mode, a lighter green-black in light.
-fn scrim() -> Color32 {
-    pick(Color32::from_black_alpha(115), Color32::from_rgba_unmultiplied(14, 20, 5, 61))
-}
-
 fn track() -> Color32 {
     white(26)
 }
@@ -251,7 +246,7 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
         // the scrim takes every click and hover, so nothing under it reacts
         let _ = ui.interact(full, key_id(key).with("scrim"), Sense::click_and_drag());
         let p = ui.painter().clone();
-        p.rect_filled(full, CornerRadius::same(WINDOW_R), scrim());
+        p.rect_filled(full, CornerRadius::same(WINDOW_R), SCRIM());
         let center = if page.width() > W + 2.0 * sp::L { page.center() } else { full.center() };
         let m = Rect::from_center_size(center, Vec2::new(W.min(full.width() - 2.0 * sp::L), height(s)));
         let _ = ui.interact(m, key_id(key).with("card"), Sense::click());
