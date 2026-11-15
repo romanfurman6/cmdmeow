@@ -4,7 +4,7 @@
 //! The data behind these locks is plain status the next update overwrites,
 //! so carrying on with it is safe.
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub trait LockExt<T: ?Sized> {
     /// Like `lock().unwrap()`, but takes the data back from a poisoned lock.
@@ -14,6 +14,21 @@ pub trait LockExt<T: ?Sized> {
 impl<T: ?Sized> LockExt<T> for Mutex<T> {
     fn lock_ok(&self) -> MutexGuard<'_, T> {
         self.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The same for a read-write lock.
+pub trait RwLockExt<T: ?Sized> {
+    fn read_ok(&self) -> RwLockReadGuard<'_, T>;
+    fn write_ok(&self) -> RwLockWriteGuard<'_, T>;
+}
+
+impl<T: ?Sized> RwLockExt<T> for RwLock<T> {
+    fn read_ok(&self) -> RwLockReadGuard<'_, T> {
+        self.read().unwrap_or_else(PoisonError::into_inner)
+    }
+    fn write_ok(&self) -> RwLockWriteGuard<'_, T> {
+        self.write().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

@@ -2,7 +2,7 @@
 //! → bubbles you can zoom into folder by folder, with a list to pick from → review and move to Trash.
 
 use crate::kit::aicheck::{self, ui::Event};
-use crate::kit::sync::LockExt;
+use crate::kit::sync::{LockExt, RwLockExt};
 use super::scan::{self, Node};
 use super::Lens as App;
 use crate::core::tool::Cx;
@@ -80,13 +80,13 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     app.lens_peek = false;
     // items moved to the Trash while the map was still being made
     if !app.lens_trashed.is_empty() && !running {
-        if let Some(root) = shared.result.lock_ok().as_mut() {
+        if let Some(root) = shared.result.write_ok().as_mut() {
             scan::prune(root, &app.lens_trashed);
         }
         app.lens_trashed.clear();
         scan::save_later(&shared);
     }
-    let guard = shared.result.lock_ok();
+    let guard = shared.result.read_ok();
     let Some(root) = guard.as_ref() else {
         drop(guard);
         // show the last map if there is one (even from a previous run);
@@ -98,7 +98,7 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
         // nothing mapped yet: mapping walks the whole disk, so it waits
         // for a click
-        if shared.result.lock_ok().is_none() {
+        if shared.result.read_ok().is_none() {
             match intro(ui, r, &root_label(&app.lens_root)) {
                 Some(true) => begin(app, ui.ctx()),
                 Some(false) => choose_folder(app, ui.ctx()),
@@ -367,7 +367,11 @@ fn open_disk(app: &mut App) {
         return;
     }
     show_root(app, PathBuf::from("/"));
-    *app.lens.result.lock_ok() = None;
+    // freeing a big map takes a while: not on the UI thread
+    let old = app.lens.result.write_ok().take();
+    if let Some(old) = old {
+        std::thread::spawn(move || drop(old));
+    }
     *app.lens.event.lock_ok() = None;
     app.lens.loaded.store(false, Ordering::SeqCst);
     app.lens.partial.store(false, Ordering::SeqCst);
@@ -1920,7 +1924,7 @@ fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 Err(_) => failed += 1,
             }
         }
-        match app.lens.result.lock_ok().as_mut() {
+        match app.lens.result.write_ok().as_mut() {
             Some(root) => {
                 scan::prune(root, &removed);
             }
@@ -1970,7 +1974,7 @@ pub fn demo_tree(app: &mut App) {
     app.lens_path = root.path.clone();
     app.lens_focus = Some(root.path.join("Movies"));
     app.lens_selected = vec![(root.path.join("Downloads/Xcode_16.xip"), (12.0 * GB) as u64), (root.path.join("Movies"), (31.0 * GB) as u64)];
-    *app.lens.result.lock_ok() = Some(root);
+    *app.lens.result.write_ok() = Some(root);
 }
 
 /// Mapping in progress, for screenshots: some folders done, others still
@@ -1979,7 +1983,7 @@ pub fn demo_live(app: &mut App) {
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
     demo_tree(app);
-    let root = app.lens.result.lock_ok().take().unwrap();
+    let root = app.lens.result.write_ok().take().unwrap();
     let live: Vec<scan::LiveChild> = root
         .children
         .iter()
@@ -2188,7 +2192,7 @@ mod tests {
         done.send(()).unwrap();
         // the disk's last map opens next (none here: the folder's is gone)
         assert_eq!(app.lens_root, Path::new("/"));
-        assert!(app.lens.result.lock_ok().is_none());
+        assert!(app.lens.result.read_ok().is_none());
     }
 
     #[test]
