@@ -1471,7 +1471,11 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
             // ring marks it there), or the item itself when that's the top
             Some(Event::Show(rec)) => {
                 let path = PathBuf::from(&rec.key);
-                ai_go = path.parent().filter(|q| q.starts_with(&root.path) && scan::find(root, q).is_some()).map(Path::to_path_buf).or(Some(path).filter(|q| scan::find(root, q).is_some()));
+                ai_go = path.parent().filter(|q| q.starts_with(&root.path) && scan::find(root, q).is_some()).map(Path::to_path_buf).or(Some(path.clone()).filter(|q| scan::find(root, q).is_some()));
+                // not on this map (a newer scan moved it): Finder still knows
+                if ai_go.is_none() && path.exists() {
+                    ai_act = Some((MenuAct::Reveal, path, 0));
+                }
             }
             None => {}
         }

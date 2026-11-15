@@ -165,7 +165,9 @@ impl Check {
         // screenshots hold the ring
         let k = if self.demo { 1.0 } else { crate::kit::glass::reveal::strength(ctx.input(|i| i.time) - at) };
         if k <= 0.0 {
+            // the row never showed up (gone since): don't scroll to it later
             self.reveal = None;
+            self.scroll = false;
             return None;
         }
         ctx.request_repaint();
@@ -597,6 +599,24 @@ fn sum(text: &str, since: u64) -> Total {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn show_scrolls_once_to_its_row_and_the_ring_ends() {
+        let ctx = egui::Context::default();
+        let mut c = Check::new("test", false);
+        assert!(!c.take_scroll("a"));
+        c.show("a", 0.0);
+        assert!(!c.take_scroll("b"));
+        assert!(c.take_scroll("a"));
+        assert!(!c.take_scroll("a"));
+        assert_eq!(c.ring(&ctx, "a"), 1.0);
+        assert_eq!(c.ring(&ctx, "b"), 0.0);
+        // long over: the ring is gone, and so is a scroll nobody took
+        c.show("b", -100.0);
+        assert_eq!(c.ring(&ctx, "b"), 0.0);
+        assert!(c.revealed(&ctx).is_none());
+        assert!(!c.take_scroll("b"));
+    }
 
     fn ask() -> Ask {
         Ask {

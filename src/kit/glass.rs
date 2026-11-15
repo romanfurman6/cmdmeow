@@ -1845,6 +1845,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reveal_holds_then_fades_out() {
+        use reveal::*;
+        assert_eq!(strength(-0.1), 0.0);
+        assert_eq!(strength(0.0), 1.0);
+        assert_eq!(strength(HOLD - 0.01), 1.0);
+        let mid = strength(HOLD + FADE / 2.0);
+        assert!(mid > 0.0 && mid < 1.0);
+        assert!(strength(HOLD + FADE * 0.25) > strength(HOLD + FADE * 0.75));
+        assert_eq!(strength(HOLD + FADE), 0.0);
+    }
+
+    #[test]
     fn decorative_beat_lands_on_a_fixed_clock() {
         let p = 1.0 / 30.0;
         assert!((next_beat(0.0, 30.0) - p).abs() < 1e-9);
