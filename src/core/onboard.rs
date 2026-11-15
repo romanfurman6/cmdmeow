@@ -707,10 +707,15 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let facts: [(bool, &str); 3] = [(true, "What went wrong and where in the app"), (true, "App and macOS version"), (false, "Files, names or IP address")];
     let w = 400.0;
     let mut y = q.bottom() + sp::XL;
+    // one card, rows touching (S4)
+    let a0 = ease((t - 0.15) / 0.4);
+    p.rect_filled(Rect::from_min_size(Pos2::new(c.x - w / 2.0, y), Vec2::new(w, facts.len() as f32 * sp::SETTINGS_ROW_H)), R_CARD, CARD().gamma_multiply(a0));
     for (k, (sent, label)) in facts.iter().enumerate() {
         let a = ease((t - 0.15 - 0.08 * k as f32) / 0.4);
-        let row = Rect::from_min_size(Pos2::new(c.x - w / 2.0, y - (1.0 - a) * 8.0), Vec2::new(w, 40.0));
-        p.rect_filled(row, 10.0, CARD().gamma_multiply(a));
+        let row = Rect::from_min_size(Pos2::new(c.x - w / 2.0, y), Vec2::new(w, sp::SETTINGS_ROW_H));
+        if k > 0 {
+            hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
+        }
         let m = Pos2::new(row.left() + 22.0, row.center().y);
         if *sent {
             check(&p, m, 12.0, GREEN().gamma_multiply(a));
@@ -719,7 +724,7 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         }
         let col = if *sent { TEXT() } else { TEXT_MUTED() };
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, *label, font(13.0), col.gamma_multiply(a));
-        y += 48.0;
+        y += sp::SETTINGS_ROW_H;
     }
     // the answer
     let yes = "Send reports";
@@ -727,12 +732,12 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let no_w = 96.0;
     let gap = 12.0;
     let left = c.x - (bw + gap + no_w) / 2.0;
-    let by = y + 14.0;
+    let by = y + sp::XL;
     let mut picked = None;
-    if ghost_button(ui, Rect::from_min_size(Pos2::new(left, by), Vec2::new(no_w, 36.0)), "Don't send").clicked() {
+    if ghost_button(ui, Rect::from_min_size(Pos2::new(left, by), Vec2::new(no_w, sp::HEADER_CONTROL_H)), "Don't send").clicked() {
         picked = Some(false);
     }
-    if pill_button(ui, Rect::from_min_size(Pos2::new(left + no_w + gap, by), Vec2::new(bw, 36.0)), yes, BTN_PRIMARY, true).clicked() {
+    if pill_button(ui, Rect::from_min_size(Pos2::new(left + no_w + gap, by), Vec2::new(bw, sp::HEADER_CONTROL_H)), yes, BTN_PRIMARY, true).clicked() {
         picked = Some(true);
     }
     match picked {
@@ -2449,38 +2454,40 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let rows_top = y;
     // open at login: as tall as the shortcut rows under it
     let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
-    p.rect_filled(row, 10.0, CARD());
+    // one card under every row (S4), drawn first
+    let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
+        let ic = app.tools[i].badge().icon;
+        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l.starts_with("Record") { Icon::ScreenRec } else { ic }, l, k))
+    }).collect();
+    let n_rows = 1 + keys.len() + needs_restart(app) as usize;
+    p.rect_filled(Rect::from_min_size(row.min, Vec2::new(row.width(), n_rows as f32 * sp::ROW_H)), R_CARD, CARD());
     icon(&p, Icon::Power, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT());
     p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Open at login", bold(13.0), TEXT());
     let now = ui.ctx().input(|i| i.time);
     // on by default; registered when setup finishes
     let on = crate::kit::login::default_pending() || app.perm_watch.login_on(app.demo, now);
-    let sw = Rect::from_min_size(Pos2::new(row.right() - 50.0, row.center().y - 11.0), Vec2::new(38.0, 22.0));
+    let sw = Rect::from_min_size(Pos2::new(row.right() - 42.0, row.center().y - 9.0), Vec2::new(30.0, 18.0));
     if switch(ui, sw, ui.scope_id().with("setup-login"), on, true).clicked() && !app.demo {
         app.perm_watch.set_login(!on);
     }
-    y += sp::ROW_H + sp::S;
+    y += sp::ROW_H;
     // shortcuts of the enabled tools
-    let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
-        let ic = app.tools[i].badge().icon;
-        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l.starts_with("Record") { Icon::ScreenRec } else { ic }, l, k))
-    }).collect();
     for (k, (ic, label, keys)) in keys.iter().enumerate() {
         let a = ease((t - 0.08 * (k + 1) as f32) / 0.4);
-        let row = Rect::from_min_size(Pos2::new(left.left(), y - (1.0 - a) * 8.0), Vec2::new(left.width(), sp::ROW_H));
-        p.rect_filled(row, 10.0, CARD().gamma_multiply(a));
+        let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
+        hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
         icon(&p, *ic, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT().gamma_multiply(a));
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, *label, font(13.0), TEXT().gamma_multiply(a));
         keycaps(&p, Pos2::new(row.right() - 12.0, row.center().y), keys);
-        y += sp::ROW_H + sp::S;
+        y += sp::ROW_H;
     }
     if needs_restart(app) {
         let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
-        p.rect_filled(row, 10.0, CARD());
+        hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
         icon(&p, Icon::ScreenRec, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), AMBER());
         p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Screen Recording needs a restart", font(13.0), TEXT());
         let bw = button_width(&p, "Restart", BTN_PRIMARY);
-        let br = Rect::from_min_size(Pos2::new(row.right() - 10.0 - bw, row.center().y - 13.0), Vec2::new(bw, 26.0));
+        let br = Rect::from_min_size(Pos2::new(row.right() - sp::M - bw, row.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
         if pill_button(ui, br, "Restart", BTN_PRIMARY, true).clicked() {
             restart = true;
         }
