@@ -2,6 +2,8 @@
 //! little darker than the window, system blue for actions, monochrome tool
 //! icons, one spacing scale ([`sp`]) and one type ramp ([`ty`]).
 
+use super::key;
+use super::sound::Click;
 use egui::{
     epaint::{PathShape, PathStroke},
     Align2, Color32, CornerRadius, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense,
@@ -418,32 +420,33 @@ pub const BTN_SECONDARY: u8 = 0;
 pub const BTN_PRIMARY: u8 = 1;
 pub const BTN_DANGER: u8 = 2;
 
-/// Standard push button (28–34 pt tall, radius 8). `kind`: 0 = secondary
-/// (quiet fill + hairline), 1 = primary (blue), 2 = destructive (red).
+/// Standard push button: 32 pt (page header, footer bars, dialogs) or
+/// 28 pt (inside cards and rows). `kind`: 0 = secondary (quiet), 1 =
+/// primary (lime), 2 = destructive ([`key::DANGER`]). A raised key: it
+/// sinks while held and clicks (see [`key`]).
 pub fn pill_button(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool) -> Response {
+    pill_button_at(ui, rect, label, kind, enabled).0
+}
+
+/// [`pill_button`] that also returns the face rect, for a caller that
+/// draws its own content on an empty label (it moves with the press).
+pub fn pill_button_at(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: bool) -> (Response, Rect) {
     let id = ui.scope_id().with(("pill", label, rect.min.x as i32, rect.min.y as i32));
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let resp = ui.interact(rect, id, sense);
-    let hover = ui.ctx().animate_bool(id.with("h"), resp.hovered() && enabled);
-    let pressed = resp.is_pointer_button_down_on() && enabled;
+    let (look, click) = match kind {
+        BTN_PRIMARY => (key::Look::lime(), Click::Primary),
+        BTN_DANGER => (key::Look::danger(), Click::Danger),
+        // secondary: its hairline goes a little stronger on hover (24%)
+        _ => (key::Look { edge: Some((key::ink(0.10), key::ink(0.24))), ..key::Look::quiet(0.04, 0.11) }, Click::Secondary),
+    };
+    let k = key::press(ui, rect, id, enabled, Some(click));
     let p = ui.painter();
-    let tint = match kind {
-        BTN_PRIMARY => Some(BLUE()),
-        BTN_DANGER => Some(RED()),
-        _ => None,
-    };
-    let a = if enabled { 1.0 } else { 0.45 };
-    liquid_capsule(p, rect, tint, if pressed { 1.6 } else { hover }, a);
-    let (f, col) = match tint {
-        Some(c) => (bold(13.0), on_color(c)),
-        None => (font(13.0), TEXT()),
-    };
-    let col = if enabled { col } else { with_alpha(col, 0.5) };
-    text_fit(p, rect.center(), Align2::CENTER_CENTER, label, f, col, rect.width() - 12.0);
-    if enabled && resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    let face = key::paint(p, rect, &look, &k);
+    let (f, col) = if kind == BTN_SECONDARY { (font(13.0), TEXT()) } else { (bold(13.0), on_color(look.fill)) };
+    let col = if enabled { col } else { with_alpha(col, key::disabled_alpha()) };
+    if !label.is_empty() {
+        text_fit(p, face.center(), Align2::CENTER_CENTER, label, f, col, rect.width() - 12.0);
     }
-    resp
+    (k.resp, face)
 }
 
 /// Width a [`pill_button`] needs for `label` (14 pt padding each side).
@@ -459,65 +462,83 @@ pub fn button_width(p: &Painter, label: &str, kind: u8) -> f32 {
     p.layout_no_wrap(label.to_owned(), f, TEXT()).size().x + 28.0
 }
 
-/// The body of a standard button: flat tint (or quiet white) with a hairline.
-/// `hover` 0..1 lightens it; values above 1 read as pressed.
+/// The body of a standard button at rest, for a picture of one or a caller
+/// that handles its own input. `tint` None = quiet. `hover` 0..1 lightens
+/// it; values above 1 draw it held. Interactive buttons use [`key`] (or a
+/// kit button) instead, which also animates the press and clicks.
 pub fn liquid_capsule(p: &Painter, rect: Rect, tint: Option<Color32>, hover: f32, alpha: f32) {
-    let r = R_BUTTON.min(rect.height() / 2.0);
+    key::paint_at(p, rect, &capsule_look(tint), hover.min(1.0), if hover > 1.0 { 1.0 } else { 0.0 }, alpha, false);
+}
+
+/// The key look of a button body: lime, red, another tint, or quiet.
+pub fn capsule_look(tint: Option<Color32>) -> key::Look {
     match tint {
-        Some(c) => {
-            let fill = if hover > 1.0 { lerp_color(c, Color32::BLACK, 0.12) } else { lerp_color(c, Color32::WHITE, 0.12 * hover) };
-            // a soft glow of its own colour below, a darker lip inside
-            let glow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: with_alpha(c, 0.25 * alpha) };
-            p.add(glow.as_shape(rect, r));
-            p.rect_filled(rect, r, with_alpha(fill, alpha));
-            let lip = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 2.0), rect.max);
-            p.with_clip_rect(lip).rect_filled(rect, r, Color32::from_black_alpha((46.0 * alpha) as u8));
-        }
-        None => {
-            let a = if hover > 1.0 { 26.0 } else { 10.0 + 10.0 * hover };
-            p.rect_filled(rect, r, white((a * alpha) as u8));
-            p.rect_stroke(rect, r, Stroke::new(1.0, white((36.0 * alpha) as u8)), StrokeKind::Inside);
-        }
+        Some(c) if c == BLUE() => key::Look::lime(),
+        Some(c) if c == key::DANGER() => key::Look::danger(),
+        Some(c) => key::Look::tint(c, 0.38, 0.26),
+        None => key::Look::quiet(0.04, 0.11),
     }
 }
 
 /// A 30 pt square icon button (panel header, sheet actions).
 pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
     let id = ui.scope_id().with(("icon-btn", tip, rect.min.x as i32, rect.min.y as i32));
-    let resp = ui.interact(rect, id, Sense::click());
-    let h = ui.ctx().animate_bool(id, resp.hovered());
+    let k = key::press(ui, rect, id, true, Some(Click::Icon));
     let p = ui.painter();
-    p.rect_filled(rect, R_BUTTON, white((15.0 + 13.0 * h) as u8));
-    icon(p, ic, Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.53)), TEXT_SOFT());
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp.on_hover_text(tip)
+    let face = key::paint(p, rect, &key::Look::quiet(0.06, 0.15), &k);
+    icon(p, ic, Rect::from_center_size(face.center(), Vec2::splat(rect.height() * 0.53)), lerp_color(TEXT_SOFT(), TEXT(), k.hover));
+    k.resp.on_hover_text(tip)
 }
 
 /// The round 26 pt close / refresh button used in sheet headers.
 pub fn round_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
     let id = ui.scope_id().with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
-    let resp = ui.interact(rect, id, Sense::click());
-    let h = ui.ctx().animate_bool(id, resp.hovered());
+    let k = key::press(ui, rect, id, true, Some(Click::Round));
     let p = ui.painter();
-    p.circle_filled(rect.center(), rect.height() / 2.0, white((20.0 + 18.0 * h) as u8));
-    icon(p, ic, Rect::from_center_size(rect.center(), Vec2::splat(rect.height() * 0.46)), TEXT_SOFT());
-    resp.on_hover_text(tip)
+    let look = key::Look::quiet(0.08, 0.20).radius(rect.height() / 2.0);
+    let face = key::paint(p, rect, &look, &k);
+    icon(p, ic, Rect::from_center_size(face.center(), Vec2::splat(rect.height() * 0.46)), lerp_color(TEXT_SOFT(), TEXT(), k.hover));
+    k.resp.on_hover_text(tip)
 }
 
-/// Text link in the accent blue.
+/// Text link in bold [`ACCENT`]: lighter and underlined on hover, the text
+/// sinks 1 pt while held.
 pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Response {
-    let galley = ui.painter().layout_no_wrap(label.to_owned(), bold(size), ACCENT());
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), bold(size), Color32::PLACEHOLDER);
     let rect = align.anchor_size(pos, galley.size());
     let id = ui.scope_id().with(("link", label, pos.x as i32, pos.y as i32));
-    let resp = ui.interact(rect.expand(4.0), id, Sense::click());
-    let col = if resp.hovered() { Color32::from_rgb(0x7D, 0xBB, 0xFF) } else { ACCENT() };
-    ui.painter().galley(rect.min, galley, col);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    let k = key::press(ui, rect.expand(4.0), id, true, Some(Click::Text));
+    let col = lerp_color(ACCENT(), lerp_color(ACCENT(), Color32::WHITE, if is_light() { 0.2 } else { 0.35 }), k.hover);
+    let at = rect.min + k.offset(1.0);
+    if k.hover > 0.5 {
+        let y = at.y + rect.height() - 1.0;
+        ui.painter().hline(at.x..=at.x + rect.width(), y, Stroke::new(1.0, col));
     }
-    resp
+    ui.painter().galley(at, galley, col);
+    if k.focus {
+        ui.painter().rect_stroke(rect.expand(3.0), 4.0, Stroke::new(1.0, TEXT()), StrokeKind::Middle);
+    }
+    k.resp
+}
+
+/// A text-only button: dim text, full ink on an ink 7% backdrop on hover;
+/// the text sinks 1 pt while held. `align` places the label in `rect`.
+pub fn ghost_button(ui: &mut Ui, rect: Rect, label: &str, f: FontId, align: Align2) -> Response {
+    let id = ui.scope_id().with(("ghost", label, rect.min.x as i32, rect.min.y as i32));
+    let k = key::press(ui, rect, id, true, Some(Click::Text));
+    let p = ui.painter();
+    // a left- or right-aligned label keeps its x; the backdrop reaches past it
+    let back = if align.x() == egui::Align::Center { rect } else { rect.expand2(Vec2::new(6.0, 0.0)) };
+    if k.hover > 0.0 {
+        p.rect_filled(back, R_SMALL, key::ink(0.07 * k.hover));
+    }
+    let face = rect.translate(k.offset(1.0));
+    let at = align.pos_in_rect(&face);
+    p.text(at, align, label, f, lerp_color(TEXT_DIM(), TEXT(), k.hover));
+    if k.focus {
+        p.rect_stroke(back.expand(2.5), R_SMALL + 2.5, Stroke::new(1.0, TEXT()), StrokeKind::Middle);
+    }
+    k.resp
 }
 
 /// Thin flat progress bar on a faint track.
@@ -683,35 +704,50 @@ pub fn spinner(painter: &Painter, center: Pos2, radius: f32, _t: f64, color: Col
     crate::kit::spin::arc_at(painter, center, radius, color, std::panic::Location::caller());
 }
 
+/// A 16 pt checkbox. Checked: lime on a 1 pt base, the check pops in.
+/// Unchecked: an outline that darkens on hover. Sinks 1 pt while held.
 pub fn checkbox(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect.expand(3.0), id, if enabled { Sense::click() } else { Sense::hover() });
-    let p = ui.painter();
-    let r = 4.0;
-    if on && enabled {
-        p.rect_filled(rect, r, BLUE());
-        let a = rect.left_top() + Vec2::new(rect.width() * 0.24, rect.height() * 0.52);
-        let b = rect.left_top() + Vec2::new(rect.width() * 0.43, rect.height() * 0.71);
-        let c = rect.left_top() + Vec2::new(rect.width() * 0.78, rect.height() * 0.31);
-        p.add(PathShape::line(vec![a, b, c], PathStroke::new(2.0, ON_ACTION)));
-    } else {
-        p.rect_stroke(rect, r, Stroke::new(1.5, white(if enabled { 90 } else { 30 })), StrokeKind::Inside);
-    }
-    resp
+    choice_box(ui, rect, id, on, enabled, 4.0, Click::Check, |p, face, pop| {
+        let at = |x: f32, y: f32| face.center() + (Vec2::new(face.width() * x, face.height() * y) - face.size() / 2.0) * pop;
+        p.add(PathShape::line(vec![at(0.24, 0.52), at(0.43, 0.71), at(0.78, 0.31)], PathStroke::new(2.0, ON_ACTION)));
+    })
 }
 
 /// One choice of several (a filled dot when picked), the size of a checkbox.
 pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect.expand(3.0), id, if enabled { Sense::click() } else { Sense::hover() });
-    let p = ui.painter();
-    let c = rect.center();
     let r = rect.width().min(rect.height()) / 2.0;
+    choice_box(ui, rect, id, on, enabled, r, Click::Radio, |p, face, pop| {
+        p.circle_filled(face.center(), r * 0.4 * pop, ON_ACTION);
+    })
+}
+
+/// Shared body of [`checkbox`] and [`radio`]. `mark` draws the check or
+/// dot on the face at a scale (it pops from 0.5 to 1 when turned on).
+fn choice_box(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool, radius: f32, click: Click, mark: impl FnOnce(&Painter, Rect, f32)) -> Response {
+    let k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
+    let p = ui.painter();
     if on && enabled {
-        p.circle_filled(c, r, BLUE());
-        p.circle_filled(c, r * 0.4, ON_ACTION);
+        let t = ui.ctx().animate_bool_with_time(id.with("pop"), on, 0.2);
+        let face = key::paint(p, rect, &key::Look::lime_small(1.0).radius(radius), &k);
+        mark(p, face, 0.5 + 0.5 * key::spring(t));
     } else {
-        stroke_circle(p, c, r - 0.75, Stroke::new(1.5, white(if enabled { 90 } else { 30 })));
+        ui.ctx().animate_bool_with_time(id.with("pop"), false, 0.0);
+        let look = key::Look {
+            fill: Color32::TRANSPARENT,
+            fill_hover: key::ink(0.08),
+            base: Color32::TRANSPARENT,
+            depth: 0.0,
+            drop: 1.0,
+            highlight: Color32::TRANSPARENT,
+            edge: Some((key::ink(0.35), key::ink(0.70))),
+            edge_w: 1.5,
+            glow: None,
+            ring: TEXT(),
+            radius,
+        };
+        key::paint(p, rect, &look, &k);
     }
-    resp
+    k.resp
 }
 
 /// A small rounded status chip ("Safe", "Ask", "Kept"). `colors` = (fill, text).
@@ -733,42 +769,71 @@ pub fn badge(p: &Painter, pos: Pos2, align: Align2, label: &str) -> Rect {
     r
 }
 
-/// Two-or-more option segmented control. Returns the index clicked this frame.
+/// Two-or-more option segmented control (32 pt in a header, 28 in a card):
+/// segments 2 pt apart, the picked one is a raised thumb. Returns the
+/// index clicked this frame.
 pub fn segmented(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selected: usize) -> Option<usize> {
     let p = ui.painter().clone();
     p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
-    let w = inner.width() / labels.len().max(1) as f32;
+    let n = labels.len().max(1) as f32;
+    let gap = 2.0;
+    let w = (inner.width() - gap * (n - 1.0)) / n;
     let mut out = None;
     for (i, l) in labels.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(inner.left() + w * i as f32, inner.top()), Vec2::new(w, inner.height()));
-        let resp = ui.interact(r, id.with(i), Sense::click());
-        if i == selected {
-            p.rect_filled(r, 6.0, pick(Color32::from_white_alpha(36), Color32::WHITE));
-        }
-        let col = if i == selected || resp.hovered() { TEXT() } else { TEXT_DIM() };
-        text_fit(&p, r.center(), Align2::CENTER_CENTER, l, font(12.0), col, r.width() - 8.0);
-        if resp.clicked() && i != selected {
+        let r = Rect::from_min_size(Pos2::new(inner.left() + (w + gap) * i as f32, inner.top()), Vec2::new(w, inner.height()));
+        let k = key::press(ui, r, id.with(i), true, Some(Click::Segment));
+        let look = if i == selected {
+            key::Look {
+                fill: pick(Color32::from_white_alpha(36), Color32::WHITE),
+                fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
+                base: key::ink(0.14),
+                depth: 1.0,
+                ..key::Look::quiet(0.0, 0.0)
+            }
+        } else {
+            key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, 0.07) }
+        };
+        let face = key::paint(&p, r, &look.radius(6.0), &k);
+        let col = if i == selected { TEXT() } else { lerp_color(TEXT_DIM(), TEXT(), k.hover) };
+        text_fit(&p, face.center(), Align2::CENTER_CENTER, l, font(12.0), col, r.width() - 8.0);
+        if k.resp.clicked() && i != selected {
             out = Some(i);
         }
     }
     out
 }
 
-/// An on/off switch (30×18).
+/// An on/off switch (30×18): lime when on. While held the knob widens
+/// 4 pt, then it slides across with a small overshoot.
 pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> Response {
-    let resp = ui.interact(rect, id, if enabled { Sense::click() } else { Sense::hover() });
+    let k = key::press(ui, rect, id, enabled, Some(Click::Switch));
     let p = ui.painter();
-    if !enabled {
-        dashed_rect(p, rect, rect.height() / 2.0, white(64));
-        return resp;
-    }
-    let t = ui.ctx().animate_bool(id.with("t"), on);
-    p.rect_filled(rect, rect.height() / 2.0, lerp_color(white(41), BLUE(), t));
+    let raw = ui.ctx().animate_bool_with_time(id.with("t"), on, 0.22);
+    // the overshoot runs the way the knob is going
+    let t = if on { key::ease_back(raw) } else { 1.0 - key::ease_back(1.0 - raw) };
+    let look = key::Look {
+        fill: lerp_color(key::ink(0.16), BLUE(), raw),
+        fill_hover: lerp_color(key::ink(0.22), lerp_color(BLUE(), Color32::WHITE, 0.26), raw),
+        base: key::ink(0.10),
+        depth: 1.0,
+        drop: 0.0,
+        highlight: Color32::TRANSPARENT,
+        edge: None,
+        edge_w: 1.0,
+        glow: None,
+        ring: if on { BLUE() } else { TEXT() },
+        radius: rect.height() / 2.0,
+    };
+    let face = key::paint(p, rect, &look, &k);
     let d = rect.height() - 4.0;
-    let x = rect.left() + 2.0 + d / 2.0 + (rect.width() - 4.0 - d) * t;
-    p.circle_filled(Pos2::new(x, rect.center().y), d / 2.0, Color32::WHITE);
-    resp
+    let grow = 4.0 * k.press.clamp(0.0, 1.0);
+    let travel = rect.width() - 4.0 - d - grow;
+    let x0 = face.left() + 2.0 + travel * t;
+    let knob = Rect::from_min_size(Pos2::new(x0, face.top() + 2.0), Vec2::new(d + grow, d));
+    let a = if enabled { 1.0 } else { key::disabled_alpha() };
+    p.rect_filled(knob, d / 2.0, with_alpha(Color32::WHITE, a));
+    k.resp
 }
 
 /// A dashed rounded outline: the "planned, not built yet" look.
