@@ -976,6 +976,22 @@ pub fn segmented_font(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], se
     out
 }
 
+/// A hover tip that opens under `top` (P7): for a bar docked at the top
+/// whose tips would otherwise cover the bar under it. The tip's top edge
+/// sits at `top`, left-aligned with the widget.
+pub fn tip_below(resp: Response, text: &str, top: f32) -> Response {
+    if text.is_empty() {
+        return resp;
+    }
+    let gap = (top - resp.rect.bottom()).max(4.0);
+    let mut t = egui::Tooltip::for_enabled(&resp);
+    t.popup = t.popup.align(egui::RectAlign::BOTTOM_START).align_alternatives(&[]).gap(gap);
+    t.show(|ui| {
+        ui.label(text);
+    });
+    resp
+}
+
 /// One segment of a segmented control: the raised thumb when `selected`,
 /// a quiet hover otherwise. Returns the key and its face, for the label.
 pub fn segment(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, selected: bool, enabled: bool) -> (key::Key, Rect) {
