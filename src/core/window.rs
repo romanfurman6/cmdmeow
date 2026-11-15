@@ -121,10 +121,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 22.0));
         let id = ui.scope_id().with("nav-more-tools");
         let resp = ui.interact(r, id, Sense::click());
-        let hov = ctx.animate_bool(id.with("h"), resp.hovered());
-        if hov > 0.0 {
-            p.rect_filled(r, 6.0, white((12.0 * hov) as u8));
-        }
+        // no hover fill: only the text brightens
         let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
         icon(&p, Icon::Plus, Rect::from_center_size(Pos2::new(r.left() + 16.0, r.center().y), Vec2::splat(12.0)), col);
         p.text(Pos2::new(r.left() + 33.0, r.center().y), Align2::LEFT_CENTER, "More tools", font(12.0), col);
