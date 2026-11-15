@@ -53,6 +53,9 @@ pub fn BG() -> Color32 { pick(hex(0x0E1B0D), hex(0xE6F0DA)) }
 /// Card surface.
 #[allow(non_snake_case)]
 pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
+/// The one hover fill for rows (H1): lists, rails, popovers, start lists.
+#[allow(non_snake_case)]
+pub fn ROW_HOVER() -> Color32 { white(10) }
 /// Card edge.
 #[allow(non_snake_case)]
 pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 20), Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
@@ -705,6 +708,56 @@ pub fn stacked_bar(painter: &Painter, rect: Rect, segments: &[(f32, Color32)]) {
         };
         clip.rect_filled(seg, cr, c);
     }
+}
+
+/// The disk ring of tool start screens (Cleanup, Disk Map): how wide it is.
+pub const DISK_RING_D: f32 = 208.0;
+/// The ring plus the name line under it.
+pub const DISK_RING_H: f32 = DISK_RING_D + sp::M + 18.0;
+
+/// A start screen's disk: used space as a `tint` arc from 12 o'clock, the
+/// free space in the middle ("1.33 TB" over "free of 2.00 TB") and the
+/// volume's name under the ring. `top` is the top centre of the ring; the
+/// whole thing is [`DISK_RING_H`] tall.
+pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint: Color32) {
+    use egui::epaint::{PathShape, PathStroke};
+    const STROKE: f32 = 12.0;
+    let r = (DISK_RING_D - STROKE) / 2.0 - 2.0;
+    let c = Pos2::new(top.x, top.y + DISK_RING_D / 2.0);
+    p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
+    if total > 0 {
+        let used = disk_used(total, free);
+        if used > 0.0 {
+            let a0 = -std::f32::consts::FRAC_PI_2;
+            let a1 = a0 + std::f32::consts::TAU * used.max(0.01);
+            p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, tint)));
+            // round caps
+            for a in [a0, a1] {
+                p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, tint);
+            }
+        }
+        let big = line_h(p, &ty::hero());
+        let small = line_h(p, &ty::label());
+        let y0 = c.y - (big + 2.0 + small) / 2.0;
+        p.text(Pos2::new(c.x, y0), Align2::CENTER_TOP, human_bytes(free), ty::hero(), TEXT());
+        p.text(Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, format!("free of {}", human_bytes(total)), ty::label(), TEXT_DIM());
+    }
+    // the name, with the disk glyph in front, centred as one
+    let ny = top.y + DISK_RING_D + sp::M + 9.0;
+    // a volume or folder name people bring may be cut (R10), to the column
+    let room = DISK_RING_D + sp::XXL - 22.0;
+    let nw = p.layout_no_wrap(name.to_owned(), ty::body(), TEXT_SOFT()).size().x.min(room);
+    let x = c.x - (22.0 + nw) / 2.0;
+    icon(p, Icon::Disk, Rect::from_center_size(Pos2::new(x + 8.0, ny), Vec2::splat(16.0)), TEXT_SOFT());
+    text_fit(p, Pos2::new(x + 22.0, ny), Align2::LEFT_CENTER, name, ty::body(), TEXT_SOFT(), room);
+}
+
+/// How full a disk is, 0..1 (0 when its size is unknown).
+pub fn disk_used(total: u64, free: u64) -> f32 {
+    if total == 0 {
+        return 0.0;
+    }
+    (1.0 - free.min(total) as f32 / total as f32).clamp(0.0, 1.0)
 }
 
 pub fn arc_points(center: Pos2, radius: f32, a0: f32, a1: f32, n: usize) -> Vec<Pos2> {
@@ -1897,6 +1950,16 @@ pub fn human_duration(secs: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disk_ring_fill_is_how_full_the_disk_is() {
+        assert_eq!(disk_used(0, 0), 0.0);
+        assert_eq!(disk_used(100, 100), 0.0);
+        assert_eq!(disk_used(100, 0), 1.0);
+        assert!((disk_used(2_000, 1_330) - 0.335).abs() < 1e-6);
+        // free reported above the size (APFS purgeable) never goes negative
+        assert_eq!(disk_used(100, 150), 0.0);
+    }
 
     #[test]
     fn decorative_beat_lands_on_a_fixed_clock() {

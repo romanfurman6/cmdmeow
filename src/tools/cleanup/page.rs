@@ -53,117 +53,81 @@ fn short_path(p: &std::path::Path) -> String {
 
 // ---------------------------------------------------------------- start
 
+/// The start screen, no cards (R13): on the left the disk ring and Scan, on
+/// the right every group a scan looks through, one 44 pt row each. After a
+/// scan the rows carry what the last one found, as a bar and a size.
 fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     page_header(&p, r, "Cleanup", "", TEXT_DIM());
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
-
-    // top: one toolbar with the disk, the AI switch and Scan; below it the
-    // groups as columns sized by what the last scan found in each
     let (total, free) = crate::kit::fs::volume_space("/");
-    let used = if total > 0 { 1.0 - free as f32 / total as f32 } else { 0.0 };
-    let bar_card = Rect::from_min_size(body.min, Vec2::new(body.width(), 56.0));
-    glass_card(&p, bar_card, R_CARD, 0.0, false);
-    let di = bar_card.shrink2(Vec2::new(sp::L, 0.0));
-    let cy = di.center().y;
-    // right to left: Scan, a divider, the free space (AI Check runs after the scan, in its strip)
-    // never scanned: the big Scan in the middle is the only one
     let last = if app.demo && !app.demo_fresh { Some(super::engine::LastScan { when: chrono::Utc::now().timestamp() - 2 * 86400, groups: vec![14_200_000_000, 9_800_000_000, 21_600_000_000, 6_100_000_000, 2_200_000_000, 1_300_000_000, 3_400_000_000] }) } else { super::engine::last_scan() };
-    let hist = if app.demo_fresh { Vec::new() } else { super::engine::history() };
-    let fresh = last.is_none() && hist.is_empty();
-    let right = if fresh {
-        di.right()
-    } else {
-        let scan_w = button_width(&p, "Scan", BTN_PRIMARY).max(96.0);
-        let scan_r = Rect::from_min_size(Pos2::new(di.right() + 4.0 - scan_w, cy - 17.0), Vec2::new(scan_w, 34.0));
-        if pill_button(ui, scan_r, "Scan", BTN_PRIMARY, true).clicked() {
-            cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
+    let sizes: Option<Vec<u64>> = last.as_ref().map(|l| Group::ALL.iter().enumerate().map(|(i, _)| l.groups.get(i).copied().unwrap_or(0)).collect());
+
+    // the block: ring column, a hairline, the rows; centred in the page
+    const LEFT_W: f32 = 240.0;
+    const GAP: f32 = 48.0;
+    const BTN: Vec2 = Vec2::new(200.0, 44.0);
+    let left_h = DISK_RING_H + sp::XXL + BTN.y;
+    let head_h = if sizes.is_some() { sp::SECTION_H } else { 0.0 };
+    let rows_h = head_h + Group::ALL.len() as f32 * sp::ROW_H;
+    let block_w = body.width().min(840.0);
+    let block_h = left_h.max(rows_h);
+    let top = (body.center().y - block_h / 2.0).max(body.top());
+    let block = Rect::from_min_size(Pos2::new(body.center().x - block_w / 2.0, top), Vec2::new(block_w, block_h));
+
+    // left: the disk and Scan
+    let lc = block.left() + LEFT_W / 2.0;
+    let ly = block.top() + (block_h - left_h) / 2.0;
+    disk_ring(&p, Pos2::new(lc, ly), "Macintosh HD", total, free, tint::CLEANUP());
+    let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
+    if scan_button(ui, br) {
+        cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
+    }
+
+    // a hairline between the columns
+    let dx = block.left() + LEFT_W + GAP;
+    hairline(&p, Pos2::new(dx, block.top()), Pos2::new(dx, block.bottom()));
+
+    // right: the groups
+    let x0 = dx + 1.0 + GAP;
+    let x1 = block.right();
+    let mut y = block.top() + (block_h - rows_h) / 2.0;
+    if let (Some(l), Some(s)) = (&last, &sizes) {
+        let cy = section_title(&p, x0, y, &format!("Last scan {}", super::engine::days_ago(l.when)));
+        p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, human_bytes(s.iter().sum()), ty::title(), TEXT());
+        y += head_h;
+    }
+    let max = sizes.as_ref().and_then(|s| s.iter().copied().max()).unwrap_or(0).max(1) as f32;
+    // the name column fits the longest group name: app text is never cut (R10)
+    let name_w = Group::ALL.iter().map(|g| p.layout_no_wrap(g.title().to_string(), ty::body(), TEXT()).size().x).fold(96.0, f32::max);
+    for (k, g) in Group::ALL.into_iter().enumerate() {
+        let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
+        let resp = ui.interact(rr, ui.scope_id().with(("cleanup-group", k)), Sense::hover());
+        if resp.hovered() {
+            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, ROW_HOVER());
         }
-        let div = scan_r.left() - sp::L;
-        p.line_segment([Pos2::new(div, cy - 14.0), Pos2::new(div, cy + 14.0)], Stroke::new(1.0, CARD_EDGE()));
-        div - sp::L
-    };
-    icon(&p, Icon::Disk, Rect::from_center_size(Pos2::new(di.left() + 9.0, cy), Vec2::splat(18.0)), TEXT_SOFT());
-    let name = p.text(Pos2::new(di.left() + 18.0 + sp::M, cy), Align2::LEFT_CENTER, "Macintosh HD", ty::title(), TEXT());
-    let free_s = if total > 0 { format!("{} free of {}", human_bytes(free), human_bytes(total)) } else { String::new() };
-    let fr = p.text(Pos2::new(right, cy), Align2::RIGHT_CENTER, &free_s, ty::body(), TEXT_SOFT());
-    let bar_r = Rect::from_min_max(Pos2::new(name.right() + sp::L, cy - 3.0), Pos2::new(fr.left() - sp::L, cy + 3.0));
-    if bar_r.width() > 40.0 {
-        bar(&p, bar_r, used, ACTION());
-    }
-
-    // a note when Claude is missing, at the bottom
-    let chart_bottom = body.bottom();
-
-    // never scanned: what a scan looks through, and one big Scan
-    if fresh {
-        let area = Rect::from_min_max(Pos2::new(body.left(), bar_card.bottom() + sp::M), Pos2::new(body.right(), chart_bottom));
-        if fresh_start(ui, area) {
-            cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
+        if k > 0 || sizes.is_some() {
+            hairline(&p, rr.left_top(), rr.right_top());
         }
-        return;
-    }
-
-    // the chart card
-    let card = Rect::from_min_max(Pos2::new(body.left(), bar_card.bottom() + sp::M), Pos2::new(body.right(), chart_bottom));
-    glass_card(&p, card, R_CARD, 0.0, false);
-    let ci = card.shrink(sp::XL);
-    let sizes: Vec<u64> = Group::ALL.iter().enumerate().map(|(i, _)| last.as_ref().and_then(|l| l.groups.get(i).copied()).unwrap_or(0)).collect();
-    let found: u64 = sizes.iter().sum();
-    let mut top = ci.top();
-    if let Some(l) = &last {
-        p.text(Pos2::new(ci.left(), top), Align2::LEFT_TOP, format!("Last scan {}", super::engine::days_ago(l.when)), ty::label(), TEXT_DIM());
-        p.text(Pos2::new(ci.left(), top + 20.0), Align2::LEFT_TOP, human_bytes(found), ty::hero(), TEXT());
-        top += 20.0 + 34.0;
-    }
-    if !hist.is_empty() {
-        let freed: u64 = hist.iter().map(|h| h.1).sum();
-        p.text(Pos2::new(ci.right(), ci.top()), Align2::RIGHT_TOP, format!("{} freed in {} clean{}", human_bytes(freed), hist.len(), if hist.len() == 1 { "" } else { "s" }), ty::label(), TEXT_DIM());
-        top = top.max(ci.top() + 20.0);
-    }
-    if top > ci.top() {
-        top += sp::L;
-    }
-
-    // columns, biggest first; the colour follows the rank
-    let mut order: Vec<usize> = (0..Group::ALL.len()).collect();
-    order.sort_by_key(|&i| std::cmp::Reverse(sizes[i]));
-    let max = sizes.iter().copied().max().unwrap_or(0).max(1) as f32;
-    let label_h = 18.0;
-    let base = ci.bottom() - label_h - sp::M;
-    let col_top = top + 22.0;
-    let n = order.len() as f32;
-    let gap = sp::L;
-    let cw = (ci.width() - gap * (n - 1.0)) / n;
-    let full = (base - col_top).max(20.0);
-    for (k, &i) in order.iter().enumerate() {
-        let g = Group::ALL[i];
-        let x = ci.left() + k as f32 * (cw + gap);
         let col = junk_ramp(k);
-        let track = Rect::from_min_max(Pos2::new(x, col_top), Pos2::new(x + cw, base));
-        p.rect_filled(track, CornerRadius { nw: 10, ne: 10, sw: 0, se: 0 }, with_alpha(col, 0.06));
-        if sizes[i] > 0 {
-            let h = (full * sizes[i] as f32 / max).max(8.0);
-            let fill = Rect::from_min_max(Pos2::new(x, base - h), Pos2::new(x + cw, base));
-            p.rect_filled(fill, CornerRadius { nw: 10, ne: 10, sw: 0, se: 0 }, col);
-            p.text(Pos2::new(fill.center().x, fill.top() - 6.0), Align2::CENTER_BOTTOM, human_bytes(sizes[i]), ty::title(), TEXT());
+        let cy = rr.center().y;
+        let ic = Pos2::new(x0 + 14.0, cy);
+        p.circle_filled(ic, 14.0, with_alpha(col, 0.14));
+        group_icon(&p, g, Rect::from_center_size(ic, Vec2::splat(16.0)), col);
+        let nx = x0 + 28.0 + sp::M;
+        p.text(Pos2::new(nx, cy), Align2::LEFT_CENTER, g.title(), ty::body(), TEXT());
+        if let Some(s) = &sizes {
+            let sz = p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, human_bytes(s[k]), ty::title(), TEXT());
+            let bar_r = Rect::from_min_max(Pos2::new(nx + name_w + sp::M, cy - 2.0), Pos2::new(sz.left().min(x1 - 72.0) - sp::M, cy + 2.0));
+            if bar_r.width() > 20.0 {
+                bar(&p, bar_r, s[k] as f32 / max, col);
+            }
         }
-        // icon + name under the baseline
-        let ny = ci.bottom() - label_h / 2.0;
-        // the whole name; the icon goes first when both don't fit the column
-        let nw = p.layout_no_wrap(g.title().to_string(), ty::body(), TEXT()).size().x;
-        // (a label may run into the gap between columns)
-        let avail = cw + gap - sp::XS;
-        let with_icon = nw + 22.0 <= avail;
-        let lx = if with_icon { x + (cw - nw - 22.0) / 2.0 } else { x + (cw - nw.min(avail)) / 2.0 - 22.0 };
-        let ir = Rect::from_center_size(Pos2::new(lx + 8.0, ny), Vec2::splat(16.0));
-        if with_icon {
-            group_icon(&p, g, ir, col);
-        }
-        text_fit(&p, Pos2::new(lx + 22.0, ny), Align2::LEFT_CENTER, g.title(), ty::body(), TEXT_SOFT(), avail);
+        resp.on_hover_text(g.blurb());
+        y += sp::ROW_H;
     }
-    p.line_segment([Pos2::new(ci.left(), base), Pos2::new(ci.right(), base)], Stroke::new(1.0, CARD_EDGE()));
 }
 
 /// A group's glyph (Developer: the SF hammer when there is one).
@@ -183,31 +147,8 @@ fn group_icon(p: &egui::Painter, g: Group, r: Rect, col: Color32) {
     icon(p, ic, r, col);
 }
 
-/// Before the first scan: every group a scan looks through as a round icon
-/// with its name, in one row (two when narrow), and a big Scan under them,
-/// all centred in `area`. True when Scan was clicked.
-fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
-    let p = ui.painter().clone();
-    let n = Group::ALL.len();
-    let cell = 112.0;
-    let per_row = if area.width() >= cell * n as f32 { n } else { n.div_ceil(2) };
-    let rows = n.div_ceil(per_row);
-    let cell_h = 92.0;
-    let btn = Vec2::new(200.0, 44.0);
-    let block_h = rows as f32 * cell_h + sp::XXL + btn.y;
-    let top = area.center().y - block_h / 2.0;
-    for (k, g) in Group::ALL.into_iter().enumerate() {
-        let row = k / per_row;
-        let in_row = if row + 1 == rows { n - row * per_row } else { per_row };
-        let col_i = k % per_row;
-        let x0 = area.center().x - in_row as f32 * cell / 2.0;
-        let c = Pos2::new(x0 + (col_i as f32 + 0.5) * cell, top + row as f32 * cell_h + 26.0);
-        let col = junk_ramp(k);
-        p.circle_filled(c, 26.0, with_alpha(col, 0.14));
-        group_icon(&p, g, Rect::from_center_size(c, Vec2::splat(22.0)), col);
-        text_fit(&p, Pos2::new(c.x, c.y + 40.0), Align2::CENTER_CENTER, g.title(), ty::body(), TEXT_SOFT(), cell - 8.0);
-    }
-    let br = Rect::from_center_size(Pos2::new(area.center().x, top + rows as f32 * cell_h + sp::XXL + btn.y / 2.0), btn);
+/// The big lime Scan of the start screen. True when clicked.
+fn scan_button(ui: &mut Ui, br: Rect) -> bool {
     let id = ui.scope_id().with("fresh-scan");
     let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     resp.clicked()
