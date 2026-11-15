@@ -337,28 +337,7 @@ const FILTERS: [(&str, Filter); 8] = [
 
 /// Filter chips in a row from `x`; returns the right edge.
 pub fn chips(ui: &mut Ui, p: &egui::Painter, x: f32, y: f32, cur: &mut Filter, salt: &str) -> f32 {
-    let mut x = x;
-    for (i, (label, f)) in FILTERS.iter().enumerate() {
-        let g = p.layout_no_wrap(label.to_string(), font(12.0), TEXT());
-        let dot = matches!(f, Filter::Kind(_));
-        let w = g.size().x + 22.0 + if dot { 12.0 } else { 0.0 };
-        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 26.0));
-        let resp = ui.interact(r, ui.scope_id().with((salt, i)), Sense::click());
-        let on = *cur == *f;
-        p.rect_filled(r, 13.0, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
-        p.rect_stroke(r, 13.0, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
-        let mut tx = r.left() + 11.0;
-        if let Filter::Kind(k) = f {
-            p.circle_filled(Pos2::new(tx + 3.5, r.center().y), 3.5, k.tint());
-            tx += 12.0;
-        }
-        p.text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, *label, font(12.0), if on { TEXT() } else { TEXT_DIM() });
-        if resp.clicked() {
-            *cur = *f;
-        }
-        x = r.right() + 6.0;
-    }
-    x
+    filter_chips(ui, p, x, y, &FILTERS, cur, salt, |f| if let Filter::Kind(k) = f { Some(k.tint()) } else { None })
 }
 
 fn day_label(d: chrono::NaiveDate) -> String {

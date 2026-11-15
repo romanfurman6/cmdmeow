@@ -42,7 +42,6 @@ pub fn ago(now: i64, t: Option<i64>) -> String {
     }
 }
 
-
 /// The app's own icon (macOS), else its letter tile.
 fn app_icon(u: &mut Uninstaller, ctx: &egui::Context, p: &egui::Painter, r: Rect, path: Option<&Path>, name: &str, budget: &mut usize) {
     if let Some(path) = path {
@@ -59,14 +58,6 @@ fn app_icon(u: &mut Uninstaller, ctx: &egui::Context, p: &egui::Painter, r: Rect
         }
     }
     letter_tile(p, r, name, 1.0);
-}
-
-fn outline_chip(p: &egui::Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {
-    let g = p.layout_no_wrap(label.to_string(), font(11.0), col);
-    let r = align.anchor_size(pos, g.size() + Vec2::new(10.0, 2.0));
-    // quiet text, no box: a tag is meta, not a button
-    p.galley(r.center() - g.size() / 2.0, g, col);
-    r
 }
 
 /// An item's path as people read it: relative to ~/Library, else as is.
@@ -276,21 +267,7 @@ const FILTERS: [(&str, Filter); 4] = [
 ];
 
 fn chip_row(ui: &mut Ui, p: &egui::Painter, x: f32, y: f32, cur: &mut Filter) -> f32 {
-    let mut x = x;
-    for (i, (label, f)) in FILTERS.iter().enumerate() {
-        let g = p.layout_no_wrap(label.to_string(), font(12.0), TEXT());
-        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(g.size().x + 22.0, 26.0));
-        let resp = ui.interact(r, ui.scope_id().with(("un-filter", i)), Sense::click());
-        let on = *cur == *f;
-        p.rect_filled(r, 13.0, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
-        p.rect_stroke(r, 13.0, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
-        p.text(r.center(), Align2::CENTER_CENTER, *label, font(12.0), if on { TEXT() } else { TEXT_DIM() });
-        if resp.clicked() {
-            *cur = *f;
-        }
-        x = r.right() + 6.0;
-    }
-    x
+    filter_chips(ui, p, x, y, &FILTERS, cur, "un-filter", |_| None)
 }
 
 fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
@@ -535,7 +512,7 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
             let sr = p.text(Pos2::new(rr.right(), rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), font(12.0), TEXT_DIM());
             let mut right = sr.left() - 8.0;
             if it.admin {
-                right = outline_chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "admin", TEXT_FAINT()).left() - 6.0;
+                right = tag(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "admin", TEXT_FAINT()).left() - 6.0;
             }
             // a long path gives way in the middle, so its file name stays
             let w = right - cb.right() - 12.0;
@@ -655,7 +632,7 @@ fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
                     let sr = p.text(Pos2::new(rr.right(), rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), font(12.0), TEXT_FAINT());
                     let mut right = sr.left() - 8.0;
                     if it.admin {
-                        right = outline_chip(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "admin", TEXT_FAINT()).left() - 6.0;
+                        right = tag(&p, Pos2::new(right, rr.center().y), Align2::RIGHT_CENTER, "admin", TEXT_FAINT()).left() - 6.0;
                     }
                     text_fit(&p, Pos2::new(cb.right() + 8.0, rr.center().y), Align2::LEFT_CENTER, &item_label(it, &lib), font(12.0), if it.selected { TEXT_SOFT() } else { TEXT_FAINT() }, right - cb.right() - 12.0);
                     yy += 22.0;
