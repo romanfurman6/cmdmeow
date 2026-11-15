@@ -19,10 +19,10 @@ Contents: 1 Tokens · 2 Colour · 3 Type · 4 Spacing and layout · 5 Surfaces �
 |---|---|---|
 | Surfaces | `BG` `CARD` `CARD_EDGE` `RAISED` `POPOVER` `SIDEBAR` `FOOTER` | glass.rs |
 | Text | `TEXT` `TEXT_SOFT` .84 · `TEXT_DIM` .68 · `TEXT_FAINT` .56 · `TEXT_MUTED` .40 · `ty::caption_color` | glass.rs |
-| Action | `BLUE` (lime fill, renamed `ACTION` ⏳) · `ON_ACTION` · `ACCENT` (lime as text) | glass.rs |
+| Action | `ACTION` (lime fill; was `BLUE`) · `ON_ACTION` · `ACCENT` (lime as text) | glass.rs |
 | State | `GREEN` `AMBER` `RED` · `CHIP_ASK` `CHIP_RISK` | glass.rs |
 | Group tints | `tint::CLEANUP` `HEALTH` `CAPTURE` `KEEP_AWAKE` `NEUTRAL` | glass.rs |
-| Neutral | `GRAY` (`OTHER` ⏳) · `white(a)` ink overlay · `HAIRLINE` 15 · `HAIRLINE_STRONG` 26 | glass.rs |
+| Neutral | `GRAY` (`OTHER` alias) · `series::monitor(i)`, `series::clean(i)` · `letter_tile()` · `white(a)` ink overlay · `HAIRLINE` 15 · `HAIRLINE_STRONG` 26 | glass.rs |
 | Spacing | `sp::XS` 4 · `S` 8 · `M` 12 · `L` 16 · `XL` 24 · `XXL` 32 | glass.rs |
 | Radius | `R_CARD` 12 · `R_BUTTON` 10 · `R_SMALL` 7 | glass.rs |
 
@@ -30,24 +30,24 @@ Every colour is a `pick(dark, light)` pair. Theme follows the system; `CMDMEOW_T
 
 ## 2. Colour
 
-Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai/artifact/V9GF4FWnmFs2vjzs4UvfeU
+Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai/artifact/V9GF4FWnmFs2vjzs4UvfeU C1–C14 ✅ 2026-11-15.
 
 | # | Rule | Status |
 |---|------|---|
-| C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ⏳ |
-| C2 | Lime is only for what you press or select. Never data. In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). | ⏳ |
-| C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ⏳ |
-| C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. | ⏳ |
-| C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ⏳ |
-| C6 | The same thing has the same colour on every screen. | ⏳ |
-| C7 | A legend square only when its colour is on a chart on the same screen. | ⏳ |
-| C8 | Contrast in both modes: body text 4.5:1, captions and section titles 3:1, icons and chart marks 3:1. | ⏳ |
-| C9 | Neutral marks (You, Other, an app with no icon) use `GRAY`. No system greys. | ⏳ |
-| C10 | One neutral letter tile (`letter_tile()`) for apps with no icon. | ⏳ |
-| C11 | Links use `ACCENT`, hover included. No system blue. | ⏳ |
-| C12 | Temperature: cyan under 68 °C, amber from 68, red from 90. Text under 68 stays plain. | ⏳ |
-| C13 | Exceptions only: capture/record HUD, the recording dot, traffic lights, third-party brand marks, user content. | ⏳ |
-| C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ⏳ |
+| C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ✅ |
+| C2 | Lime is only for what you press or select. Never data. In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). | ✅ |
+| C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ✅ |
+| C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. | ✅ |
+| C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ✅ |
+| C6 | The same thing has the same colour on every screen. | ✅ |
+| C7 | A legend square only when its colour is on a chart on the same screen. | ✅ |
+| C8 | Contrast in both modes: body text 4.5:1, captions and section titles 3:1, icons and chart marks 3:1. | ✅ |
+| C9 | Neutral marks (You, Other, an app with no icon) use `GRAY`. No system greys. | ✅ |
+| C10 | One neutral letter tile (`letter_tile()`) for apps with no icon. | ✅ |
+| C11 | Links use `ACCENT`, hover included. No system blue. | ✅ |
+| C12 | Temperature: cyan under 68 °C, amber from 68, red from 90. Text under 68 stays plain. | ✅ |
+| C13 | Exceptions only: capture/record HUD, the recording dot, traffic lights, third-party brand marks, user content. | ✅ |
+| C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ✅ |
 | C15 | AI (AI Check chip, reveal ring, agent marks) uses cyan `tint::HEALTH`. | ⏳ conflict K5 |
 
 **Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ⏳
@@ -62,7 +62,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | L6 | Disabled or locked: alpha .45 in dark, .62 in light. |
 | L7 | A popover over a card keeps a visible edge in light mode. |
 
-Proposed light values (C-thread): Clean #7DB519→#5B8A14, Monitor #1F8AA0→#177A8E, Amber/Create #C06A12→#A65A0E, Green #4B8625→#437A20, light junk ramp #5B8A14…#284F1E. Monitor series dark #6FD6E8 / #B4EAF3 / #4FA9BC, light #177A8E / #0B4652 / #3A97AB. ⏳
+Light and series values (✅ 2026-11-15): Clean #7DB519→#5B8A14, Monitor #1F8AA0→#177A8E, Amber/Create #C06A12→#A65A0E, Green #4B8625→#437A20, light junk ramp #5B8A14…#284F1E. Monitor series dark #6FD6E8 / #B4EAF3 / #4FA9BC, light #177A8E / #0B4652 / #3A97AB.
 
 ## 3. Type ✅
 
@@ -134,12 +134,12 @@ Planned consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET`
 
 | # | Rule | Status |
 |---|------|---|
-| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar): `ROW_HOVER` = `white(10)`. | ⏳ conflict K2 |
+| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar): `ROW_HOVER` = `white(10)`. | ✅ in AI Check · ⏳ elsewhere (K2) |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
 | H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(BLUE, .16)`), radius 8, text `ACCENT`. | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ⏳ (Roman 2026-11-15 comment) |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
-| H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ⏳ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
+| H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
 
 ## 9. Motion
 
