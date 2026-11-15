@@ -7,6 +7,7 @@ use super::scan::{self, Node};
 use super::Lens as App;
 use crate::core::tool::Cx;
 use crate::kit::glass::*;
+use crate::kit::menu;
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -1169,7 +1170,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
             text_fit(lp, Pos2::new(rr.left() + 56.0, rr.top() + 28.0), Align2::LEFT_CENTER, &at, mono(11.0), TEXT_FAINT(), (rr.width() - 66.0) * 0.6);
             let bw = (rr.width() * 0.3) * (f.bytes as f32 / top as f32);
             lp.rect_filled(Rect::from_min_size(Pos2::new(rr.right() - 10.0 - bw, rr.top() + 26.0), Vec2::new(bw, 3.0)), 1.5, with_alpha(ACCENT(), 0.6));
-            rresp.context_menu(|ui| {
+            menu::context(&rresp).show(|ui| {
                 if let Some(a) = item_menu(ui, &f.path, false) {
                     app.lens_menu_act = Some((a, f.path.clone(), f.bytes));
                 }
@@ -1252,7 +1253,7 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
                     go = Some(k.path.clone());
                 }
             }
-            resp.context_menu(|ui| {
+            menu::context(&resp).show(|ui| {
                 if let Some(a) = item_menu(ui, &k.path, !k.children.is_empty()) {
                     app.lens_menu_act = Some((a, k.path.clone(), k.bytes));
                 }
@@ -1328,23 +1329,23 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let mut pick_root: Option<Option<PathBuf>> = None;
-    egui::Popup::menu(&lr_resp).show(|ui| {
+    menu::popup(&lr_resp).show(|ui| {
         for (name, path) in locations() {
-            if ui.button(name).clicked() {
+            if menu::item(ui, &name).clicked() {
                 pick_root = Some(Some(path));
             }
         }
         let recent: Vec<PathBuf> = app.lens_recent.iter().filter(|r| r.is_dir()).cloned().collect();
         if !recent.is_empty() {
-            ui.separator();
+            menu::separator(ui);
             for path in recent {
-                if ui.button(tilde(&path)).clicked() {
+                if menu::item(ui, &tilde(&path)).clicked() {
                     pick_root = Some(Some(path));
                 }
             }
         }
-        ui.separator();
-        if ui.button("Choose Folder…").clicked() {
+        menu::separator(ui);
+        if menu::item(ui, "Choose Folder…").clicked() {
             pick_root = Some(None);
         }
     });
@@ -1601,7 +1602,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
             hover_path = Some(k.path.clone());
             hover_item = Some((k.path.clone(), k.bytes));
         }
-        resp.context_menu(|ui| {
+        menu::context(&resp).show(|ui| {
             if let Some(a) = item_menu(ui, &k.path, !k.children.is_empty()) {
                 menu_act = Some((a, k.path.clone(), k.bytes));
             }
@@ -1687,7 +1688,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     }
     if let Some((mp, mb)) = app.lens_menu.clone() {
         let drill = scan::find(root, &mp).is_some_and(|n| !n.children.is_empty());
-        out.resp.context_menu(|ui| {
+        menu::context(&out.resp).show(|ui| {
             if let Some(a) = item_menu(ui, &mp, drill) {
                 menu_act = Some((a, mp.clone(), mb));
             }
@@ -1804,20 +1805,20 @@ pub(crate) enum MenuAct {
 /// The right-click menu of a file or folder on the map or in the list.
 fn item_menu(ui: &mut Ui, path: &Path, drill: bool) -> Option<MenuAct> {
     let mut out = None;
-    if drill && ui.button("Open").clicked() {
+    if drill && menu::item(ui, "Open").clicked() {
         out = Some(MenuAct::Open);
     }
-    if ui.button("Quick Look").clicked() {
+    if menu::item(ui, "Quick Look").clicked() {
         out = Some(MenuAct::QuickLook);
     }
-    if ui.button("Reveal in Finder").clicked() {
+    if menu::item(ui, "Reveal in Finder").clicked() {
         out = Some(MenuAct::Reveal);
     }
-    if ui.button("Copy Path").clicked() {
+    if menu::item(ui, "Copy Path").clicked() {
         out = Some(MenuAct::CopyPath);
     }
-    ui.separator();
-    if ui.add_enabled(trashable(path), egui::Button::new("Move to Trash…")).clicked() {
+    menu::separator(ui);
+    if menu::danger(ui, "Move to Trash…", trashable(path)).clicked() {
         out = Some(MenuAct::Trash);
     }
     if out.is_some() {

@@ -22,6 +22,7 @@ pub mod hotkeys;
 pub mod login;
 pub mod macos;
 pub mod mechanics;
+pub mod menu;
 pub mod modal;
 pub mod native;
 pub mod parakeet;

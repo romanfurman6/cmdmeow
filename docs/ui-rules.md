@@ -133,6 +133,12 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | P4 | **Dim** under dialogs, sheets and the loader: one `SCRIM()` over the page area, black 45% dark, ink 24% light. A click on the dim closes a sheet. Esc closes every dialog and sheet, except while work runs (loader). Destructive confirms never close from a click on the dim. | ✅ |
 | P5 | Every removal that can take longer than 0.4 s shows the removal loader (`kit::loader::show`): card 340 wide, padding 24, mark 88, title (lead, verb + "…"), "x of y" (body dim), current path (mono 11 faint, cut in the middle), 28 buttons (Stop where safe; Done, Put back where undo exists). It appears after 0.4 s and stays at least 0.8 s. Scans and measuring keep `spinner()` and the bar. | ✅ |
 | P6 | The loader mark is one shape with the ⌘ cut out; Done turns ⌘ into ✓. | ✅ |
+| M1 | **Menus** ("⋯" and right-click) come only from `kit::menu` (`popup`, `context`, `item`, `choice`, `sub`, `note`, `separator`, `danger`); never `ui.button` in a menu. Frame: radius 10, 1 pt edge, Whisper shadow (P1, P2), 4 above and below the rows. | ⏳ (canvas https://claude.ai/artifact/4C5Z47zFtr7PiiQD8qPtyv) |
+| M2 | Menu rows 28, body 13, text 12 in from the edge. A note (state, command) is caption 11 dim, wraps at 320, mono for commands. Hairline separators edge to edge with 4 above and below. | ⏳ |
+| M3 | Menu rows hover with `ROW_HOVER` edge to edge (H2); no press, no sound (B10). | ⏳ |
+| M4 | A picked choice is lime 16% with `ACCENT` text and a check (H3). Never the system blue. | ⏳ |
+| M5 | A submenu row shows a dim chevron; the submenu opens 4 to the right of its menu, never over its rows. | ⏳ |
+| M6 | A "⋯" menu opens 4 under its button, right edges lined up (above when there's no room), so it never covers the row it came from. Destructive rows use `DANGER` text (B6). | ⏳ |
 
 ## 8. Hover, selection, focus
 

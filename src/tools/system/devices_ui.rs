@@ -11,6 +11,7 @@ use super::devices::{self, Device, Prefs, ALERT_CHOICES, CHARGED_CHOICES};
 use super::monitor::Snapshot;
 use crate::core::tool::Size;
 use crate::kit::glass::*;
+use crate::kit::menu;
 use crate::kit::tile;
 use egui::{Align2, Color32, Pos2, Rect, Response, Sense, Ui, Vec2};
 
@@ -399,21 +400,20 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
 fn device_menu(resp: &Response, d: &Device, prefs: &Prefs) -> Option<PageAction> {
     let mut out = None;
     let key = d.key();
-    egui::Popup::menu(resp).show(|ui| {
-        ui.set_min_width(180.0);
+    menu::popup(resp).show(|ui| {
         let below = prefs.alert_below(&key);
-        ui.menu_button("Alert below", |ui| {
+        menu::sub(ui, "Alert below", |ui| {
             for c in ALERT_CHOICES {
                 let label = if c == 0 { "Never".to_string() } else { format!("{c}%") };
-                if ui.selectable_label(below == c, label).clicked() {
+                if menu::choice(ui, &label, below == c).clicked() {
                     out = Some(PageAction::AlertBelow(key.clone(), c));
                 }
             }
         });
-        if ui.button("Hide").clicked() {
+        if menu::item(ui, "Hide").clicked() {
             out = Some(PageAction::Hide(key.clone(), true));
         }
-        if !d.live() && ui.button("Forget").clicked() {
+        if !d.live() && menu::item(ui, "Forget").clicked() {
             out = Some(PageAction::Forget(key.clone()));
         }
     });
