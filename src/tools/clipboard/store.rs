@@ -36,11 +36,11 @@ impl Kind {
         }
     }
 
-    /// The kind's mark: blue for links, grey for the rest (no rainbow).
+    /// The kind's mark: links in the link colour, grey for the rest (C9, C11).
     pub fn tint(self) -> Color32 {
         match self {
-            Kind::Link => Color32::from_rgb(0x0A, 0x84, 0xFF),
-            _ => Color32::from_rgb(0x8E, 0x8E, 0x93),
+            Kind::Link => crate::kit::glass::ACCENT(),
+            _ => crate::kit::glass::GRAY(),
         }
     }
 }

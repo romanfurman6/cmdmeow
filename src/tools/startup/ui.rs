@@ -28,22 +28,8 @@ fn SUGGEST_TEXT() -> Color32 { AMBER() }
 #[allow(non_snake_case)]
 fn ORPHAN_TEXT() -> Color32 { AMBER() }
 
-fn letter_color(name: &str) -> Color32 {
-    const PALETTE: [Color32; 8] = [
-        Color32::from_rgb(0x1F, 0x7A, 0xE0),
-        Color32::from_rgb(0x8E, 0x44, 0xAD),
-        Color32::from_rgb(0x24, 0x8A, 0x3D),
-        Color32::from_rgb(0xC7, 0x80, 0x1F),
-        Color32::from_rgb(0xC0, 0x39, 0x2B),
-        Color32::from_rgb(0x2E, 0x9E, 0x8F),
-        Color32::from_rgb(0x5B, 0x2C, 0x6F),
-        Color32::from_rgb(0x48, 0x48, 0x4E),
-    ];
-    let h = name.bytes().fold(5381u32, |h, b| h.wrapping_mul(33) ^ b as u32);
-    PALETTE[(h % PALETTE.len() as u32) as usize]
-}
 
-/// The owning app's icon (macOS), else a colored square with a letter.
+/// The owning app's icon (macOS), else its letter tile.
 #[allow(clippy::too_many_arguments)]
 fn app_icon(s: &mut Startup, ctx: &egui::Context, p: &egui::Painter, r: Rect, path: Option<&Path>, name: &str, dim: bool, budget: &mut usize) {
     let a = if dim { 0.5 } else { 1.0 };
@@ -60,9 +46,7 @@ fn app_icon(s: &mut Startup, ctx: &egui::Context, p: &egui::Painter, r: Rect, pa
             return;
         }
     }
-    p.rect_filled(r, (r.width() * 0.27).round(), with_alpha(letter_color(name), a));
-    let l: String = name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
-    p.text(r.center(), Align2::CENTER_CENTER, l, bold(r.width() * 0.5), with_alpha(Color32::WHITE, a));
+    letter_tile(p, r, name, a);
 }
 
 fn outline_chip(p: &egui::Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {

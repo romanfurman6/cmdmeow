@@ -42,22 +42,8 @@ pub fn ago(now: i64, t: Option<i64>) -> String {
     }
 }
 
-fn letter_color(name: &str) -> Color32 {
-    const PALETTE: [Color32; 8] = [
-        Color32::from_rgb(0x1F, 0x7A, 0xE0),
-        Color32::from_rgb(0x8E, 0x44, 0xAD),
-        Color32::from_rgb(0x24, 0x8A, 0x3D),
-        Color32::from_rgb(0xC7, 0x80, 0x1F),
-        Color32::from_rgb(0xC0, 0x39, 0x2B),
-        Color32::from_rgb(0x2E, 0x9E, 0x8F),
-        Color32::from_rgb(0x5B, 0x2C, 0x6F),
-        Color32::from_rgb(0x48, 0x48, 0x4E),
-    ];
-    let h = name.bytes().fold(5381u32, |h, b| h.wrapping_mul(33) ^ b as u32);
-    PALETTE[(h % PALETTE.len() as u32) as usize]
-}
 
-/// The app's own icon (macOS), else a colored square with its first letter.
+/// The app's own icon (macOS), else its letter tile.
 fn app_icon(u: &mut Uninstaller, ctx: &egui::Context, p: &egui::Painter, r: Rect, path: Option<&Path>, name: &str, budget: &mut usize) {
     if let Some(path) = path {
         // an app in Downloads etc. isn't read (nor cached) before Full Disk Access
@@ -72,10 +58,7 @@ fn app_icon(u: &mut Uninstaller, ctx: &egui::Context, p: &egui::Painter, r: Rect
             return;
         }
     }
-    let rad = (r.width() * 0.25).round();
-    p.rect_filled(r, rad, letter_color(name));
-    let l: String = name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default();
-    p.text(r.center(), Align2::CENTER_CENTER, l, bold(r.width() * 0.5), Color32::WHITE);
+    letter_tile(p, r, name, 1.0);
 }
 
 fn outline_chip(p: &egui::Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> Rect {
@@ -280,8 +263,8 @@ fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
     let br = Rect::from_center_size(Pos2::new(c.x, c.y + 20.0 + sp::XXL), btn);
     let resp = ui.interact(br, ui.scope_id().with("un-fresh-scan"), Sense::click());
     let hov = ui.ctx().animate_bool(resp.id, resp.hovered());
-    liquid_capsule(&p, br, Some(BLUE()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
-    p.text(br.center(), Align2::CENTER_CENTER, "Scan for apps", bold(16.0), on_color(BLUE()));
+    liquid_capsule(&p, br, Some(ACTION()), if resp.is_pointer_button_down_on() { 1.6 } else { hov }, 1.0);
+    p.text(br.center(), Align2::CENTER_CENTER, "Scan for apps", bold(16.0), on_color(ACTION()));
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -305,7 +288,7 @@ fn chip_row(ui: &mut Ui, p: &egui::Painter, x: f32, y: f32, cur: &mut Filter) ->
         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(g.size().x + 22.0, 26.0));
         let resp = ui.interact(r, ui.scope_id().with(("un-filter", i)), Sense::click());
         let on = *cur == *f;
-        p.rect_filled(r, 13.0, if on { with_alpha(BLUE(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
+        p.rect_filled(r, 13.0, if on { with_alpha(ACTION(), 0.22) } else if resp.hovered() { white(10) } else { Color32::TRANSPARENT });
         p.rect_stroke(r, 13.0, Stroke::new(1.0, if on { with_alpha(ACCENT(), 0.45) } else { white(26) }), StrokeKind::Inside);
         p.text(r.center(), Align2::CENTER_CENTER, *label, font(12.0), if on { TEXT() } else { TEXT_DIM() });
         if resp.clicked() {
@@ -408,7 +391,7 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
                 let resp = ui.interact(r, ui.scope_id().with(("un-row", &a.path)), Sense::click());
                 let sel = u.selected.as_ref() == Some(&a.path);
                 if sel {
-                    p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, with_alpha(BLUE(), 0.30));
+                    p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, with_alpha(ACTION(), 0.30));
                     p.rect_stroke(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.55)), StrokeKind::Inside);
                 } else if resp.hovered() {
                     p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, white(8));
@@ -518,12 +501,19 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
     let tr = p.text(Pos2::new(x0, y), Align2::LEFT_TOP, human_bytes(total), bold(22.0), TEXT());
     p.text(Pos2::new(tr.right() + 6.0, tr.bottom() - 3.0), Align2::LEFT_BOTTOM, "in total", font(13.0), TEXT_DIM());
     y = tr.bottom() + 8.0;
-    let data_col = AMBER();
+    // two Clean series, not amber: data isn't a warning (C4, C5)
+    let (app_col, data_col) = (series::clean(0), series::clean(3));
     let tf = total.max(1) as f32;
-    stacked_bar(&p, Rect::from_min_size(Pos2::new(x0, y), Vec2::new(x1 - x0, 6.0)), &[(app_b as f32 / tf, TINT()), ((total - app_b) as f32 / tf, data_col)]);
+    stacked_bar(&p, Rect::from_min_size(Pos2::new(x0, y), Vec2::new(x1 - x0, 6.0)), &[(app_b as f32 / tf, app_col), ((total - app_b) as f32 / tf, data_col)]);
     y += 12.0;
-    let l1 = p.text(Pos2::new(x0, y), Align2::LEFT_TOP, format!("App {}", human_bytes(app_b)), font(11.0), TEXT_DIM());
-    p.text(Pos2::new(l1.right() + 12.0, y), Align2::LEFT_TOP, format!("Data {}", human_bytes(total - app_b)), font(11.0), data_col);
+    let mut lx = x0;
+    for (k, (label, col)) in [(format!("App {}", human_bytes(app_b)), app_col), (format!("Data {}", human_bytes(total - app_b)), data_col)].into_iter().enumerate() {
+        if k > 0 {
+            lx += 12.0;
+        }
+        p.rect_filled(Rect::from_min_size(Pos2::new(lx, y + 3.0), Vec2::splat(7.0)), 2.0, col);
+        lx = p.text(Pos2::new(lx + 12.0, y), Align2::LEFT_TOP, label, font(11.0), TEXT_DIM()).right();
+    }
     y += 26.0;
 
     // files

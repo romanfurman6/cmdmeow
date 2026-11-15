@@ -410,20 +410,6 @@ fn rec_icon(c: &mut Check, ctx: &egui::Context, p: &egui::Painter, r: Rect, rec:
         }
     }
     let name = if rec.name.is_empty() { &rec.title } else { &rec.name };
-    p.rect_filled(r, 7.0, letter_color(name));
-    let l: String = name.chars().next().map(|ch| ch.to_uppercase().collect()).unwrap_or_default();
-    p.text(r.center(), Align2::CENTER_CENTER, l, bold(14.0), Color32::WHITE);
+    letter_tile(p, r, name, 1.0);
 }
 
-fn letter_color(name: &str) -> Color32 {
-    const PALETTE: [Color32; 6] = [
-        Color32::from_rgb(0x4C, 0x8B, 0xF5),
-        Color32::from_rgb(0x2E, 0xA0, 0x6B),
-        Color32::from_rgb(0xC0, 0x60, 0x3E),
-        Color32::from_rgb(0x8A, 0x5C, 0xD6),
-        Color32::from_rgb(0x2B, 0x8C, 0xA0),
-        Color32::from_rgb(0xB0, 0x7A, 0x1E),
-    ];
-    let h = name.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
-    PALETTE[(h % PALETTE.len() as u32) as usize]
-}

@@ -167,7 +167,7 @@ pub fn toggle_chip(ui: &mut Ui, left: Pos2, id: Id, label: &str, on: bool, glyph
     let r = Rect::from_min_size(Pos2::new(left.x, left.y - 17.0), Vec2::new(w, 34.0));
     let resp = ui.interact(r, id, Sense::click());
     let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
-    let (fill, edge, ink) = if on { (with_alpha(BLUE(), 0.16 + 0.06 * hov), with_alpha(BLUE(), 0.45), ACCENT()) } else { (white((8.0 + 10.0 * hov) as u8), white(32), TEXT_DIM()) };
+    let (fill, edge, ink) = if on { (with_alpha(ACTION(), 0.16 + 0.06 * hov), with_alpha(ACTION(), 0.45), ACCENT()) } else { (white((8.0 + 10.0 * hov) as u8), white(32), TEXT_DIM()) };
     p.rect_filled(r, 17.0, fill);
     p.rect_stroke(r, 17.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     let cy = r.center().y;
