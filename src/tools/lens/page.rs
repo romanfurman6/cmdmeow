@@ -1403,7 +1403,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     // the view switch in the middle of the header, away from the map's state
     let seg_w = 186.0;
     let seg_x = (hr.center().x - seg_w / 2.0).min(hint.left() - 40.0 - seg_w);
-    let seg_r = Rect::from_min_size(Pos2::new(seg_x, hr.center().y - 13.0), Vec2::new(seg_w, 26.0));
+    let seg_r = Rect::from_min_size(Pos2::new(seg_x, hr.center().y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(seg_w, sp::HEADER_CONTROL_H));
     if let Some(i) = segmented(ui, seg_r, ui.scope_id().with("map-view"), &["Bubbles", "Rings", "Files"], app.lens_view as usize) {
         app.lens_view = i as u8;
         super::save_prefs(app);

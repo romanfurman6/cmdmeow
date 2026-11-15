@@ -207,7 +207,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
             Source::Display => {
                 p.rect_filled(r, 0.0, DIM);
                 p.rect_stroke(r, 0.0, Stroke::new(3.0, ACTION()), StrokeKind::Inside);
-                let card = Rect::from_center_size(r.center(), Vec2::new(440.0, 464.0));
+                let card = Rect::from_center_size(r.center(), Vec2::new(440.0, 452.0));
                 display_card(ui, &p, card, &d, &s, many, &cam_name, &mic_name, &devs, &mut todo);
                 if devs.menu.is_none() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     todo.push(Do::Start(super::chose_display(&d, &s)));
@@ -356,10 +356,10 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         let x0 = card.left() + 16.0;
         let x1 = card.right() - 16.0;
         let mut y = card.top() + 16.0;
-        if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 34.0)), id.with("src"), &["Display", "Window", "Area"], 0) {
+        if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::HEADER_CONTROL_H)), id.with("src"), &["Display", "Window", "Area"], 0) {
             todo.push(Do::Source(Source::ALL[i]));
         }
-        y += 34.0 + 16.0;
+        y += sp::HEADER_CONTROL_H + 16.0;
         icons::draw(p, Ico::Screen, Rect::from_center_size(Pos2::new(card.center().x, y + 18.0), Vec2::splat(36.0)), TEXT_SOFT());
         y += 42.0;
         let name = if many { format!("{}  ⌄", d.name) } else { d.name.clone() };
@@ -374,24 +374,13 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         p.text(Pos2::new(card.center().x, y + 8.0), Align2::CENTER_CENTER, format!("{w} × {h} · {} fps", s.fps.min(d.fps)), font(12.0), TEXT_DIM());
         y += 28.0;
 
-        let start = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 56.0));
-        let sr = ui.interact(start, id.with("start"), Sense::click());
-        // the action colour with dark text, like every primary button
-        p.rect_filled(start, 12.0, if sr.hovered() { lerp_color(ACTION(), Color32::WHITE, 0.15) } else { ACTION() });
-        let dot = Pos2::new(start.left() + 30.0, start.center().y);
-        p.circle_filled(dot, 13.0, ON_ACTION);
-        p.circle_filled(dot, 6.0, LIVE);
-        p.text(Pos2::new(dot.x + 25.0, start.center().y), Align2::LEFT_CENTER, "Start recording", bold(15.0), ON_ACTION);
-        let kr = Rect::from_center_size(Pos2::new(start.right() - 36.0, start.center().y), Vec2::new(44.0, 22.0));
-        p.rect_filled(kr, 6.0, with_alpha(ON_ACTION, 0.14));
-        p.text(kr.center(), Align2::CENTER_CENTER, "Enter", bold(11.0), ON_ACTION);
-        if sr.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
+        // the kit hero button (B2: 44), the Enter key as its cap
+        let start = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + crate::kit::empty::HERO_H));
+        let sr = crate::kit::empty::hero_button(ui, start.center(), id.with("start"), "Start recording", Some("↩"), crate::kit::empty::Lead::Dot(LIVE), Some(ACTION()), true, start.width());
         if sr.clicked() {
             todo.push(Do::Start(super::chose_display(d, s)));
         }
-        y += 56.0 + 14.0;
+        y += crate::kit::empty::HERO_H + sp::L;
 
         const ROW: f32 = 56.0;
         let rows = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 3.0 * ROW));
