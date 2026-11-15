@@ -158,7 +158,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 | # | Rule |
 |---|------|
 | N1 | **Click:** plastic "higher" (~57 ms, 400 Hz high-pass), three takes, source `/mnt/project-files/button-press/clicks/final/7-higher-1..3.wav`. Played on mouse down, always with the visual press, never alone. |
-| N2 | **Three levels, not one per kind:** Emphasized (hero, primary, danger) 0 dB; Standard (secondary, side, icon, round, tool) −3 dB; Subtle (chips, segment, filter, switch, shortcut, check, radio, text) −6 dB; none for rows, sidebar, cards, hover. Relative to `CLICK_MASTER`, which sits under the cues; set by ear on the M1. |
+| N2 | **Three levels, not one per kind:** Emphasized (hero, primary, danger) 0 dB; Standard (secondary, side, icon, round, tool) −3 dB; Subtle (chips, segment, filter, switch, shortcut, check, radio, text) −6 dB; none for rows, sidebar, cards, hover. Relative to `CLICK_MASTER`, tuned by ear on the M1 (target ≈ −6 dB under cues; starts at 0 dB). |
 | N3 | **Pitch per kind in whole intervals:** hero −2, primary 0, danger −3 semitones; standard +2/+3; subtle +2…+5. |
 | N4 | **Variation:** ±3% pitch, ±6% level, never the same take twice, at most one click per 100 ms. |
 | N5 | **Silent when:** disabled or busy, Settings › Sounds off (`sounds_on`), macOS "Play user interface sound effects" off, recording, screenshot mode, launch, any click the user didn't make. |
