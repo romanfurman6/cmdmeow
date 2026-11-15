@@ -265,7 +265,7 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
         if !matches!(s, Status::Stopped { .. }) {
             remember_frac(ctx, key, frac, state);
         }
-        crate::kit::spin::mark(&p, &format!("loader-{key}"), mark, frac, state, BLUE(), track(), POPOVER());
+        crate::kit::spin::mark(&p, &format!("loader-{key}"), mark, frac, state, ACTION(), track(), POPOVER());
         let w = m.width() - 2.0 * PAD;
         let mut y = mark.bottom() + sp::L;
         let line = |y: f32, text: &str, font: egui::FontId, col: Color32| {
