@@ -950,6 +950,11 @@ pub fn badge(p: &Painter, pos: Pos2, align: Align2, label: &str) -> Rect {
 /// segments 2 pt apart, the picked one is a raised thumb. Returns the
 /// index clicked this frame.
 pub fn segmented(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selected: usize) -> Option<usize> {
+    segmented_font(ui, rect, id, labels, selected, font(12.0))
+}
+
+/// [`segmented`] with its labels in `label_font` (11 in a small widget).
+pub fn segmented_font(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selected: usize, label_font: FontId) -> Option<usize> {
     let p = ui.painter().clone();
     p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
@@ -973,7 +978,7 @@ pub fn segmented(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], selecte
         };
         let face = key::paint(&p, r, &look.radius(6.0), &k);
         let col = if i == selected { TEXT() } else { lerp_color(TEXT_DIM(), TEXT(), k.hover) };
-        text_fit(&p, face.center(), Align2::CENTER_CENTER, l, font(12.0), col, r.width() - 8.0);
+        text_fit(&p, face.center(), Align2::CENTER_CENTER, l, label_font.clone(), col, r.width() - 8.0);
         if k.resp.clicked() && i != selected {
             out = Some(i);
         }

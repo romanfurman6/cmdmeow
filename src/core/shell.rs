@@ -349,7 +349,7 @@ impl App {
                     t.demo_view("sizes");
                 }
                 let show: &[(&str, Size)] = if view == "sizes" {
-                    &[("cleanup/clean", Size::S11), ("system/cpu", Size::S11), ("system/memory", Size::S12), ("fan/fans", Size::S14), ("capture/capture", Size::S14), ("keep_awake/card", Size::S24), ("clipboard/recent", Size::S24)]
+                    &[("cleanup/clean", Size::S11), ("system/cpu", Size::S11), ("system/memory", Size::S12), ("fan/fans", Size::S14), ("capture/capture", Size::S14), ("keep_awake/card", Size::S12), ("clipboard/recent", Size::S24)]
                 } else {
                     &[("system/health", Size::S24), ("lens/map", Size::S24), ("claude/limits", Size::S24), ("system/storage", Size::S11), ("system/memory", Size::S11), ("system/battery", Size::S12), ("fan/fans", Size::S44)]
                 };
