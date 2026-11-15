@@ -25,6 +25,19 @@ impl ServerInfo {
         let place = if self.city.is_empty() { &self.colo } else { &self.city };
         [self.isp.as_str(), place.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ")
     }
+
+    /// The line, then shorter ones for a narrow spot: the place alone,
+    /// then the provider alone.
+    pub fn lines(&self) -> Vec<String> {
+        let place = if self.city.is_empty() { &self.colo } else { &self.city };
+        let mut v = vec![self.line()];
+        for part in [place, &self.isp] {
+            if !part.is_empty() && !v.contains(part) {
+                v.push(part.clone());
+            }
+        }
+        v
+    }
 }
 
 // ---------------------------------------------------------------- math
@@ -535,6 +548,14 @@ mod tests {
         assert_eq!(server_ms("cdn-cache; desc=MISS, cfRequestDuration;dur=3"), Some(3.0));
         assert_eq!(server_ms("cfL4;desc=\"?proto=TCP\""), None);
         assert_eq!(server_ms(""), None);
+    }
+
+    #[test]
+    fn shorter_server_lines() {
+        let full = ServerInfo { isp: "Orange Spain Network".into(), city: "Barcelona".into(), colo: "BCN".into() };
+        assert_eq!(full.lines(), vec!["Orange Spain Network · Barcelona", "Barcelona", "Orange Spain Network"]);
+        let only_colo = ServerInfo { colo: "MAD".into(), ..Default::default() };
+        assert_eq!(only_colo.lines(), vec!["MAD"]);
     }
 
     #[test]
