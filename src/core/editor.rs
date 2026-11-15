@@ -671,7 +671,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         let m = Rect::from_center_size(Pos2::new(r.left() + 16.0 + 10.0, r.center().y), Vec2::splat(20.0));
         aicheck::ui::agent_mark(&p, m, a, None);
         let ready = demo || a.ready();
-        let (label, col) = if ready { ("Ready".to_string(), BLUE()) } else { (a.why_not(), TEXT_DIM()) };
+        let (label, col) = if ready { ("Ready".to_string(), ACCENT()) } else { (a.why_not(), TEXT_DIM()) };
         let c = chip(&p, Pos2::new(r.right() - 16.0, r.center().y), Align2::RIGHT_CENTER, &label, (with_alpha(col, 0.16), col));
         text_fit(&p, Pos2::new(m.right() + 10.0, r.center().y), Align2::LEFT_CENTER, a.name(), bold(13.0), TEXT(), c.left() - m.right() - 20.0);
         if resp.clicked() && !on && !demo {
