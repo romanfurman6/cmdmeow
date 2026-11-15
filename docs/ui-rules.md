@@ -67,7 +67,7 @@ Light and series values (✅ 2026-11-15): Clean #7DB519→#5B8A14, Monitor #1F8A
 
 ## 3. Type ✅
 
-Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/400, label 12/400, caption 11/400 (`ty::*`). Bold 11 and 12 are allowed for chips and small values. Mono 11 for paths. Only exceptions: the speed dial (52) and the app mark (40). Light mode uses heavier weights (body 500, hero 500).
+Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/400, label 12/400, caption 11/400 (`ty::*`). Bold 11 and 12 are allowed for chips and small values. Mono 11 for paths. Only exceptions: the speed dial (52) and the app mark (40). Hero and number use the semibold weight, like titles. Light mode uses heavier weights (body 510, semibold and hero 680).
 
 ## 4. Spacing and layout ✅
 
@@ -242,3 +242,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-15, Roman: whole system approved, including L1–L7, S4, H6, SP3/SP4 (count badge instead of the rail dot) and SP7–SP9. Details get tuned later through this file (G1).
 
 2026-11-15, Roman: per-screen audit fixes approved (canvas https://claude.ai/artifact/XuR6xDoEmxzkmKMtCwcRmQ), including the new P7 tip placement.
+
+2026-11-15, Roman: big numbers (hero, number) bold, as the rule says (B over thin, M1 comparison).
