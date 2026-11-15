@@ -179,8 +179,11 @@ pub struct State {
     pub busy: Option<String>,
     /// A job going to the Trash, for the removal loader: its name, its file
     /// and, once done, how it went.
-    pub trashing: Option<(String, String, Option<Result<(), String>>)>,
+    pub trashing: Option<Trashing>,
 }
+
+/// Name, file, and once done how it went.
+pub type Trashing = (String, String, Option<Result<(), String>>);
 
 impl State {
     pub fn trusted(&self, j: &Job) -> bool {

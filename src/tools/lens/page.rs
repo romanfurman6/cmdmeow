@@ -2326,3 +2326,29 @@ mod tests {
         assert!(app.lens_selected.is_empty());
     }
 }
+
+#[cfg(test)]
+mod trash_job_tests {
+    use super::*;
+    use crate::kit::loader::Status;
+
+    #[test]
+    fn a_stopped_job_says_what_went_and_a_finished_one_what_failed() {
+        let mut j = TrashJob { total: 10, done: 4, freed: 4, finished: false, ..Default::default() };
+        assert!(matches!(j.status(), Status::Working { can_stop: true, .. }));
+        j.finished = true;
+        j.stopped = true;
+        assert!(matches!(j.status(), Status::Stopped { .. }));
+        j.stopped = false;
+        j.removed = vec![PathBuf::from("/a")];
+        j.failed = 2;
+        match j.status() {
+            Status::Finished { sub, problem, put_back, .. } => {
+                assert_eq!(sub, "1 item");
+                assert_eq!(problem.as_deref(), Some("2 items couldn't be moved"));
+                assert!(!put_back);
+            }
+            s => panic!("{s:?}"),
+        }
+    }
+}
