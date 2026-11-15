@@ -1047,11 +1047,23 @@ fn rings(app: &mut App, ui: &mut Ui, pa: Rect, root: &Node, node: &Node, here: &
         if arc < 54.0 || ring_w < 30.0 || s.kind == Kind::Other && s.path.is_none() && arc < 80.0 {
             continue;
         }
-        let at = c + Vec2::angled((s.a0 + s.a1) / 2.0) * rm;
-        let w = arc.min(ring_w * 1.7) * 0.85;
+        let mid = (s.a0 + s.a1) / 2.0;
+        let at = c + Vec2::angled(mid) * rm;
+        // the slice's room for flat text: across the ring where it runs
+        // sideways, along it where it runs up and down
+        let (cs, sn) = (mid.cos().abs(), mid.sin().abs());
+        let w = (ring_w * cs + arc * sn) * 0.8;
+        let h = (ring_w * sn + arc * cs) * 0.8;
+        let size = human_bytes(s.bytes);
+        let name_w = p.layout_no_wrap(s.name.clone(), bold(11.0), TEXT()).size().x;
+        let size_w = p.layout_no_wrap(size.clone(), font(11.0), TEXT()).size().x;
+        // a label shows whole or not at all (hover names every slice)
+        if name_w.max(size_w) > w || h < 30.0 {
+            continue;
+        }
         let ta = k.max(0.2);
-        text_fit(&p, at - Vec2::new(0.0, 1.0), Align2::CENTER_BOTTOM, &s.name, bold(11.0), with_alpha(TEXT(), ta), w);
-        text_fit(&p, at + Vec2::new(0.0, 1.0), Align2::CENTER_TOP, &human_bytes(s.bytes), font(11.0), with_alpha(TEXT_SOFT(), ta), w);
+        p.text(at - Vec2::new(0.0, 1.0), Align2::CENTER_BOTTOM, &s.name, bold(11.0), with_alpha(TEXT(), ta));
+        p.text(at + Vec2::new(0.0, 1.0), Align2::CENTER_TOP, size, font(11.0), with_alpha(TEXT_SOFT(), ta));
     }
     // the middle: the folder, or what's hovered
     let center_hot = on_center && can_up;
