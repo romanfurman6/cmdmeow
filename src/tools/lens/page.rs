@@ -150,42 +150,27 @@ fn tilde(p: &Path) -> String {
 
 // ---------------------------------------------------------------- start
 
-/// Before the first map, centred: the disk as a ring (how full it is), its
-/// name and space, a big Map disk and a quiet link to map a folder instead.
+/// Before the first map, centred and without a card (R13): the shared disk
+/// ring, a big Map disk and a quiet link to map a folder instead.
 /// Some(true): map the disk; Some(false): choose a folder.
 fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<bool> {
     let p = ui.painter().clone();
     page_header(&p, r, "Disk Map", "", TEXT_DIM());
     let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H), r.max);
     let (total, free) = crate::kit::fs::volume_space("/");
-    let used = if total > 0 { 1.0 - free as f32 / total as f32 } else { 0.0 };
-    let ring_r = 64.0;
-    let block_h = ring_r * 2.0 + 28.0 + 26.0 + 22.0 + 32.0 + 44.0 + 22.0 + 20.0;
+    let link_h = line_h(&p, &bold(13.0));
+    let block_h = DISK_RING_H + sp::XXL + 44.0 + sp::L + link_h;
     let top = body.center().y - block_h / 2.0;
-    let c = Pos2::new(body.center().x, top + ring_r);
-    // the ring: used space from 12 o'clock, clockwise
-    use egui::epaint::{PathShape, PathStroke};
-    let a0 = -std::f32::consts::FRAC_PI_2;
-    p.add(PathShape::line(arc_points(c, ring_r, 0.0, std::f32::consts::TAU, 96), PathStroke::new(12.0, white(16))));
-    if used > 0.0 {
-        p.add(PathShape::line(arc_points(c, ring_r, a0, a0 + std::f32::consts::TAU * used.clamp(0.01, 1.0), 96), PathStroke::new(12.0, tint::DISK_MAP())));
-    }
-    icon(&p, Icon::Disk, Rect::from_center_size(c, Vec2::splat(34.0)), TEXT_SOFT());
-    let mut y = top + ring_r * 2.0 + 28.0;
-    let nr = p.text(Pos2::new(c.x, y), Align2::CENTER_TOP, name, bold(20.0), TEXT());
-    y = nr.bottom() + sp::LINE_GAP;
-    if total > 0 {
-        p.text(Pos2::new(c.x, y), Align2::CENTER_TOP, format!("{} of {} used", human_bytes(total - free), human_bytes(total)), ty::body(), TEXT_DIM());
-    }
-    y += line_h(&p, &ty::body()) + 32.0;
-    let br = Rect::from_center_size(Pos2::new(c.x, y + 22.0), Vec2::new(200.0, 44.0));
+    let cx = body.center().x;
+    disk_ring(&p, Pos2::new(cx, top), name, total, free, tint::DISK_MAP());
+    let y = top + DISK_RING_H + sp::XXL;
+    let br = Rect::from_min_size(Pos2::new(cx - 100.0, y), Vec2::new(200.0, 44.0));
     let id = ui.scope_id().with("map-disk");
     let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     if resp.clicked() {
         return Some(true);
     }
-    y += 44.0 + 22.0;
-    link(ui, Pos2::new(c.x, y), Align2::CENTER_TOP, "or choose a folder", 13.0).clicked().then_some(false)
+    link(ui, Pos2::new(cx, br.bottom() + sp::L), Align2::CENTER_TOP, "or choose a folder", 13.0).clicked().then_some(false)
 }
 
 /// A folder dragged over the window: an outline says it can be dropped.
