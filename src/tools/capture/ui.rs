@@ -759,7 +759,7 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
         .filter(|(r, _)| *r != Row::Clicks || clicks)
         .collect();
     let x0 = col.left();
-    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Screen recording");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Screen recording");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), rows.len());
     let id = ui.scope_id().with("rec-options");
     let mut s = c.settings.rec.clone();
@@ -843,7 +843,7 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
     use super::share::VIDEO_ACCOUNT;
     let x0 = col.left();
     let id = ui.scope_id().with(("share", shots));
-    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Sharing");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Sharing");
     let mut s = if shots { c.settings.shot_share.clone() } else { c.settings.share.clone() };
     let labels = [if shots { "Upload each screenshot" } else { "Upload each recording" }, "Copy the link when done", "Storage"];
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), labels.len());
@@ -1104,7 +1104,7 @@ fn record_keys(c: &mut Capture, ui: &mut Ui, cx: &mut Cx) {
 /// Returns the bottom of what it drew.
 fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &[Command]) -> f32 {
     let x0 = col.left();
-    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Keyboard shortcuts");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Keyboard shortcuts");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), list.len());
     for (k, cmd) in list.iter().enumerate() {
         let y = row_y(card, k);
@@ -1175,7 +1175,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     let mut y = col.top();
 
     // after a capture
-    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "After a capture");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "After a capture");
     let card = card_rows(p, x0, y + 28.0, w, 5);
     let ry = row_y(card, 0);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Then", font(13.0), TEXT());
@@ -1223,7 +1223,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     y = card.bottom() + 16.0;
 
     // saving
-    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Saving");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Saving");
     let card = card_rows(p, x0, y + 28.0, w, 4);
     let ry = row_y(card, 0);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Folder", font(13.0), TEXT());
@@ -1281,7 +1281,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     y = card.bottom() + 16.0;
 
     // permission
-    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Permission");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Permission");
     let card = Rect::from_min_size(Pos2::new(x0, y + 28.0), Vec2::new(w, 56.0));
     glass_card(p, card, R_CARD, 0.0, false);
     let ok = mac::can_record_screen();

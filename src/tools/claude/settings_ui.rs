@@ -12,7 +12,7 @@ const MENU: [(&str, &str); 4] = [("closest", "Closest to limit"), ("claude", "Cl
 /// A card of `n` rows under a section title. Returns the card and moves `y`
 /// past it.
 fn section(p: &egui::Painter, x: f32, w: f32, y: &mut f32, title: &str, n: usize) -> Rect {
-    crate::kit::glass::card_title(&p, Pos2::new(x, *y), title);
+    crate::kit::glass::card_title(p, Pos2::new(x, *y), title);
     *y += 28.0;
     let card = Rect::from_min_size(Pos2::new(x, *y), Vec2::new(w, n as f32 * ROW_H));
     glass_card(p, card, R_CARD, 0.0, false);

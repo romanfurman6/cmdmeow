@@ -714,7 +714,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let id = ui.scope_id().with("dict-left");
     let mut changed = false;
     let x0 = col.left();
-    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "Speaking");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Speaking");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 4);
 
     // shortcut
@@ -860,7 +860,7 @@ fn words_card_h(p: &egui::Painter, words: &[String], colw: f32) -> f32 {
 fn words_card(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, x0: f32, top: f32, w: f32) -> bool {
     let id = ui.scope_id().with("dict-words");
     let mut changed = false;
-    crate::kit::glass::card_title(&p, Pos2::new(x0, top), "Words");
+    crate::kit::glass::card_title(p, Pos2::new(x0, top), "Words");
     let card = Rect::from_min_size(Pos2::new(x0, top + 28.0), Vec2::new(w, words_card_h(p, &d.settings.words, w)));
     glass_card(p, card, R_CARD, 0.0, false);
 
@@ -903,7 +903,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let id = ui.scope_id().with("dict-right");
     let mut changed = false;
     let x0 = col.left();
-    crate::kit::glass::card_title(&p, Pos2::new(x0, col.top()), "After");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "After");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 2);
     let rows: [(&str, &mut bool); 2] = [("Restore clipboard", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
     for (k, (l, on)) in rows.into_iter().enumerate() {
@@ -925,7 +925,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     }
 
     let y0 = card.bottom() + 28.0;
-    crate::kit::glass::card_title(&p, Pos2::new(x0, y0), "Permissions");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y0), "Permissions");
     let card = card_rows(p, x0, y0 + 28.0, col.width(), 2);
     for (k, perm) in [Perm::Microphone, Perm::Accessibility].into_iter().enumerate() {
         let y = row_y(card, k);
