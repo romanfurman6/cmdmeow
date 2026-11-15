@@ -25,6 +25,19 @@ impl ServerInfo {
         let place = if self.city.is_empty() { &self.colo } else { &self.city };
         [self.isp.as_str(), place.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ")
     }
+
+    /// The line, then shorter ones for a narrow spot: the place alone,
+    /// then the provider alone.
+    pub fn lines(&self) -> Vec<String> {
+        let place = if self.city.is_empty() { &self.colo } else { &self.city };
+        let mut v = vec![self.line()];
+        for part in [place, &self.isp] {
+            if !part.is_empty() && !v.contains(part) {
+                v.push(part.clone());
+            }
+        }
+        v
+    }
 }
 
 // ---------------------------------------------------------------- math
@@ -80,6 +93,18 @@ pub fn jitter(rtts: &[f64]) -> Option<f64> {
     }
     let sum: f64 = rtts.windows(2).map(|w| (w[1] - w[0]).abs()).sum();
     Some(sum / (rtts.len() - 1) as f64)
+}
+
+/// Jitter from the steady round trips only: a reply far slower than the
+/// rest (over 3× the median) is a hiccup, not jitter, and one of them made
+/// a 40 ms line read "±1677". Needs 3 steady trips, else unknown.
+pub fn steady_jitter(rtts: &[f64]) -> Option<f64> {
+    let mid = median(rtts)?;
+    let steady: Vec<f64> = rtts.iter().copied().filter(|r| *r <= 3.0 * mid).collect();
+    if steady.len() < 3 {
+        return None;
+    }
+    jitter(&steady)
 }
 
 /// The server's own time in a `Server-Timing` header
@@ -246,10 +271,57 @@ struct Plan {
 
 fn plan(mode: SpeedMode) -> Plan {
     match mode {
-        // about 6 s: few pings, short phases, enough streams to fill the line fast
-        SpeedMode::Quick => Plan { pings: 3, phase: Duration::from_millis(2500), grace: Duration::from_millis(600), down: 6, up: 4 },
+        // about 6 s: a few pings (enough for a steady jitter), short phases, enough streams to fill the line fast
+        SpeedMode::Quick => Plan { pings: 6, phase: Duration::from_millis(2500), grace: Duration::from_millis(600), down: 6, up: 4 },
         SpeedMode::Full => Plan { pings: m::SPEED_TEST_PINGS, phase: m::SPEED_TEST_PHASE, grace: m::SPEED_TEST_GRACE, down: m::SPEED_TEST_STREAMS_DOWN, up: m::SPEED_TEST_STREAMS_UP },
     }
+}
+
+/// Open the connection the pings use: up to `SPEED_TEST_OPEN_TRIES` calls,
+/// each under `SPEED_TEST_CONNECT_TIMEOUT`. Returns the last error.
+fn open_connection<E>(stopped: &dyn Fn() -> bool, call: impl Fn(Duration) -> Result<(), E>) -> Result<(), E> {
+    let mut last = call(m::SPEED_TEST_CONNECT_TIMEOUT);
+    for _ in 1..m::SPEED_TEST_OPEN_TRIES {
+        if last.is_ok() || stopped() {
+            break;
+        }
+        last = call(m::SPEED_TEST_CONNECT_TIMEOUT);
+    }
+    last
+}
+
+/// Lost pings in a row after which the line counts as down and pinging stops.
+const LOST_IN_A_ROW: usize = 3;
+
+/// `n` round trips with `ping`, each under `SPEED_TEST_PING_TIMEOUT`.
+/// A lost one counts for nothing, and the next ping first opens a fresh
+/// connection uncounted (with the longer connect deadline), so a handshake
+/// never reads as a round trip. After [`LOST_IN_A_ROW`] losses it gives up,
+/// so a dead line ends the phase in seconds. `report` gets the trips so far
+/// and 0..1.
+fn round_trips(n: usize, stopped: &dyn Fn() -> bool, ping: impl Fn(Duration) -> Option<f64>, report: impl Fn(&[f64], f32)) -> Vec<f64> {
+    let mut rtts = Vec::new();
+    let mut lost = 0;
+    for i in 0..n {
+        if lost > 0 {
+            let _ = ping(m::SPEED_TEST_CONNECT_TIMEOUT);
+        }
+        if stopped() {
+            break;
+        }
+        match ping(m::SPEED_TEST_PING_TIMEOUT) {
+            Some(ms) => {
+                rtts.push(ms);
+                lost = 0;
+            }
+            None => lost += 1,
+        }
+        report(&rtts, (i + 1) as f32 / n as f32);
+        if lost >= LOST_IN_A_ROW {
+            break;
+        }
+    }
+    rtts
 }
 
 /// Apply `f` to the speed test state, unless the run that owns `cancel` was
@@ -298,50 +370,65 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
                 .build(),
         );
 
-        // who's measuring, on the side
-        std::thread::scope(|sc| {
-            let meta = sc.spawn(|| {
-                let body = agent.get(m::SPEED_TEST_META_URL).call().ok()?.into_body().read_to_string().ok()?;
-                parse_meta(&body)
+        // who's measuring, on the side: it lands whenever it comes and never
+        // holds the test up
+        {
+            let (agent, shared, cancel, ctx) = (agent.clone(), shared.clone(), cancel.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                // the endpoint answers the speed test page; a bare request gets 403
+                let body = agent
+                    .get(m::SPEED_TEST_META_URL)
+                    .header("Referer", "https://speed.cloudflare.com/")
+                    .header("Origin", "https://speed.cloudflare.com")
+                    .config()
+                    .timeout_global(Some(m::SPEED_TEST_META_TIMEOUT))
+                    .build()
+                    .call()
+                    .ok()?
+                    .into_body()
+                    .read_to_string()
+                    .ok()?;
+                let info = parse_meta(&body)?;
+                if write(&shared, &cancel, &|s| s.server = Some(info.clone())) {
+                    ctx.request_repaint();
+                }
+                Some(())
             });
+        }
 
-            // ping: the first call opens the connection; the rest are round
-            // trips without the server's own time
-            let ping_url = format!("{}?bytes=0", m::SPEED_TEST_DOWN_URL);
-            if let Err(e) = agent.get(&ping_url).call() {
+        // ping: the first call opens the connection; the rest are round
+        // trips without the server's own time. Each has a short deadline: a
+        // reply stuck for seconds is a lost ping, not a round trip (it held
+        // the dial for most of a minute and read as jitter of 13 seconds).
+        let ping_url = format!("{}?bytes=0", m::SPEED_TEST_DOWN_URL);
+        let ping = |limit: Duration| {
+            let t0 = Instant::now();
+            let r = agent.get(&ping_url).config().timeout_global(Some(limit)).build().call().ok()?;
+            let total = t0.elapsed().as_secs_f64() * 1000.0;
+            let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
+            Some((total - server).max(0.1))
+        };
+        // a cold first connection can miss its deadline on a good line (two
+        // of nine M1 runs), so it gets a few tries before "no internet"
+        if let Err(e) = open_connection(&stopped, |limit| agent.get(&ping_url).config().timeout_global(Some(limit)).build().call().map(|_| ())) {
+            if !stopped() {
                 finish(Some(format!("No internet connection ({e})")));
-                return;
             }
-            let mut rtts = Vec::new();
-            for i in 0..pl.pings {
-                if stopped() {
-                    finish(None);
-                    return;
-                }
-                let t0 = Instant::now();
-                if let Ok(r) = agent.get(&ping_url).call() {
-                    let total = t0.elapsed().as_secs_f64() * 1000.0;
-                    let server = r.headers().get("server-timing").and_then(|h| h.to_str().ok()).and_then(server_ms).unwrap_or(0.0);
-                    rtts.push((total - server).max(0.1));
-                }
-                let frac = (i + 1) as f32 / pl.pings as f32;
-                let (lat, jit) = (median(&rtts), jitter(&rtts));
-                set(&|s| {
-                    s.latency_ms = lat;
-                    s.jitter_ms = jit;
-                    s.progress = 0.1 * frac;
-                });
-            }
-            if rtts.is_empty() {
-                finish(Some("No internet connection".into()));
-                return;
-            }
-            if let Ok(Some(info)) = meta.join() {
-                set(&|s| s.server = Some(info.clone()));
-            }
+            return;
+        }
+        let rtts = round_trips(pl.pings, &stopped, ping, |rtts, frac| {
+            let (lat, jit) = (median(rtts), steady_jitter(rtts));
+            set(&|s| {
+                s.latency_ms = lat;
+                s.jitter_ms = jit;
+                s.progress = 0.1 * frac;
+            });
         });
-        if stopped() || shared.lock_ok().speed.phase == SpeedPhase::Done {
-            finish(None);
+        if stopped() {
+            return;
+        }
+        if rtts.is_empty() {
+            finish(Some("No internet connection".into()));
             return;
         }
 
@@ -420,11 +507,55 @@ mod tests {
     }
 
     #[test]
+    fn one_slow_reply_is_not_jitter() {
+        // the M1 runs: a 40 ms line with one reply near the 2 s deadline
+        let rtts = [38.0, 41.0, 1700.0, 40.0, 39.0, 42.0];
+        let j = steady_jitter(&rtts).unwrap();
+        assert!(j < 5.0, "{j}");
+        // too few steady trips: unknown, not a guess
+        assert_eq!(steady_jitter(&[40.0, 1700.0, 41.0]), None);
+        assert_eq!(steady_jitter(&[]), None);
+        assert_eq!(steady_jitter(&[20.0, 24.0, 20.0, 21.0]), Some(3.0));
+    }
+
+    #[test]
+    fn a_cold_first_call_gets_more_tries() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let flaky = |_| {
+            calls.set(calls.get() + 1);
+            if calls.get() < 2 { Err("timeout") } else { Ok(()) }
+        };
+        assert_eq!(open_connection(&|| false, flaky), Ok(()));
+        assert_eq!(calls.get(), 2);
+        // a dead line gives up after the last try
+        calls.set(0);
+        let dead = |_| {
+            calls.set(calls.get() + 1);
+            Err::<(), _>("timeout")
+        };
+        assert_eq!(open_connection(&|| false, dead), Err("timeout"));
+        assert_eq!(calls.get(), m::SPEED_TEST_OPEN_TRIES);
+        // and a stop doesn't wait for more tries
+        calls.set(0);
+        assert!(open_connection(&|| true, dead).is_err());
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
     fn server_timing() {
         assert_eq!(server_ms("cfRequestDuration;dur=12.5"), Some(12.5));
         assert_eq!(server_ms("cdn-cache; desc=MISS, cfRequestDuration;dur=3"), Some(3.0));
         assert_eq!(server_ms("cfL4;desc=\"?proto=TCP\""), None);
         assert_eq!(server_ms(""), None);
+    }
+
+    #[test]
+    fn shorter_server_lines() {
+        let full = ServerInfo { isp: "Orange Spain Network".into(), city: "Barcelona".into(), colo: "BCN".into() };
+        assert_eq!(full.lines(), vec!["Orange Spain Network · Barcelona", "Barcelona", "Orange Spain Network"]);
+        let only_colo = ServerInfo { colo: "MAD".into(), ..Default::default() };
+        assert_eq!(only_colo.lines(), vec!["MAD"]);
     }
 
     #[test]
@@ -505,6 +636,48 @@ mod tests {
         // the download it had reached stays
         assert_eq!(s.down_mbps, Some(120.0));
         assert_eq!(s.live_mbps, 0.0);
+    }
+
+    #[test]
+    fn a_lost_ping_counts_for_nothing_and_reconnects_uncounted() {
+        use std::cell::RefCell;
+        // the 3rd ping is lost; the call after it opens a new connection
+        let calls = RefCell::new(Vec::new());
+        let ping = |limit: Duration| {
+            let k = calls.borrow().len();
+            calls.borrow_mut().push(limit);
+            match k {
+                2 => None,
+                3 => Some(900.0), // the reconnect: a handshake, not a trip
+                _ => Some(20.0 + k as f64),
+            }
+        };
+        let rtts = round_trips(4, &|| false, ping, |_, _| {});
+        assert_eq!(rtts, vec![20.0, 21.0, 24.0]);
+        let calls = calls.into_inner();
+        assert_eq!(calls.len(), 5);
+        assert_eq!(calls[3], m::SPEED_TEST_CONNECT_TIMEOUT);
+        assert!(calls.iter().enumerate().all(|(k, l)| k == 3 || *l == m::SPEED_TEST_PING_TIMEOUT));
+        assert!(jitter(&rtts).unwrap() < 5.0);
+    }
+
+    #[test]
+    fn a_dead_line_gives_up_after_a_few_lost_pings() {
+        use std::cell::Cell;
+        let calls = Cell::new(0);
+        let rtts = round_trips(10, &|| false, |_| {
+            calls.set(calls.get() + 1);
+            None
+        }, |_, _| {});
+        assert!(rtts.is_empty());
+        // 3 pings and the 2 reconnects between them, not 10 of each
+        assert_eq!(calls.get(), 2 * LOST_IN_A_ROW - 1);
+    }
+
+    #[test]
+    fn round_trips_stop_when_stopped() {
+        let rtts = round_trips(10, &|| true, |_| Some(20.0), |_, _| {});
+        assert!(rtts.is_empty());
     }
 
     #[test]

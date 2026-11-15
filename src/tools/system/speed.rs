@@ -329,10 +329,17 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
         left = sr.left();
     }
     let tw = left - sp::M - x0;
+    // the longest wording that fits whole (no "…" on our own text)
+    let fitting = |options: Vec<String>| {
+        let fits = |t: &String| p.layout_no_wrap(t.clone(), ty::label(), TEXT()).size().x <= tw;
+        options.iter().find(|t| fits(*t)).or(options.last()).cloned().unwrap_or_default()
+    };
     if let Some(e) = &s.error {
-        text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, e, ty::label(), AMBER(), tw);
+        // the cause in brackets goes first when space is short
+        let short = e.split(" (").next().unwrap_or(e).to_string();
+        text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, &fitting(vec![e.clone(), short]), ty::label(), AMBER(), tw);
     } else if let Some(server) = &s.server {
-        text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, &server.line(), ty::label(), TEXT_DIM(), tw);
+        text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, &fitting(server.lines()), ty::label(), TEXT_DIM(), tw);
     }
     (ask, closed)
 }
