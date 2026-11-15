@@ -89,7 +89,7 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
             ui.set_min_size(full.size());
             // the scrim swallows clicks; a click on it closes the modal
             let scrim = ui.interact(full, id().with("scrim"), Sense::click());
-            ui.painter().rect_filled(full, CornerRadius::same(WINDOW_R), Color32::from_black_alpha((115.0 * ease) as u8));
+            ui.painter().rect_filled(full, CornerRadius::same(WINDOW_R), crate::kit::glass::SCRIM().gamma_multiply(ease));
             ui.multiply_opacity(ease);
             let h = PAD + 28.0 + sp::M + 2.0 * DIAL_R + sp::L + 56.0 + sp::L + 30.0 + PAD;
             let m = Rect::from_center_size(full.center() + Vec2::new(0.0, (1.0 - ease) * 18.0), Vec2::new(W.min(full.width() - 32.0), h));

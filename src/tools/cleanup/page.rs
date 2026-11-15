@@ -965,7 +965,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     // block clicks to the page underneath
     let _ = ui.interact(r, ui.scope_id().with("confirm-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, Color32::from_black_alpha(115));
+    p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, crate::kit::glass::SCRIM());
     let (n, bytes, perm, trashed, rebuilt, emptied, tools) = {
         let g = app.clean.lock_ok();
         let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected).collect();
@@ -1008,7 +1008,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     let ok = Rect::from_min_size(Pos2::new(m.right() - 22.0 - okw, m.bottom() - 22.0 - 30.0), Vec2::new(okw, 30.0));
     let cw = button_width(&p, "Cancel", BTN_SECONDARY);
     let cancel = Rect::from_min_size(Pos2::new(ok.left() - 8.0 - cw, ok.top()), Vec2::new(cw, 30.0));
-    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         app.clean_confirm = false;
     }
     if pill_button(ui, ok, ok_label, if danger { BTN_DANGER } else { BTN_PRIMARY }, true).clicked() {

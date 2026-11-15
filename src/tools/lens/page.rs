@@ -1178,7 +1178,7 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let scrim = ui.interact(r, ui.scope_id().with("other-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, Color32::from_black_alpha(115));
+    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, crate::kit::glass::SCRIM());
     let rows = node.children.len() + usize::from(node.other > 0);
     let h = (70.0 + rows as f32 * 34.0 + 16.0).min(r.height() - 80.0);
     let m = Rect::from_center_size(r.center(), Vec2::new(520.0, h));
@@ -1829,7 +1829,7 @@ fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     // swallow clicks behind the dialog
     let _ = ui.interact(r, ui.scope_id().with("review-scrim"), Sense::click());
-    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, Color32::from_black_alpha(115));
+    p.rect_filled(r, CornerRadius { ne: 12, se: 12, ..Default::default() }, crate::kit::glass::SCRIM());
     let n = app.lens_selected.len();
     let rows = n.min(8);
     let h = 22.0 + 46.0 + 14.0 + rows as f32 * 34.0 + 8.0 + 18.0 + 30.0 + 22.0;
@@ -1876,7 +1876,8 @@ fn review_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let ok = Rect::from_min_size(Pos2::new(m.right() - 22.0 - ow, by), Vec2::new(ow, 30.0));
     let cw = button_width(&p, "Cancel", BTN_SECONDARY);
     let cancel = Rect::from_min_size(Pos2::new(ok.left() - 8.0 - cw, by), Vec2::new(cw, 30.0));
-    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || app.lens_selected.is_empty() {
+    let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || esc || app.lens_selected.is_empty() {
         app.lens_review = false;
         app.lens_confirm = false;
     }

@@ -64,6 +64,10 @@ pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
 /// mode needs a firmer ink line to part a white popover from white cards.
 #[allow(non_snake_case)]
 pub fn POPOVER_EDGE() -> Color32 { if is_light() { white(52) } else { white(30) } }
+/// The dim under dialogs, sheets and the loader: black 45% in dark, ink
+/// 24% in light.
+#[allow(non_snake_case)]
+pub fn SCRIM() -> Color32 { pick(Color32::from_black_alpha(115), Color32::from_rgba_unmultiplied(14, 20, 5, 61)) }
 /// Window sidebar.
 #[allow(non_snake_case)]
 pub fn SIDEBAR() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128)) }

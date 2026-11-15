@@ -129,7 +129,7 @@ fn is_running(u: &mut Uninstaller, id: &str) -> bool {
 
 fn scrim(ui: &mut Ui, r: Rect, salt: &str) {
     let _ = ui.interact(r, ui.scope_id().with(salt), Sense::click());
-    ui.painter().rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, Color32::from_black_alpha(115));
+    ui.painter().rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, crate::kit::glass::SCRIM());
 }
 
 fn modal_card(p: &egui::Painter, m: Rect) {
