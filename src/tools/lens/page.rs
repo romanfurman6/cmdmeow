@@ -43,6 +43,7 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             if let Some((sub, done, all)) = found {
                 match results(app, ui, r, &sub, Some((done, all))) {
                     Act::Stop => shared.stop.store(true, Ordering::SeqCst),
+                    Act::Switch(to) => switch(app, ui.ctx(), to),
                     Act::Overview => {
                         app.lens_peek = false;
                         app.lens_path = app.lens_root.clone();
@@ -108,20 +109,25 @@ pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     };
     let root_path = root.path.clone();
     let act = results(app, ui, r, root, None);
+    // what `results` asks for runs only once the map's lock is let go:
+    // switching to the disk clears the map, and doing that under the lock
+    // froze the page for good
     drop(guard);
     auto_update(app, ui.ctx(), &root_path, now);
-    if act == Act::Stop {
-        shared.stop.store(true, Ordering::SeqCst);
-    } else if act == Act::Update {
-        app.lens_selected.clear();
-        if shared.running.load(Ordering::SeqCst) {
-            // an automatic update is already on it: show it, with Stop
-            shared.quiet.store(false, Ordering::SeqCst);
-        } else {
-            scan::update(shared.clone(), ui.ctx().clone(), false);
+    match act {
+        Act::Stop => shared.stop.store(true, Ordering::SeqCst),
+        Act::Update => {
+            app.lens_selected.clear();
+            if shared.running.load(Ordering::SeqCst) {
+                // an automatic update is already on it: show it, with Stop
+                shared.quiet.store(false, Ordering::SeqCst);
+            } else {
+                scan::update(shared.clone(), ui.ctx().clone(), false);
+            }
         }
-    } else if app.lens_review {
-        review(app, ui, r, cx);
+        Act::Switch(to) => switch(app, ui.ctx(), to),
+        _ if app.lens_review => review(app, ui, r, cx),
+        _ => {}
     }
 }
 
@@ -132,6 +138,8 @@ enum Act {
     Stop,
     /// Leave a finished folder for the live overview of the whole map.
     Overview,
+    /// Map something else, picked in the switcher (None: ask for a folder).
+    Switch(Option<PathBuf>),
 }
 
 fn home() -> PathBuf {
@@ -241,6 +249,17 @@ fn auto_update(app: &mut App, ctx: &egui::Context, root: &Path, now: f64) {
     let _ = root;
     // look again now and then: the watch only flags, it doesn't repaint
     ctx.request_repaint_after(std::time::Duration::from_secs(5));
+}
+
+/// Map what was picked in the switcher: the disk (its last map opens), a
+/// volume or folder, or None for the folder dialog. Never call it while
+/// holding `lens.result`: going back to the disk clears the map.
+fn switch(app: &mut App, ctx: &egui::Context, to: Option<PathBuf>) {
+    match to {
+        Some(path) if path == Path::new("/") => open_disk(app),
+        Some(path) => begin_at(app, ctx, path),
+        None => choose_folder(app, ctx),
+    }
 }
 
 /// Ask for a folder to map (the system folder dialog, off the UI thread).
@@ -1424,15 +1443,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         }
         pick_root = None;
     }
-    let picked = pick_root.is_some();
-    match pick_root {
-        Some(Some(path)) if path == Path::new("/") => open_disk(app),
-        Some(Some(path)) => begin_at(app, &ctx, path),
-        Some(None) => choose_folder(app, &ctx),
-        None => {}
-    }
-    if picked {
-        return Act::None;
+    // the caller switches, once it has let go of the map
+    if let Some(to) = pick_root {
+        return Act::Switch(to);
     }
 
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, hr.bottom() + 16.0), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - 16.0));
@@ -2116,6 +2129,66 @@ mod tests {
         assert!(remember_folder(&mut r, &home.join("p3"), home));
         let names: Vec<_> = r.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names, ["p3", "p6", "p5", "p4", "p2"]);
+    }
+
+    fn press(at: Pos2, down: bool) -> egui::Event {
+        egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: down, modifiers: Default::default() }
+    }
+
+    /// A folder is mapped, then "Macintosh HD" is picked in the switcher:
+    /// the page goes back to the disk. It used to freeze for good, clearing
+    /// the map while the page still held the map's lock.
+    #[test]
+    fn switching_from_a_folder_back_to_the_disk_does_not_freeze() {
+        use std::sync::mpsc::{channel, RecvTimeoutError};
+        let (done, wait) = channel::<()>();
+        std::thread::spawn(move || {
+            if let Err(RecvTimeoutError::Timeout) = wait.recv_timeout(std::time::Duration::from_secs(60)) {
+                eprintln!("Disk Map froze switching from a folder back to the disk");
+                std::process::exit(1);
+            }
+        });
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut app = App::new(&crate::core::tool::ToolEnv { ctx: ctx.clone(), demo: true });
+        // a mapped folder, not the disk
+        demo_tree(&mut app);
+        app.lens_selected.clear();
+        assert_ne!(app.lens_root, Path::new("/"));
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0));
+        let r = Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 720.0));
+        let mut t = 0.0;
+        let mut pass = |app: &mut App, events: Vec<egui::Event>| {
+            t += 0.1;
+            let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ui| {
+                let mut cx = Cx::new(None);
+                page(app, ui, r, &mut cx);
+            });
+            out.textures_delta.clear();
+            out.platform_output.accesskit_update
+        };
+        // open the switcher (the folder's name, top left)
+        let switcher = Pos2::new(r.left() + 84.0 + 24.0, r.top() + HEADER_H / 2.0);
+        pass(&mut app, vec![]);
+        pass(&mut app, vec![egui::Event::PointerMoved(switcher)]);
+        pass(&mut app, vec![press(switcher, true)]);
+        pass(&mut app, vec![press(switcher, false)]);
+        let mut disk = None;
+        for _ in 0..3 {
+            let Some(tree) = pass(&mut app, vec![]) else { continue };
+            disk = tree.nodes.iter().find(|(_, n)| n.label() == Some("Macintosh HD")).and_then(|(_, n)| n.bounds()).map(|b| Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32));
+            if disk.is_some() {
+                break;
+            }
+        }
+        let disk = disk.expect("the switcher's menu lists Macintosh HD");
+        pass(&mut app, vec![egui::Event::PointerMoved(disk)]);
+        pass(&mut app, vec![press(disk, true)]);
+        pass(&mut app, vec![press(disk, false)]);
+        done.send(()).unwrap();
+        // the disk's last map opens next (none here: the folder's is gone)
+        assert_eq!(app.lens_root, Path::new("/"));
+        assert!(app.lens.result.lock_ok().is_none());
     }
 
     #[test]
