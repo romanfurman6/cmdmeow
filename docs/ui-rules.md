@@ -137,6 +137,7 @@ Planned consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET`
 | H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar): `ROW_HOVER` = `white(10)`. | ⏳ conflict K2 |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
 | H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(BLUE, .16)`), radius 8, text `ACCENT`. | ✅ |
+| H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ⏳ (Roman 2026-11-15 comment) |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ⏳ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
 
