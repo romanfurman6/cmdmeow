@@ -66,9 +66,17 @@ fn up_color() -> Color32 {
     ACTION()
 }
 
-/// Draw the modal while it is open (and while it fades out). Returns true
-/// the mode to run when the user asks for another test.
-pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
+/// What the dialog asks the caller to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    /// Run another test in this mode.
+    Run(SpeedMode),
+    /// Stop the test under way: Stop, or the dialog closing while it runs.
+    Stop,
+}
+
+/// Draw the modal while it is open (and while it fades out).
+pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<Ask> {
     let ctx = ui.ctx().clone();
     let open = ctx.data(|d| d.get_temp::<bool>(id())).unwrap_or(false);
     let a = ctx.animate_bool_with_time(id().with("fade"), open, 0.18);
@@ -79,7 +87,7 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
     // nothing under the dialog reacts while it's up
     crate::kit::modal::shield(&ctx);
     let full = ctx.content_rect();
-    let mut again = None;
+    let mut ask = None;
     egui::Area::new(id().with("area"))
         .order(Order::Foreground)
         .fixed_pos(full.min)
@@ -95,17 +103,22 @@ pub fn modal(ui: &mut Ui, s: &SpeedTest) -> Option<SpeedMode> {
             let m = Rect::from_center_size(full.center() + Vec2::new(0.0, (1.0 - ease) * 18.0), Vec2::new(W.min(full.width() - 32.0), h));
             let card = ui.interact(m, id().with("card"), Sense::click());
             card_bg(ui.painter(), m);
-            let (rerun, closed) = content(ui, m, s);
-            again = rerun.filter(|_| open);
+            let (asked, closed) = content(ui, m, s);
+            ask = asked.filter(|_| open);
             let esc = ctx.input(|i| i.key_pressed(Key::Escape));
             if open && (closed || esc || (scrim.clicked() && !card.contains_pointer())) {
                 close(&ctx);
+                // a test nobody watches would only hold the network (and the
+                // Wi-Fi card's buttons) up
+                if s.running {
+                    ask = Some(Ask::Stop);
+                }
             }
         });
     if s.running || a < 1.0 {
         animate(&ctx);
     }
-    again
+    ask
 }
 
 fn card_bg(p: &egui::Painter, m: Rect) {
@@ -124,8 +137,8 @@ struct Col {
     glyph: Option<Icon>,
 }
 
-/// Returns (the mode to run again, close).
-fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
+/// Returns (what the buttons ask for, close).
+fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let t = ctx.input(|i| i.time) as f32;
@@ -284,7 +297,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
 
     // buttons, or the error
     let by = y;
-    let mut again = None;
+    let mut ask = None;
     let left;
     if !s.running {
         let done_w = button_width(&p, "Done", BTN_PRIMARY);
@@ -302,7 +315,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
                 SpeedMode::Full => "About 20 seconds, more streams",
             };
             if pill_button(ui, r, label, BTN_SECONDARY, true).on_hover_text(tip).clicked() {
-                again = Some(mode);
+                ask = Some(Ask::Run(mode));
             }
             l = r.left();
         }
@@ -311,7 +324,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
         let sw = button_width(&p, "Stop", BTN_SECONDARY);
         let sr = Rect::from_min_size(Pos2::new(x1 - sw, by), Vec2::new(sw, 30.0));
         if pill_button(ui, sr, "Stop", BTN_SECONDARY, true).clicked() {
-            s.stop();
+            ask = Some(Ask::Stop);
         }
         left = sr.left();
     }
@@ -321,7 +334,7 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<SpeedMode>, bool) {
     } else if let Some(server) = &s.server {
         text_fit(&p, Pos2::new(x0, by + 15.0), Align2::LEFT_CENTER, &server.line(), ty::label(), TEXT_DIM(), tw);
     }
-    (again, closed)
+    (ask, closed)
 }
 
 #[cfg(test)]

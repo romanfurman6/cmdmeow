@@ -7,6 +7,7 @@ use crate::kit::mechanics as m;
 use crate::kit::sync::LockExt;
 use serde_json::Value;
 use std::io::Read;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
@@ -107,43 +108,64 @@ fn phase_frac(elapsed: Duration, total: Duration) -> f32 {
 
 // ---------------------------------------------------------------- transfer
 
+/// What the streams of one transfer share.
+#[derive(Default)]
+struct Streams {
+    bytes: AtomicU64,
+    over: AtomicBool,
+    alive: AtomicUsize,
+}
+
+/// How long a transfer that ran its course waits for its streams to
+/// finish their last read. A stop doesn't wait at all.
+const WIND_DOWN: Duration = Duration::from_millis(500);
+
 /// Run `streams` workers until `length` passes or the test is stopped,
 /// sampling the bytes they move. `report` gets (live Mbps, 0..1).
 /// Returns the measured Mbps, or None when nothing came through.
-fn transfer<W>(streams: usize, length: Duration, grace: Duration, stopped: &(dyn Fn() -> bool + Sync), report: &dyn Fn(f64, f32), worker: W) -> Option<f64>
+///
+/// The workers run on their own threads and are never joined: one stuck in
+/// a read or waiting on the server can't hold the test (or a Stop) up. It
+/// sees `over` once its call returns and quits.
+fn transfer<W>(streams: usize, length: Duration, grace: Duration, stopped: &dyn Fn() -> bool, report: &dyn Fn(f64, f32), worker: W) -> Option<f64>
 where
-    W: Fn(&AtomicU64, &(dyn Fn() -> bool + Sync)) + Sync,
+    W: Fn(&AtomicU64, &dyn Fn() -> bool) + Send + Sync + 'static,
 {
-    let bytes = AtomicU64::new(0);
-    let over = AtomicBool::new(false);
-    let alive = AtomicUsize::new(streams);
-    let done = || over.load(Ordering::Relaxed) || stopped();
+    let st = Arc::new(Streams { alive: AtomicUsize::new(streams), ..Default::default() });
+    let worker = Arc::new(worker);
+    for _ in 0..streams {
+        let (st, worker) = (st.clone(), worker.clone());
+        std::thread::spawn(move || {
+            worker(&st.bytes, &|| st.over.load(Ordering::Relaxed));
+            st.alive.fetch_sub(1, Ordering::Relaxed);
+        });
+    }
     let mut meter = Meter::new(grace);
-    let mut last = 0.0;
     let t0 = Instant::now();
-    std::thread::scope(|sc| {
-        for _ in 0..streams {
-            sc.spawn(|| {
-                worker(&bytes, &done);
-                alive.fetch_sub(1, Ordering::Relaxed);
-            });
+    let last = loop {
+        std::thread::sleep(Duration::from_millis(80));
+        if stopped() {
+            st.over.store(true, Ordering::Relaxed);
+            return None;
         }
-        loop {
-            std::thread::sleep(Duration::from_millis(80));
-            let el = t0.elapsed();
-            last = meter.sample(el.as_secs_f64(), bytes.load(Ordering::Relaxed));
-            report(last, phase_frac(el, length));
-            if el >= length || stopped() || alive.load(Ordering::Relaxed) == 0 {
-                over.store(true, Ordering::Relaxed);
-                break;
-            }
+        let el = t0.elapsed();
+        let live = meter.sample(el.as_secs_f64(), st.bytes.load(Ordering::Relaxed));
+        report(live, phase_frac(el, length));
+        if el >= length || st.alive.load(Ordering::Relaxed) == 0 {
+            st.over.store(true, Ordering::Relaxed);
+            break live;
         }
-    });
-    (bytes.load(Ordering::Relaxed) > 0).then_some(last)
+    };
+    // let the streams close before the next phase, but not for long
+    let t1 = Instant::now();
+    while st.alive.load(Ordering::Relaxed) > 0 && t1.elapsed() < WIND_DOWN && !stopped() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    (st.bytes.load(Ordering::Relaxed) > 0).then_some(last)
 }
 
 /// One download stream: asks for big files back to back, counting bytes.
-fn download_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &(dyn Fn() -> bool + Sync)) {
+fn download_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &dyn Fn() -> bool) {
     // the server refuses files over its cap (403 for 100 MB since 2026-11),
     // so a refused size is halved and asked again
     let mut chunk = m::SPEED_TEST_CHUNK_DOWN;
@@ -175,7 +197,7 @@ fn download_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &(dyn Fn() -> b
 }
 
 /// One upload stream: posts zeros back to back, counting what goes out.
-fn upload_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &(dyn Fn() -> bool + Sync)) {
+fn upload_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &dyn Fn() -> bool) {
     let len = m::SPEED_TEST_CHUNK_UP;
     while !done() {
         let mut body = Zeros { left: len, bytes, done };
@@ -194,7 +216,7 @@ fn upload_stream(agent: &ureq::Agent, bytes: &AtomicU64, done: &(dyn Fn() -> boo
 struct Zeros<'a> {
     left: u64,
     bytes: &'a AtomicU64,
-    done: &'a (dyn Fn() -> bool + Sync),
+    done: &'a dyn Fn() -> bool,
 }
 
 impl Read for Zeros<'_> {
@@ -230,6 +252,18 @@ fn plan(mode: SpeedMode) -> Plan {
     }
 }
 
+/// Apply `f` to the speed test state, unless the run that owns `cancel` was
+/// stopped: Stop already shows it as stopped, and a new run may be under way.
+/// Stop sets the flag under the same lock, so nothing slips in after it.
+fn write(shared: &Shared, cancel: &AtomicBool, f: &dyn Fn(&mut SpeedTest)) -> bool {
+    let mut s = shared.lock_ok();
+    if cancel.load(Ordering::Relaxed) {
+        return false;
+    }
+    f(&mut s.speed);
+    true
+}
+
 pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
     let pl = plan(mode);
     {
@@ -241,20 +275,18 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
     }
     let cancel = shared.lock_ok().speed.cancel.clone();
     std::thread::spawn(move || {
-        let stopped = move || cancel.load(Ordering::Relaxed);
+        let stopped = || cancel.load(Ordering::Relaxed);
         let set = |f: &dyn Fn(&mut SpeedTest)| {
-            let mut s = shared.lock_ok();
-            f(&mut s.speed);
-            ctx.request_repaint();
+            if write(&shared, &cancel, f) {
+                ctx.request_repaint();
+            }
         };
-        // a stop ends the test quietly with what it has so far
         let finish = |err: Option<String>| {
-            let quiet = stopped();
             set(&|s| {
                 s.running = false;
                 s.phase = SpeedPhase::Done;
                 s.live_mbps = 0.0;
-                if !quiet && err.is_some() {
+                if err.is_some() {
                     s.error = err.clone();
                 }
             })
@@ -321,10 +353,9 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
                 s.progress = base + share * frac;
             })
         };
-        let down = transfer(pl.down, pl.phase, pl.grace, &stopped, &report(0.1, 0.5), |b, d| download_stream(&agent, b, d));
+        let a = agent.clone();
+        let down = transfer(pl.down, pl.phase, pl.grace, &stopped, &report(0.1, 0.5), move |b, d| download_stream(&a, b, d));
         if stopped() {
-            set(&|s| s.down_mbps = down);
-            finish(None);
             return;
         }
         let Some(down) = down else {
@@ -339,11 +370,10 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         });
 
         // upload
-        let up = transfer(pl.up, pl.phase, pl.grace, &stopped, &report(0.6, 0.4), |b, d| upload_stream(&agent, b, d));
+        let a = agent.clone();
+        let up = transfer(pl.up, pl.phase, pl.grace, &stopped, &report(0.6, 0.4), move |b, d| upload_stream(&a, b, d));
         set(&|s| {
-            if !stopped() {
-                s.up_mbps = up;
-            }
+            s.up_mbps = up;
             s.progress = 1.0;
         });
         finish(if up.is_none() { Some("Upload test failed".into()) } else { None });
@@ -427,6 +457,54 @@ mod tests {
         });
         assert!(t0.elapsed() < Duration::from_secs(2));
         assert!(r.unwrap() > 0.0);
+    }
+
+    #[test]
+    fn stop_does_not_wait_for_a_stuck_stream() {
+        // a stream stuck in a read for seconds, as on a stalled connection
+        let t0 = Instant::now();
+        let stopped = || t0.elapsed() > Duration::from_millis(200);
+        let r = transfer(2, Duration::from_secs(10), Duration::ZERO, &stopped, &|_, _| {}, |b, _| {
+            b.fetch_add(1_000_000, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_secs(3));
+        });
+        assert_eq!(r, None);
+        assert!(t0.elapsed() < Duration::from_secs(1), "{:?}", t0.elapsed());
+    }
+
+    #[test]
+    fn phase_end_does_not_wait_for_a_stuck_stream() {
+        let t0 = Instant::now();
+        let r = transfer(2, Duration::from_millis(200), Duration::ZERO, &|| false, &|_, _| {}, |b, _| {
+            b.fetch_add(1_000_000, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_secs(3));
+        });
+        assert!(r.is_some());
+        assert!(t0.elapsed() < Duration::from_millis(1500), "{:?}", t0.elapsed());
+    }
+
+    #[test]
+    fn a_stopped_run_writes_nothing() {
+        let shared: Shared = Default::default();
+        let cancel = {
+            let mut s = shared.lock_ok();
+            s.speed = SpeedTest { running: true, phase: SpeedPhase::Download, live_mbps: 120.0, ..Default::default() };
+            s.speed.cancel.clone()
+        };
+        assert!(write(&shared, &cancel, &|s| s.progress = 0.3));
+        shared.lock_ok().speed.stop();
+        // the thread's late "done" can't undo the stop or touch a new run
+        assert!(!write(&shared, &cancel, &|s| {
+            s.running = true;
+            s.error = Some("Upload test failed".into());
+        }));
+        let s = shared.lock_ok().speed.clone();
+        assert!(!s.running);
+        assert_eq!(s.phase, SpeedPhase::Done);
+        assert_eq!(s.error, None);
+        // the download it had reached stays
+        assert_eq!(s.down_mbps, Some(120.0));
+        assert_eq!(s.live_mbps, 0.0);
     }
 
     #[test]

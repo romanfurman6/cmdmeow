@@ -359,8 +359,10 @@ pub fn detail(mon: &monitor::Shared, d: &str, ui: &mut Ui, rect: Rect, cx: &mut 
         Action::None => {}
     }
     if kind == Sheet::Network {
-        if let Some(mode) = super::speed::modal(ui, &s.speed) {
-            monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode);
+        match super::speed::modal(ui, &s.speed) {
+            Some(super::speed::Ask::Run(mode)) => monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode),
+            Some(super::speed::Ask::Stop) => monitor::stop_speed_test(mon, ui.ctx()),
+            None => {}
         }
     }
 }

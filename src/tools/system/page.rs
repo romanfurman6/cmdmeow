@@ -181,8 +181,10 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             P::Forget(key) => monitor::forget_device(mon, &key),
         }
     }
-    if let Some(mode) = super::speed::modal(ui, &s.speed) {
-        monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode);
+    match super::speed::modal(ui, &s.speed) {
+        Some(super::speed::Ask::Run(mode)) => monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode),
+        Some(super::speed::Ask::Stop) => monitor::stop_speed_test(mon, ui.ctx()),
+        None => {}
     }
 }
 

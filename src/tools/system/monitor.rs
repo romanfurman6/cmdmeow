@@ -107,13 +107,26 @@ pub struct SpeedTest {
     /// The provider and the test server's city, when the server says.
     pub server: Option<super::speedtest::ServerInfo>,
     pub error: Option<String>,
-    /// Set by [`SpeedTest::stop`]; the test thread checks it between reads.
+    /// This run's stop flag. Each run gets a fresh one, so a stopped run's
+    /// thread can tell it no longer owns the state.
     pub cancel: Arc<AtomicBool>,
 }
 
 impl SpeedTest {
-    pub fn stop(&self) {
+    /// Stop the run at once: the flag tells its thread to wind down, and the
+    /// state shows "stopped" now, with what it measured so far, so a new
+    /// test can start right away. The thread writes nothing after this.
+    pub fn stop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
+        if self.running {
+            // a download cut short keeps the rate it had reached
+            if self.phase == SpeedPhase::Download && self.down_mbps.is_none() && self.live_mbps > 0.0 {
+                self.down_mbps = Some(self.live_mbps);
+            }
+            self.running = false;
+            self.phase = SpeedPhase::Done;
+            self.live_mbps = 0.0;
+        }
     }
 }
 
@@ -987,6 +1000,12 @@ fn apply_ipconfig(w: &mut Wifi, out: &str) {
 // ---------------------------------------------------------------- speed test
 
 pub use super::speedtest::start as start_speed_test;
+
+/// Stop the speed test under way (Stop, or the dialog closing while it runs).
+pub fn stop_speed_test(shared: &Shared, ctx: &egui::Context) {
+    shared.lock_ok().speed.stop();
+    ctx.request_repaint();
+}
 
 /// "Good for" activities, by download speed in Mbps.
 pub fn good_for(mbps: f64) -> Vec<&'static str> {
