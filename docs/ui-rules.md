@@ -19,6 +19,7 @@ Contents: 1 Tokens · 2 Colour · 3 Type · 4 Spacing and layout · 5 Surfaces �
 |---|---|---|
 | Surfaces | `BG` `CARD` `CARD_EDGE` `RAISED` `POPOVER` `SIDEBAR` `FOOTER` | glass.rs |
 | Text | `TEXT` `TEXT_SOFT` .84 · `TEXT_DIM` .68 · `TEXT_FAINT` .56 · `TEXT_MUTED` .40 · `ty::caption_color` | glass.rs |
+| AI | `AI()` (cyan) | glass.rs |
 | Action | `ACTION` (lime fill; was `BLUE`) · `DANGER` (destructive button fill) · `ON_ACTION` · `ACCENT` (lime as text) | glass.rs |
 | State | `GREEN` `AMBER` `RED` · `CHIP_ASK` `CHIP_RISK` | glass.rs |
 | Group tints | `tint::CLEANUP` `HEALTH` `CAPTURE` `KEEP_AWAKE` `NEUTRAL` | glass.rs |
@@ -48,7 +49,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C12 | Temperature: cyan under 68 °C, amber from 68, red from 90. Text under 68 °C is plain. | ✅ |
 | C13 | Exceptions only: capture/record HUD, the recording dot, traffic lights, third-party brand marks, user content. | ✅ |
 | C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ✅ |
-| C15 | AI (AI Check chip, reveal ring, agent marks) uses cyan `tint::HEALTH`. | ⏳ conflict K5 |
+| C15 | AI (AI Check chip, reveal ring, agent marks) has its own token `AI()`, cyan (today the same value as `tint::HEALTH`). | ✅ |
 
 **Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ⏳
 
@@ -129,7 +130,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | P1 | **Surface:** `POPOVER` fill (egui menus `BG`), 1 pt inside edge `POPOVER_EDGE` (dark `white(30)`, light ink ~20%). Radius: dialogs and sheets 14, popovers and bars 12, hover tip and menus 10, onboarding hint 8, toasts pill. | ✅ |
 | P2 | **Floating shadow "Whisper"**, one token `float_shadow()`: two black layers, key (0,1) blur 2 at .30 dark / .06 light, ambient (0,4) blur 10 at .20 dark / .06 light. egui menus and tooltips: `float_shadow_egui()` one layer (0,3) blur 8 at .32 / .08. Only floating things get it (menus, tooltips, popovers, dialogs, sheets, toasts, floating bars, drag tags); cards, rows and page content never do. Native window shadows and the screenshot "Shadow" option stay. | ✅ |
 | P3 | **Modal cover:** while any menu, popover or dialog is open, nothing under it hovers, shows a tip or takes a click (`kit::modal::shield`, `layer`, `pointer(ui)`). A click on the cover closes a menu or popover. | ✅ |
-| P4 | **Dim** under dialogs and sheets: black 115 (45%) over the page area. A click on the dim closes a sheet; destructive confirms close only with Cancel (Esc where wired). | ✅ · K1, K6 open |
+| P4 | **Dim** under dialogs, sheets and the loader: one `SCRIM()` over the page area, black 45% dark, ink 24% light. A click on the dim closes a sheet. Esc closes every dialog and sheet, except while work runs (loader). Destructive confirms never close from a click on the dim. | ✅ |
 | P5 | Every removal that can take longer than 0.4 s shows the removal loader (`kit::loader::show`): card 340 wide, padding 24, mark 88, title (lead, verb + "…"), "x of y" (body dim), current path (mono 11 faint, cut in the middle), 28 buttons (Stop where safe; Done, Put back where undo exists). It appears after 0.4 s and stays at least 0.8 s. Scans and measuring keep `spinner()` and the bar. | ✅ |
 | P6 | The loader mark is one shape with the ⌘ cut out; Done turns ⌘ into ✓. | ✅ |
 
@@ -137,7 +138,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 
 | # | Rule | Status |
 |---|------|---|
-| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar): `ROW_HOVER` = `white(10)`. | ✅ in AI Check · ⏳ elsewhere (K2) |
+| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. | ✅ |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
 | H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(BLUE, .16)`), radius 8, text `ACCENT`. | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ⏳ (Roman 2026-11-15 comment) |
@@ -179,7 +180,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 | SP5 | **Empty state**: R6. | ✅ |
 | SP6 | **Locked tool**: a permission screen per tool that names what is missing in the words of the fix (T16), not a dimmed page. | ✅ |
 | SP7 | **Big state + control** (Keep Awake): centred scene, title hero 28, detail body dim in a fixed 18 line (kept when empty), then one segmented control 32 tall (Off · Auto · On). The control is the only switch, so state and control never disagree (T17). | ⏳ |
-| SP8 | **Hourly chart**: 24 columns, gap 4, 72 tall, stacked series (top corners radius 3), dashed `white(26)` guides with 11 faint labels in a 36 right gutter, 00/06/12/18 under it. Hover a column → tooltip plus 1.5 outline, linked to the list below. Legend sits on the section title row (10 swatch, label 12 dim, value bold 12). | ⏳ |
+| SP8 | **Hourly chart**: 24 columns, gap 4, 72 tall, stacked series in lavender steps (On = `tint::KEEP_AWAKE`, Auto = `series::util(1)`; never `GREEN`, C4) (top corners radius 3), dashed `white(26)` guides with 11 faint labels in a 36 right gutter, 00/06/12/18 under it. Hover a column → tooltip plus 1.5 outline, linked to the list below. Legend sits on the section title row (10 swatch, label 12 dim, value bold 12). | ⏳ |
 | SP9 | **Widgets**: 1:1 (scene + one word, tap toggles) and 1:2 (scene + two lines + control) only. | ⏳ |
 
 ## 12. Writing text ✅
@@ -225,12 +226,6 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 
 ---
 
-## Open conflicts (for Roman)
+## Decisions log
 
-| # | Conflict | Proposed pick |
-|---|------|---|
-| K1 | Dim under dialogs in light mode: dialogs use black 45% in both themes; the loader uses ink 24% in light. | One `SCRIM()`: black 45% dark, ink 24% light. |
-| K2 | Row hover is `white(10)` on Cleanup start, `white(12)` on the group rail and sidebar, `white(13)` r8 inset on Keep Awake, a 4 pt inset pill in popovers. | One `ROW_HOVER` = `white(10)` (already in PR #211, the value Roman saw in hover A), edge to edge in lists and popovers (H2); inset r8 only in the sidebar and rail. |
-| K5 | AI uses Monitor cyan, so AI marks look like Monitor data on Clean screens (C3). | Keep cyan as the AI colour (C15) under its own name, `AI()`. |
-| K6 | Esc closes the Uninstaller confirm but not Disk Map or Cleanup confirms. | Esc closes every dialog except while work runs. |
-| K7 | Keep Awake's chart stacks On in `GREEN` and Auto in lavender: a state colour used as a series (C4). | On = lavender, Auto = a second lavender step (`series::util(1)`). |
+2026-11-15, Roman: K1 one `SCRIM()` (P4) · K2 one `ROW_HOVER` white(10) (H1) · K3 lime glow stays (B5) · K4 heights 44/32/28 (B2) · K5 `AI()` token (C15) · K6 Esc closes every dialog except while work runs (P4) · K7 Keep Awake chart in lavender steps (SP8).
