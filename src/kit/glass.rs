@@ -2205,3 +2205,21 @@ pub fn tag(p: &Painter, pos: Pos2, align: Align2, label: &str, col: Color32) -> 
     p.galley(r.center() - g.size() / 2.0, g, col);
     r
 }
+
+/// Floating HUDs over other apps (dictation pill, brightness/volume OSD).
+/// They stay dark in both themes, so their content stays light (L5, C13).
+pub mod hud {
+    use egui::Color32;
+    /// The pill body; `a` fades it in and out.
+    pub fn bg(a: f32) -> Color32 { Color32::from_rgba_unmultiplied(24, 24, 26, (242.0 * a.clamp(0.0, 1.0)) as u8) }
+    /// The 1 pt rim.
+    pub fn edge(a: f32) -> Color32 { Color32::from_white_alpha((30.0 * a.clamp(0.0, 1.0)) as u8) }
+    /// Text and glyphs.
+    pub const INK: Color32 = Color32::from_rgba_premultiplied(214, 214, 214, 214);
+    /// Strong content (live bars, typed text).
+    pub fn strong(alpha: u8) -> Color32 { Color32::from_white_alpha(alpha) }
+    /// Done.
+    pub const OK: Color32 = Color32::from_rgb(0x94, 0xD4, 0x5A);
+    /// Needs attention.
+    pub const WARN: Color32 = Color32::from_rgb(0xF7, 0xB2, 0x67);
+}

@@ -59,7 +59,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | L2 | Light `CARD_EDGE` ink 20→31 so white cards don't merge into the sage backdrop. |
 | L3 | Hairlines and dividers use `white(HAIRLINE*)` only; never hard-coded black or white alpha. |
 | L4 | Switch off track: light ink 56 (dark 41). Inactive pager dots: light ink 72 (dark 46). |
-| L5 | Surfaces that stay dark in both themes (dictation HUD pill) use fixed light content, never theme ink. |
+| L5 | Surfaces that stay dark in both themes (dictation pill, display OSD) use `glass::hud` and fixed light content, never theme ink. |
 | L6 | Disabled or locked: alpha .45 in dark, .62 in light. |
 | L7 | A popover over a card keeps a visible edge in light mode. |
 

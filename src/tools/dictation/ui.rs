@@ -106,12 +106,12 @@ pub fn pill(d: &mut Dictation, ctx: &egui::Context) {
                 pill_working(&p, r, t, f, &levels);
             }
             Phase::Showing { note: Note::Pasted, .. } => {
-                icon(&p, Icon::Check, Rect::from_center_size(r.center(), Vec2::splat(16.0)), Color32::from_rgb(0x94, 0xD4, 0x5A));
+                icon(&p, Icon::Check, Rect::from_center_size(r.center(), Vec2::splat(16.0)), hud::OK);
             }
             Phase::Showing { note, .. } => {
                 let (glyph, col) = match note {
                     Note::Copied => (Icon::Clipboard, PILL_INK),
-                    _ => (Icon::Mic, Color32::from_rgb(0xF7, 0xB2, 0x67)),
+                    _ => (Icon::Mic, hud::WARN),
                 };
                 icon(&p, glyph, Rect::from_center_size(Pos2::new(r.left() + 18.0, cy), Vec2::splat(14.0)), col);
                 if let Some(t) = &text {
@@ -123,13 +123,13 @@ pub fn pill(d: &mut Dictation, ctx: &egui::Context) {
     });
 }
 
-// The pill floats over any app like a system HUD, so it stays dark in both
-// themes and its content stays light (the theme's ink would vanish on it).
-const PILL_INK: Color32 = Color32::from_rgba_premultiplied(214, 214, 214, 214);
+// The pill floats over any app like a system HUD: dark in both themes,
+// light content (L5).
+const PILL_INK: Color32 = hud::INK;
 
 fn pill_bg(p: &egui::Painter, r: Rect) {
-    p.rect_filled(r, r.height() / 2.0, Color32::from_rgba_unmultiplied(24, 24, 26, 242));
-    p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, Color32::from_white_alpha(30)), StrokeKind::Inside);
+    p.rect_filled(r, r.height() / 2.0, hud::bg(1.0));
+    p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, hud::edge(1.0)), StrokeKind::Inside);
 }
 
 /// The pill while it listens: a pulsing dot, the voice, the time.
@@ -138,7 +138,7 @@ fn pill_listening(p: &egui::Painter, r: Rect, t: f64, secs: f32, levels: &[f32])
     let pulse = 0.55 + 0.45 * (0.5 + 0.5 * (t * 5.0).sin()) as f32;
     p.circle_filled(Pos2::new(r.left() + 16.0, cy), 4.5, with_alpha(LIVE, pulse));
     let tr = p.text(Pos2::new(r.right() - 13.0, cy), Align2::RIGHT_CENTER, clock(secs), mono(12.0), PILL_INK);
-    bars(p, Rect::from_min_max(Pos2::new(r.left() + 28.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0)), levels, Color32::from_white_alpha(225));
+    bars(p, Rect::from_min_max(Pos2::new(r.left() + 28.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0)), levels, hud::strong(225));
 }
 
 /// The pill while the model works: like a video render, the take's bars
@@ -148,8 +148,8 @@ fn pill_working(p: &egui::Painter, r: Rect, t: f64, f: f32, levels: &[f32]) {
     spinner(p, Pos2::new(r.left() + 17.0, cy), 6.5, t, PILL_INK);
     let tr = p.text(Pos2::new(r.right() - 13.0, cy), Align2::RIGHT_CENTER, format!("{}%", (f * 100.0) as u32), mono(12.0), PILL_INK);
     let br = Rect::from_min_max(Pos2::new(r.left() + 32.0, r.top() + 8.0), Pos2::new(tr.left() - 10.0, r.bottom() - 8.0));
-    bars(p, br, levels, Color32::from_white_alpha(70));
-    bars(&p.with_clip_rect(Rect::from_min_max(Pos2::new(br.left() - 2.0, r.top()), Pos2::new(br.left() + br.width() * f, r.bottom()))), br, levels, Color32::from_white_alpha(225));
+    bars(p, br, levels, hud::strong(70));
+    bars(&p.with_clip_rect(Rect::from_min_max(Pos2::new(br.left() - 2.0, r.top()), Pos2::new(br.left() + br.width() * f, r.bottom()))), br, levels, hud::strong(225));
 }
 
 /// The voice as bars, newest on the right, mirrored around the middle.
