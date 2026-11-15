@@ -238,36 +238,41 @@ pub fn dedupe(sensors: Vec<Sensor>) -> Vec<Sensor> {
 
 // ---------------------------------------------------------------- colours
 
-/// Heat scale stops: (°C, colour).
-const HEAT: [(f32, [u8; 3]); 5] = [(30.0, [0x2F, 0x6E, 0x9E]), (50.0, [0x3F, 0xA7, 0xC4]), (68.0, [0xE3, 0xC0, 0x4A]), (82.0, [0xF0, 0x8A, 0x2C]), (95.0, [0xE5, 0x48, 0x3B])];
+/// From here a temperature is amber, then red (C12).
+pub const WARM_C: f32 = 68.0;
+pub const HOT_C: f32 = 90.0;
 
-/// Fill colour for a temperature on the heat scale.
+/// Fill colour for a temperature: three palette steps, both modes (C12).
 pub fn heat(c: f32) -> Color32 {
-    let rgb = |s: [u8; 3]| Color32::from_rgb(s[0], s[1], s[2]);
-    if c <= HEAT[0].0 {
-        return rgb(HEAT[0].1);
+    use crate::kit::glass::{tint, AMBER, RED};
+    if c >= HOT_C {
+        RED()
+    } else if c >= WARM_C {
+        AMBER()
+    } else {
+        tint::FAN()
     }
-    for w in HEAT.windows(2) {
-        let ((t0, a), (t1, b)) = (w[0], w[1]);
-        if c <= t1 {
-            let f = (c - t0) / (t1 - t0);
-            let l = |i: usize| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * f).round() as u8;
-            return Color32::from_rgb(l(0), l(1), l(2));
-        }
-    }
-    rgb(HEAT[4].1)
 }
 
-/// Readable text colour for a temperature (on dark cards).
+/// A heat-map cell: the [`heat`] step, and under [`WARM_C`] the cyan gets
+/// stronger as it warms, so a calm chip still shows which cores work.
+pub fn heat_cell(c: f32) -> Color32 {
+    if c >= WARM_C {
+        return heat(c);
+    }
+    let f = ((c - 30.0) / (WARM_C - 30.0)).clamp(0.0, 1.0);
+    crate::kit::glass::with_alpha(heat(c), 0.35 + 0.65 * f)
+}
+
+/// Text colour for a temperature: plain under [`WARM_C`], then amber, red.
 pub fn heat_text(c: f32) -> Color32 {
-    if c >= 90.0 {
-        Color32::from_rgb(0xFF, 0x6B, 0x5E)
-    } else if c >= 80.0 {
-        Color32::from_rgb(0xFF, 0xA2, 0x4D)
-    } else if c >= 68.0 {
-        Color32::from_rgb(0xF2, 0xD3, 0x6B)
+    use crate::kit::glass::{AMBER, RED, TEXT};
+    if c >= HOT_C {
+        RED()
+    } else if c >= WARM_C {
+        AMBER()
     } else {
-        Color32::from_rgb(0xF5, 0xF5, 0xF7)
+        TEXT()
     }
 }
 
@@ -409,9 +414,17 @@ mod tests {
 
     #[test]
     fn heat_scale_and_rpm_text() {
-        assert_eq!(heat(10.0), Color32::from_rgb(0x2F, 0x6E, 0x9E));
-        assert_eq!(heat(200.0), Color32::from_rgb(0xE5, 0x48, 0x3B));
-        assert_eq!(heat(68.0), Color32::from_rgb(0xE3, 0xC0, 0x4A));
+        use crate::kit::glass::{tint, AMBER, RED, TEXT};
+        assert_eq!(heat(10.0), tint::FAN());
+        assert_eq!(heat(67.9), tint::FAN());
+        assert_eq!(heat(68.0), AMBER());
+        assert_eq!(heat(200.0), RED());
+        assert_eq!(heat_text(50.0), TEXT());
+        assert_eq!(heat_text(90.0), RED());
+        // under 68 °C a cell keeps the cyan step and gets stronger as it warms
+        assert_eq!(heat_cell(30.0).a(), 89);
+        assert!(heat_cell(60.0).a() > heat_cell(40.0).a());
+        assert_eq!(heat_cell(80.0), AMBER());
         assert_eq!(rpm_text(2140.4), "2 140");
         assert_eq!(rpm_text(980.0), "980");
         assert_eq!(rpm_text(12345.0), "12 345");

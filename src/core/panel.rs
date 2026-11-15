@@ -237,7 +237,7 @@ pub fn size_chips(ui: &mut Ui, rect: Rect, id: Id, offered: &[Size], cur: Size) 
         let ok = offered.contains(&z);
         let resp = ui.interact(r, id.with(i), if ok { Sense::click() } else { Sense::hover() });
         if z == cur {
-            p.rect_filled(r, 7.0, BLUE());
+            p.rect_filled(r, 7.0, ACTION());
         } else if ok && resp.hovered() {
             p.rect_filled(r, 7.0, white(20));
         }
@@ -270,9 +270,9 @@ fn update_banner(ui: &mut Ui, r: Rect) {
     let right = r.right() - sp::M;
     let state = update::state();
     let (title, accent) = match &state {
-        State::Available(m) => (format!("Cmd+Meow {}", m.version), BLUE()),
-        State::Downloading(v, _) | State::Installing(v) => (format!("Cmd+Meow {v}"), BLUE()),
-        State::Restarting => ("Cmd+Meow".into(), BLUE()),
+        State::Available(m) => (format!("Cmd+Meow {}", m.version), ACTION()),
+        State::Downloading(v, _) | State::Installing(v) => (format!("Cmd+Meow {v}"), ACTION()),
+        State::Restarting => ("Cmd+Meow".into(), ACTION()),
         State::Failed(..) => ("Update failed".into(), RED()),
         State::Idle => return,
     };
@@ -292,7 +292,7 @@ fn update_banner(ui: &mut Ui, r: Rect) {
             let f = if let State::Downloading(_, f) = &state { *f } else { 1.0 };
             let w = 96.0;
             let b = Rect::from_min_size(Pos2::new(right - w, r.center().y - 2.0), Vec2::new(w, 4.0));
-            bar(&p, b, f, BLUE());
+            bar(&p, b, f, ACTION());
             text_right = b.left() - sp::M;
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }

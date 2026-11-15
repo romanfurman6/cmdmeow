@@ -3,7 +3,7 @@
 //! slider and curve editor) and the last 10 minutes of speed and temperature.
 
 use super::control::{speed, Mode, Preset, Settings, Source, CURVE_HI, CURVE_LO, RESUME_C};
-use super::data::{heat, heat_text, rpm_text, Fan, Snapshot, HISTORY};
+use super::data::{heat, heat_cell, heat_text, rpm_text, Fan, Snapshot, HISTORY};
 use super::{Cmd, HelperState, Live};
 use super::ui::{blades, dial, fan_name, heat_pos, heat_scale, hottest_text, is_block, plural, sparkline, thermal_hint, BLADE, HOT_LINE, LINE};
 use crate::core::tool::Cx;
@@ -384,7 +384,7 @@ fn heat_map(p: &egui::Painter, r: Rect, s: &Snapshot) {
             let ch = (cells.height() - gap * (crows as f32 - 1.0)) / crows as f32;
             for (i, c) in g.cells.iter().enumerate() {
                 let cr = Rect::from_min_size(Pos2::new(cells.left() + (i % ccols) as f32 * (cw + gap), cells.top() + (i / ccols) as f32 * (ch + gap)), Vec2::new(cw, ch));
-                p.rect_filled(cr, 3.0, heat(*c));
+                p.rect_filled(cr, 3.0, heat_cell(*c));
             }
         }
     } else {

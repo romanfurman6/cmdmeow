@@ -195,7 +195,7 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
                 let resp = ui.interact(rr, ui.scope_id().with(("gl", &it.title, &it.key)), Sense::click());
                 let sel = it.key.is_some() && it.key == app.gallery_pick;
                 if sel {
-                    p.rect_filled(rr, 7.0, BLUE());
+                    p.rect_filled(rr, 7.0, ACTION());
                 } else if resp.hovered() {
                     p.rect_filled(rr, 7.0, white(12));
                 }
@@ -495,7 +495,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
         if app.drag.is_none() && clip.contains(mb.center()) {
             let b = ui.interact(mb, id.with("hide"), Sense::click());
             p.circle_filled(mb.center() + Vec2::new(0.0, 1.5), 10.5, Color32::from_black_alpha(90));
-            p.circle_filled(mb.center(), 10.0, if b.hovered() { Color32::from_rgb(0x8E, 0x8E, 0x93) } else { Color32::from_rgb(0x6E, 0x6E, 0x73) });
+            p.circle_filled(mb.center(), 10.0, if b.hovered() { lerp_color(GRAY(), TEXT(), 0.3) } else { GRAY() });
             p.line_segment([mb.center() - Vec2::new(4.5, 0.0), mb.center() + Vec2::new(4.5, 0.0)], Stroke::new(1.8, Color32::WHITE));
             if b.on_hover_text("Hide").clicked() {
                 hide = Some(key.clone());
@@ -549,7 +549,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
     // the slot at the end
     let on_end = target == Target::Insert(None) && line.is_none();
     if on_end {
-        p.rect_filled(end, 10.0, with_alpha(BLUE(), 0.12));
+        p.rect_filled(end, 10.0, with_alpha(ACTION(), 0.12));
     }
     dashed_rect(&p, end, 10.0, if on_end { ACCENT() } else { white(40) });
     let label = if app.drag.is_some() { "Drop here to add at the end" } else { "Drag widgets here" };
@@ -667,12 +667,12 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         let hv = ui.ctx().animate_bool(resp.id, resp.hovered());
         glass_card(&p, r, R_CARD, hv, on);
         if on {
-            p.rect_stroke(r, R_CARD, Stroke::new(1.0, with_alpha(BLUE(), 0.6)), StrokeKind::Inside);
+            p.rect_stroke(r, R_CARD, Stroke::new(1.0, with_alpha(ACTION(), 0.6)), StrokeKind::Inside);
         }
         let m = Rect::from_center_size(Pos2::new(r.left() + 16.0 + 10.0, r.center().y), Vec2::splat(20.0));
         aicheck::ui::agent_mark(&p, m, a, None);
         let ready = demo || a.ready();
-        let (label, col) = if ready { ("Ready".to_string(), BLUE()) } else { (a.why_not(), TEXT_DIM()) };
+        let (label, col) = if ready { ("Ready".to_string(), GREEN()) } else { (a.why_not(), TEXT_DIM()) };
         let c = chip(&p, Pos2::new(r.right() - 16.0, r.center().y), Align2::RIGHT_CENTER, &label, (with_alpha(col, 0.16), col));
         text_fit(&p, Pos2::new(m.right() + 10.0, r.center().y), Align2::LEFT_CENTER, a.name(), bold(13.0), TEXT(), c.left() - m.right() - 20.0);
         if resp.clicked() && !on && !demo {

@@ -11,7 +11,7 @@
 
 use egui::{epaint::Mesh, Color32, Id, Painter, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use super::glass::{lerp_color, pick, white, with_alpha, BLUE, R_BUTTON};
+use super::glass::{lerp_color, pick, white, with_alpha, ACTION, DANGER, R_BUTTON};
 use super::sound::{self, Click};
 
 /// Base under a lime or red face, and how far that face sinks.
@@ -23,13 +23,6 @@ pub const KEY_DROP_QUIET: f32 = 1.0;
 /// Press down (ease-out) and release (spring) in seconds.
 pub const PRESS_IN: f32 = 0.05;
 pub const PRESS_OUT: f32 = 0.16;
-
-/// The red of destructive buttons: a true red with white text. State
-/// colour (chips, battery, error text) stays [`super::glass::RED`].
-#[allow(non_snake_case)]
-pub fn DANGER() -> Color32 {
-    pick(Color32::from_rgb(0xF0, 0x44, 0x38), Color32::from_rgb(0xD9, 0x2D, 0x20))
-}
 
 /// Opacity of a disabled control (one value for every kind).
 pub fn disabled_alpha() -> f32 {
@@ -199,10 +192,10 @@ impl Look {
 
     /// Primary and hero: lime.
     pub fn lime() -> Look {
-        Look::tint(BLUE(), 0.38, 0.26)
+        Look::tint(ACTION(), 0.38, 0.26)
     }
 
-    /// Destructive confirm: [`DANGER`].
+    /// Destructive confirm: [`DANGER`] (the state red stays `RED()`).
     pub fn danger() -> Look {
         let mut l = Look::tint(DANGER(), 0.40, 0.22);
         l.glow = Some(with_alpha(DANGER(), 0.65));

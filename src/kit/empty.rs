@@ -158,7 +158,7 @@ pub fn side_width(p: &egui::Painter, label: &str, keys: Option<&str>) -> f32 {
 /// A round on/off chip with a glyph and a label (System audio, Microphone),
 /// 32 pt. On: a lime tint with a lime edge. Returns the response and its width.
 pub fn toggle_chip(ui: &mut Ui, left: Pos2, id: Id, label: &str, on: bool, glyph: impl FnOnce(&egui::Painter, Rect, Color32)) -> (Response, f32) {
-    use crate::kit::glass::BLUE;
+    use crate::kit::glass::ACTION;
     use crate::kit::key::{self, Look};
     let p = ui.painter().clone();
     let w = toggle_width(&p, label);
@@ -166,11 +166,11 @@ pub fn toggle_chip(ui: &mut Ui, left: Pos2, id: Id, label: &str, on: bool, glyph
     let k = key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
     let look = if on {
         Look {
-            fill: with_alpha(BLUE(), 0.16),
-            fill_hover: with_alpha(BLUE(), 0.22),
-            base: with_alpha(BLUE(), 0.30),
+            fill: with_alpha(ACTION(), 0.16),
+            fill_hover: with_alpha(ACTION(), 0.22),
+            base: with_alpha(ACTION(), 0.30),
             edge: Some((with_alpha(ACCENT(), 0.45), with_alpha(ACCENT(), 0.60))),
-            ring: BLUE(),
+            ring: ACTION(),
             ..Look::quiet(0.0, 0.0)
         }
     } else {

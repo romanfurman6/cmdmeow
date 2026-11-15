@@ -155,7 +155,7 @@ pub fn claude_bin() -> Option<PathBuf> {
 
 pub fn claude_cmd(bin: &Path) -> Command {
     let mut c = Command::new(bin);
-    // a neutral working folder so no project settings or CLAUDE().md get involved
+    // a neutral working folder so no project settings or CLAUDE.md get involved
     c.current_dir(std::env::temp_dir());
     let path = std::env::var("PATH").unwrap_or_default();
     c.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{path}"));

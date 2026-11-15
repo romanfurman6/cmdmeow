@@ -180,7 +180,7 @@ fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<bool> {
     y += line_h(&p, &ty::body()) + 32.0;
     let br = Rect::from_center_size(Pos2::new(c.x, y + 22.0), Vec2::new(200.0, 44.0));
     let id = ui.scope_id().with("map-disk");
-    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(BLUE()), true, br.width());
+    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     if resp.clicked() {
         return Some(true);
     }
@@ -398,7 +398,7 @@ fn group_digits(n: u64) -> String {
 /// Colour of the top-level folder that holds `path`. Folders get their
 /// colour the first time they're drawn and keep it while the map changes.
 fn hue_of(app: &mut App, root: &Path, path: &Path) -> Color32 {
-    let Some(first) = path.strip_prefix(root).ok().and_then(|r| r.components().next()) else { return PURPLE() };
+    let Some(first) = path.strip_prefix(root).ok().and_then(|r| r.components().next()) else { return OTHER() };
     let top = root.join(first);
     let i = match app.lens_hues.iter().position(|q| *q == top) {
         Some(i) => i,
@@ -544,14 +544,14 @@ fn mapping(app: &mut App, ui: &mut Ui, r: Rect, root: &Path, rows: &[scan::LiveR
     for &(n, c, rad) in &placed {
         if keys[n] == more {
             let bytes: u64 = rest.iter().map(|x| x.bytes).sum();
-            live_bubble(&bp, c, rad, &format!("{} more", rest.len()), bytes, PURPLE(), rest.iter().any(|x| !x.done), false, now);
+            live_bubble(&bp, c, rad, &format!("{} more", rest.len()), bytes, OTHER(), rest.iter().any(|x| !x.done), false, now);
             continue;
         }
         let row = shown_rows[n];
         let hov = hot == Some(n);
-        live_bubble(&bp, c, rad, &row.name, row.bytes, BLUE(), !row.done, hov, now);
+        live_bubble(&bp, c, rad, &row.name, row.bytes, tint::DISK_MAP(), !row.done, hov, now);
         if hov {
-            hovered = Some((row, BLUE()));
+            hovered = Some((row, tint::DISK_MAP()));
             hovered_at = Some(Rect::from_center_size(c, Vec2::splat(rad * 2.0)));
         }
     }
@@ -765,8 +765,8 @@ fn bubbles(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node, here: &str, free: 
         let linked = kid.is_some_and(|kd| list_hover == Some(kd.path.as_path()));
         let on = kid.is_some_and(|kd| app.lens_selected.iter().any(|(q, _)| q == &kd.path));
         let base = match b.kind {
-            Kind::Kid(_) => BLUE(),
-            Kind::Other => PURPLE(),
+            Kind::Kid(_) => tint::DISK_MAP(),
+            Kind::Other => OTHER(),
             Kind::Free => ACCENT(),
         };
         if b.kind == Kind::Free {
