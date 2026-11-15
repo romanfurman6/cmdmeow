@@ -172,6 +172,12 @@ pub fn simulate(kind: Kind) {
     send(engine::Event::Sim(kind));
 }
 
+/// The app quits. Call on the way out.
+pub fn quit() {
+    #[cfg(target_os = "macos")]
+    mac::quit();
+}
+
 fn send(ev: engine::Event) {
     #[cfg(target_os = "macos")]
     mac::send(ev);

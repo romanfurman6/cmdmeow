@@ -990,6 +990,11 @@ fn pads_stop(devices: Vec<*mut c_void>) {
 
 // ---------------------------------------------------------------- starting
 
+/// The app quits: nothing the cat switched on may stay on.
+pub fn quit() {
+    super::slap::quit();
+}
+
 pub fn start(prefs: Prefs, status_item: *mut c_void) {
     static STARTED: AtomicBool = AtomicBool::new(false);
     if MainThreadMarker::new().is_none() || status_item.is_null() || STARTED.swap(true, Ordering::SeqCst) {
@@ -999,6 +1004,9 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
     let mut main = Main { item, over: None, big: None, big_turn: 0, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
+    if !prefs.hiss {
+        super::slap::tidy();
+    }
     main.feel(&prefs);
     MAIN.with(|m| *m.borrow_mut() = Some(main));
 

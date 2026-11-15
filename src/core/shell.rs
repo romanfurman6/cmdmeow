@@ -819,6 +819,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        crate::kit::cat::quit();
         // tools save some files in the background; let them land
         crate::kit::fs::flush_writes();
     }

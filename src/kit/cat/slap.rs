@@ -3,7 +3,7 @@
 //! and `stop` run the sensor on a thread of its own.
 
 #[cfg(target_os = "macos")]
-pub use sensor::{start, stop, woke};
+pub use sensor::{quit, start, stop, tidy, woke};
 
 /// A slap: the body jolts by this much, in g, from one reading to the next…
 pub const SLAP_G: f64 = 0.16;
@@ -170,6 +170,44 @@ mod sensor {
         }
     }
 
+    /// Kept while the sensor reports: left alone it goes on reporting to no
+    /// one, so a start that finds this knows the last run ended (crashed,
+    /// was killed) without turning it off.
+    fn marker() -> std::path::PathBuf {
+        crate::kit::fs::data_path("cat-feeling")
+    }
+
+    /// Tell the sensor how often to report, and keep the marker in step.
+    unsafe fn pace(us: i32) {
+        report_every(us);
+        if us > 0 {
+            let _ = std::fs::write(marker(), b"");
+        } else {
+            let _ = std::fs::remove_file(marker());
+        }
+    }
+
+    /// The app quits: turn the sensor off now, its thread may not get to.
+    pub fn quit() {
+        ON.store(false, Ordering::SeqCst);
+        let running = running();
+        if let Some(run_loop) = *running {
+            unsafe {
+                pace(0);
+                CFRunLoopStop(run_loop as *const c_void);
+            }
+        }
+    }
+
+    /// The app starts with slaps switched off: turn the sensor off if the
+    /// last run left it on.
+    pub fn tidy() {
+        if marker().exists() {
+            let _running = running();
+            unsafe { pace(0) };
+        }
+    }
+
     /// The Mac woke: the sensor may have lost its pace over the sleep.
     pub fn woke() {
         let running = running();
@@ -214,7 +252,7 @@ mod sensor {
             let me = run_loop as usize;
             {
                 let mut running = running();
-                report_every(EVERY_US);
+                pace(EVERY_US);
                 *running = Some(me);
             }
             // still wanted, and no newer thread took over
@@ -238,7 +276,7 @@ mod sensor {
                 // left alone, the sensor goes on reporting to no one (a
                 // start right after the stop sets its own pace)
                 if silent || !ON.load(Ordering::SeqCst) {
-                    report_every(0);
+                    pace(0);
                 }
             }
         } else if log {
