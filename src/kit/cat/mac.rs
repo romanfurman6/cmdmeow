@@ -1467,18 +1467,14 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         if let Some(closed) = lid_closed() {
             lid_is(closed);
         }
-        if !LID_CLOSED.load(Ordering::SeqCst) {
-            on_main(|m| m.doze(false));
-        }
+        on_main(|m| m.doze(false));
     });
     // the screens come back when the lid opens, asleep or not
     observe("NSWorkspaceScreensDidWakeNotification", false, || {
         if let Some(closed) = lid_closed() {
             lid_is(closed);
         }
-        if !LID_CLOSED.load(Ordering::SeqCst) {
-            on_main(|m| m.doze(false));
-        }
+        on_main(|m| m.doze(false));
     });
     // the Mac or its screens go to sleep: the cat curls up at once
     observe("NSWorkspaceWillSleepNotification", false, || on_main(|m| m.doze(true)));

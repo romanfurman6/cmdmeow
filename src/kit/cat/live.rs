@@ -418,6 +418,9 @@ struct Ptr {
     moved: f64,
     stim: f64,
     last: Option<(f64, f64, f64)>,
+    /// where the button went down, and whether the hand moved since (a drag, not a click)
+    press: (f64, f64),
+    dragged: bool,
 }
 
 const ANIMS: [&str; 13] = ["idle", "walk", "run", "sitting", "sit_tranistion_to", "sit_transition_from", "clean", "sleeping", "sleep_transition_to", "sleep_transition_from", "beg", "scratch", "jump"];
@@ -548,6 +551,13 @@ impl Live {
         self.w = w;
         self.h = h;
         self.ground = ground;
+        // the bed and the bowl stand on the new bottom at once (no fall)
+        for (t, held) in [(&mut self.bed, self.held == Some(Held::Bed)), (&mut self.bowl, self.held == Some(Held::Bowl))] {
+            if let (Some((x, _)), false) = (t.at, held) {
+                t.at = Some((x, ground.3));
+                t.vy = 0.0;
+            }
+        }
         // the screen changed size: what was at home is at home again, and
         // nothing stays off the desk
         if !me.0.is_finite() || matches!(self.mode, Mode::Away | Mode::Enter | Mode::Leave | Mode::Flee | Mode::Gone | Mode::Peek) {
@@ -671,10 +681,13 @@ impl Live {
                 self.ptr.x = x;
                 self.ptr.y = y;
                 self.ptr.on = true;
-                // what a hand holds goes with it
+                // what a hand holds goes with it (the ball once it is dragged, not on a click)
                 let (gx, gy) = self.grab;
+                if self.held.is_some() && !self.ptr.dragged && dist((x, y), self.ptr.press) > 5.0 {
+                    self.ptr.dragged = true;
+                }
                 match self.held {
-                    Some(Held::Ball) => {
+                    Some(Held::Ball) if self.ptr.dragged => {
                         self.ball.z = 40.0;
                         self.ball.x = x - gx;
                         self.ball.y = y - gy + toys::BR + 40.0;
@@ -682,7 +695,7 @@ impl Live {
                     }
                     Some(Held::Bed) => self.bed.at = Some((x - gx, y - gy)),
                     Some(Held::Bowl) => self.bowl.at = Some((x - gx, y - gy)),
-                    None => {}
+                    _ => {}
                 }
             }
             None => {
@@ -703,7 +716,16 @@ impl Live {
     fn press(&mut self, now: f64) {
         self.ptr.down_at = now;
         self.ptr.down_on_cat = self.over_cat();
-        if self.doze || !self.ptr.on || self.mode == Mode::Away {
+        self.ptr.press = (self.ptr.x, self.ptr.y);
+        self.ptr.dragged = false;
+        if !self.ptr.on || self.mode == Mode::Away {
+            return;
+        }
+        // someone clicks: the Mac is awake, whatever it said
+        if self.doze && (self.ptr.down_on_cat || self.ball.under(self.ptr.press) || self.on_bed(self.ptr.press) || self.on_bowl(self.ptr.press)) {
+            self.doze = false;
+        }
+        if self.doze {
             return;
         }
         let p = (self.ptr.x, self.ptr.y);
@@ -752,9 +774,9 @@ impl Live {
         }
         match self.held.take() {
             Some(Held::Ball) => {
-                // a throw keeps the hand's speed, and a flick up lofts it
+                // a throw keeps the hand's speed, and a flick up lofts it; a click leaves it be
                 self.ball.held = false;
-                if now - self.ptr.moved < 90.0 {
+                if self.ptr.dragged && now - self.ptr.moved < 90.0 {
                     let k = (1500.0 / self.ptr.vx.hypot(self.ptr.vy).max(1.0)).min(1.0);
                     self.ball.vx = self.ptr.vx * k;
                     self.ball.vy = self.ptr.vy * k;
@@ -2911,9 +2933,12 @@ mod tests {
         }
         assert!(slams >= 2, "{slams} slams, {jumps} jumps");
         assert!(jumps >= 1, "{slams} slams, {jumps} jumps");
-        // three clicks on the ball put it away; it goes home
+        // three clicks on the ball put it away (a click does not lift it); it goes home
+        while l.ball.speed() > 1.0 || l.ball.z > 0.0 || l.hunt.act.is_some() {
+            t = run(&mut l, t, 16.7);
+        }
+        let at = l.ball.top();
         for _ in 0..3 {
-            let at = l.ball.top();
             t = click(&mut l, t, at);
         }
         assert!(l.ball.gone > 0.0);
@@ -3056,6 +3081,30 @@ mod tests {
         l.set_area(2056.0, 1329.0, (0.0, 25.0, 2056.0, 1250.0));
         assert!(dist((l.x, l.y), l.home()) < 1.0);
         assert!(l.home().0 > 1800.0 && l.home().1 > 1200.0, "{:?}", l.home());
+        // a bed people moved stands on the new bottom too, the cat on it
+        l.set_places(Some(900.0), None);
+        let t = run(&mut l, t, 100.0);
+        (l.x, l.y) = l.home();
+        l.set_area(1496.0, 967.0, (0.0, 25.0, 1496.0, 890.0));
+        assert!((l.bed_at().1 - (890.0 - 18.0)).abs() < 0.5, "{:?}", l.bed_at());
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+        l.set_area(2056.0, 1329.0, (0.0, 25.0, 2056.0, 1250.0));
+        run(&mut l, t, 500.0);
+        assert!((l.bed_at().1 - (1250.0 - 18.0)).abs() < 0.5, "{:?}", l.bed_at());
+        assert!(dist((l.x, l.y), l.home()) < 1.0, "{:?} home {:?}", (l.x, l.y), l.home());
+    }
+
+    #[test]
+    fn a_click_on_a_cat_asleep_with_the_mac_wakes_it() {
+        let (mut l, mut t) = settled();
+        l.doze(true, t);
+        t = run(&mut l, t, 2000.0);
+        let at = middle(&l);
+        t = click(&mut l, t, at);
+        assert!(!l.doze);
+        assert_eq!(l.mode, Mode::WakeUp);
+        run(&mut l, t, 2500.0);
+        assert!(!matches!(l.mode, Mode::Lie | Mode::WakeUp), "{:?}", l.mode);
     }
 
     #[test]
