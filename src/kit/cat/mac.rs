@@ -331,14 +331,20 @@ impl Main {
         self.act(Do::React(kind));
     }
 
+    /// The desktop cat can't act this reaction out: its sound plays now.
+    fn voice_now(&mut self) {
+        if let Some((kind, n)) = self.next_voice.take() {
+            self.play(kind, n);
+        }
+    }
+
     /// Start `what`: its sheets are decoded off the main thread, then it plays.
     fn act(&mut self, what: Do) {
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(area) = screen::area(mtm) else { return };
+        let Some(area) = MainThreadMarker::new().and_then(screen::area) else { return self.voice_now() };
         if self.desk.is_none() {
-            self.desk = Desk::new(mtm);
+            self.desk = MainThreadMarker::new().and_then(Desk::new);
         }
-        let Some(d) = &self.desk else { return };
+        let Some(d) = &self.desk else { return self.voice_now() };
         let script = desk::script(what, area.size.width, d.rest, self.live);
         self.load(Some(what), script, Vec::new());
     }
@@ -358,6 +364,7 @@ impl Main {
                 } else if m.asked == ask {
                     m.doing = None;
                     m.tidying = false;
+                    m.voice_now();
                 }
             });
         });
@@ -368,9 +375,8 @@ impl Main {
         if ask != self.asked {
             return;
         }
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(area) = screen::area(mtm) else { return };
-        let Some(d) = &mut self.desk else { return };
+        let Some(area) = MainThreadMarker::new().and_then(screen::area) else { return self.voice_now() };
+        let Some(d) = &mut self.desk else { return self.voice_now() };
         let (files, paths): (Vec<_>, Vec<_>) = files.into_iter().unzip();
         let ends = d.play(area, &script, frames, files);
         if d.window().alphaValue() < 1.0 {
