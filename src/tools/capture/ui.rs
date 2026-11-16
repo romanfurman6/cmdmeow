@@ -136,7 +136,8 @@ pub fn card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + MODE_H)), &MODES, false);
     y += MODE_H + sp::M;
     // the newest images in the screenshot folder; history when it has none
-    c.refresh_files();
+    // (or there's no folder yet: picking one may make macOS ask)
+    c.refresh_files(false);
     // pictures only: recordings in the same folder are the Video widget's
     let items: Vec<Item> = if c.files.is_empty() { c.store.shots.iter().filter(|s| s.kind != Kind::Recording).take(4).map(Item::from_shot).collect() } else { c.files.iter().filter(|f| !folder::is_video(&f.path)).take(4).map(|f| Item::from_file(c, f)).collect() };
     let row = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, rect.bottom() - sp::M));
@@ -232,13 +233,14 @@ pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let first = c.tab == Tab::History && no_shots(c);
     let sub = match c.tab {
-        Tab::History if first => format!("Saving to {}", c.shown_folder()),
+        Tab::History if first => c.saving_to().map(|f| format!("Saving to {f}")).unwrap_or_default(),
         Tab::History => {
             let n = c.store.shots.iter().filter(|s| s.kind != Kind::Recording).count();
-            format!("{n} screenshot{} · {} · saving to {}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk()), c.shown_folder())
+            let to = c.saving_to().map(|f| format!(" · saving to {f}")).unwrap_or_default();
+            format!("{n} screenshot{} · {}{to}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk()))
         }
         Tab::Folder => {
-            c.refresh_files();
+            c.refresh_files(true);
             let n = c.files.len();
             let more = if n >= super::folder::LIMIT { " (newest)" } else { "" };
             format!("{n} image{}{more} in {}", if n == 1 { "" } else { "s" }, c.shown_folder())
@@ -682,6 +684,9 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
 }
 
 /// The screenshot folder: every PNG and JPG in it, newest first.
+/// Where the first save looks, in order (the hover tip on "Auto").
+const AUTO_FOLDERS: &str = "~/Documents/Screenshots, ~/Desktop/Screenshots or ~/Downloads";
+
 fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let p = ui.painter().clone();
     let x0 = body.left() + 24.0;
@@ -691,7 +696,7 @@ fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
     icons::draw(&p, Ico::Folder, Rect::from_center_size(Pos2::new(x0 + 8.0, cy), Vec2::splat(16.0)), TEXT_DIM());
     let ow = button_width(&p, "Open in Finder", BTN_SECONDARY) - 6.0;
     let or = Rect::from_min_max(Pos2::new(x1 - ow, cy - 13.0), Pos2::new(x1, cy + 13.0));
-    if pill_button(ui, or, "Open in Finder", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, or, "Open in Finder", BTN_SECONDARY, !c.settings.folder_auto()).clicked() {
         let _ = std::process::Command::new("open").arg(&c.settings.folder).spawn();
     }
     let cw = button_width(&p, "Change folder…", BTN_SECONDARY) - 6.0;
@@ -1232,7 +1237,10 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     if pill_button(ui, br, "Change…", BTN_SECONDARY, true).clicked() {
         c.choose_folder();
     }
-    text_fit(p, Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, &c.shown_folder(), mono(12.0), TEXT_DIM(), br.left() - card.left() - 90.0);
+    let shown = text_fit(p, Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, &c.shown_folder(), mono(12.0), TEXT_DIM(), br.left() - card.left() - 90.0);
+    if c.settings.folder_auto() {
+        ui.interact(shown, id.with("folder-auto"), Sense::hover()).on_hover_text(AUTO_FOLDERS);
+    }
     let ry = row_y(card, 1);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Format", font(13.0), TEXT());
     let fr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 110.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
@@ -1413,8 +1421,8 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let n = c.store.shots.iter().filter(|s| s.kind == Kind::Recording).count();
     let first = c.vtab == VTab::Recordings && n == 0 && c.rec.tray().is_none();
     let sub = match c.vtab {
-        VTab::Recordings if first => format!("Saving to {}", c.shown_folder()),
-        VTab::Recordings => format!("{n} recording{} · saving to {}", if n == 1 { "" } else { "s" }, c.shown_folder()),
+        VTab::Recordings if first => c.saving_to().map(|f| format!("Saving to {f}")).unwrap_or_default(),
+        VTab::Recordings => format!("{n} recording{}{}", if n == 1 { "" } else { "s" }, c.saving_to().map(|f| format!(" · saving to {f}")).unwrap_or_default()),
         VTab::Settings => String::new(),
     };
     let btns = page_header(&p, r, "Video", &sub, TEXT_DIM());

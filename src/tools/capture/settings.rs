@@ -128,6 +128,8 @@ pub struct Settings {
     /// Seconds the preview stays up; None keeps it until closed.
     pub preview_secs: Option<u32>,
     pub sound: bool,
+    /// Where copies are saved; empty until the first save picks one
+    /// ([`auto_folder`]) or the user does.
     pub folder: PathBuf,
     pub format: Format,
     pub keep: usize,
@@ -228,7 +230,7 @@ impl Default for Settings {
             save: true,
             preview_secs: Some(6),
             sound: false,
-            folder: crate::kit::fs::home().join("Desktop"),
+            folder: PathBuf::new(),
             format: Format::Png,
             keep: 50,
             delay: 0,
@@ -244,6 +246,11 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// No folder yet: the first save (or the Folder tab) picks one.
+    pub fn folder_auto(&self) -> bool {
+        self.folder.as_os_str().is_empty()
+    }
+
     pub fn shortcut(&self, c: Command) -> Option<&Shortcut> {
         self.shortcuts.iter().find(|(k, _)| *k == c).and_then(|(_, s)| s.as_ref())
     }
@@ -304,6 +311,31 @@ impl Settings {
     }
 }
 
+/// The folder captures go to before the user picks one: a "Screenshots"
+/// folder already in Documents or on the Desktop, else Downloads (else
+/// ~/Pictures/Screenshots, when macOS was told no). Looking in those folders
+/// makes macOS ask about them (without Full Disk Access), so this runs only
+/// when a capture is saved or the Folder tab opens: never at launch or in
+/// setup, and never on the ui thread (the question blocks the caller).
+pub fn auto_folder() -> PathBuf {
+    pick_folder(&crate::kit::fs::home(), |p| p.is_dir(), |p| std::fs::read_dir(p).is_ok())
+}
+
+fn pick_folder(home: &Path, is_dir: impl Fn(&Path) -> bool, readable: impl Fn(&Path) -> bool) -> PathBuf {
+    for base in ["Documents", "Desktop"] {
+        let p = home.join(base).join("Screenshots");
+        if is_dir(&p) {
+            return p;
+        }
+    }
+    let downloads = home.join("Downloads");
+    if readable(&downloads) {
+        downloads
+    } else {
+        home.join("Pictures").join("Screenshots")
+    }
+}
+
 /// `~/Library/Application Support/cmdmeow/capture` (the platform's data dir elsewhere).
 pub fn data_dir() -> PathBuf {
     crate::kit::fs::data_path("capture")
@@ -321,6 +353,17 @@ pub fn save(dir: &Path, s: &Settings) {
 mod tests {
     use super::*;
     use crate::kit::hotkeys::key_code;
+
+    #[test]
+    fn auto_folder_order() {
+        let h = Path::new("/Users/me");
+        let has = |dirs: &'static [&'static str]| move |p: &Path| dirs.iter().any(|d| p == h.join(d));
+        assert_eq!(pick_folder(h, has(&["Documents/Screenshots", "Desktop/Screenshots"]), |_| true), h.join("Documents/Screenshots"));
+        assert_eq!(pick_folder(h, has(&["Desktop/Screenshots"]), |_| true), h.join("Desktop/Screenshots"));
+        assert_eq!(pick_folder(h, has(&[]), |_| true), h.join("Downloads"));
+        assert_eq!(pick_folder(h, has(&[]), |_| false), h.join("Pictures/Screenshots"));
+        assert!(Settings::default().folder_auto());
+    }
 
     fn sc(key: &str) -> Shortcut {
         Shortcut { cmd: true, shift: true, alt: false, ctrl: false, key: key.into() }
