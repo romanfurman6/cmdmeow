@@ -1,6 +1,7 @@
 //! The live desktop cat on screen: a see-through window over the first
-//! screen with one Core Animation layer per part of the cat, posed each
-//! frame from `live`; and, at the desktop icons' own level, the pictures
+//! screen, on the desk under every app's window and just above the icons,
+//! with one Core Animation layer per part of the cat, posed each frame
+//! from `live`, and its things; and, at the desktop icons' own level, the pictures
 //! of the icons it pushes while they move (Finder takes over once each one
 //! comes to rest).
 
@@ -37,6 +38,7 @@ extern "C" {
     fn CGWindowLevelForKey(key: i32) -> i32;
     fn CGPreflightScreenCaptureAccess() -> bool;
     fn CGMainDisplayID() -> u32;
+    fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *const c_void;
     fn CGPathCreateMutable() -> *mut c_void;
     fn CGPathMoveToPoint(path: *mut c_void, m: *const c_void, x: f64, y: f64);
     fn CGPathAddQuadCurveToPoint(path: *mut c_void, m: *const c_void, cx: f64, cy: f64, x: f64, y: f64);
@@ -62,8 +64,9 @@ extern "C" {
 
 /// `kCGDesktopIconWindowLevelKey`
 const DESKTOP_ICONS: i32 = 18;
-/// The cat walks above the windows, as the strip did.
-const CAT_LEVEL: isize = 25;
+/// Windows from here up are the Dock, menus and the like, not apps'
+/// (`kCGDockWindowLevel`).
+const DOCK_LEVEL: i64 = 20;
 
 /// An owned `CGImage`.
 pub struct Image(pub *mut c_void);
@@ -272,8 +275,10 @@ impl Stage {
     pub fn new(mtm: MainThreadMarker, loaded: Loaded) -> Option<Stage> {
         let (live, images) = loaded;
         let (frame, ground) = first_screen(mtm)?;
-        let (window, root) = make_window(mtm, frame, CAT_LEVEL, true)?;
+        // on the desk, under every window: just above the icons (and the
+        // pictures of the icons it pushes)
         let icon_level = unsafe { CGWindowLevelForKey(DESKTOP_ICONS) } as isize + 1;
+        let (window, root) = make_window(mtm, frame, icon_level + 1, true)?;
         let (desk, droot) = make_window(mtm, frame, icon_level, false)?;
         let (patches, moved) = unsafe { (new_layer(&droot), new_layer(&droot)) };
         let (body, shadow, props, claws) = unsafe {
@@ -374,6 +379,45 @@ impl Stage {
         if over == self.through {
             self.through = !over;
             self.window.setIgnoresMouseEvents(!over);
+        }
+    }
+
+    /// An app's window lies over the cat's at `p` (first screen points,
+    /// down from its top): a click there is the app's, not the cat's.
+    pub fn covered(&self, p: (f64, f64)) -> bool {
+        let id = self.window.windowNumber();
+        if id <= 0 {
+            return false;
+        }
+        let me = std::process::id() as i64;
+        unsafe {
+            // kCGWindowListOptionOnScreenAboveWindow | kCGWindowListExcludeDesktopElements
+            let list = CGWindowListCopyWindowInfo((1 << 1) | (1 << 4), id as u32);
+            let Some(list) = (list as *const AnyObject).as_ref() else { return false };
+            let n: usize = msg_send![list, count];
+            let number = |d: &AnyObject, key: &str| -> Option<f64> {
+                let v: Option<Retained<AnyObject>> = msg_send![d, objectForKey: &*NSString::from_str(key)];
+                let v = v?;
+                let is_number: bool = msg_send![&*v, isKindOfClass: class!(NSNumber)];
+                is_number.then(|| msg_send![&*v, doubleValue])
+            };
+            let mut over = false;
+            for i in 0..n {
+                let d: Retained<AnyObject> = msg_send![list, objectAtIndex: i];
+                let layer = number(&d, "kCGWindowLayer").unwrap_or(0.0) as i64;
+                if !(0..DOCK_LEVEL).contains(&layer) || number(&d, "kCGWindowAlpha").unwrap_or(1.0) < 0.05 || number(&d, "kCGWindowOwnerPID").unwrap_or(-1.0) as i64 == me {
+                    continue;
+                }
+                let b: Option<Retained<AnyObject>> = msg_send![&*d, objectForKey: &*NSString::from_str("kCGWindowBounds")];
+                let Some(b) = b else { continue };
+                let (Some(x), Some(y), Some(w), Some(h)) = (number(&b, "X"), number(&b, "Y"), number(&b, "Width"), number(&b, "Height")) else { continue };
+                if p.0 >= x && p.0 <= x + w && p.1 >= y && p.1 <= y + h {
+                    over = true;
+                    break;
+                }
+            }
+            CFRelease(list as *const AnyObject as *const c_void);
+            over
         }
     }
 

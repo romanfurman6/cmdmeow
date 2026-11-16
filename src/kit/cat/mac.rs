@@ -138,6 +138,9 @@ struct Main {
     power: Option<(u8, bool)>,
     /// The eating sound played last.
     eaten: u8,
+    /// The button is down, and that press went to an app's window.
+    pressed: bool,
+    swallow: bool,
 }
 
 /// Something to do with the desktop cat once it is made.
@@ -462,7 +465,14 @@ impl Main {
         let (w, h) = st.size();
         let at = pointer_at().filter(|(x, y)| (0.0..=w).contains(x) && (0.0..=h).contains(y));
         // 0: the combined session state; 0: the left button
-        let down = unsafe { CGEventSourceButtonState(0, 0) };
+        let raw = unsafe { CGEventSourceButtonState(0, 0) };
+        // a press on an app's window over the cat is the app's: the cat
+        // does not feel it until the button is up again
+        if raw && !self.pressed {
+            self.swallow = at.is_some_and(|p| st.covered(p));
+        }
+        self.pressed = raw;
+        let down = raw && !self.swallow;
         st.live.pointer(at, down, now);
         let scene = st.live.tick(now);
         st.draw(&scene);
@@ -1432,6 +1442,8 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         slaps: false,
         power: None,
         eaten: 0,
+        pressed: false,
+        swallow: false,
     };
     if !prefs.hiss {
         super::slap::tidy();
