@@ -166,7 +166,9 @@ mod mac {
         // activated anew (deactivate alone didn't do it): hand activation
         // to the Dock for a moment, and the window that is opening takes it
         // back on its next frames
+        crate::kit::frame_log::note(|| format!("dock icon {}", if visible { "on" } else { "off" }));
         if visible && app.isActive() {
+            crate::kit::frame_log::note(|| "activation handed to the Dock".into());
             use objc2::runtime::AnyObject;
             use objc2::{class, msg_send};
             unsafe {

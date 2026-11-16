@@ -242,6 +242,22 @@ pub fn take_paint_counts() -> (u32, u32) {
     (p[0].swap(0, Ordering::Relaxed), p[1].swap(0, Ordering::Relaxed))
 }
 
+/// Cmd+Meow patch: have eframe report slow paints, windows covered or
+/// uncovered and focus changes, one line each, to `f`. Set once.
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(feature = "glow", feature = "wgpu_no_default_features"))]
+pub fn set_trace(f: fn(&str)) {
+    let _ = native::winit_integration::TRACE.set(f);
+}
+
+/// Cmd+Meow patch: microseconds spent painting, over all windows, since
+/// the last call (counted only once [`set_trace`] was called).
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(feature = "glow", feature = "wgpu_no_default_features"))]
+pub fn take_paint_micros() -> u64 {
+    native::winit_integration::PAINT_MICROS.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Cmd+Meow patch: paint every pass of every window for `d`, even passes
 /// that draw what is already on screen.
 #[cfg(not(target_arch = "wasm32"))]
