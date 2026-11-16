@@ -909,9 +909,11 @@ impl Capture {
         }
     }
 
-    /// Pick the folder for the user on a thread ([`settings::auto_folder`]).
+    /// No folder yet: pick it for the user on a thread
+    /// ([`settings::auto_folder`]). Only where the folder is needed or shown
+    /// (a save, a recording, the pages), never from the widget or setup.
     fn pick_folder(&mut self) {
-        if self.picking {
+        if self.picking || !self.settings.folder_auto() || self.dir.is_none() {
             return;
         }
         self.picking = true;
@@ -923,11 +925,8 @@ impl Capture {
         (!self.settings.folder_auto()).then(|| self.shown_folder())
     }
 
-    /// "Auto" until a folder is picked.
+    /// Empty while the folder is being picked.
     fn shown_folder(&self) -> String {
-        if self.settings.folder_auto() {
-            return "Auto".into();
-        }
         let home = dirs::home_dir().map(|h| h.display().to_string()).unwrap_or_default();
         let f = self.settings.folder.display().to_string();
         // sample data for screenshots lives in a temp folder
@@ -1220,12 +1219,6 @@ impl Tool for Capture {
             }
             "capture-settings" => {
                 self.tab = Tab::Settings;
-                Some(View::Page)
-            }
-            // before the first save picks the folder
-            "capture-settings-auto" => {
-                self.tab = Tab::Settings;
-                self.settings.folder = PathBuf::new();
                 Some(View::Page)
             }
             "capture-editor" => {
