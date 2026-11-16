@@ -770,6 +770,7 @@ impl App {
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::kit::repaint_log::begin(ctx);
+        crate::kit::frame_log::begin();
         crate::kit::url_scheme::after_launch();
         self.follow_links(ctx);
         // the cat's switches changed (in Settings, or it showed a reaction for the first time)
@@ -1049,6 +1050,7 @@ impl eframe::App for App {
         crate::kit::spin::drop_unflushed();
         crate::kit::viewport::end_pass();
         crate::kit::repaint_log::end();
+        crate::kit::frame_log::end(self.app_open.then(|| self.tools.get(self.page).map(|t| t.name())).flatten());
     }
 }
 

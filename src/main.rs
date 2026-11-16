@@ -27,6 +27,7 @@ mod tools;
 
 fn main() -> eframe::Result {
     kit::repaint_log::mark_start();
+    kit::frame_log::init();
     kit::sync::install_panic_log();
     // official release builds only (DSN baked in by release.yml), and only
     // after the person agreed in setup or Settings; off everywhere else

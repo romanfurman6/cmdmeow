@@ -39,6 +39,41 @@ pub fn remember_window(id: egui::ViewportId, window: &std::sync::Arc<winit::wind
 /// The app turns it off while such overlays are up.
 pub static SKIP_HIDDEN_SLEEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Cmd+Meow patch: where eframe tells the app what it saw (a slow paint, a
+/// window covered or uncovered, focus coming or going), once the app asks
+/// for it ([`crate::set_trace`]). Nothing is formatted while it's unset.
+pub static TRACE: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
+
+/// Send one line to the app's trace, if it asked for one.
+pub fn trace(line: impl FnOnce() -> String) {
+    if let Some(f) = TRACE.get() {
+        f(&line());
+    }
+}
+
+/// A paint (GPU frame, waiting for the display included) longer than this
+/// is traced.
+pub const SLOW_PAINT: core::time::Duration = core::time::Duration::from_millis(100);
+
+/// Microseconds spent painting, over all windows, since the app last asked
+/// ([`crate::take_paint_micros`]).
+pub static PAINT_MICROS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Time one paint of `window`: add it up, and trace it when slow.
+pub fn timed_paint<R>(window: &Window, paint: impl FnOnce() -> R) -> R {
+    if TRACE.get().is_none() {
+        return paint();
+    }
+    let t = std::time::Instant::now();
+    let out = paint();
+    let d = t.elapsed();
+    PAINT_MICROS.fetch_add(d.as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+    if d >= SLOW_PAINT {
+        trace(|| format!("slow paint {} ms in window {:?}", d.as_millis(), window.title()));
+    }
+    out
+}
+
 pub fn sleep_if_invisible_or_minimized(window: Option<&Window>) {
     if !SKIP_HIDDEN_SLEEP.load(std::sync::atomic::Ordering::Relaxed) && window.is_some_and(is_invisible_or_minimized) {
         profiling::scope!("minimized_sleep");
