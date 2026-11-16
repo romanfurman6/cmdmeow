@@ -360,11 +360,14 @@ fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     let mut io = run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
     io.push_str(&run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
     devices::merge(&mut list, &devices::parse_ioreg(&io));
+    // read Bluetooth before taking the store lock (IOBluetooth can be slow,
+    // and forgetting a device from the UI takes the same lock)
+    let (adverts, extra) = (super::ble::adverts(), super::ble::extra());
     let mut st = bt_store().lock_ok();
     // AirPods that are with the iPhone come under a passing address: name
     // them as the known pair before anything is matched or remembered
     st.seen.identify(&mut list);
-    devices::merge_extra(&mut list, &profile.paired_pods, &super::ble::adverts(), &super::ble::extra());
+    devices::merge_extra(&mut list, &profile.paired_pods, &adverts, &extra);
     let now = devices::now();
     let mut history_changed = false;
     for d in &list {
