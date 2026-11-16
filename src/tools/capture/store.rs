@@ -198,16 +198,14 @@ pub fn save_copy_png(png: &[u8], img: Option<&RgbaImage>, settings: &Settings, t
 }
 
 /// A free file name for a new copy in the user's folder.
-/// No folder yet: the first save picks it ([`super::settings::auto_folder`]).
 fn copy_path(settings: &Settings, t: chrono::DateTime<chrono::Local>) -> Result<PathBuf, String> {
-    let dir = if settings.folder_auto() { super::settings::auto_folder() } else { settings.folder.clone() };
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&settings.folder).map_err(|e| e.to_string())?;
     let name = settings.file_name(t);
-    let mut path = dir.join(&name);
+    let mut path = settings.folder.join(&name);
     let mut n = 2;
     while path.exists() {
         let stem = name.trim_end_matches(&format!(".{}", settings.format.ext()));
-        path = dir.join(format!("{stem} {n}.{}", settings.format.ext()));
+        path = settings.folder.join(format!("{stem} {n}.{}", settings.format.ext()));
         n += 1;
     }
     Ok(path)

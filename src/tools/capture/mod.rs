@@ -32,7 +32,7 @@ use grab::Grab;
 use image::RgbaImage;
 use settings::{Command, Settings};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
 use store::{Kind, Store};
@@ -82,9 +82,6 @@ enum Done {
     Saved(Option<u64>, Result<PathBuf, String>, bool),
     Thumb(u64, Option<egui::ColorImage>),
     Folder(Option<PathBuf>),
-    /// The folder picked for the user ([`settings::auto_folder`]); None
-    /// when it couldn't be picked without macOS asking.
-    AutoFolder(Option<PathBuf>),
     Files(PathBuf, Vec<folder::FileShot>),
 }
 
@@ -158,9 +155,6 @@ pub struct Capture {
     files: Vec<folder::FileShot>,
     files_at: Option<Instant>,
     files_busy: bool,
-    /// The folder is being picked; then this command runs.
-    picking: bool,
-    after_pick: Option<(Command, u32)>,
     tab: Tab,
     vtab: VTab,
     /// Which of the two tools are on: Screenshot (`shot_on`) and Video.
@@ -238,8 +232,6 @@ impl Capture {
             files: Vec::new(),
             files_at: None,
             files_busy: false,
-            picking: false,
-            after_pick: None,
             tab: Tab::History,
             vtab: VTab::Recordings,
             shot_on: true,
@@ -259,12 +251,6 @@ impl Capture {
             has_secret: if env.demo { Some(false) } else { None },
         };
         c.apply_keys();
-        // with Full Disk Access macOS never asks: pick the folder now, so
-        // Settings shows it
-        if c.dir.is_some() && c.settings.folder_auto() {
-            c.picking = true;
-            c.in_background(|| Some(Done::AutoFolder((crate::kit::perms::Perm::FullDisk.status() == crate::kit::perms::Status::Allowed).then(settings::auto_folder))));
-        }
         c
     }
 
@@ -378,13 +364,6 @@ impl Capture {
                 cx.open_page(ID, "history");
             }
             Command::Record => {
-                // the file needs its folder before recording starts; macOS
-                // may ask about it first
-                if self.rec.idle() && self.settings.folder_auto() {
-                    self.after_pick = Some((Command::Record, 0));
-                    self.pick_folder();
-                    return;
-                }
                 if self.rec.idle() {
                     cx.push(Action::HidePanel);
                     self.preview = None;
@@ -620,7 +599,6 @@ impl Capture {
             Done::Note(msg) => self.hud(msg),
             Done::Saved(id, r, announce) => match r {
                 Ok(path) => {
-                    self.adopt_folder(&path);
                     if let Some(id) = id {
                         self.store.set_saved(id, path.clone());
                     }
@@ -655,23 +633,6 @@ impl Capture {
                 self.files_at = None;
             }
             Done::Folder(None) => {}
-            Done::AutoFolder(p) => {
-                self.picking = false;
-                self.files_busy = false;
-                self.files_at = None;
-                if let Some(p) = p.filter(|_| self.settings.folder_auto()) {
-                    self.settings.folder = p;
-                    self.save_settings();
-                }
-                if !self.settings.folder_auto() {
-                    if let Some(c) = self.after_pick.take() {
-                        self.queue.push(c);
-                    }
-                } else if self.after_pick.is_some() {
-                    // the quiet check at launch found nothing: pick for real
-                    self.pick_folder();
-                }
-            }
             Done::Files(dir, files) => {
                 self.files_busy = false;
                 if dir == self.settings.folder {
@@ -886,7 +847,6 @@ impl Capture {
     fn save_image(&mut self, id: Option<u64>, img: &RgbaImage) -> Option<PathBuf> {
         match store::save_copy(img, &self.settings, chrono::Local::now()) {
             Ok(path) => {
-                self.adopt_folder(&path);
                 if let Some(id) = id {
                     self.store.set_saved(id, path.clone());
                 }
@@ -900,34 +860,7 @@ impl Capture {
         }
     }
 
-    /// The first save picked the folder: keep it.
-    fn adopt_folder(&mut self, saved: &Path) {
-        if let Some(dir) = saved.parent().filter(|_| self.settings.folder_auto()) {
-            self.settings.folder = dir.to_path_buf();
-            self.save_settings();
-            self.files_at = None;
-        }
-    }
-
-    /// Pick the folder for the user on a thread ([`settings::auto_folder`]).
-    fn pick_folder(&mut self) {
-        if self.picking {
-            return;
-        }
-        self.picking = true;
-        self.in_background(|| Some(Done::AutoFolder(Some(settings::auto_folder()))));
-    }
-
-    /// The folder for "saving to …", once there is one.
-    fn saving_to(&self) -> Option<String> {
-        (!self.settings.folder_auto()).then(|| self.shown_folder())
-    }
-
-    /// "Auto" until a folder is picked.
     fn shown_folder(&self) -> String {
-        if self.settings.folder_auto() {
-            return "Auto".into();
-        }
         let home = dirs::home_dir().map(|h| h.display().to_string()).unwrap_or_default();
         let f = self.settings.folder.display().to_string();
         // sample data for screenshots lives in a temp folder
@@ -942,16 +875,7 @@ impl Capture {
     }
 
     /// Re-read the screenshot folder when the list is a few seconds old.
-    /// Without a folder yet, `pick` picks one (macOS may ask about it), else
-    /// the list stays empty: the widget never makes macOS ask.
-    fn refresh_files(&mut self, pick: bool) {
-        if self.settings.folder_auto() {
-            if pick {
-                self.files_busy = true;
-                self.pick_folder();
-            }
-            return;
-        }
+    fn refresh_files(&mut self) {
         if self.files_busy || self.files_at.is_some_and(|t| t.elapsed().as_secs_f32() < 3.0) {
             return;
         }
@@ -1220,12 +1144,6 @@ impl Tool for Capture {
             }
             "capture-settings" => {
                 self.tab = Tab::Settings;
-                Some(View::Page)
-            }
-            // before the first save picks the folder
-            "capture-settings-auto" => {
-                self.tab = Tab::Settings;
-                self.settings.folder = PathBuf::new();
                 Some(View::Page)
             }
             "capture-editor" => {
