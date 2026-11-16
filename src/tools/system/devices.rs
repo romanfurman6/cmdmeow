@@ -116,18 +116,36 @@ impl Device {
     /// The key settings, the cache and the history use: the address, or
     /// the name when there's none.
     pub fn key(&self) -> String {
-        if self.address.is_empty() {
+        if self.address.is_empty() || self.rotating() {
             self.name.to_lowercase()
         } else {
             self.address.clone()
         }
     }
-    /// The same physical device (by address, or else by name).
+    /// The same physical device: by address, or else by name. A device
+    /// whose address rotates is matched by kind and name only.
     pub fn same(&self, o: &Device) -> bool {
+        if self.rotating() || o.rotating() {
+            return self.kind == o.kind && same_name(&self.name, &o.name);
+        }
         if !self.address.is_empty() && !o.address.is_empty() {
             return self.address == o.address;
         }
         self.name.eq_ignore_ascii_case(&o.name)
+    }
+    /// Apple earbuds or headphones listed without a product id: macOS sees
+    /// them over Bluetooth LE only (they're with the iPhone, not connected
+    /// to this Mac) under a private address that changes about every 15
+    /// minutes. That address doesn't say which pair it is; the name does.
+    pub fn rotating(&self) -> bool {
+        self.product == 0 && matches!(self.kind, Kind::Earbuds | Kind::Headphones) && is_apple_audio(&self.name)
+    }
+    /// Take the identity (address, product id, name) of the known device
+    /// this rotating one is.
+    pub fn adopt(&mut self, known: &Device) {
+        self.address = known.address.clone();
+        self.product = known.product;
+        self.name = known.name.clone();
     }
     pub fn live(&self) -> bool {
         self.seen.is_none()
@@ -270,6 +288,24 @@ pub fn lowest_first(devs: &[Device]) -> Vec<Device> {
         Some(t) => (1, u64::MAX - t),
     });
     v
+}
+
+/// AirPods and Beats.
+fn is_apple_audio(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.contains("airpods") || n.contains("beats")
+}
+
+/// The same name, ignoring case, or one is the other with the owner's name
+/// in front ("Roman's AirPods Pro", "AirPods Pro").
+pub fn same_name(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b) || ends_with_name(a, b) || ends_with_name(b, a)
+}
+
+/// `long` ends with `short` as whole words, ignoring case ("Roman's AirPods Max", "AirPods Max").
+pub fn ends_with_name(long: &str, short: &str) -> bool {
+    let (l, sh) = (long.to_lowercase(), short.to_lowercase());
+    l != sh && l.ends_with(&sh) && l[..l.len() - sh.len()].ends_with([' ', '\u{a0}'])
 }
 
 fn norm_addr(a: &str) -> String {
@@ -501,11 +537,7 @@ pub fn merge_extra(list: &mut Vec<Device>, paired_pods: &[Device], adverts: &[Po
         // the connected pair of this model; macOS sometimes reports no
         // product id for it, so a lone connected pair without one counts too
         // (Apple's only: other earbuds must never take a stranger's advert)
-        let apple = |d: &Device| {
-            let n = d.name.to_lowercase();
-            n.contains("airpods") || n.contains("beats")
-        };
-        let unknown: Vec<usize> = (0..list.len()).filter(|&i| list[i].kind == Kind::Earbuds && list[i].product == 0 && list[i].live() && apple(&list[i])).collect();
+        let unknown: Vec<usize> = (0..list.len()).filter(|&i| list[i].kind == Kind::Earbuds && list[i].product == 0 && list[i].live() && is_apple_audio(&list[i].name)).collect();
         let conn = list.iter().position(|d| d.product == a.model && d.kind == Kind::Earbuds && d.live()).or(match unknown[..] {
             [i] => Some(i),
             _ => None,
