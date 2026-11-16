@@ -120,6 +120,12 @@ struct Main {
     quiet: Instant,
     /// A tidy is on its way (asking Finder, or carrying files).
     tidying: bool,
+    /// The sound of the reaction about to play, for the desktop cat to
+    /// start at its moment (`desk::Script::voice`).
+    next_voice: Option<(Kind, u8)>,
+    /// The desktop cat's purr is on: it ends as the cat uncurls, not when
+    /// the hand goes.
+    desk_purr: bool,
     /// Where Finder showed each file of the tidy, so Put back can lay it there again.
     spots: Vec<(PathBuf, f64, f64)>,
     seed: u32,
@@ -307,10 +313,21 @@ impl Main {
         }
     }
 
-    /// A reaction began: the desktop cat acts it out.
-    fn react(&mut self, kind: Kind) {
+    /// A reaction began: the desktop cat acts it out, with sound `n`. One
+    /// already under way plays to its end (a second slap does not start
+    /// the scare over); only a slap cuts into another reaction.
+    fn react(&mut self, kind: Kind, n: u8) {
+        if let Some(Do::React(now)) = self.doing {
+            if now == kind || kind != Kind::Hiss {
+                if log() {
+                    eprintln!("[cat] {} waits: {} is under way", kind.slug(), now.slug());
+                }
+                return;
+            }
+        }
         self.quiet = Instant::now();
         self.tidying = false;
+        self.next_voice = Some((kind, n));
         self.act(Do::React(kind));
     }
 
@@ -362,6 +379,26 @@ impl Main {
         self.rest_next = script.rest;
         self.doing = what;
         let turn = d.turn;
+        // the sound goes with the picture: at the frame where it happens
+        let voice = self.next_voice.take().filter(|(k, _)| what == Some(Do::React(*k)));
+        if matches!(what, Some(Do::React(_))) {
+            self.desk_purr = false;
+            self.stop_voice();
+            if let Some(old) = self.fading.take() {
+                let _: bool = unsafe { msg_send![&*old, stop] };
+            }
+        }
+        if let (Some((kind, n)), Some(at)) = (voice, script.voice) {
+            later(Duration::from_secs_f64(at as f64 / desk::FPS), move |m| {
+                if m.desk.as_ref().is_some_and(|d| d.turn == turn) {
+                    if log() {
+                        eprintln!("[cat] sound {} {n} at frame {at}", kind.slug());
+                    }
+                    m.play(kind, n);
+                    m.desk_purr = kind == Kind::Purr;
+                }
+            });
+        }
         // each file goes into the box folder as it starts to fall
         for f in &script.fetch {
             let Some(path) = paths.get(f.file).cloned() else { continue };
@@ -385,12 +422,15 @@ impl Main {
 
     /// The act is over: back to rest in the corner, or off the screen.
     fn over(&mut self, turn: u32) {
-        let Some(d) = &mut self.desk else { return };
-        if d.turn != turn {
+        if self.desk.as_ref().is_none_or(|d| d.turn != turn) {
             return;
         }
         self.doing = None;
         self.tidying = false;
+        if std::mem::take(&mut self.desk_purr) {
+            self.hush();
+        }
+        let Some(d) = &mut self.desk else { return };
         let rest = if self.live { self.rest_next } else { Rest::Away };
         if rest != Rest::Away {
             let Some(area) = MainThreadMarker::new().and_then(screen::area) else { return };
@@ -413,9 +453,15 @@ impl Main {
 
     /// The reaction is over: a held act (the purr) plays its way out.
     fn desk_end(&mut self) {
-        if let Some(secs) = self.desk.as_mut().filter(|d| d.holding()).and_then(|d| d.end()) {
-            self.over_in(secs);
-        }
+        let Some((wait, secs)) = self.desk.as_mut().filter(|d| d.holding()).and_then(|d| d.end()) else { return };
+        self.over_in(secs);
+        // the purr fades as the cat uncurls
+        let Some(turn) = self.desk.as_ref().map(|d| d.turn) else { return };
+        later(Duration::from_secs_f64(wait), move |m| {
+            if m.desk.as_ref().is_some_and(|d| d.turn == turn) && std::mem::take(&mut m.desk_purr) {
+                m.hush();
+            }
+        });
     }
 
     /// The cat moves in to its corner, or out of the screen.
@@ -578,6 +624,14 @@ impl Main {
     fn stop_voice(&mut self) {
         if let Some((sound, _)) = self.voice.take() {
             let _: bool = unsafe { msg_send![&*sound, stop] };
+        }
+    }
+
+    /// The rules say the purr is over. The desktop cat's purr waits for
+    /// the cat to uncurl (`desk_end`).
+    fn hush_asked(&mut self) {
+        if !self.desk_purr {
+            self.hush();
         }
     }
 
@@ -1369,7 +1423,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
     let (tx, rx) = mpsc::channel();
     *TX.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
     let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(1);
-    let main = Main { item, over: None, desk: None, live: false, doing: None, rest_next: Rest::Away, asked: 0, quiet: Instant::now(), tidying: false, spots: Vec::new(), seed: seed | 1, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
+    let main = Main { item, over: None, desk: None, live: false, doing: None, rest_next: Rest::Away, asked: 0, quiet: Instant::now(), tidying: false, next_voice: None, desk_purr: false, spots: Vec::new(), seed: seed | 1, voice: None, fading: None, buzz_turn: 0, buzzing: false, pads: Vec::new(), slaps: false };
     if !prefs.hiss {
         super::slap::tidy();
     }
@@ -1482,14 +1536,17 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
         cmds.extend(cat.tick(now));
         // a reaction began (each one starts with its sound): the desktop cat
         // acts it out when it is to show
-        let began = cmds.iter().rev().find_map(|c| if let Cmd::Sound { kind, .. } = c { Some(*kind) } else { None });
+        let began = cmds.iter().rev().find_map(|c| if let Cmd::Sound { kind, n } = c { Some((*kind, *n)) } else { None });
+        // the desktop cat plays the sound itself, at the moment it happens
+        let desk_shows = began.is_some() && cat.big();
         for cmd in cmds {
             if log() {
                 eprintln!("[cat] → {cmd:?}");
             }
             match cmd {
+                Cmd::Sound { .. } if desk_shows => {}
                 Cmd::Sound { kind, n } => on_main(move |m| m.play(kind, n)),
-                Cmd::Hush => on_main(|m| m.hush()),
+                Cmd::Hush => on_main(|m| m.hush_asked()),
                 Cmd::Buzz(on) => on_main(move |m| m.buzz(on)),
                 Cmd::Big(true) => {}
                 Cmd::Big(false) => on_main(|m| m.desk_end()),
@@ -1498,8 +1555,8 @@ fn run(rx: Receiver<Event>, mut cat: Engine, mut watch: bool) {
                 }
             }
         }
-        if let Some(kind) = began.filter(|_| cat.big()) {
-            on_main(move |m| m.react(kind));
+        if let Some((kind, n)) = began.filter(|_| desk_shows) {
+            on_main(move |m| m.react(kind, n));
         }
         // a pointer resting on a cat that lives on screen
         if let Some(rect) = *HOT.lock().unwrap_or_else(|e| e.into_inner()) {
