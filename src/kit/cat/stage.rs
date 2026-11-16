@@ -67,6 +67,8 @@ const DESKTOP_ICONS: i32 = 18;
 /// Windows from here up are the Dock, menus and the like, not apps'
 /// (`kCGDockWindowLevel`).
 const DOCK_LEVEL: i64 = 20;
+/// Owners of system windows that lie over the desk but are not apps.
+const SYSTEM: [&str; 5] = ["Dock", "Window Server", "WindowManager", "Control Center", "Notification Center"];
 
 /// An owned `CGImage`.
 pub struct Image(pub *mut c_void);
@@ -395,6 +397,12 @@ impl Stage {
             let list = CGWindowListCopyWindowInfo((1 << 1) | (1 << 4), id as u32);
             let Some(list) = (list as *const AnyObject).as_ref() else { return false };
             let n: usize = msg_send![list, count];
+            let text = |d: &AnyObject, key: &str| -> Option<String> {
+                let v: Option<Retained<AnyObject>> = msg_send![d, objectForKey: &*NSString::from_str(key)];
+                let v = v?;
+                let is_text: bool = msg_send![&*v, isKindOfClass: class!(NSString)];
+                is_text.then(|| Retained::cast_unchecked::<NSString>(v).to_string())
+            };
             let number = |d: &AnyObject, key: &str| -> Option<f64> {
                 let v: Option<Retained<AnyObject>> = msg_send![d, objectForKey: &*NSString::from_str(key)];
                 let v = v?;
@@ -406,6 +414,10 @@ impl Stage {
                 let d: Retained<AnyObject> = msg_send![list, objectAtIndex: i];
                 let layer = number(&d, "kCGWindowLayer").unwrap_or(0.0) as i64;
                 if !(0..DOCK_LEVEL).contains(&layer) || number(&d, "kCGWindowAlpha").unwrap_or(1.0) < 0.05 || number(&d, "kCGWindowOwnerPID").unwrap_or(-1.0) as i64 == me {
+                    continue;
+                }
+                // the system's own overlays (the Dock's "show desktop" one) are not apps
+                if text(&d, "kCGWindowOwnerName").is_some_and(|o| SYSTEM.contains(&o.as_str())) {
                     continue;
                 }
                 let b: Option<Retained<AnyObject>> = msg_send![&*d, objectForKey: &*NSString::from_str("kCGWindowBounds")];

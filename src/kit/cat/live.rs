@@ -541,9 +541,24 @@ impl Live {
 
     /// The screen's size and where the cat may walk (the usable area, above the Dock).
     pub fn set_area(&mut self, w: f64, h: f64, ground: (f64, f64, f64, f64)) {
+        if ground == self.ground && w == self.w && h == self.h {
+            return;
+        }
+        let (was_home, me) = (self.home(), (self.x, self.y));
         self.w = w;
         self.h = h;
         self.ground = ground;
+        // the screen changed size: what was at home is at home again, and
+        // nothing stays off the desk
+        if !me.0.is_finite() || matches!(self.mode, Mode::Away | Mode::Enter | Mode::Leave | Mode::Flee | Mode::Gone | Mode::Peek) {
+            return;
+        }
+        if dist(me, was_home) < 30.0 {
+            (self.x, self.y) = self.home();
+        } else {
+            (self.x, self.y) = (self.clamp_x(me.0), self.clamp_y(me.1));
+        }
+        self.roam_to = (self.clamp_x(self.roam_to.0), self.clamp_y(self.roam_to.1));
     }
 
     /// Where people last left the bed and the bowl (from the left; they
@@ -788,7 +803,7 @@ impl Live {
         if self.held.is_some() {
             return true;
         }
-        if !self.ptr.on || self.mode == Mode::Away || self.doze {
+        if !self.ptr.on || self.mode == Mode::Away {
             return false;
         }
         let p = (self.ptr.x, self.ptr.y);
@@ -1562,6 +1577,13 @@ impl Live {
         // three clicks on the cat: the yarn ball
         if self.clicks.len() >= 3 && !matches!(self.mode, Mode::Tidy | Mode::Away) {
             self.start_ball(now);
+        }
+        // asleep with the Mac, wherever it got to: it curls up there
+        if self.doze && matches!(self.mode, Mode::Sit | Mode::Wash | Mode::Roam | Mode::Hello | Mode::Beg | Mode::Eat | Mode::Ball) {
+            self.stop_all();
+            self.hunt.act = None;
+            self.set_mode(Mode::Lie, now);
+            self.go("sleeping", 300.0, now);
         }
         let need = self.need();
         // a pointer held on the cat pets it
@@ -3010,6 +3032,30 @@ mod tests {
         run_out(&mut l, t, 3500.0, &mut out);
         assert_eq!(voices(&out, Kind::Hello), 1);
         assert!(!matches!(l.mode, Mode::Lie | Mode::WakeUp), "{:?}", l.mode);
+    }
+
+    #[test]
+    fn asleep_before_it_came_it_lies_down_once_home() {
+        let mut l = live();
+        l.doze(true, 0.0);
+        l.set_lives(true, 0.0);
+        let t = run(&mut l, 0.0, 8000.0);
+        assert_eq!(l.mode, Mode::Lie);
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+        l.doze(false, t);
+        run(&mut l, t, 5000.0);
+        assert!(!matches!(l.mode, Mode::Lie | Mode::WakeUp), "{:?}", l.mode);
+    }
+
+    #[test]
+    fn a_new_screen_size_keeps_it_on_its_bed() {
+        let (mut l, t) = settled();
+        l.lie_down(Mode::Lie, t);
+        l.set_area(1496.0, 967.0, (0.0, 25.0, 1496.0, 890.0));
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+        l.set_area(2056.0, 1329.0, (0.0, 25.0, 2056.0, 1250.0));
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+        assert!(l.home().0 > 1800.0 && l.home().1 > 1200.0, "{:?}", l.home());
     }
 
     #[test]

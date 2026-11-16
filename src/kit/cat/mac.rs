@@ -410,9 +410,6 @@ impl Main {
         if let Some((pct, plugged)) = self.power {
             st.live.power(pct, plugged);
         }
-        if LID_CLOSED.load(Ordering::SeqCst) {
-            st.live.doze(true, now_ms());
-        }
         st.live.set_lives(self.live, now_ms());
         self.shown = true;
         self.refit_at = now_ms() + REFIT_EVERY;
@@ -1107,8 +1104,10 @@ fn lid_is(closed: bool) {
         if log() {
             eprintln!("[cat] lid {}", if closed { "closed" } else { "open" });
         }
-        on_main(move |m| m.doze(closed));
+        // a closed lid with a monitor on is a Mac at work: the cat sleeps
+        // when the Mac does (below), and the lid opening wakes it
         if !closed {
+            on_main(|m| m.doze(false));
             send(Event::LidOpen);
         }
     }
