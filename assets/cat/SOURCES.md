@@ -14,3 +14,12 @@ own licences, not this repository's.
 
 - Pixabay Content License: https://pixabay.com/service/license-summary/
 - Mixkit Sound Effects Free License: https://mixkit.co/license/#sfxFree
+
+`tap-1`, `tap-2` are made here (a short filtered knock), not recorded.
+
+# The desktop cat
+
+`rig/` is the skeleton, its animations and part pictures from the
+"Cat game character pack" by GDS (bought under its commercial licence),
+recoloured; `rig.json` is a compact export of its Spriter file.
+`rig/bowl.webp` is drawn for this app.

@@ -5,26 +5,33 @@
 //!
 //! - `face`: what the cat looks like in each mood, as plain drawing.
 //! - `engine`: which mood it is in and what it does next, as plain rules.
-//! - `desk`: what the desktop cat does for each reaction, frame by frame.
-//! - `screen`: the desktop cat's window, played with Core Animation.
-//! - `mac`: the menu bar icon, the desktop cat, the sounds and what the Mac
-//!   feels (trackpad, power, wake, lid, pointer).
+//! - `rig`: the desktop cat's skeleton and its animations, posed at any time.
+//! - `live`: the desktop cat's mind and body: what it does from moment to
+//!   moment, the pointer it plays with, the desktop icons it pushes.
+//! - `grid`: Finder's desktop grid, read from where its icons lie.
+//! - `stage`: the desktop cat's windows, one Core Animation layer a part,
+//!   and the pictures of the icons while they move.
+//! - `mac`: the menu bar icon, the sounds, Finder and what the Mac feels
+//!   (trackpad, power, wake, lid, pointer).
 //! - `slap`: which jolts of the body are slaps, and the sensor that feels
 //!   them.
 //!
-//! Nothing here draws with egui or asks it for frames: the cat has its own
-//! thread, which sleeps until something moves.
+//! Nothing here draws with egui or asks it for frames: the menu bar face
+//! has its own thread, which sleeps until something moves, and the desktop
+//! cat a timer that fires only while it is on screen.
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
-mod desk;
 mod engine;
 pub mod face;
+mod grid;
+mod live;
 #[cfg(target_os = "macos")]
 mod mac;
-#[cfg(target_os = "macos")]
-mod screen;
+mod rig;
 mod slap;
+#[cfg(target_os = "macos")]
+mod stage;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -117,7 +124,7 @@ pub struct Prefs {
     /// The eyes follow the pointer.
     pub watch: bool,
     pub show: Show,
-    /// The tidy shortcut carries the desktop's files into a folder.
+    /// The tidy shortcut: the cat pushes the desktop icons into Finder's grid.
     pub tidy: bool,
     /// Reactions the big cat has shown already (their slugs).
     pub seen: Vec<String>,
@@ -185,20 +192,20 @@ pub fn tidy_shortcut() -> crate::kit::hotkeys::Shortcut {
     crate::kit::hotkeys::Shortcut { cmd: true, shift: false, alt: true, ctrl: true, key: "T".into() }
 }
 
-/// Puts the last tidy's files back where they were.
+/// Puts the last tidy's icons back where they were.
 pub const PUT_BACK_KEYS: &str = "⇧⌃⌥⌘T";
 pub fn put_back_shortcut() -> crate::kit::hotkeys::Shortcut {
     crate::kit::hotkeys::Shortcut { shift: true, ..tidy_shortcut() }
 }
 
-/// The put back shortcut was pressed: the last tidy's files go back.
+/// The put back shortcut was pressed: the last tidy's icons go back.
 pub fn put_back() {
     #[cfg(target_os = "macos")]
     mac::put_back();
 }
 
-/// The tidy shortcut was pressed: the cat carries the desktop's files
-/// into a folder (main thread).
+/// The tidy shortcut was pressed: the cat pushes the desktop icons into
+/// Finder's grid (main thread).
 pub fn tidy() {
     #[cfg(target_os = "macos")]
     mac::tidy();
