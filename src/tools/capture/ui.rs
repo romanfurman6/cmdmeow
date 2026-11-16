@@ -230,8 +230,6 @@ fn only_recordings(shots: &[Shot]) -> bool {
 }
 
 pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
-    // the page shows the folder: pick it now (macOS may ask about it)
-    c.pick_folder();
     let p = ui.painter().clone();
     let first = c.tab == Tab::History && no_shots(c);
     let sub = match c.tab {
@@ -686,6 +684,9 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
 }
 
 /// The screenshot folder: every PNG and JPG in it, newest first.
+/// Where the first save looks, in order (the hover tip on "Auto").
+const AUTO_FOLDERS: &str = "~/Documents/Screenshots, ~/Desktop/Screenshots or ~/Downloads";
+
 fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let p = ui.painter().clone();
     let x0 = body.left() + 24.0;
@@ -1236,7 +1237,10 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     if pill_button(ui, br, "Change…", BTN_SECONDARY, true).clicked() {
         c.choose_folder();
     }
-    text_fit(p, Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, &c.shown_folder(), mono(12.0), TEXT_DIM(), br.left() - card.left() - 90.0);
+    let shown = text_fit(p, Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, &c.shown_folder(), mono(12.0), TEXT_DIM(), br.left() - card.left() - 90.0);
+    if c.settings.folder_auto() {
+        ui.interact(shown, id.with("folder-auto"), Sense::hover()).on_hover_text(AUTO_FOLDERS);
+    }
     let ry = row_y(card, 1);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Format", font(13.0), TEXT());
     let fr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 110.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
@@ -1413,7 +1417,6 @@ fn video_card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
 
 /// The Video page: recordings, or the recording settings.
 pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
-    c.pick_folder();
     let p = ui.painter().clone();
     let n = c.store.shots.iter().filter(|s| s.kind == Kind::Recording).count();
     let first = c.vtab == VTab::Recordings && n == 0 && c.rec.tray().is_none();
