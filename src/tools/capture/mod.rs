@@ -643,6 +643,7 @@ impl Capture {
             Done::Files(dir, files) => {
                 self.files_busy = false;
                 if dir == self.settings.folder {
+                    self.folder_ok = true;
                     self.files = files;
                     self.files_at = Some(Instant::now());
                     self.forget_dropped_thumbs();
@@ -909,7 +910,7 @@ impl Capture {
     fn folder_known(&mut self) -> bool {
         if !self.folder_ok {
             let dir = &self.settings.folder;
-            self.folder_ok = self.files_at.is_some() || self.store.shots.iter().any(|s| s.saved.as_deref().is_some_and(|p| p.starts_with(dir)));
+            self.folder_ok = self.store.shots.iter().any(|s| s.saved.as_deref().is_some_and(|p| p.starts_with(dir)));
         }
         if self.folder_ok {
             return true;
@@ -1214,6 +1215,10 @@ mod tests {
         // the demo folder is a temp folder: nothing to ask about
         assert!(c.folder_known());
         c.settings.folder = crate::kit::fs::home().join("Desktop");
+        if !crate::kit::fs::behind_folder_prompt(&c.settings.folder) {
+            // Full Disk Access on this machine: macOS never asks
+            return;
+        }
         c.folder_ok = false;
         c.folder_check = None;
         c.files_at = None;
