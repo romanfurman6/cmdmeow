@@ -257,16 +257,6 @@ pub fn load(script: &Script) -> Option<Frames> {
     Some(frames)
 }
 
-/// Seconds from `t` (since the act began) to where its loop next starts
-/// again: the end of the intro, or of the round under way.
-pub fn until_loop_ends(t: f64, intro: f64, hold: f64) -> f64 {
-    if t < intro || hold <= 0.0 {
-        return (intro - t).max(0.0);
-    }
-    let into = (t - intro) % hold;
-    hold - into
-}
-
 /// A one-pixel clear picture.
 fn clear_pixel() -> Option<*mut c_void> {
     unsafe {
@@ -507,7 +497,7 @@ impl Desk {
         let outro = std::mem::take(&mut self.outro);
         let frames = self.frames.as_ref()?;
         let now = unsafe { CACurrentMediaTime() };
-        let wait = until_loop_ends(now - self.began, self.intro_secs, self.hold_secs);
+        let wait = desk::until_loop_ends(now - self.began, self.intro_secs, self.hold_secs);
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];

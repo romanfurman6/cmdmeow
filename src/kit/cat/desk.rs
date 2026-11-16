@@ -245,6 +245,22 @@ impl Script {
     }
 }
 
+/// Seconds from `t` (since an act began) to where its held loop next
+/// starts again: the end of the intro, or of the round under way. Within
+/// half a frame of a start counts as that start.
+pub fn until_loop_ends(t: f64, intro: f64, hold: f64) -> f64 {
+    let close = 0.5 / FPS;
+    if t < intro || hold <= 0.0 {
+        return (intro - t).max(0.0);
+    }
+    let into = (t - intro) % hold;
+    if into < close {
+        0.0
+    } else {
+        hold - into
+    }
+}
+
 /// Where the cat sits on a screen `width` points wide.
 pub fn home(width: f64) -> f64 {
     (width - HOME_IN).max(width / 2.0)
@@ -552,6 +568,17 @@ mod tests {
         }
         // getting up from the corner comes first, in silence
         assert!(at(Kind::Hiss, Rest::Sit).1 > 0);
+    }
+
+    #[test]
+    fn a_held_act_ends_where_its_loop_starts_again() {
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(near(until_loop_ends(0.3, 1.0, 1.6), 0.7), "still in the intro");
+        assert!(near(until_loop_ends(1.0, 1.0, 1.6), 0.0), "right at the loop's start");
+        assert!(near(until_loop_ends(2.6, 1.0, 1.6), 0.0), "right at a later round's start");
+        assert!(near(until_loop_ends(2.6 + 0.01, 1.0, 1.6), 0.0), "within half a frame of it");
+        assert!(near(until_loop_ends(1.5, 1.0, 1.6), 1.1), "mid-round: to its end");
+        assert!(near(until_loop_ends(5.0, 1.0, 0.0), 0.0), "nothing held");
     }
 
     #[test]
