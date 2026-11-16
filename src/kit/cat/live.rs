@@ -1,9 +1,10 @@
 //! The desktop cat, alive: what it wants and does, frame by frame, on the
-//! skeleton of `rig`. It looks at the pointer, swipes at it with its claws
-//! out, gets bored, washes, lies down, is scared by a slap from whatever it
-//! was doing, purrs under a held pointer, races about after three clicks,
-//! and tidies the desktop by pushing the real icons with its nose and paw
-//! into Finder's grid.
+//! skeleton of `rig`. It looks at the pointer and plays with it, walks
+//! about the desk on its own, gets bored, washes, lies down, is scared by a
+//! slap from whatever it was doing, purrs under a held pointer, hunts the
+//! pointer after three clicks (a pounce from afar, a paw slammed on it up
+//! close), and tidies the desktop by pushing the real icons with its nose
+//! and paw into Finder's grid.
 //!
 //! Pure: points down from the top left of the screen, milliseconds. The
 //! Mac side feeds it the pointer and what the Mac felt, and draws the
@@ -58,8 +59,10 @@ pub enum Out {
     Tap { soft: bool },
     /// A held pointer on the cat: the purr starts or stops.
     Purr(bool),
-    /// It races off (three clicks), or comes to tidy.
+    /// It comes to tidy.
     Mew,
+    /// A chirp: the hunt starts, or it caught the pointer.
+    Chirp,
 }
 
 /// One part to draw: its picture, where (an affine map from the picture's
@@ -97,7 +100,10 @@ enum Mode {
     Pet,
     Tidy,
     WalkHome,
-    Zoom,
+    /// after the pointer (three clicks), or a little play where it sits
+    Hunt,
+    /// a walk to somewhere else on the desk
+    Roam,
     Eat,
     Beg,
     Hello,
@@ -166,6 +172,33 @@ impl Swipe {
     }
 }
 
+/// What the hunt does now: a pounce (the jump) or a paw slammed down (the scratch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Act {
+    Jump,
+    Slam,
+}
+
+#[derive(Default)]
+struct Hunt {
+    until: f64,
+    act: Option<Act>,
+    t0: f64,
+    from: (f64, f64),
+    to: (f64, f64),
+    hit: bool,
+    rest: f64,
+    caught: u32,
+    last_jump: f64,
+    /// a little play from where it sits: no pounce, a few seconds
+    short: bool,
+}
+
+/// Where the paw comes down in the scratch (at 0.47 of it) and where the
+/// front paws land in the jump (from 0.8), ahead of and above the feet.
+const SLAM: (f64, f64) = (106.0, 10.0);
+const LAND: (f64, f64) = (28.0, 6.0);
+
 struct Mind {
     interest: f64,
     bored: f64,
@@ -177,6 +210,8 @@ struct Mind {
     swish: f64,
     yawn: f64,
     last_swipe: f64,
+    next_roam: f64,
+    turned: f64,
 }
 
 struct Tidy {
@@ -223,7 +258,8 @@ pub struct Live {
     scare: f64,
     scare_t0: f64,
     petting: bool,
-    zoom: (u32, f64),
+    hunt: Hunt,
+    roam_to: (f64, f64),
     sw: Swipe,
     look: (f64, f64, f64),
     nudge_t0: f64,
@@ -255,12 +291,14 @@ struct Ptr {
     down_at: f64,
     down_on_cat: bool,
     v: f64,
+    vx: f64,
+    vy: f64,
     moved: f64,
     stim: f64,
     last: Option<(f64, f64, f64)>,
 }
 
-const ANIMS: [&str; 12] = ["idle", "walk", "run", "sitting", "sit_tranistion_to", "sit_transition_from", "clean", "sleeping", "sleep_transition_to", "sleep_transition_from", "beg", "scratch"];
+const ANIMS: [&str; 13] = ["idle", "walk", "run", "sitting", "sit_tranistion_to", "sit_transition_from", "clean", "sleeping", "sleep_transition_to", "sleep_transition_from", "beg", "scratch", "jump"];
 
 fn anim(name: &str) -> &'static str {
     ANIMS.iter().find(|a| **a == name).copied().unwrap_or("idle")
@@ -334,11 +372,12 @@ impl Live {
             mode: Mode::Away,
             mode_t0: 0.0,
             until: 0.0,
-            mind: Mind { interest: 0.0, bored: 0.0, quiet: 0.0, next_idle: 2500.0, glance: None, ear: -1e9, ear_side: 1.0, swish: -1e9, yawn: -1e9, last_swipe: -1e9 },
+            mind: Mind { interest: 0.0, bored: 0.0, quiet: 0.0, next_idle: 2500.0, glance: None, ear: -1e9, ear_side: 1.0, swish: -1e9, yawn: -1e9, last_swipe: -1e9, next_roam: 20000.0, turned: -1e9 },
             scare: 0.0,
             scare_t0: -1e9,
             petting: false,
-            zoom: (0, 0.0),
+            hunt: Hunt { last_jump: -1e9, ..Hunt::default() },
+            roam_to: (0.0, 0.0),
             sw: Swipe::default(),
             look: (0.0, 0.0, 0.0),
             nudge_t0: -1e9,
@@ -402,14 +441,19 @@ impl Live {
             Some((x, y)) => {
                 if let Some((lx, ly, lt)) = self.ptr.last {
                     if now > lt {
-                        let v = (x - lx).hypot(y - ly) / ((now - lt) / 1000.0);
+                        let s = (now - lt) / 1000.0;
+                        let (vx, vy) = ((x - lx) / s, (y - ly) / s);
+                        let v = vx.hypot(vy);
                         self.ptr.v = self.ptr.v * 0.6 + v * 0.4;
+                        self.ptr.vx = self.ptr.vx * 0.5 + vx * 0.5;
+                        self.ptr.vy = self.ptr.vy * 0.5 + vy * 0.5;
                         if v > 60.0 {
                             self.ptr.moved = now;
                         }
+                        // any move it can see draws it in; a quick one near it most
                         let d = (x - self.x).hypot(y - (self.y - 60.0));
-                        if d.is_finite() {
-                            self.ptr.stim += (v / 900.0).min(1.0) * (1.0 - d / 650.0).max(0.0) * 0.25 * ((now - lt) / 16.7).min(3.0);
+                        if d.is_finite() && v > 15.0 {
+                            self.ptr.stim += (0.35 + 0.65 * (v / 700.0).min(1.0)) * (1.0 - d / 900.0).max(0.0) * 0.3 * ((now - lt) / 16.7).min(3.0);
                         }
                     }
                 }
@@ -461,7 +505,7 @@ impl Live {
     /// A hand on the trackpad (or a held pointer): it curls up and purrs.
     pub fn pet(&mut self, on: bool, now: f64) {
         if on {
-            if matches!(self.mode, Mode::Scare | Mode::Zoom | Mode::Tidy | Mode::Leave) {
+            if matches!(self.mode, Mode::Scare | Mode::Hunt | Mode::Tidy | Mode::Leave) {
                 return;
             }
             if self.mode == Mode::Away {
@@ -483,7 +527,7 @@ impl Live {
         if self.mode == Mode::Away {
             return self.enter(now);
         }
-        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Zoom) {
+        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Hunt) {
             return;
         }
         self.stop_all();
@@ -495,7 +539,7 @@ impl Live {
 
     /// On the charger: it eats from its bowl.
     pub fn eat(&mut self, now: f64) {
-        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Zoom) {
+        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Hunt) {
             return;
         }
         if self.mode == Mode::Away {
@@ -508,7 +552,7 @@ impl Live {
 
     /// The battery is low: it begs.
     pub fn beg(&mut self, now: f64) {
-        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Zoom) {
+        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Hunt) {
             return;
         }
         if self.mode == Mode::Away {
@@ -1092,23 +1136,14 @@ impl Live {
         if !self.x.is_finite() {
             self.place_home();
         }
-        self.mind.interest = (self.mind.interest + self.ptr.stim - dt / 1000.0 * 0.22).clamp(0.0, 1.0);
+        self.mind.interest = (self.mind.interest + self.ptr.stim - dt / 1000.0 * 0.12).clamp(0.0, 1.0);
         self.ptr.stim = 0.0;
         self.mind.bored = (self.mind.bored - dt / 1000.0 * 0.09).max(0.0);
         if self.mind.interest > 0.3 {
             self.mind.quiet = now;
         }
-        if self.clicks.len() >= 3 && !matches!(self.mode, Mode::Zoom | Mode::Tidy | Mode::Away) {
-            self.clicks.clear();
-            if self.petting {
-                self.petting = false;
-                self.out.push(Out::Purr(false));
-            }
-            self.stop_all();
-            self.set_mode(Mode::Zoom, now);
-            self.go("run", 140.0, now);
-            self.zoom = (0, now + 6500.0);
-            self.out.push(Out::Mew);
+        if self.clicks.len() >= 3 && !matches!(self.mode, Mode::Tidy | Mode::Away) && !(self.mode == Mode::Hunt && !self.hunt.short) {
+            self.start_hunt(now, false);
         }
         // a pointer held on the cat pets it
         if self.ptr.down && self.ptr.down_on_cat && now - self.ptr.down_at > 350.0 && !self.petting && matches!(self.mode, Mode::Sit | Mode::Lie | Mode::Wash) {
@@ -1139,9 +1174,16 @@ impl Live {
             }
             Mode::Sit => {
                 let keen = self.mind.interest > 0.5 && self.mind.bored < 0.75 && now - self.ptr.moved < 600.0;
-                let gap = self.rnd(300.0, 700.0);
-                if self.sw.phase.is_none() && reachy && keen && now - self.mind.last_swipe > gap {
-                    self.swipe(now, false, None, None, 0.0, false);
+                // a pointer played with close by: it goes for it (no pounce)
+                if self.sw.phase.is_none() && keen && self.ptr.on && dist((self.ptr.x, self.ptr.y), (self.x, self.y)) < 330.0 && now - self.mind.last_swipe > 900.0 {
+                    self.start_hunt(now, true);
+                    return self.turn(dt);
+                }
+                // the pointer behind it: it turns round to face it
+                let side = (self.ptr.x - self.x).signum();
+                if self.sw.phase.is_none() && self.ptr.on && self.mind.interest > 0.3 && (self.ptr.x - self.x).abs() > 60.0 && side != self.dir && now - self.mind.turned > 700.0 {
+                    self.dir = side;
+                    self.mind.turned = now;
                 }
                 if self.sw.phase.is_none() && self.mind.bored >= 0.75 && self.mind.interest > 0.2 {
                     // had enough: looks away, and maybe washes or lies down
@@ -1156,6 +1198,15 @@ impl Live {
                         self.set_mode(Mode::Lie, now);
                         self.go("sleeping", 600.0, now);
                     }
+                }
+                // now and then it gets up and walks somewhere else on the desk
+                if self.lives && self.sw.phase.is_none() && self.mind.interest < 0.2 && now > self.mind.next_roam {
+                    self.mind.next_roam = now + self.rnd(25000.0, 60000.0);
+                    let g = self.ground;
+                    let (rx, ry) = (self.rnd(g.0 + (g.2 - g.0) * 0.1, g.0 + (g.2 - g.0) * 0.9), self.rnd(g.1 + (g.3 - g.1) * 0.2, g.1 + (g.3 - g.1) * 0.95));
+                    self.roam_to = (self.clamp_x(rx), self.clamp_y(ry));
+                    self.set_mode(Mode::Roam, now);
+                    return self.turn(dt);
                 }
                 if self.sw.phase.is_none() && self.mind.interest < 0.3 && now > self.mind.next_idle {
                     self.idle(now);
@@ -1226,34 +1277,14 @@ impl Live {
                     self.sit_down(180.0, now);
                 }
             }
-            Mode::Zoom => {
-                let tired = now > self.zoom.1 || self.zoom.0 >= 6;
-                let goal = if tired {
-                    o
-                } else if self.ptr.on {
-                    (self.clamp_x(self.ptr.x), self.clamp_y(self.ptr.y + 50.0))
-                } else {
-                    let y = self.rnd(self.h * 0.45, self.h * 0.85);
-                    (if self.zoom.0 % 2 == 1 { self.w * 0.15 } else { self.w * 0.85 }, self.clamp_y(y))
-                };
-                if self.sw.phase.is_none() {
-                    if dist(goal, (self.x, self.y)) < 18.0 {
-                        if tired {
-                            self.dir = -1.0;
-                            self.sit_down(180.0, now);
-                            self.mind.bored = 0.8;
-                        } else {
-                            self.swipe(now, true, None, None, 0.0, false);
-                            self.zoom.0 += 1;
-                            self.go("idle", 120.0, now);
-                        }
-                    } else {
-                        let d0 = self.dir;
-                        self.walk_to(goal, dt, !tired, now);
-                        if self.dir != d0 {
-                            self.zoom.0 += 1;
-                        }
-                    }
+            Mode::Hunt => self.hunt_think(now, dt),
+            Mode::Roam => {
+                if self.mind.interest > 0.6 {
+                    self.set_mode(Mode::Sit, now);
+                    self.go("idle", 200.0, now);
+                } else if self.walk_to(self.roam_to, dt, dist(self.roam_to, (self.x, self.y)) > 500.0, now) {
+                    self.sit_down(200.0, now);
+                    self.mind.quiet = now + self.rnd(4000.0, 14000.0);
                 }
             }
         }
@@ -1288,8 +1319,173 @@ impl Live {
         if self.mind.glance.is_some_and(|g| now > g.2) {
             self.mind.glance = None;
         }
+        self.turn(dt);
+    }
+
+    /// The body turns towards where it faces.
+    fn turn(&mut self, dt: f64) {
         let want = self.want_flip();
         self.flip += (want - self.flip).signum() * (want - self.flip).abs().min(dt / 70.0);
+    }
+
+    fn anim_ms(&self, name: &str) -> f64 {
+        self.rig.anims.get(name).map_or(1000.0, |a| a.len) / Self::rate(name)
+    }
+
+    /// Three clicks: it goes after the pointer for a while. `short`: a
+    /// little play from where it sits, no pounce.
+    fn start_hunt(&mut self, now: f64, short: bool) {
+        self.clicks.clear();
+        if self.petting {
+            self.petting = false;
+            self.out.push(Out::Purr(false));
+        }
+        self.stop_all();
+        self.set_mode(Mode::Hunt, now);
+        self.hunt = Hunt { until: now + if short { 3500.0 } else { 15000.0 }, short, last_jump: self.hunt.last_jump, ..Hunt::default() };
+        if !short {
+            self.go("run", 140.0, now);
+            self.out.push(Out::Chirp);
+        }
+        self.mind.interest = 1.0;
+    }
+
+    fn caught(&mut self, now: f64) {
+        self.hunt.caught += 1;
+        self.hunt.rest = now + 650.0;
+        self.mind.ear = now;
+        self.mind.ear_side = 1.0;
+        self.out.push(Out::Chirp);
+    }
+
+    fn hunt_think(&mut self, now: f64, dt: f64) {
+        let p = (self.ptr.x, self.ptr.y);
+        match self.hunt.act {
+            Some(Act::Jump) => {
+                // airborne from 0.27 to 0.8 of the jump, front paws down by 0.85
+                let t = (now - self.hunt.t0) / self.anim_ms("jump");
+                let e = ease((t - 0.27) / 0.53);
+                let (f, to) = (self.hunt.from, self.hunt.to);
+                self.x = f.0 + (to.0 - f.0) * e;
+                self.y = f.1 + (to.1 - f.1) * e;
+                if !self.hunt.hit && t > 0.8 {
+                    self.hunt.hit = true;
+                    if self.ptr.on && dist(p, (self.x + LAND.0 * self.dir, self.y - LAND.1)) < 48.0 {
+                        self.caught(now);
+                    } else {
+                        self.hunt.rest = now + 200.0;
+                    }
+                }
+                if t >= 0.9 {
+                    self.hunt.act = None;
+                    self.go("idle", 140.0, now);
+                }
+                return;
+            }
+            Some(Act::Slam) => {
+                let t = (now - self.hunt.t0) / self.anim_ms("scratch");
+                // through the wind-up it shuffles so the paw comes down on the pointer
+                if t < 0.45 && self.ptr.on {
+                    let step = 160.0 * dt / 1000.0;
+                    let f = self.hunt.from;
+                    let (wx, wy) = (p.0 - self.dir * SLAM.0 - self.x, p.1 + SLAM.1 - self.y);
+                    self.x = self.clamp_x((self.x + wx.clamp(-step, step)).clamp(f.0 - 36.0, f.0 + 36.0));
+                    self.y = self.clamp_y((self.y + wy.clamp(-step, step)).clamp(f.1 - 14.0, f.1 + 14.0));
+                }
+                if !self.hunt.hit && t > 0.47 {
+                    self.hunt.hit = true;
+                    if self.ptr.on && dist(p, (self.x + SLAM.0 * self.dir, self.y - SLAM.1)) < 42.0 {
+                        self.caught(now);
+                    }
+                }
+                if t >= 0.72 {
+                    self.hunt.act = None;
+                    self.go("idle", 160.0, now);
+                    self.hunt.rest = self.hunt.rest.max(now + 150.0);
+                }
+                return;
+            }
+            None => {}
+        }
+        if now < self.hunt.rest {
+            self.go("idle", 140.0, now);
+            return;
+        }
+        if now > self.hunt.until || self.hunt.caught >= 4 || !self.ptr.on {
+            if self.hunt.short {
+                self.set_mode(Mode::Sit, now);
+                self.go("idle", 200.0, now);
+                self.mind.last_swipe = now + 1500.0;
+                self.mind.bored = (self.mind.bored + 0.3).min(1.0);
+            } else {
+                self.set_mode(Mode::WalkHome, now + 700.0);
+                self.mind.bored = 0.8;
+            }
+            return;
+        }
+        // a still pointer is dead prey: it watches it, then loses interest
+        let still = now - self.ptr.moved;
+        if self.hunt.caught > 0 && still > 1200.0 {
+            self.go("idle", 160.0, now);
+            if still > 3500.0 {
+                self.hunt.until = 0.0;
+            }
+            return;
+        }
+        let dir = if p.0 != self.x { (p.0 - self.x).signum() } else { self.dir };
+        // in front and in paw range: a slam from where it stands
+        let (rx, ry) = ((p.0 - self.x) * dir, p.1 - (self.y - SLAM.1));
+        if rx > 74.0 && rx < 138.0 && ry.abs() < 32.0 {
+            self.dir = dir;
+            self.go("idle", 120.0, now);
+            if self.turned(0.3) {
+                self.hunt.act = Some(Act::Slam);
+                self.hunt.t0 = now;
+                self.hunt.hit = false;
+                self.hunt.from = (self.x, self.y);
+                self.go("scratch", 70.0, now);
+            }
+            return;
+        }
+        // right under its nose: a step back first, still facing it
+        if rx > -10.0 && rx <= 74.0 && ry.abs() < 50.0 && self.turned(0.3) && dir == self.dir {
+            self.go("idle", 120.0, now);
+            self.x = self.clamp_x(self.x - dir * 90.0 * dt / 1000.0);
+            return;
+        }
+        let lead = ((self.ptr.vx * 0.25).clamp(-120.0, 120.0), (self.ptr.vy * 0.25).clamp(-80.0, 80.0));
+        let slam_at = (self.clamp_x(p.0 - dir * SLAM.0), self.clamp_y(p.1 + SLAM.1));
+        let d = dist(slam_at, (self.x, self.y));
+        if d < 26.0 {
+            self.dir = dir;
+            self.go("idle", 120.0, now);
+            if self.turned(0.3) {
+                self.hunt.act = Some(Act::Slam);
+                self.hunt.t0 = now;
+                self.hunt.hit = false;
+                self.hunt.from = (self.x, self.y);
+                self.go("scratch", 70.0, now);
+            }
+            return;
+        }
+        // from afar: a pounce to where the pointer is going
+        let land_at = (self.clamp_x(p.0 + lead.0 - dir * LAND.0), self.clamp_y(p.1 + lead.1 + LAND.1));
+        let dj = dist(land_at, (self.x, self.y));
+        if !self.hunt.short && dj > 90.0 && dj < 280.0 && now - self.hunt.last_jump > 1100.0 {
+            self.dir = dir;
+            self.go("idle", 100.0, now);
+            if self.turned(0.3) {
+                self.hunt.act = Some(Act::Jump);
+                self.hunt.t0 = now;
+                self.hunt.hit = false;
+                self.hunt.from = (self.x, self.y);
+                self.hunt.to = land_at;
+                self.hunt.last_jump = now;
+                self.go("jump", 60.0, now);
+            }
+            return;
+        }
+        self.walk_to(slam_at, dt, !self.hunt.short && d > 110.0, now);
     }
 
     // ---------------------------------------------------------------- the pose
@@ -1347,7 +1543,7 @@ impl Live {
         } else if let Some((gx, gy, _)) = self.mind.glance {
             let g = self.to_world((gx, gy), o);
             tgt = Some((g.0 * fl, g.1));
-        } else if self.ptr.on && ((self.mind.interest > 0.22 && !matches!(self.mode, Mode::Lie | Mode::Pet)) || self.sw.phase.is_some() || self.mode == Mode::Hello) {
+        } else if self.ptr.on && (((self.mind.interest > 0.08 || now - self.ptr.moved < 1500.0) && !matches!(self.mode, Mode::Lie | Mode::Pet)) || self.sw.phase.is_some() || self.mode == Mode::Hello) {
             tgt = Some(p);
         }
         let (mut la, mut lx, mut ly) = (0.0, 0.0, 0.0);
@@ -1356,8 +1552,8 @@ impl Live {
             let d = vx.hypot(vy).max(1.0);
             let elev = vy.atan2(vx.abs() + 300.0);
             la = (-elev / D2R * 0.85).clamp(-26.0, 26.0);
-            if self.mind.interest < 0.45 && self.mind.glance.is_none() && self.sw.phase.is_none() && focus.is_none() && self.mode != Mode::Hello {
-                la *= 0.3;
+            if self.mind.interest < 0.15 && self.mind.glance.is_none() && self.sw.phase.is_none() && focus.is_none() && self.mode != Mode::Hello {
+                la *= 0.5;
             }
             lx = vx / d * 10.0;
             ly = vy / d * 7.0;
@@ -1470,6 +1666,11 @@ impl Live {
         }
         self.sw.w += (if tt.is_some() { w } else { 0.0 } - self.sw.w) * (dt / 16.0).min(1.0);
         self.sw.claws = claws;
+        // claws out as the paw comes down on the pointer
+        if self.mode == Mode::Hunt && self.hunt.act == Some(Act::Slam) {
+            let t = (now - self.hunt.t0) / self.anim_ms("scratch");
+            self.sw.claws = self.sw.claws.max(ease((t - 0.38) / 0.08) * (1.0 - ease((t - 0.64) / 0.06)));
+        }
         if let Some(t) = tt.filter(|_| self.sw.w > 0.01) {
             wd = self.reach_for(&l, &fix0, t, (s0, e, wr), (l1, l2), paw_tilt);
         }
@@ -1526,7 +1727,7 @@ impl Live {
             self.set_eyes(&mut wd, self.closed);
         }
         // the pupils open wide when it hunts
-        let hunting = matches!(self.mode, Mode::Sit | Mode::Zoom | Mode::Tidy);
+        let hunting = matches!(self.mode, Mode::Sit | Mode::Hunt | Mode::Tidy);
         let dil = 1.0 + 0.28 * (self.mind.interest * if hunting { 1.0 } else { 0.0 }).max(crouch).max(if focus.is_some() { 0.6 } else { 0.0 });
         if dil > 1.01 {
             for k in 0..wd.objs.len() {
@@ -1786,24 +1987,101 @@ mod tests {
         assert!(matches!(l.mode, Mode::Sit | Mode::SitDown), "{:?}", l.mode);
     }
 
+    /// Clicks it three times where it sits; returns the time after.
+    fn three_clicks(l: &mut Live, t: f64) -> f64 {
+        let (x0, y0, x1, y1) = l.bounds.unwrap();
+        let at = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let mut t = t;
+        for _ in 0..3 {
+            l.pointer(Some(at), true, t);
+            t = run(l, t, 50.0);
+            l.pointer(Some(at), false, t);
+            t = run(l, t, 100.0);
+        }
+        t
+    }
+
+    /// Runs it with the pointer at `at(t)` each frame.
+    fn run_with(l: &mut Live, t: f64, ms: f64, at: &dyn Fn(f64) -> (f64, f64)) -> f64 {
+        let mut t = t;
+        let end = t + ms;
+        while t < end {
+            t += 16.7;
+            l.pointer(Some(at(t)), false, t);
+            let _ = l.tick(t);
+        }
+        t
+    }
+
     #[test]
-    fn three_clicks_on_it_and_it_races_about_then_comes_back() {
+    fn three_clicks_and_it_pounces_on_a_still_pointer_then_goes_home() {
         let mut l = live();
         l.set_lives(true, 0.0);
         let mut t = run(&mut l, 0.0, 6000.0);
-        let (x0, y0, x1, y1) = l.bounds.unwrap();
-        let at = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-        for _ in 0..3 {
-            l.pointer(Some(at), true, t);
-            t = run(&mut l, t, 50.0);
-            l.pointer(Some(at), false, t);
-            t = run(&mut l, t, 100.0);
+        t = three_clicks(&mut l, t);
+        assert_eq!(l.mode, Mode::Hunt);
+        assert!(l.take().contains(&Out::Chirp));
+        // a still pointer up and to the left: it runs there and pounces
+        let at = (l.x - 420.0, l.y - 260.0);
+        let mut jumped = false;
+        let end = t + 6000.0;
+        while t < end {
+            t = run_with(&mut l, t, 16.7, &|_| at);
+            jumped |= l.hunt.act == Some(Act::Jump);
+            if l.hunt.caught > 0 {
+                break;
+            }
         }
-        assert_eq!(l.mode, Mode::Zoom);
-        l.pointer(None, false, t);
-        t = run(&mut l, t, 12000.0);
+        assert!(jumped, "no pounce");
+        assert_eq!(l.hunt.caught, 1, "missed: cat at {:?}, pointer {:?}", (l.x, l.y), at);
+        // dead prey: it loses interest and walks back to its corner
+        l.mind.next_roam = f64::INFINITY;
+        run_with(&mut l, t, 16000.0, &|_| at);
         assert!(matches!(l.mode, Mode::Sit | Mode::SitDown), "{:?}", l.mode);
-        let _ = t;
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+    }
+
+    #[test]
+    fn a_pointer_wiggled_in_front_of_it_gets_the_paw() {
+        let mut l = live();
+        l.set_lives(true, 0.0);
+        let mut t = run(&mut l, 0.0, 6000.0);
+        t = three_clicks(&mut l, t);
+        let (x, y) = (l.x - 300.0, l.y - 120.0);
+        let (mut slams, mut caught) = (0, 0);
+        let mut last = None;
+        let end = t + 8000.0;
+        while t < end {
+            t = run_with(&mut l, t, 16.7, &|t| (x + 14.0 * (t / 70.0).sin(), y + 6.0 * (t / 90.0).cos()));
+            if l.hunt.act == Some(Act::Slam) && last != Some(Act::Slam) {
+                slams += 1;
+            }
+            last = l.hunt.act;
+            caught = caught.max(l.hunt.caught);
+        }
+        assert!(slams >= 2, "{slams} slams");
+        assert!(caught >= 2, "caught {caught}");
+    }
+
+    #[test]
+    fn it_walks_about_the_desk_on_its_own_and_sits_there() {
+        let mut l = live();
+        l.set_lives(true, 0.0);
+        let t = run(&mut l, 0.0, 6000.0);
+        l.pointer(None, false, t);
+        let mut t = t;
+        let mut roamed = false;
+        let end = t + 40000.0;
+        while t < end {
+            t = run(&mut l, t, 100.0);
+            roamed |= l.mode == Mode::Roam;
+            if roamed && l.mode == Mode::Sit {
+                break;
+            }
+        }
+        assert!(roamed, "never roamed");
+        assert_eq!(l.mode, Mode::Sit);
+        assert!(dist((l.x, l.y), l.roam_to) < 1.0);
     }
 
     #[test]

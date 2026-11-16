@@ -242,7 +242,8 @@ pub fn blend<'a>(a: &Local<'a>, b: &Local<'a>, w: f64) -> Local<'a> {
         .iter()
         .zip(&a.st)
         .map(|(q, p)| match (p, q) {
-            (_, None) => None,
+            (None, None) => None,
+            (Some(p), None) => Some(*p),
             (None, Some(q)) => Some(*q),
             (Some(p), Some(q)) => {
                 let base = if w < 0.5 { p } else { q };

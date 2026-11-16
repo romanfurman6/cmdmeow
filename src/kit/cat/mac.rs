@@ -478,6 +478,7 @@ impl Main {
                 }
                 Out::Purr(false) => self.hush(),
                 Out::Mew => self.play(Kind::Hungry, 1),
+                Out::Chirp => self.play(Kind::Hello, 1),
             }
         }
         let rested = !placed.is_empty();

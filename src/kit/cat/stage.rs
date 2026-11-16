@@ -407,23 +407,24 @@ impl Stage {
             return;
         }
         self.claws_k = k;
-        // the paw picture's y runs down; the layer's up
+        // three hooked claws out of the toes, along the bottom of the paw
+        // picture at its front end; the picture's y runs down, the layer's up
         let (w, h) = (iw, ih);
-        let len = h * 0.28 * k;
+        let (len, b) = (h * 0.22 * k, w * 0.016);
+        let p = |px: f64, py: f64| (px, h - py);
         let path = CGPathCreateMutable();
-        for v in [0.34, 0.52, 0.7] {
-            let (x, y) = (w * 0.93, h * v);
-            let p = |px: f64, py: f64| (px, h - py);
-            let a = p(x - len * 0.2, y - len * 0.22);
+        for u in [0.36, 0.402, 0.448] {
+            let (x, y) = (w * u, h * 0.7);
+            let a = p(x - b, y);
             CGPathMoveToPoint(path, std::ptr::null(), a.0, a.1);
-            let (c, e) = (p(x + len * 0.9, y - len * 0.35), p(x + len, y + len * 0.45));
+            let (c, e) = (p(x - b * 1.3, y + len * 0.75), p(x - len * 0.45, y + len));
             CGPathAddQuadCurveToPoint(path, std::ptr::null(), c.0, c.1, e.0, e.1);
-            let (c, e) = (p(x + len * 0.45, y + len * 0.05), p(x - len * 0.2, y + len * 0.2));
+            let (c, e) = (p(x + b * 0.4, y + len * 0.6), p(x + b, y));
             CGPathAddQuadCurveToPoint(path, std::ptr::null(), c.0, c.1, e.0, e.1);
             CGPathCloseSubpath(path);
         }
         let _: () = msg_send![&*self.claws, setPath: path];
-        let _: () = msg_send![&*self.claws, setLineWidth: h * 0.035];
+        let _: () = msg_send![&*self.claws, setLineWidth: h * 0.03];
         let _: () = msg_send![&*self.claws, setLineJoin: &*NSString::from_str("round")];
         CGPathRelease(path);
     }
