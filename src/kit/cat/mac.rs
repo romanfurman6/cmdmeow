@@ -134,6 +134,10 @@ struct Main {
     pads: Vec<*mut c_void>,
     /// Whether the body is felt for slaps.
     slaps: bool,
+    /// The battery's last reading (percent, charger in), for the bowl.
+    power: Option<(u8, bool)>,
+    /// The eating sound played last.
+    eaten: u8,
 }
 
 /// Something to do with the desktop cat once it is made.
@@ -336,6 +340,24 @@ impl Main {
         });
     }
 
+    /// The battery's charge and the charger: the food in the bowl.
+    fn power(&mut self, pct: u8, plugged: bool) {
+        self.power = Some((pct, plugged));
+        if let Some(st) = &mut self.stage {
+            st.live.power(pct, plugged);
+            self.wake();
+        }
+    }
+
+    /// The Mac went to sleep (or its lid closed): so does the cat. Awake
+    /// again, it gets up a moment later.
+    fn doze(&mut self, on: bool) {
+        if let Some(st) = &mut self.stage {
+            st.live.doze(on, now_ms());
+            self.wake();
+        }
+    }
+
     /// The reaction is over (the hand left the trackpad).
     fn react_end(&mut self) {
         if let Some(st) = &mut self.stage {
@@ -380,6 +402,14 @@ impl Main {
             self.tidying = false;
             return;
         };
+        let (bed, bowl) = places();
+        st.live.set_places(bed, bowl);
+        if let Some((pct, plugged)) = self.power {
+            st.live.power(pct, plugged);
+        }
+        if LID_CLOSED.load(Ordering::SeqCst) {
+            st.live.doze(true, now_ms());
+        }
         st.live.set_lives(self.live, now_ms());
         self.shown = true;
         self.refit_at = now_ms() + REFIT_EVERY;
@@ -477,8 +507,22 @@ impl Main {
                     self.play(Kind::Purr, n);
                 }
                 Out::Purr(false) => self.hush(),
-                Out::Mew => self.play(Kind::Hungry, 1),
-                Out::Chirp => self.play(Kind::Hello, 1),
+                Out::Mew => self.voice_now(Kind::Hungry, 1),
+                Out::Chirp => {
+                    let n = self.pick(3);
+                    self.voice_now(Kind::Hello, n);
+                }
+                Out::Voice(kind) => {
+                    let n = if kind == Kind::Eat {
+                        // the eating sounds one after another
+                        self.eaten = self.eaten % kind.sounds().1 + 1;
+                        self.eaten
+                    } else {
+                        self.pick(kind.sounds().1)
+                    };
+                    self.voice_now(kind, n);
+                }
+                Out::Moved { bed, bowl } => keep_places(bed, bowl),
             }
         }
         let rested = !placed.is_empty();
@@ -614,8 +658,17 @@ impl Main {
         self.taps.push(s);
     }
 
-    /// Play `kind`'s sound `n`, unless the Mac should be quiet now.
+    /// A reaction's sound, `n`. While the cat lives on the desk it says
+    /// hello, eats and begs in its own time (`Out::Voice`), so those wait for it.
     fn play(&mut self, kind: Kind, n: u8) {
+        if self.live && !self.broken && matches!(kind, Kind::Hello | Kind::Eat | Kind::Hungry) {
+            return;
+        }
+        self.voice_now(kind, n);
+    }
+
+    /// Play `kind`'s sound `n`, unless the Mac should be quiet now.
+    fn voice_now(&mut self, kind: Kind, n: u8) {
         self.stop_voice();
         if !may_sound() {
             return;
@@ -989,7 +1042,23 @@ extern "C" fn power_changed(_context: *mut c_void) {
             eprintln!("[cat] power {pct}% plugged {plugged}");
         }
         send(Event::Power { pct, plugged });
+        on_main(move |m| m.power(pct, plugged));
     }
+}
+
+/// Where people left the bed and the bowl (from the left of the screen).
+fn places() -> (Option<f64>, Option<f64>) {
+    let text = std::fs::read_to_string(crate::kit::fs::data_path("cat-places")).unwrap_or_default();
+    let mut it = text.split_whitespace().map(|v| v.parse::<f64>().ok().filter(|x| x.is_finite()));
+    (it.next().flatten(), it.next().flatten())
+}
+
+fn keep_places(bed: f64, bowl: f64) {
+    let path = crate::kit::fs::data_path("cat-places");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, format!("{bed:.0} {bowl:.0}\n"));
 }
 
 // ------------------------------------------------------------------ the lid
@@ -1028,6 +1097,7 @@ fn lid_is(closed: bool) {
         if log() {
             eprintln!("[cat] lid {}", if closed { "closed" } else { "open" });
         }
+        on_main(move |m| m.doze(closed));
         if !closed {
             send(Event::LidOpen);
         }
@@ -1360,6 +1430,8 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         buzzing: false,
         pads: Vec::new(),
         slaps: false,
+        power: None,
+        eaten: 0,
     };
     if !prefs.hiss {
         super::slap::tidy();
@@ -1384,13 +1456,22 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         if let Some(closed) = lid_closed() {
             lid_is(closed);
         }
+        if !LID_CLOSED.load(Ordering::SeqCst) {
+            on_main(|m| m.doze(false));
+        }
     });
     // the screens come back when the lid opens, asleep or not
     observe("NSWorkspaceScreensDidWakeNotification", false, || {
         if let Some(closed) = lid_closed() {
             lid_is(closed);
         }
+        if !LID_CLOSED.load(Ordering::SeqCst) {
+            on_main(|m| m.doze(false));
+        }
     });
+    // the Mac or its screens go to sleep: the cat curls up at once
+    observe("NSWorkspaceWillSleepNotification", false, || on_main(|m| m.doze(true)));
+    observe("NSWorkspaceScreensDidSleepNotification", false, || on_main(|m| m.doze(true)));
     observe("com.apple.screenIsLocked", true, || send(Event::Locked(true)));
     observe("com.apple.screenIsUnlocked", true, || send(Event::Locked(false)));
 

@@ -6,6 +6,7 @@
 
 use super::grid::{self, Spot};
 use super::live::{Live, Scene};
+use super::props::Props;
 use super::rig::Rig;
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -63,8 +64,6 @@ extern "C" {
 const DESKTOP_ICONS: i32 = 18;
 /// The cat walks above the windows, as the strip did.
 const CAT_LEVEL: isize = 25;
-/// The food bowl's size, points.
-const BOWL: (f64, f64) = (60.0, 30.0);
 
 /// An owned `CGImage`.
 pub struct Image(pub *mut c_void);
@@ -123,8 +122,8 @@ unsafe fn flatten(image: *mut c_void) -> Option<Image> {
     (!flat.is_null()).then_some(Image(flat))
 }
 
-/// The cat's brain, its parts' pictures by file, and the bowl's picture.
-pub type Loaded = (Live, HashMap<[u16; 2], Image>, Option<Image>);
+/// The cat's brain and its parts' pictures by file.
+pub type Loaded = (Live, HashMap<[u16; 2], Image>);
 
 /// A picture of part of the screen, the point at its top left (first
 /// screen points, down from its top) and its pixels per point.
@@ -142,8 +141,7 @@ pub fn load(seed: u32) -> Option<Loaded> {
         sizes.insert(*key, (w, h));
         images.insert(*key, img);
     }
-    let bowl = asset("rig/bowl.webp").and_then(|p| decode(&p));
-    Some((Live::new(rig, sizes, seed)?, images, bowl))
+    Some((Live::new(rig, sizes, seed)?, images))
 }
 
 /// A part layer's picture-to-screen map, from the y-down map of `live`
@@ -188,12 +186,13 @@ impl Desktop {
 pub struct Stage {
     window: Retained<NSWindow>,
     desk: Retained<NSWindow>,
-    root: Retained<AnyObject>,
     /// on the desk window: the wallpaper patches, under the icons' pictures
     patches: Retained<AnyObject>,
     moved: Retained<AnyObject>,
+    /// the cat: its shadow and its parts, between its things
+    body: Retained<AnyObject>,
     shadow: Retained<AnyObject>,
-    bowl: Retained<AnyObject>,
+    props: Props,
     parts: Vec<(Retained<AnyObject>, Option<[u16; 2]>)>,
     claws: Retained<AnyObject>,
     claws_on: Option<usize>,
@@ -271,33 +270,30 @@ pub fn first_screen(mtm: MainThreadMarker) -> Option<(NSRect, (f64, f64, f64, f6
 
 impl Stage {
     pub fn new(mtm: MainThreadMarker, loaded: Loaded) -> Option<Stage> {
-        let (live, images, bowl_img) = loaded;
+        let (live, images) = loaded;
         let (frame, ground) = first_screen(mtm)?;
         let (window, root) = make_window(mtm, frame, CAT_LEVEL, true)?;
         let icon_level = unsafe { CGWindowLevelForKey(DESKTOP_ICONS) } as isize + 1;
         let (desk, droot) = make_window(mtm, frame, icon_level, false)?;
         let (patches, moved) = unsafe { (new_layer(&droot), new_layer(&droot)) };
-        let (shadow, bowl, claws) = unsafe {
-            let shadow = shape(&root, [0.0, 0.0, 0.0, 0.2]);
-            let bowl = new_layer(&root);
-            if let Some(b) = &bowl_img {
-                let _: () = msg_send![&*bowl, setContents: b.0 as *mut AnyObject];
-            }
-            let _: () = msg_send![&*bowl, setBounds: CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: BOWL.0, height: BOWL.1 } }];
-            let _: () = msg_send![&*bowl, setHidden: true];
-            let claws = shape(&root, [0.957, 0.965, 0.937, 1.0]);
+        let (body, shadow, props, claws) = unsafe {
+            let body = new_layer(&root);
+            let _: () = msg_send![&*body, setZPosition: 3.0f64];
+            let shadow = shape(&body, [0.0, 0.0, 0.0, 0.2]);
+            let props = Props::new(&root);
+            let claws = shape(&body, [0.957, 0.965, 0.937, 1.0]);
             let ink = CGColorCreateSRGB(0.04, 0.06, 0.035, 1.0);
             let _: () = msg_send![&*claws, setStrokeColor: ink];
             CGColorRelease(ink);
             let _: () = msg_send![&*claws, setHidden: true];
-            (shadow, bowl, claws)
+            (body, shadow, props, claws)
         };
         let mut live = live;
         live.set_area(frame.size.width, frame.size.height, ground);
         // the desk window lies under the cat's, both see-through
         desk.orderFrontRegardless();
         window.orderFrontRegardless();
-        Some(Stage { window, desk, root, patches, moved, shadow, bowl, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), desktop: None, through: true })
+        Some(Stage { window, desk, patches, moved, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), desktop: None, through: true })
     }
 
     /// The first screen's size, points.
@@ -324,7 +320,7 @@ impl Stage {
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
             // grow the pool of part layers as needed
             while self.parts.len() < scene.parts.len() {
-                let l = new_layer(&self.root);
+                let l = new_layer(&self.body);
                 self.parts.push((l, None));
             }
             let mut claws_at = None;
@@ -349,7 +345,7 @@ impl Stage {
                 let _: () = msg_send![&**layer, setHidden: true];
             }
             self.draw_claws(claws_at);
-            // the shadow under the feet, the bowl
+            // the shadow under the feet; the bed, the bowl, the ball
             match scene.feet {
                 Some((x, y)) => {
                     let path = CGPathCreateMutable();
@@ -362,15 +358,7 @@ impl Stage {
                     let _: () = msg_send![&*self.shadow, setHidden: true];
                 }
             }
-            match scene.bowl {
-                Some((x, y)) => {
-                    let _: () = msg_send![&*self.bowl, setPosition: CGPoint { x: x - BOWL.0 / 2.0, y: h - y }];
-                    let _: () = msg_send![&*self.bowl, setHidden: false];
-                }
-                None => {
-                    let _: () = msg_send![&*self.bowl, setHidden: true];
-                }
-            }
+            self.props.draw(scene, h);
             // the icons on the move
             for &(id, x, y, rot) in &scene.icons {
                 if let Some(p) = self.proxies.get(&id) {
@@ -381,8 +369,8 @@ impl Stage {
             }
             let _: () = msg_send![class!(CATransaction), commit];
         }
-        // the cat catches the pointer only where it is
-        let over = self.live.over_cat();
+        // the cat catches the pointer only where it or its things are
+        let over = self.live.catches();
         if over == self.through {
             self.through = !over;
             self.window.setIgnoresMouseEvents(!over);

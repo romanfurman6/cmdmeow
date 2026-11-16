@@ -165,7 +165,7 @@ impl Rig {
                 .collect();
             let tl_names = tl.iter().map(|l| l.as_ref().map(|(id, _)| *id)).collect();
             // the pack marks its one-way moves (sit down, lie down, get up) as loops
-            let looped = a.looped && !(n.contains("trans") || n.contains("tranis"));
+            let looped = a.looped && !(n.contains("trans") || n.contains("tranis") || n == "jump");
             anims.insert(n, Anim { len: a.len, looped, main: a.main, tl, tl_names });
         }
         let files = raw.files.into_iter().filter_map(|(k, f)| Some((key_of(&k)?, f))).collect();

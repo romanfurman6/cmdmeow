@@ -1,17 +1,24 @@
 //! The desktop cat, alive: what it wants and does, frame by frame, on the
-//! skeleton of `rig`. It looks at the pointer and plays with it, walks
-//! about the desk on its own, gets bored, washes, lies down, is scared by a
-//! slap from whatever it was doing, purrs under a held pointer, hunts the
-//! pointer after three clicks (a pounce from afar, a paw slammed on it up
-//! close), and tidies the desktop by pushing the real icons with its nose
-//! and paw into Finder's grid.
+//! skeleton of `rig`. It sits on its bed, looks about, washes, walks about
+//! the desk, and sleeps until something wakes it. A held pointer makes it
+//! purr. A slap sends it off through the edge by its bed; it peeks back
+//! and comes home. Three clicks bring a yarn ball people drag and throw
+//! and it chases, pins and bats (three clicks on the ball put it away).
+//! On the charger it eats from its bowl, and on a low battery it begs by
+//! it (the food in the bowl is the charge). It falls asleep when the lid
+//! closes and wakes a moment after it opens. People can move its bed and
+//! bowl along the bottom of the screen. It can also tidy the desktop by
+//! pushing the real icons with its nose and paw into Finder's grid.
 //!
 //! Pure: points down from the top left of the screen, milliseconds. The
 //! Mac side feeds it the pointer and what the Mac felt, and draws the
-//! `Scene` it returns (one layer per part).
+//! `Scene` it returns (one layer per part, and its things).
 
 use super::rig::{self, Local, Rig, St, World, D2R};
+use super::toys::{self, Ball, BallView, BowlView, BOWL_H};
+use super::Kind;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 /// Points per pack unit: the cat is about 150 pt tall.
 pub const S: f64 = 0.1;
@@ -25,6 +32,29 @@ const WALK_RATE: f64 = 1.9;
 const WALK: f64 = 1.15 * WALK_RATE * S * 1000.0;
 /// Sliding friction of a pushed icon, points/s².
 const FR: f64 = 820.0;
+/// A turn: a small hop, and the body comes round at its top.
+const TURN_MS: f64 = 300.0;
+/// A step back covers this many points a second: the walk played backwards.
+const BACK: f64 = 80.0;
+/// It begs below this charge (0–1) and stops once it is back up here.
+const LOW: f64 = 0.10;
+const FED: f64 = 0.15;
+/// Each eating sound lasts this long; a meal is two or three of them.
+const CRUNCH_MS: f64 = 2640.0;
+/// It sleeps on this long after the lid opens.
+const WAKE_AFTER: f64 = 3000.0;
+/// Its head in the bowl: head and neck down, shoulders lower, a little
+/// chew; it stands this much further back than its nose so the head is
+/// over the middle of the bowl.
+const EAT_LOOK: f64 = 27.0;
+const EAT_NECK: f64 = 30.0;
+const EAT_BODY: f64 = 6.0;
+const EAT_DROP: f64 = -4.0;
+const EAT_BACK: f64 = 34.0;
+const EAT_CHEW: f64 = 1.5;
+/// What people let go of above the bottom falls this fast (points/s²).
+const DROP: f64 = 1900.0;
+
 
 /// An icon on the desktop the cat can move: its id (the Mac side's), the
 /// middle of its picture, and how it slides.
@@ -55,14 +85,20 @@ pub enum Out {
     Rest { id: usize, x: f64, y: f64 },
     /// The tidy is over.
     Tidied,
-    /// A paw or a nose met an icon (soft: a pat).
+    /// A paw or a nose met an icon, or the ball or the bowl hit the desk
+    /// (soft: a pat).
     Tap { soft: bool },
     /// A held pointer on the cat: the purr starts or stops.
     Purr(bool),
     /// It comes to tidy.
     Mew,
-    /// A meow: the hunt starts (a catch is silent).
+    /// A meow: the ball comes.
     Chirp,
+    /// One of the kind's sounds, now: it eats, begs, or says hello once up.
+    Voice(Kind),
+    /// The bed or the bowl came to rest somewhere new: where they stand
+    /// (from the left).
+    Moved { bed: f64, bowl: f64 },
 }
 
 /// One part to draw: its picture, where (an affine map from the picture's
@@ -80,10 +116,12 @@ pub struct Scene {
     pub parts: Vec<Part>,
     /// The icons being moved: id, middle, turn in degrees.
     pub icons: Vec<(usize, f64, f64, f64)>,
-    /// The food bowl's middle bottom, while it eats.
-    pub bowl: Option<(f64, f64)>,
     /// The feet's shadow (middle).
     pub feet: Option<(f64, f64)>,
+    /// The bed's middle bottom.
+    pub bed: Option<(f64, f64)>,
+    pub bowl: Option<BowlView>,
+    pub ball: Option<BallView>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,14 +134,21 @@ enum Mode {
     Wash,
     Lie,
     SitDown,
+    /// getting up from lying (then `wake_next`)
+    WakeUp,
     Scare,
+    /// off through the edge by its bed, out of sight a while, a peek back
+    Flee,
+    Gone,
+    Peek,
     Pet,
     Tidy,
     WalkHome,
-    /// after the pointer (three clicks), or a little play where it sits
-    Hunt,
+    /// after the yarn ball
+    Ball,
     /// a walk to somewhere else on the desk
     Roam,
+    ToBowl,
     Eat,
     Beg,
     Hello,
@@ -172,32 +217,85 @@ impl Swipe {
     }
 }
 
-/// What the hunt does now: a pounce (the jump) or a paw slammed down (the scratch).
+/// What it does to the ball now: a pounce (the jump), a paw slammed down
+/// (the scratch), or the ball pinned under its front paws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Act {
     Jump,
     Slam,
+    Hold,
 }
 
 #[derive(Default)]
 struct Hunt {
-    until: f64,
     act: Option<Act>,
     t0: f64,
     from: (f64, f64),
     to: (f64, f64),
     hit: bool,
     rest: f64,
-    caught: u32,
     last_jump: f64,
-    /// a little play from where it sits: no pounce, a few seconds
-    short: bool,
 }
 
 /// Where the paw comes down in the scratch (at 0.47 of it) and where the
 /// front paws land in the jump (from 0.8), ahead of and above the feet.
 const SLAM: (f64, f64) = (106.0, 10.0);
 const LAND: (f64, f64) = (28.0, 6.0);
+
+/// The edge it runs off through when scared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    Left,
+    Right,
+    Bottom,
+}
+
+/// What a hand holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Ball,
+    Bed,
+    Bowl,
+}
+
+/// What it wants from its bowl.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Need {
+    Eat,
+    Beg,
+}
+
+/// Begging by the bowl: up on its hind legs with a meow, down, a sit and a
+/// stare, up again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BegStep {
+    Stand,
+    Up,
+    Down,
+    Sitting,
+    Rise,
+}
+
+struct Feed {
+    step: BegStep,
+    t: f64,
+    wait: f64,
+    until: f64,
+    /// the next eating sound
+    voice: f64,
+    /// the last meow
+    meow: f64,
+    /// how far its head is down in the bowl (0–1)
+    k: f64,
+}
+
+/// The bed or the bowl: where people put it (None: by the corner) and how
+/// fast it falls after they let go above the bottom.
+#[derive(Default, Clone, Copy)]
+struct Thing {
+    at: Option<(f64, f64)>,
+    vy: f64,
+}
 
 struct Mind {
     interest: f64,
@@ -211,7 +309,6 @@ struct Mind {
     yawn: f64,
     last_swipe: f64,
     next_roam: f64,
-    turned: f64,
 }
 
 struct Tidy {
@@ -227,6 +324,8 @@ struct Tidy {
 struct Clip {
     name: &'static str,
     t0: f64,
+    /// played backwards (the walk, for a step back)
+    rev: bool,
 }
 
 pub struct Live {
@@ -251,14 +350,37 @@ pub struct Live {
     y: f64,
     dir: f64,
     flip: f64,
+    /// the turn under way: when, from and to which flip; and the hop of it (0–1)
+    turn: (f64, f64, f64),
+    hop: f64,
     mode: Mode,
     mode_t0: f64,
-    until: f64,
+    /// what it does once it is up
+    wake_next: Mode,
+    /// a hello is due once it is up
+    wake_hello: bool,
     mind: Mind,
     scare: f64,
     scare_t0: f64,
     petting: bool,
     hunt: Hunt,
+    ball: Ball,
+    ball_clicks: Vec<f64>,
+    held: Option<Held>,
+    /// where the hand holds what it holds, from its middle
+    grab: (f64, f64),
+    bed: Thing,
+    bowl: Thing,
+    /// the charge (0–1) and the charger; None on a Mac without a battery
+    battery: Option<(f64, bool)>,
+    want_eat: bool,
+    hungry: bool,
+    feed: Feed,
+    edge: Edge,
+    /// the Mac sleeps (the lid is closed): so does the cat
+    doze: bool,
+    /// when it gets up after the lid opened
+    wake_at: f64,
     roam_to: (f64, f64),
     sw: Swipe,
     look: (f64, f64, f64),
@@ -361,7 +483,7 @@ impl Live {
             h: 0.0,
             ground: (0.0, 0.0, 0.0, 0.0),
             lives: true,
-            cur: Clip { name: "sitting", t0: 0.0 },
+            cur: Clip { name: "sitting", t0: 0.0, rev: false },
             prev: None,
             blend_t0: 0.0,
             blend_ms: 160.0,
@@ -369,14 +491,30 @@ impl Live {
             y: f64::NAN,
             dir: -1.0,
             flip: 1.0,
+            turn: (-1e9, 1.0, 1.0),
+            hop: 0.0,
             mode: Mode::Away,
             mode_t0: 0.0,
-            until: 0.0,
-            mind: Mind { interest: 0.0, bored: 0.0, quiet: 0.0, next_idle: 2500.0, glance: None, ear: -1e9, ear_side: 1.0, swish: -1e9, yawn: -1e9, last_swipe: -1e9, next_roam: 20000.0, turned: -1e9 },
+            wake_next: Mode::Sit,
+            wake_hello: false,
+            mind: Mind { interest: 0.0, bored: 0.0, quiet: 0.0, next_idle: 2500.0, glance: None, ear: -1e9, ear_side: 1.0, swish: -1e9, yawn: -1e9, last_swipe: -1e9, next_roam: 20000.0 },
             scare: 0.0,
             scare_t0: -1e9,
             petting: false,
             hunt: Hunt { last_jump: -1e9, ..Hunt::default() },
+            ball: Ball::default(),
+            ball_clicks: Vec::new(),
+            held: None,
+            grab: (0.0, 0.0),
+            bed: Thing::default(),
+            bowl: Thing::default(),
+            battery: None,
+            want_eat: false,
+            hungry: false,
+            feed: Feed { step: BegStep::Stand, t: 0.0, wait: 0.0, until: 0.0, voice: 0.0, meow: -1e9, k: 0.0 },
+            edge: Edge::Right,
+            doze: false,
+            wake_at: 0.0,
             roam_to: (0.0, 0.0),
             sw: Swipe::default(),
             look: (0.0, 0.0, 0.0),
@@ -408,9 +546,66 @@ impl Live {
         self.ground = ground;
     }
 
-    /// Where it rests: the bottom right corner of the usable area.
+    /// Where people last left the bed and the bowl (from the left; they
+    /// stand on the bottom).
+    pub fn set_places(&mut self, bed: Option<f64>, bowl: Option<f64>) {
+        let floor = self.ground.3;
+        self.bed.at = bed.map(|x| (x, floor));
+        self.bowl.at = bowl.map(|x| (x, floor));
+    }
+
+    /// The bed's middle bottom: on the bottom, where people put it, or by
+    /// the right corner; up in a hand while held, and as it falls.
+    fn bed_at(&self) -> (f64, f64) {
+        let g = self.ground;
+        let floor = g.3 - 18.0;
+        match self.bed.at {
+            Some((x, y)) => (x.clamp(g.0 + 104.0, (g.2 - 104.0).max(g.0 + 104.0)), y.clamp(g.1 + 60.0, floor)),
+            None => (g.2 - 108.0, floor),
+        }
+    }
+
+    /// Where it sits on its bed.
     fn home(&self) -> (f64, f64) {
-        (self.ground.2 - 70.0, self.ground.3 - 14.0)
+        let b = self.bed_at();
+        (b.0 + 22.0, b.1 - 8.0)
+    }
+
+    fn on_bed(&self, p: (f64, f64)) -> bool {
+        let b = self.bed_at();
+        (p.0 - b.0).abs() < 102.0 && p.1 > b.1 - 46.0 && p.1 < b.1 + 16.0
+    }
+
+    /// The bowl's middle bottom: on the bottom, where people put it, or
+    /// beside the bed.
+    fn bowl_at(&self) -> (f64, f64) {
+        let g = self.ground;
+        let floor = g.3 - 20.0;
+        let (x, y) = self.bowl.at.unwrap_or((self.bed_at().0 - 190.0, floor));
+        (x.clamp(g.0 + 50.0, (g.2 - 50.0).max(g.0 + 50.0)), y.clamp(g.1 + 60.0, floor))
+    }
+
+    fn on_bowl(&self, p: (f64, f64)) -> bool {
+        let b = self.bowl_at();
+        (p.0 - b.0).abs() < 46.0 && p.1 > b.1 - 44.0 && p.1 < b.1 + 8.0
+    }
+
+    /// Where it stands to eat, and which way it faces: its head over the
+    /// middle of the bowl, from the side it is on.
+    fn bowl_stand(&self) -> (f64, f64, f64) {
+        let (b, g) = (self.bowl_at(), self.ground);
+        let off = self.rel_nose.0 + EAT_BACK;
+        let mut side = if self.x > b.0 { 1.0 } else { -1.0 };
+        if b.0 + side * off > g.2 - 40.0 || b.0 + side * off < g.0 + 40.0 {
+            side = -side;
+        }
+        (b.0 + side * off, b.1 - 6.0, -side)
+    }
+
+    /// Where the ball may lie.
+    fn ball_area(&self) -> (f64, f64, f64, f64) {
+        let g = self.ground;
+        (g.0 + toys::BR + 6.0, g.1 + 110.0, g.2 - toys::BR - 6.0, g.3 - 8.0)
     }
 
     fn clamp_x(&self, x: f64) -> f64 {
@@ -421,7 +616,7 @@ impl Live {
         y.clamp(self.ground.1 + 95.0, (self.ground.3 - 8.0).max(self.ground.1 + 95.0))
     }
 
-    /// It lives on screen in its corner, or only comes for a reaction.
+    /// It lives on screen on its bed, or only comes for a reaction.
     pub fn set_lives(&mut self, on: bool, now: f64) {
         self.lives = on;
         if on && self.mode == Mode::Away {
@@ -461,6 +656,19 @@ impl Live {
                 self.ptr.x = x;
                 self.ptr.y = y;
                 self.ptr.on = true;
+                // what a hand holds goes with it
+                let (gx, gy) = self.grab;
+                match self.held {
+                    Some(Held::Ball) => {
+                        self.ball.z = 40.0;
+                        self.ball.x = x - gx;
+                        self.ball.y = y - gy + toys::BR + 40.0;
+                        (self.ball.vx, self.ball.vy, self.ball.vz) = (0.0, 0.0, 0.0);
+                    }
+                    Some(Held::Bed) => self.bed.at = Some((x - gx, y - gy)),
+                    Some(Held::Bowl) => self.bowl.at = Some((x - gx, y - gy)),
+                    None => {}
+                }
             }
             None => {
                 self.ptr.on = false;
@@ -468,19 +676,123 @@ impl Live {
             }
         }
         if down && !self.ptr.down {
-            self.ptr.down_at = now;
-            self.ptr.down_on_cat = self.over_cat();
-            if self.ptr.down_on_cat {
-                self.clicks.push(now);
-                self.clicks.retain(|t| now - t <= 1300.0);
-            }
+            self.press(now);
+        }
+        if !down && self.ptr.down {
+            self.release(now);
         }
         self.ptr.down = down;
     }
 
-    /// The pointer is over the cat (it catches clicks there).
+    /// The button went down: on the ball, the bowl, the bed or the cat.
+    fn press(&mut self, now: f64) {
+        self.ptr.down_at = now;
+        self.ptr.down_on_cat = self.over_cat();
+        if self.doze || !self.ptr.on || self.mode == Mode::Away {
+            return;
+        }
+        let p = (self.ptr.x, self.ptr.y);
+        if self.ball.under(p) {
+            // three clicks on the ball put it away
+            self.ball_clicks.push(now);
+            self.ball_clicks.retain(|t| now - t <= 1300.0);
+            if self.ball_clicks.len() >= 3 {
+                self.ball_clicks.clear();
+                return self.put_ball_away(now);
+            }
+            let c = self.ball.top();
+            self.held = Some(Held::Ball);
+            self.grab = (p.0 - c.0, p.1 - c.1);
+            self.ball.held = true;
+            self.ball.touched = now;
+            return;
+        }
+        // the bowl's and the bed's rims below the cat's feet are theirs, not the cat's
+        let b = self.bowl_at();
+        if self.on_bowl(p) && (!self.ptr.down_on_cat || p.1 > b.1 - 18.0) {
+            self.ptr.down_on_cat = false;
+            self.held = Some(Held::Bowl);
+            self.grab = (p.0 - b.0, p.1 - b.1);
+            return;
+        }
+        let b = self.bed_at();
+        if self.on_bed(p) && (!self.ptr.down_on_cat || p.1 > self.home().1 - 2.0) {
+            self.ptr.down_on_cat = false;
+            self.held = Some(Held::Bed);
+            self.grab = (p.0 - b.0, p.1 - b.1);
+            return;
+        }
+        if self.ptr.down_on_cat {
+            self.clicks.push(now);
+            self.clicks.retain(|t| now - t <= 1300.0);
+        }
+    }
+
+    /// The button came up: what was held is let go (a ball thrown), and a
+    /// click on a sleeping cat wakes it.
+    fn release(&mut self, now: f64) {
+        if self.mode == Mode::Lie && self.ptr.down_on_cat && now - self.ptr.down_at < 350.0 && !self.doze {
+            self.get_up(Mode::Sit, now);
+            self.mind.quiet = now;
+        }
+        match self.held.take() {
+            Some(Held::Ball) => {
+                // a throw keeps the hand's speed, and a flick up lofts it
+                self.ball.held = false;
+                if now - self.ptr.moved < 90.0 {
+                    let k = (1500.0 / self.ptr.vx.hypot(self.ptr.vy).max(1.0)).min(1.0);
+                    self.ball.vx = self.ptr.vx * k;
+                    self.ball.vy = self.ptr.vy * k;
+                    self.ball.vz = (120.0 + (-self.ptr.vy * k).max(0.0) * 0.3).min(520.0);
+                }
+                self.throw_ball(now);
+            }
+            Some(Held::Bowl) => {
+                self.bowl.at = Some(self.bowl_at());
+                self.bowl.vy = 0.0;
+                if matches!(self.mode, Mode::Eat | Mode::Beg | Mode::ToBowl) {
+                    self.set_mode(Mode::ToBowl, now);
+                    self.go("idle", 160.0, now);
+                }
+                self.moved();
+            }
+            Some(Held::Bed) => {
+                // the bed moved: it goes to it
+                self.bed.at = Some(self.bed_at());
+                self.bed.vy = 0.0;
+                if self.mode == Mode::Lie {
+                    self.get_up(Mode::Sit, now);
+                } else if matches!(self.mode, Mode::Sit | Mode::SitDown | Mode::Wash | Mode::Roam) {
+                    self.set_mode(Mode::WalkHome, now + 400.0);
+                }
+                self.mind.quiet = now;
+                self.moved();
+            }
+            None => {}
+        }
+    }
+
+    fn moved(&mut self) {
+        let (bed, bowl) = (self.bed_at().0, self.bowl_at().0);
+        self.out.push(Out::Moved { bed, bowl });
+    }
+
+    /// The pointer is over the cat.
     pub fn over_cat(&self) -> bool {
         self.ptr.on && self.bounds.is_some_and(|(x0, y0, x1, y1)| self.ptr.x >= x0 && self.ptr.x <= x1 && self.ptr.y >= y0 && self.ptr.y <= y1)
+    }
+
+    /// The pointer is over the cat or one of its things, or holds one: its
+    /// window catches clicks there.
+    pub fn catches(&self) -> bool {
+        if self.held.is_some() {
+            return true;
+        }
+        if !self.ptr.on || self.mode == Mode::Away || self.doze {
+            return false;
+        }
+        let p = (self.ptr.x, self.ptr.y);
+        self.over_cat() || self.ball.under(p) || self.on_bed(p) || self.on_bowl(p)
     }
 
     /// A slap: scared at once, from anything (a tidy goes on afterwards).
@@ -495,6 +807,8 @@ impl Live {
         let tidying = self.mode == Mode::Tidy;
         self.stop_all();
         self.tidy.resume = tidying;
+        self.hunt.act = None;
+        self.wake_at = 0.0;
         self.scare_t0 = now;
         self.set_mode(Mode::Scare, now);
         self.go("idle", 90.0, now);
@@ -505,62 +819,104 @@ impl Live {
     /// A hand on the trackpad (or a held pointer): it curls up and purrs.
     pub fn pet(&mut self, on: bool, now: f64) {
         if on {
-            if matches!(self.mode, Mode::Scare | Mode::Hunt | Mode::Tidy | Mode::Leave) {
+            if self.doze || matches!(self.mode, Mode::Scare | Mode::Ball | Mode::Tidy | Mode::Leave | Mode::Flee | Mode::Gone | Mode::Peek) {
                 return;
             }
             if self.mode == Mode::Away {
                 self.place_home();
             }
             self.stop_all();
-            self.set_mode(Mode::Pet, now);
-            self.go("sleeping", 380.0, now);
+            self.lie_down(Mode::Pet, now);
         } else if self.mode == Mode::Pet {
-            self.set_mode(Mode::Sit, now);
-            self.go("sitting", 380.0, now);
+            self.get_up(Mode::Sit, now);
             self.mind.bored = 0.6;
             self.mind.quiet = now;
         }
     }
 
-    /// The lid opened: it gets up, ears up, and looks around.
+    /// The Mac went to sleep (the lid closed): it is asleep at once. Awake
+    /// again: it sleeps on a moment, then gets up.
+    pub fn doze(&mut self, on: bool, now: f64) {
+        if on == self.doze {
+            return;
+        }
+        self.doze = on;
+        if !on {
+            if self.mode == Mode::Lie {
+                self.wake_at = now + WAKE_AFTER;
+            }
+            return;
+        }
+        if self.petting {
+            self.petting = false;
+            self.out.push(Out::Purr(false));
+        }
+        self.held = None;
+        self.ball.held = false;
+        self.stop_all();
+        self.hunt.act = None;
+        self.wake_at = 0.0;
+        self.wake_hello = false;
+        if matches!(self.mode, Mode::Away | Mode::Tidy) {
+            return;
+        }
+        if matches!(self.mode, Mode::Flee | Mode::Gone | Mode::Peek | Mode::Enter | Mode::Leave) {
+            self.place_home();
+        }
+        self.set_mode(Mode::Lie, now);
+        self.go("sleeping", 60.0, now);
+    }
+
+    /// The lid opened (or the Mac woke): a hello, once it is up.
     pub fn hello(&mut self, now: f64) {
         if self.mode == Mode::Away {
+            self.out.push(Out::Voice(Kind::Hello));
             return self.enter(now);
         }
-        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Hunt) {
+        if self.doze || self.wake_at > 0.0 || self.mode == Mode::WakeUp {
+            self.wake_hello = true;
             return;
         }
-        self.stop_all();
-        self.set_mode(Mode::Hello, now);
-        self.go("idle", 300.0, now);
+        if self.mode == Mode::Lie {
+            self.wake_hello = true;
+            return self.get_up(Mode::Sit, now);
+        }
+        self.out.push(Out::Voice(Kind::Hello));
         self.mind.ear = now;
-        self.mind.interest = 0.8;
+        if matches!(self.mode, Mode::Sit | Mode::Wash | Mode::Roam | Mode::WalkHome | Mode::SitDown) {
+            self.stop_all();
+            self.set_mode(Mode::Hello, now);
+            self.go("idle", 300.0, now);
+            self.mind.interest = 0.8;
+        }
     }
 
-    /// On the charger: it eats from its bowl.
+    /// On the charger: it goes to its bowl and eats.
     pub fn eat(&mut self, now: f64) {
-        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Hunt) {
-            return;
-        }
+        self.want_eat = true;
         if self.mode == Mode::Away {
-            self.place_home();
+            self.enter(now);
         }
-        self.stop_all();
-        self.set_mode(Mode::Eat, now);
-        self.go("idle", 300.0, now);
     }
 
-    /// The battery is low: it begs.
+    /// The battery is low: it sits by its bowl and begs until it is fed.
     pub fn beg(&mut self, now: f64) {
-        if matches!(self.mode, Mode::Tidy | Mode::Scare | Mode::Hunt) {
-            return;
-        }
+        self.hungry = true;
         if self.mode == Mode::Away {
-            self.place_home();
+            self.enter(now);
         }
-        self.stop_all();
-        self.set_mode(Mode::Beg, now);
-        self.go("beg", 300.0, now);
+    }
+
+    /// The battery's charge (percent) and whether the charger is in.
+    pub fn power(&mut self, pct: u8, plugged: bool) {
+        let level = f64::from(pct.min(100)) / 100.0;
+        self.battery = Some((level, plugged));
+        if !plugged {
+            self.want_eat = false;
+        }
+        if plugged || level >= FED {
+            self.hungry = false;
+        }
     }
 
     /// Tidy these icons into these slots (the middle of each picture).
@@ -593,6 +949,8 @@ impl Live {
 
     /// How often it wants drawing now (0: it is still, or away).
     pub fn fps(&self) -> f64 {
+        let falling = |t: &Thing, floor: f64| t.vy != 0.0 || t.at.is_some_and(|p| p.1 < floor);
+        let busy = self.held.is_some() || (self.ball.on && !self.ball.held && (self.ball.speed() > 1.0 || self.ball.z > 0.0 || self.ball.gone > 0.0)) || falling(&self.bed, self.ground.3 - 18.0) || falling(&self.bowl, self.ground.3 - 20.0);
         match self.mode {
             Mode::Away => {
                 if self.icons.iter().any(|i| i.lifted) {
@@ -601,8 +959,11 @@ impl Live {
                     0.0
                 }
             }
-            Mode::Lie | Mode::Pet => 20.0,
-            Mode::Sit if self.sw.phase.is_none() && self.mind.interest < 0.2 => 30.0,
+            _ if busy => 60.0,
+            Mode::Lie | Mode::Pet if self.doze => 4.0,
+            Mode::Lie | Mode::Pet if self.cur.name == "sleeping" => 20.0,
+            Mode::Gone => 10.0,
+            Mode::Sit if self.sw.phase.is_none() && self.mind.interest < 0.2 && !self.ball.on => 30.0,
             _ => 60.0,
         }
     }
@@ -628,12 +989,21 @@ impl Live {
     }
 
     fn go(&mut self, name: &str, ms: f64, now: f64) {
+        self.play(name, ms, now, false);
+    }
+
+    /// The move played backwards (the walk: a step back).
+    fn go_back(&mut self, name: &str, ms: f64, now: f64) {
+        self.play(name, ms, now, true);
+    }
+
+    fn play(&mut self, name: &str, ms: f64, now: f64, rev: bool) {
         let name = anim(name);
-        if self.cur.name == name {
+        if self.cur.name == name && self.cur.rev == rev {
             return;
         }
-        self.prev = Some(Clip { name: self.cur.name, t0: self.cur.t0 });
-        self.cur = Clip { name, t0: now };
+        self.prev = Some(Clip { name: self.cur.name, t0: self.cur.t0, rev: self.cur.rev });
+        self.cur = Clip { name, t0: now, rev };
         self.blend_t0 = now;
         self.blend_ms = ms;
     }
@@ -646,25 +1016,36 @@ impl Live {
         }
     }
 
+    /// How far into its move a clip is, pack time (backwards at the pace of a step back).
+    fn clip_t(c: &Clip, now: f64) -> f64 {
+        (now - c.t0) * Self::rate(c.name) * if c.rev { -BACK / WALK } else { 1.0 }
+    }
+
     fn anim_done(&self, now: f64) -> bool {
-        self.rig.anims.get(self.cur.name).is_some_and(|a| !a.looped && (now - self.cur.t0) * Self::rate(self.cur.name) >= a.len)
+        !self.cur.rev && self.rig.anims.get(self.cur.name).is_some_and(|a| !a.looped && (now - self.cur.t0) * Self::rate(self.cur.name) >= a.len)
+    }
+
+    /// Faces this way at once (no turn).
+    fn set_flip(&mut self, f: f64) {
+        self.flip = f;
+        self.dir = if f > 0.0 { -1.0 } else { 1.0 };
+        self.turn = (-1e9, f, f);
+        self.hop = 0.0;
     }
 
     fn place_home(&mut self) {
         let (x, y) = self.home();
         self.x = x;
         self.y = y;
-        self.dir = -1.0;
-        self.flip = 1.0;
+        self.set_flip(1.0);
     }
 
-    /// In from the right edge, to its corner.
+    /// In from the right edge, to its bed.
     fn enter(&mut self, now: f64) {
         let (_, y) = self.home();
         self.x = self.ground.2 + 90.0;
         self.y = y;
-        self.dir = -1.0;
-        self.flip = 1.0;
+        self.set_flip(1.0);
         self.set_mode(Mode::Enter, now);
         self.go("walk", 10.0, now);
     }
@@ -682,6 +1063,27 @@ impl Live {
         self.set_mode(Mode::SitDown, now);
         self.go("sit_tranistion_to", ms, now);
     }
+
+    /// Down through the pack's own move (a blend straight from sitting to
+    /// lying slides the parts about).
+    fn lie_down(&mut self, m: Mode, now: f64) {
+        let lying = matches!(self.cur.name, "sleeping" | "sleep_transition_to");
+        self.set_mode(m, now);
+        if !lying {
+            self.go("sleep_transition_to", 200.0, now);
+        }
+    }
+
+    /// Up through the pack's own move, then `next`.
+    fn get_up(&mut self, next: Mode, now: f64) {
+        self.set_mode(Mode::WakeUp, now);
+        self.wake_next = next;
+        self.wake_at = 0.0;
+        // just up: no walk off at once
+        self.mind.next_roam = self.mind.next_roam.max(now + 8000.0);
+        self.go("sleep_transition_from", 150.0, now);
+    }
+
 
     fn swipe(&mut self, now: f64, quick: bool, at: Option<usize>, dir: Option<(f64, f64)>, power: f64, soft: bool) {
         self.sw.phase = Some(if quick { Phase::Strike } else { Phase::Crouch });
@@ -701,6 +1103,8 @@ impl Live {
         self.mind.last_swipe = now;
     }
 
+    /// Something small to do while it sits: a glance, an ear, the tail, a
+    /// wash, a yawn, or (after a long quiet) lie down.
     fn idle(&mut self, now: f64) {
         let long = now - self.mind.quiet > 18000.0;
         let list = [(0, 34.0), (1, 20.0), (2, 14.0), (3, 12.0), (4, 10.0), (5, if long { 14.0 } else { 0.0 })];
@@ -729,10 +1133,7 @@ impl Live {
                 self.go("clean", 300.0, now);
             }
             4 => self.mind.yawn = now,
-            _ => {
-                self.set_mode(Mode::Lie, now);
-                self.go("sleeping", 600.0, now);
-            }
+            _ => self.lie_down(Mode::Lie, now),
         }
         self.mind.next_idle = now + self.rnd(1800.0, 4500.0);
     }
@@ -747,7 +1148,7 @@ impl Live {
             return true;
         }
         let v = if run { WALK * 2.3 } else { WALK } * dt / 1000.0;
-        if dx.abs() > 6.0 {
+        if dx.abs() > if d < 40.0 { 6.0 } else { 24.0 } {
             self.dir = dx.signum();
         }
         self.go(if run { "run" } else { "walk" }, 160.0, now);
@@ -1131,6 +1532,19 @@ impl Live {
         self.out.push(Out::Tap { soft: self.sw.soft });
     }
 
+    /// What it wants from its bowl now: to eat (on the charger, once per
+    /// plug-in) or to beg (the battery is low).
+    fn need(&self) -> Option<Need> {
+        let plugged = self.battery.is_some_and(|b| b.1);
+        if self.want_eat {
+            Some(Need::Eat)
+        } else if !plugged && (self.hungry || self.battery.is_some_and(|b| b.0 < LOW)) {
+            Some(Need::Beg)
+        } else {
+            None
+        }
+    }
+
     fn think(&mut self, now: f64, dt: f64) {
         let o = self.home();
         if !self.x.is_finite() {
@@ -1138,15 +1552,20 @@ impl Live {
         }
         self.mind.interest = (self.mind.interest + self.ptr.stim - dt / 1000.0 * 0.12).clamp(0.0, 1.0);
         self.ptr.stim = 0.0;
-        self.mind.bored = (self.mind.bored - dt / 1000.0 * 0.09).max(0.0);
+        self.mind.bored = (self.mind.bored - dt / 1000.0 * if self.mode == Mode::Ball { 0.02 } else { 0.09 }).max(0.0);
         if self.mind.interest > 0.3 {
             self.mind.quiet = now;
         }
-        if self.clicks.len() >= 3 && !matches!(self.mode, Mode::Tidy | Mode::Away) && !(self.mode == Mode::Hunt && !self.hunt.short) {
-            self.start_hunt(now, false);
+        if self.doze {
+            self.clicks.clear();
         }
+        // three clicks on the cat: the yarn ball
+        if self.clicks.len() >= 3 && !matches!(self.mode, Mode::Tidy | Mode::Away) {
+            self.start_ball(now);
+        }
+        let need = self.need();
         // a pointer held on the cat pets it
-        if self.ptr.down && self.ptr.down_on_cat && now - self.ptr.down_at > 350.0 && !self.petting && matches!(self.mode, Mode::Sit | Mode::Lie | Mode::Wash) {
+        if self.ptr.down && self.ptr.down_on_cat && self.held.is_none() && now - self.ptr.down_at > 350.0 && !self.petting && matches!(self.mode, Mode::Sit | Mode::Lie | Mode::Wash | Mode::Beg) && !self.doze {
             self.petting = true;
             self.pet(true, now);
             self.out.push(Out::Purr(true));
@@ -1158,6 +1577,7 @@ impl Live {
             self.out.push(Out::Purr(false));
         }
         let reachy = self.ptr.on && self.shoulder.is_some_and(|s| dist((self.ptr.x, self.ptr.y), s) < self.reach * 1.45);
+        let me = (self.x, self.y);
         match self.mode {
             Mode::Away => {}
             Mode::Enter => {
@@ -1172,52 +1592,7 @@ impl Live {
                     self.set_mode(Mode::Away, now);
                 }
             }
-            Mode::Sit => {
-                let keen = self.mind.interest > 0.5 && self.mind.bored < 0.75 && now - self.ptr.moved < 600.0;
-                // a pointer played with close by: it goes for it (no pounce)
-                if self.sw.phase.is_none() && keen && self.ptr.on && dist((self.ptr.x, self.ptr.y), (self.x, self.y)) < 330.0 && now - self.mind.last_swipe > 900.0 {
-                    self.start_hunt(now, true);
-                    return self.turn(dt);
-                }
-                // the pointer behind it: it turns round to face it
-                let side = (self.ptr.x - self.x).signum();
-                if self.sw.phase.is_none() && self.ptr.on && self.mind.interest > 0.3 && (self.ptr.x - self.x).abs() > 60.0 && side != self.dir && now - self.mind.turned > 700.0 {
-                    self.dir = side;
-                    self.mind.turned = now;
-                }
-                if self.sw.phase.is_none() && self.mind.bored >= 0.75 && self.mind.interest > 0.2 {
-                    // had enough: looks away, and maybe washes or lies down
-                    self.mind.interest = 0.0;
-                    let g = (self.rnd(self.w * 0.05, self.w * 0.4), self.rnd(self.h * 0.1, self.h * 0.6), now + self.rnd(1200.0, 2200.0));
-                    self.mind.glance = Some(g);
-                    let r = self.random();
-                    if r < 0.35 {
-                        self.set_mode(Mode::Wash, now);
-                        self.go("clean", 300.0, now);
-                    } else if r < 0.5 {
-                        self.set_mode(Mode::Lie, now);
-                        self.go("sleeping", 600.0, now);
-                    }
-                }
-                // now and then it gets up and walks somewhere else on the desk
-                if self.lives && self.sw.phase.is_none() && self.mind.interest < 0.2 && now > self.mind.next_roam {
-                    self.mind.next_roam = now + self.rnd(25000.0, 60000.0);
-                    let g = self.ground;
-                    let (rx, ry) = (self.rnd(g.0 + (g.2 - g.0) * 0.1, g.0 + (g.2 - g.0) * 0.9), self.rnd(g.1 + (g.3 - g.1) * 0.2, g.1 + (g.3 - g.1) * 0.95));
-                    self.roam_to = (self.clamp_x(rx), self.clamp_y(ry));
-                    self.set_mode(Mode::Roam, now);
-                    return self.turn(dt);
-                }
-                if self.sw.phase.is_none() && self.mind.interest < 0.3 && now > self.mind.next_idle {
-                    self.idle(now);
-                }
-                if self.sw.phase.is_none() && now - self.mind.quiet > 9000.0 && dist((self.x, self.y), o) > 30.0 {
-                    self.set_mode(Mode::WalkHome, now);
-                }
-                if !self.lives && self.sw.phase.is_none() && now - self.mode_t0 > 2500.0 && self.mind.interest < 0.3 {
-                    self.set_mode(Mode::Leave, now);
-                }
-            }
+            Mode::Sit => self.sit_think(now, need, o),
             Mode::Wash => {
                 if (self.mind.interest > 0.7 && self.mind.bored < 0.5) || now - self.mode_t0 > 2600.0 {
                     self.set_mode(Mode::Sit, now);
@@ -1225,14 +1600,46 @@ impl Live {
                 }
             }
             Mode::Lie => {
-                if self.until == 0.0 {
-                    self.until = self.rnd(14000.0, 26000.0);
+                if self.cur.name == "sleep_transition_to" && self.anim_done(now) {
+                    self.go("sleeping", 120.0, now);
                 }
-                if self.mind.interest > 0.75 || now - self.mode_t0 > self.until {
-                    self.until = 0.0;
-                    self.set_mode(Mode::Sit, now);
-                    self.go("sitting", 500.0, now);
+                // it sleeps on until someone wakes it: a click, the ball, the
+                // bed moved, a slap, the lid opened, hunger
+                if self.doze {
+                } else if self.wake_at > 0.0 {
+                    if now > self.wake_at {
+                        self.get_up(Mode::Sit, now);
+                        self.mind.quiet = now;
+                        self.mind.next_idle = now + 4000.0;
+                    }
+                } else if (need == Some(Need::Eat) && now - self.mode_t0 > 1200.0) || (need == Some(Need::Beg) && now - self.mode_t0 > 4000.0) {
+                    self.get_up(Mode::Sit, now);
                     self.mind.quiet = now;
+                }
+            }
+            Mode::Pet => {
+                if self.cur.name == "sleep_transition_to" && self.anim_done(now) {
+                    self.go("sleeping", 120.0, now);
+                }
+            }
+            Mode::WakeUp => {
+                if self.anim_done(now) {
+                    if std::mem::take(&mut self.wake_hello) {
+                        self.out.push(Out::Voice(Kind::Hello));
+                        self.mind.ear = now;
+                        self.mind.ear_side = 1.0;
+                    }
+                    if self.wake_next == Mode::Ball && self.ball.on {
+                        self.set_mode(Mode::Ball, now);
+                        self.hunt.act = None;
+                        self.hunt.rest = now + 150.0;
+                        self.go("idle", 220.0, now);
+                    } else if dist(me, o) > 30.0 && !self.ball.on {
+                        self.set_mode(Mode::WalkHome, now + 200.0);
+                    } else {
+                        self.set_mode(Mode::Sit, now);
+                        self.go("sitting", 150.0, now);
+                    }
                 }
             }
             Mode::SitDown => {
@@ -1247,46 +1654,122 @@ impl Live {
                         self.set_mode(Mode::Tidy, now);
                         self.tidy.step = Some(Step::Pick);
                     } else {
-                        self.sit_down(220.0, now);
+                        self.edge = self.exit_edge();
+                        self.set_mode(Mode::Flee, now);
                     }
                 }
             }
-            Mode::Pet => {}
+            // off through the edge nearest its bed, a while out of sight, a peek, back home
+            Mode::Flee => {
+                if self.walk_to(self.edge_point(self.edge, true), dt, true, now) {
+                    let away = self.rnd(1800.0, 3400.0);
+                    self.set_mode(Mode::Gone, now + away);
+                    self.go("idle", 100.0, now);
+                }
+            }
+            Mode::Gone => {
+                if now > self.mode_t0 {
+                    let (x, y) = self.edge_point(self.edge, true);
+                    (self.x, self.y) = (x, y);
+                    let dir = match self.edge {
+                        Edge::Right => -1.0,
+                        Edge::Left => 1.0,
+                        Edge::Bottom => {
+                            if self.bed_at().0 > (self.ground.0 + self.ground.2) / 2.0 {
+                                -1.0
+                            } else {
+                                1.0
+                            }
+                        }
+                    };
+                    self.set_flip(if dir < 0.0 { 1.0 } else { -1.0 });
+                    self.set_mode(Mode::Peek, now);
+                }
+            }
+            Mode::Peek => {
+                let t = now - self.mode_t0;
+                if t < 900.0 {
+                    if self.walk_to(self.edge_point(self.edge, false), dt, false, now) {
+                        self.go("idle", 160.0, now);
+                    }
+                } else if t < 2600.0 {
+                    // it looks about before it comes out
+                    self.go("idle", 160.0, now);
+                    if self.mind.glance.is_none() {
+                        let g = (self.rnd(self.w * 0.2, self.w * 0.8), self.rnd(self.h * 0.2, self.h * 0.7), now + 700.0);
+                        self.mind.glance = Some(g);
+                    }
+                    if t > 1200.0 && t < 1260.0 {
+                        self.mind.ear = now;
+                        self.mind.ear_side = 1.0;
+                    }
+                } else {
+                    self.mind.glance = None;
+                    self.set_mode(Mode::WalkHome, now);
+                    self.mind.bored = 0.5;
+                    self.mind.next_roam = now + 40000.0;
+                }
+            }
             Mode::Hello => {
                 if now - self.mode_t0 > 2200.0 {
                     self.sit_down(220.0, now);
-                }
-            }
-            Mode::Eat => {
-                if now - self.mode_t0 > 4200.0 {
-                    self.sit_down(220.0, now);
-                }
-            }
-            Mode::Beg => {
-                if now - self.mode_t0 > 2600.0 {
-                    self.set_mode(Mode::Sit, now);
-                    self.go("sitting", 300.0, now);
                 }
             }
             Mode::Tidy => self.tidy_think(now, dt),
             Mode::WalkHome => {
                 if now < self.mode_t0 {
                     self.go("idle", 200.0, now);
+                } else if need.is_some() && !self.ball.on {
+                    self.set_mode(Mode::ToBowl, now);
                 } else if self.walk_to(o, dt, false, now) {
                     self.dir = -1.0;
                     self.sit_down(180.0, now);
                 }
             }
-            Mode::Hunt => self.hunt_think(now, dt),
             Mode::Roam => {
                 if self.mind.interest > 0.6 {
                     self.set_mode(Mode::Sit, now);
                     self.go("idle", 200.0, now);
-                } else if self.walk_to(self.roam_to, dt, dist(self.roam_to, (self.x, self.y)) > 500.0, now) {
+                } else if need.is_some() {
+                    self.set_mode(Mode::ToBowl, now);
+                } else if self.walk_to(self.roam_to, dt, dist(self.roam_to, me) > 500.0, now) {
                     self.sit_down(200.0, now);
                     self.mind.quiet = now + self.rnd(4000.0, 14000.0);
                 }
             }
+            Mode::ToBowl => {
+                let (sx, sy, face) = self.bowl_stand();
+                if self.walk_to((sx, sy), dt, dist((sx, sy), me) > 500.0, now) {
+                    self.dir = face;
+                    match need {
+                        Some(Need::Eat) => self.start_eat(now),
+                        Some(Need::Beg) => {
+                            self.set_mode(Mode::Beg, now);
+                            self.feed.step = BegStep::Stand;
+                            self.feed.t = now;
+                            self.go("idle", 200.0, now);
+                        }
+                        None => self.sit_down(200.0, now),
+                    }
+                }
+            }
+            Mode::Eat => {
+                // head down in the bowl, the app's eating sounds one after another; then a wash
+                self.go("idle", 200.0, now);
+                if now - self.mode_t0 > 450.0 && now >= self.feed.voice && now < self.feed.until {
+                    self.out.push(Out::Voice(Kind::Eat));
+                    self.feed.voice = now + CRUNCH_MS;
+                }
+                if now > self.feed.until || !self.want_eat {
+                    self.want_eat = false;
+                    self.set_mode(Mode::Wash, now);
+                    self.go("clean", 300.0, now);
+                    self.mind.quiet = now;
+                    self.mind.next_roam = self.mind.next_roam.max(now + 20000.0);
+                }
+            }
+            Mode::Beg => self.beg_think(now, need),
+            Mode::Ball => self.ball_think(now, dt),
         }
         // the swipe's clock
         if let Some(p) = self.sw.phase {
@@ -1319,49 +1802,254 @@ impl Live {
         if self.mind.glance.is_some_and(|g| now > g.2) {
             self.mind.glance = None;
         }
-        self.turn(dt);
+        self.turn(now);
     }
 
-    /// The body turns towards where it faces.
-    fn turn(&mut self, dt: f64) {
+    fn sit_think(&mut self, now: f64, need: Option<Need>, o: (f64, f64)) {
+        let me = (self.x, self.y);
+        let free = self.sw.phase.is_none();
+        if need.is_some() && free && !self.ball.on {
+            return self.set_mode(Mode::ToBowl, now);
+        }
+        // standing about with nothing to do: it sits down
+        if free && self.cur.name == "idle" && now - self.mode_t0 > 1500.0 {
+            return self.sit_down(260.0, now);
+        }
+        if self.ball.on {
+            // the ball behind it: it turns round to keep it in view
+            if (self.ball.x - self.x).abs() > 60.0 && (self.ball.x - self.x).signum() != self.dir {
+                self.dir = (self.ball.x - self.x).signum();
+            }
+            // a ball rolling past: it goes for it
+            if !self.ball.held && self.ball.speed() > 180.0 && dist((self.ball.x, self.ball.y), me) < 420.0 && self.mind.bored < 0.6 {
+                self.set_mode(Mode::Ball, now);
+                self.hunt.act = None;
+                return;
+            }
+        }
+        if free && self.mind.bored >= 0.75 && self.mind.interest > 0.2 {
+            // had enough: looks away, and maybe washes or lies down
+            self.mind.interest = 0.0;
+            let g = (self.rnd(self.w * 0.05, self.w * 0.4), self.rnd(self.h * 0.1, self.h * 0.6), now + self.rnd(1200.0, 2200.0));
+            self.mind.glance = Some(g);
+            let r = self.random();
+            if r < 0.35 {
+                self.set_mode(Mode::Wash, now);
+                self.go("clean", 300.0, now);
+            } else if r < 0.5 {
+                self.lie_down(Mode::Lie, now);
+            }
+        }
+        if self.mode != Mode::Sit {
+            return;
+        }
+        // now and then it gets up and walks somewhere else on the desk
+        if self.lives && free && self.mind.interest < 0.2 && now > self.mind.next_roam {
+            self.mind.next_roam = now + self.rnd(25000.0, 60000.0);
+            let g = self.ground;
+            let (rx, ry) = (self.rnd(g.0 + (g.2 - g.0) * 0.1, g.0 + (g.2 - g.0) * 0.9), self.rnd(g.1 + (g.3 - g.1) * 0.2, g.1 + (g.3 - g.1) * 0.95));
+            self.roam_to = (self.clamp_x(rx), self.clamp_y(ry));
+            return self.set_mode(Mode::Roam, now);
+        }
+        if free && self.mind.interest < 0.3 && now > self.mind.next_idle {
+            self.idle(now);
+        }
+        if self.mode == Mode::Sit && free && now - self.mind.quiet > 9000.0 && dist(me, o) > 30.0 {
+            self.set_mode(Mode::WalkHome, now);
+        }
+        if self.mode == Mode::Sit && !self.lives && free && now - self.mode_t0 > 2500.0 && self.mind.interest < 0.3 && !self.ball.on {
+            self.set_mode(Mode::Leave, now);
+        }
+    }
+
+    /// Begging by the bowl: up on its hind legs with a meow, down, a sit
+    /// and a stare, up again; until it is fed.
+    fn beg_think(&mut self, now: f64, need: Option<Need>) {
+        // a beg asked for with a full battery (a try from Settings) is one round
+        if now - self.mode_t0 > 15000.0 && !self.battery.is_some_and(|b| b.0 < LOW && !b.1) {
+            self.hungry = false;
+        }
+        let _ = need;
+        match self.need() {
+            Some(Need::Eat) => return self.start_eat(now),
+            None => {
+                if self.cur.name == "sitting" {
+                    self.set_mode(Mode::Sit, now);
+                } else {
+                    self.sit_down(240.0, now);
+                }
+                self.mind.quiet = now;
+                return;
+            }
+            Some(Need::Beg) => {}
+        }
+        let t = now - self.feed.t;
+        let next = |l: &mut Live, s: BegStep| {
+            l.feed.step = s;
+            l.feed.t = now;
+        };
+        match self.feed.step {
+            BegStep::Stand => {
+                self.go("idle", 200.0, now);
+                if t > 600.0 {
+                    next(self, BegStep::Up);
+                    self.go("beg", 220.0, now);
+                    if now - self.feed.meow > 6000.0 {
+                        self.feed.meow = now;
+                        self.out.push(Out::Voice(Kind::Hungry));
+                    }
+                }
+            }
+            BegStep::Up => {
+                if t > self.anim_ms("beg") {
+                    next(self, BegStep::Down);
+                    self.go("idle", 260.0, now);
+                }
+            }
+            BegStep::Down => {
+                if t > 400.0 {
+                    next(self, BegStep::Sitting);
+                    self.feed.wait = self.rnd(3000.0, 5200.0);
+                    self.go("sit_tranistion_to", 180.0, now);
+                }
+            }
+            BegStep::Sitting => {
+                if self.cur.name == "sit_tranistion_to" && self.anim_done(now) {
+                    self.go("sitting", 120.0, now);
+                }
+                if t > 1800.0 && t < 1860.0 {
+                    self.mind.ear = now;
+                    self.mind.ear_side = -1.0;
+                }
+                if t > self.feed.wait {
+                    next(self, BegStep::Rise);
+                    self.go("sit_transition_from", 150.0, now);
+                }
+            }
+            BegStep::Rise => {
+                if self.anim_done(now) {
+                    next(self, BegStep::Stand);
+                }
+            }
+        }
+    }
+
+    fn start_eat(&mut self, now: f64) {
+        self.set_mode(Mode::Eat, now);
+        // a meal is two or three of the eating sounds
+        let n = if self.random() < 0.5 { 2.0 } else { 3.0 };
+        self.feed.voice = now + 450.0;
+        self.feed.until = now + 450.0 + n * CRUNCH_MS;
+        self.go("idle", 260.0, now);
+    }
+
+    /// The body comes round to where it faces: a small hop, and the turn
+    /// at the top of it. No turning back for a moment after a turn.
+    fn turn(&mut self, now: f64) {
+        if self.want_flip() != self.turn.2 && now - self.turn.0 < TURN_MS + 250.0 {
+            self.dir = if self.turn.2 > 0.0 { -1.0 } else { 1.0 };
+        }
         let want = self.want_flip();
-        self.flip += (want - self.flip).signum() * (want - self.flip).abs().min(dt / 70.0);
+        if self.turn.2 != want {
+            self.turn = (now, self.flip, want);
+        }
+        let (t0, from, to) = self.turn;
+        let tp = ((now - t0) / TURN_MS).min(1.0);
+        self.flip = from + (to - from) * ease((tp - 0.36) / 0.28);
+        self.hop = if (to - from).abs() > 0.6 { (PI * tp).sin() } else { 0.0 };
     }
 
     fn anim_ms(&self, name: &str) -> f64 {
         self.rig.anims.get(name).map_or(1000.0, |a| a.len) / Self::rate(name)
     }
 
-    /// Three clicks: it goes after the pointer for a while. `short`: a
-    /// little play from where it sits, no pounce.
-    fn start_hunt(&mut self, now: f64, short: bool) {
+    // ---------------------------------------------------------------- the ball
+
+    /// Three clicks on the cat: a yarn ball drops in front of it.
+    fn start_ball(&mut self, now: f64) {
         self.clicks.clear();
         if self.petting {
             self.petting = false;
             self.out.push(Out::Purr(false));
         }
         self.stop_all();
-        self.set_mode(Mode::Hunt, now);
-        self.hunt = Hunt { until: now + if short { 3500.0 } else { 15000.0 }, short, last_jump: self.hunt.last_jump, ..Hunt::default() };
-        if !short {
-            self.go("run", 140.0, now);
-            self.out.push(Out::Chirp);
-        }
+        let a = self.ball_area();
+        let (x, y) = ((self.x + self.dir * 150.0).clamp(a.0, a.2), (self.y - 30.0).clamp(a.1, a.3));
+        self.ball = Ball { on: true, x, y, z: 380.0, alpha: 1.0, touched: now, ..Ball::default() };
+        self.ball_clicks.clear();
+        self.mind.bored = 0.0;
         self.mind.interest = 1.0;
+        self.out.push(Out::Chirp);
+        if matches!(self.mode, Mode::Lie | Mode::Pet) {
+            return self.get_up(Mode::Ball, now);
+        }
+        self.set_mode(Mode::Ball, now);
+        self.hunt.act = None;
+        self.hunt.rest = now + 500.0;
+        self.go("idle", 200.0, now);
     }
 
-    fn caught(&mut self, now: f64) {
-        self.hunt.caught += 1;
-        self.hunt.rest = now + 650.0;
-        self.mind.ear = now;
-        self.mind.ear_side = 1.0;
+    /// The ball let go of: it wants it again.
+    fn throw_ball(&mut self, now: f64) {
+        self.ball.touched = now;
+        self.mind.bored = (self.mind.bored - 0.5).max(0.0);
+        self.mind.interest = 1.0;
+        if self.mode == Mode::Lie && !self.doze {
+            return self.get_up(Mode::Ball, now);
+        }
+        if matches!(self.mode, Mode::Sit | Mode::Wash | Mode::WalkHome | Mode::Roam | Mode::SitDown) {
+            self.set_mode(Mode::Ball, now);
+            self.hunt.act = None;
+            self.hunt.rest = now + 250.0;
+            self.go("idle", 200.0, now);
+        }
     }
 
-    fn hunt_think(&mut self, now: f64, dt: f64) {
-        let p = (self.ptr.x, self.ptr.y);
+    /// Three clicks on the ball: it shrinks away, and the cat goes home.
+    fn put_ball_away(&mut self, now: f64) {
+        self.ball.held = false;
+        self.held = None;
+        self.ball.gone = now;
+        self.hunt.act = None;
+        if !matches!(self.mode, Mode::Scare | Mode::Pet | Mode::Lie | Mode::WakeUp | Mode::Flee | Mode::Gone | Mode::Peek | Mode::Tidy) {
+            self.set_mode(Mode::WalkHome, now + 500.0);
+            self.go("idle", 200.0, now);
+        }
+        self.mind.bored = 1.0;
+        self.mind.interest = 0.0;
+        self.mind.next_roam = now + 30000.0;
+    }
+
+    fn kick_ball(&mut self, power: f64) {
+        self.ball.vx = self.dir * self.rnd(240.0, 480.0) * power;
+        self.ball.vy = self.rnd(-190.0, 190.0) * power;
+        self.ball.vz = self.rnd(90.0, 240.0) * power;
+        self.out.push(Out::Tap { soft: false });
+    }
+
+    fn faces(&self, d: f64) -> bool {
+        (self.flip - if d < 0.0 { 1.0 } else { -1.0 }).abs() < 0.3
+    }
+
+    fn strike(&mut self, act: Act, now: f64) {
+        self.hunt.act = Some(act);
+        self.hunt.t0 = now;
+        self.hunt.hit = false;
+        self.hunt.from = (self.x, self.y);
+    }
+
+    /// After the ball: it pounces on it, pins it, bats it away; a step
+    /// back when it is too close; it watches it dangle in a hand.
+    fn ball_think(&mut self, now: f64, dt: f64) {
+        if !self.ball.on {
+            self.set_mode(Mode::WalkHome, now + 300.0);
+            self.mind.next_roam = now + 30000.0;
+            return;
+        }
+        let me = (self.x, self.y);
+        let ball = (self.ball.x, self.ball.y);
         match self.hunt.act {
             Some(Act::Jump) => {
-                // airborne from 0.27 to 0.8 of the jump, front paws down by 0.85
                 let t = (now - self.hunt.t0) / self.anim_ms("jump");
                 let e = ease((t - 0.27) / 0.53);
                 let (f, to) = (self.hunt.from, self.hunt.to);
@@ -1369,11 +2057,16 @@ impl Live {
                 self.y = f.1 + (to.1 - f.1) * e;
                 if !self.hunt.hit && t > 0.8 {
                     self.hunt.hit = true;
-                    if self.ptr.on && dist(p, (self.x + LAND.0 * self.dir, self.y - LAND.1)) < 48.0 {
-                        self.caught(now);
-                    } else {
-                        self.hunt.rest = now + 200.0;
+                    let paws = (self.x + LAND.0 * self.dir, self.y - LAND.1);
+                    if !self.ball.held && self.ball.z < 34.0 && dist(ball, paws) < 56.0 {
+                        // pinned under its front paws
+                        self.hunt.act = Some(Act::Hold);
+                        self.hunt.rest = now + self.rnd(700.0, 1300.0);
+                        self.mind.bored += 0.08;
+                        self.mind.ear = now;
+                        return;
                     }
+                    self.hunt.rest = now + 250.0;
                 }
                 if t >= 0.9 {
                     self.hunt.act = None;
@@ -1381,26 +2074,40 @@ impl Live {
                 }
                 return;
             }
+            Some(Act::Hold) => {
+                self.ball.x = self.x + (LAND.0 + 6.0) * self.dir;
+                self.ball.y = self.y - LAND.1 + 4.0;
+                (self.ball.z, self.ball.vx, self.ball.vy, self.ball.vz) = (0.0, 0.0, 0.0, 0.0);
+                self.go("idle", 140.0, now);
+                if now > self.hunt.rest {
+                    self.hunt.act = None;
+                    self.hunt.rest = now + 150.0;
+                }
+                return;
+            }
             Some(Act::Slam) => {
                 let t = (now - self.hunt.t0) / self.anim_ms("scratch");
-                // through the wind-up it shuffles so the paw comes down on the pointer
-                if t < 0.45 && self.ptr.on {
+                if t < 0.45 {
+                    // it shuffles so the paw comes down on the ball
                     let step = 160.0 * dt / 1000.0;
+                    let (wx, wy) = (ball.0 - self.dir * SLAM.0 - self.x, ball.1 + SLAM.1 - self.y);
                     let f = self.hunt.from;
-                    let (wx, wy) = (p.0 - self.dir * SLAM.0 - self.x, p.1 + SLAM.1 - self.y);
                     self.x = self.clamp_x((self.x + wx.clamp(-step, step)).clamp(f.0 - 36.0, f.0 + 36.0));
                     self.y = self.clamp_y((self.y + wy.clamp(-step, step)).clamp(f.1 - 14.0, f.1 + 14.0));
                 }
                 if !self.hunt.hit && t > 0.47 {
                     self.hunt.hit = true;
-                    if self.ptr.on && dist(p, (self.x + SLAM.0 * self.dir, self.y - SLAM.1)) < 42.0 {
-                        self.caught(now);
+                    let paw = (self.x + SLAM.0 * self.dir, self.y - SLAM.1);
+                    if !self.ball.held && self.ball.z < 30.0 && dist(ball, paw) < 48.0 {
+                        self.kick_ball(1.0);
+                        self.ball.touched = now;
+                        self.mind.bored += self.rnd(0.1, 0.17);
                     }
                 }
                 if t >= 0.72 {
                     self.hunt.act = None;
                     self.go("idle", 160.0, now);
-                    self.hunt.rest = self.hunt.rest.max(now + 150.0);
+                    self.hunt.rest = self.hunt.rest.max(now + 200.0);
                 }
                 return;
             }
@@ -1410,81 +2117,145 @@ impl Live {
             self.go("idle", 140.0, now);
             return;
         }
-        if now > self.hunt.until || self.hunt.caught >= 4 || !self.ptr.on {
-            if self.hunt.short {
-                self.set_mode(Mode::Sit, now);
-                self.go("idle", 200.0, now);
-                self.mind.last_swipe = now + 1500.0;
-                self.mind.bored = (self.mind.bored + 0.3).min(1.0);
-            } else {
-                self.set_mode(Mode::WalkHome, now + 700.0);
-                self.mind.bored = 0.8;
-            }
+        let dx = ball.0 - self.x;
+        // a turn only when the ball is clearly on the other side: no jitter
+        let dir = if dx.abs() > 30.0 { dx.signum() } else { self.dir };
+        if self.ball.held {
+            // dangled: it watches, and rears up for it when it is close above
+            self.dir = dir;
+            let c = self.ball.top();
+            let rx = (c.0 - self.x) * dir;
+            let near = rx > -20.0 && rx < 140.0 && c.1 < self.y - 80.0 && c.1 > self.y - 260.0;
+            self.go(if near { "beg" } else { "idle" }, 220.0, now);
             return;
         }
-        // a still pointer is dead prey: it watches it, then loses interest
-        let still = now - self.ptr.moved;
-        if self.hunt.caught > 0 && still > 1200.0 {
-            self.go("idle", 160.0, now);
-            if still > 3500.0 {
-                self.hunt.until = 0.0;
-            }
+        let slow = self.ball.speed() < 40.0 && self.ball.z < 2.0;
+        if self.mind.bored > 0.85 && slow {
+            self.sit_down(240.0, now);
+            self.mind.quiet = now;
             return;
         }
-        let dir = if p.0 != self.x { (p.0 - self.x).signum() } else { self.dir };
-        // in front and in paw range: a slam from where it stands
-        let (rx, ry) = ((p.0 - self.x) * dir, p.1 - (self.y - SLAM.1));
-        if rx > 74.0 && rx < 138.0 && ry.abs() < 32.0 {
+        // in front and in paw range: it bats it from where it stands
+        let (rx, ry) = ((ball.0 - self.x) * dir, ball.1 - (self.y - SLAM.1));
+        if rx > 74.0 && rx < 138.0 && ry.abs() < 32.0 && self.ball.z < 30.0 && self.ball.speed() < 260.0 {
             self.dir = dir;
             self.go("idle", 120.0, now);
-            if self.turned(0.3) {
-                self.hunt.act = Some(Act::Slam);
-                self.hunt.t0 = now;
-                self.hunt.hit = false;
-                self.hunt.from = (self.x, self.y);
+            if self.faces(dir) {
+                self.strike(Act::Slam, now);
                 self.go("scratch", 70.0, now);
             }
             return;
         }
-        // right under its nose: a step back first, still facing it
-        if rx > -10.0 && rx <= 74.0 && ry.abs() < 50.0 && self.turned(0.3) && dir == self.dir {
-            self.go("idle", 120.0, now);
-            self.x = self.clamp_x(self.x - dir * 90.0 * dt / 1000.0);
+        // too close: a few steps back
+        if slow && rx > -10.0 && rx <= 74.0 && ry.abs() < 50.0 && self.faces(dir) && dir == self.dir {
+            self.go_back("walk", 140.0, now);
+            self.x = self.clamp_x(self.x - dir * BACK * dt / 1000.0);
             return;
         }
-        let lead = ((self.ptr.vx * 0.25).clamp(-120.0, 120.0), (self.ptr.vy * 0.25).clamp(-80.0, 80.0));
-        let slam_at = (self.clamp_x(p.0 - dir * SLAM.0), self.clamp_y(p.1 + SLAM.1));
-        let d = dist(slam_at, (self.x, self.y));
-        if d < 26.0 {
-            self.dir = dir;
-            self.go("idle", 120.0, now);
-            if self.turned(0.3) {
-                self.hunt.act = Some(Act::Slam);
-                self.hunt.t0 = now;
-                self.hunt.hit = false;
-                self.hunt.from = (self.x, self.y);
-                self.go("scratch", 70.0, now);
-            }
-            return;
-        }
-        // from afar: a pounce to where the pointer is going
-        let land_at = (self.clamp_x(p.0 + lead.0 - dir * LAND.0), self.clamp_y(p.1 + lead.1 + LAND.1));
-        let dj = dist(land_at, (self.x, self.y));
-        if !self.hunt.short && dj > 90.0 && dj < 280.0 && now - self.hunt.last_jump > 1100.0 {
-            self.dir = dir;
+        // a rolling ball: a pounce to where it will be when the paws come down
+        let area = self.ball_area();
+        let p = self.ball.at(self.anim_ms("jump") * 0.8, area);
+        let pdir = if (p.0 - self.x).abs() > 30.0 { (p.0 - self.x).signum() } else { self.dir };
+        let land = (self.clamp_x(p.0 - pdir * LAND.0), self.clamp_y(p.1 + LAND.1));
+        let dj = dist(land, me);
+        if !slow && dj > 90.0 && dj < 300.0 && now - self.hunt.last_jump > 900.0 && self.ball.z < 60.0 {
+            self.dir = pdir;
             self.go("idle", 100.0, now);
-            if self.turned(0.3) {
-                self.hunt.act = Some(Act::Jump);
-                self.hunt.t0 = now;
-                self.hunt.hit = false;
-                self.hunt.from = (self.x, self.y);
-                self.hunt.to = land_at;
+            if self.faces(pdir) {
+                self.strike(Act::Jump, now);
+                self.hunt.to = land;
                 self.hunt.last_jump = now;
                 self.go("jump", 60.0, now);
             }
             return;
         }
-        self.walk_to(slam_at, dt, !self.hunt.short && d > 110.0, now);
+        let q = self.ball.at(300.0, area);
+        let qdir = if (q.0 - self.x).abs() > 30.0 { (q.0 - self.x).signum() } else { self.dir };
+        let to = (self.clamp_x(q.0 - qdir * SLAM.0), self.clamp_y(q.1 + SLAM.1));
+        self.walk_to(to, dt, dist(to, me) > 110.0, now);
+    }
+
+    /// The ball rolls and flies; what was let go of above the bottom falls.
+    fn things(&mut self, now: f64, dt: f64) {
+        if self.ball.on && self.ball.gone > 0.0 && now - self.ball.gone > 220.0 {
+            self.ball.on = false;
+            self.ball.gone = 0.0;
+        }
+        if self.ball.on && !self.ball.held && self.hunt.act != Some(Act::Hold) {
+            let area = self.ball_area();
+            if self.ball.step(dt, area).is_some_and(|v| v > 300.0) {
+                self.out.push(Out::Tap { soft: true });
+            }
+            // left alone a long while, it fades away
+            if self.mode != Mode::Ball && now - self.ball.touched > 45000.0 {
+                self.ball.alpha -= dt / 1000.0;
+                if self.ball.alpha <= 0.0 {
+                    self.ball.on = false;
+                }
+            }
+        }
+        let floor = self.ground.3;
+        let (bed, bowl) = (self.held == Some(Held::Bed), self.held == Some(Held::Bowl));
+        let thud = Self::fall(&mut self.bed, bed, floor - 18.0, dt) | Self::fall(&mut self.bowl, bowl, floor - 20.0, dt);
+        if thud {
+            self.out.push(Out::Tap { soft: true });
+        }
+    }
+
+    /// One step of a fall to `floor`, with a little bounce: true on a thud.
+    fn fall(t: &mut Thing, held: bool, floor: f64, dt: f64) -> bool {
+        let Some((x, y)) = t.at else { return false };
+        if held || (y >= floor && t.vy <= 0.0) {
+            if !held && y > floor {
+                t.at = Some((x, floor));
+            }
+            t.vy = 0.0;
+            return false;
+        }
+        let s = dt / 1000.0;
+        t.vy += DROP * s;
+        let y = y + t.vy * s;
+        if y < floor {
+            t.at = Some((x, y));
+            return false;
+        }
+        t.at = Some((x, floor));
+        let hard = t.vy > 320.0;
+        if hard {
+            t.vy = -t.vy * 0.22;
+            t.at = Some((x, floor - 0.01));
+        } else {
+            t.vy = 0.0;
+        }
+        hard
+    }
+
+    // ---------------------------------------------------------------- flight
+
+    /// The edge it may leave by: the side nearest its bed (or the bottom,
+    /// when that is much nearer); every other edge is a wall.
+    fn exit_edge(&self) -> Edge {
+        let (b, g) = (self.bed_at(), self.ground);
+        let sd = (b.0 - g.0).min(g.2 - b.0);
+        if sd < 160.0 || sd < (self.h - b.1) * 2.0 {
+            if b.0 < (g.0 + g.2) / 2.0 {
+                Edge::Left
+            } else {
+                Edge::Right
+            }
+        } else {
+            Edge::Bottom
+        }
+    }
+
+    /// Where it goes out of sight through an edge (`out`), or peeks back from.
+    fn edge_point(&self, e: Edge, out: bool) -> (f64, f64) {
+        let (b, g) = (self.bed_at(), self.ground);
+        match e {
+            Edge::Left => (g.0 - if out { 130.0 } else { 32.0 }, b.1 - 6.0),
+            Edge::Right => (g.2 + if out { 130.0 } else { 32.0 }, b.1 - 6.0),
+            Edge::Bottom => (b.0, self.h + if out { 230.0 } else { 80.0 }),
+        }
     }
 
     // ---------------------------------------------------------------- the pose
@@ -1495,11 +2266,24 @@ impl Live {
         self.last = now;
         self.think(now, dt);
         self.physics(dt);
+        self.things(now, dt);
         let mut scene = if self.mode == Mode::Away { Scene::default() } else { self.pose(now, dt) };
         self.nose_hold(now);
         scene.icons = self.icons.iter().filter(|i| i.lifted).map(|i| (i.id, i.x, i.y, i.rot)).collect();
-        if self.mode == Mode::Eat {
-            scene.bowl = Some((self.x - self.dir * 70.0, self.y - 2.0));
+        if self.lives || self.mode != Mode::Away {
+            scene.bed = Some(self.bed_at());
+            let (x, y) = self.bowl_at();
+            let (level, plugged) = self.battery.unwrap_or((0.8, false));
+            // in front of the cat: the inside under its head, the front wall over its chin
+            let front = self.mode != Mode::Away && y > self.y;
+            scene.bowl = Some(BowlView { x, y, level, charging: plugged, low: level < LOW && !plugged, battery: self.battery.is_some(), front });
+        }
+        // the shadow stays on the ground through a hop
+        scene.feet = scene.feet.map(|_| (self.x, self.y));
+        if self.ball.on {
+            let b = &self.ball;
+            let scale = if b.gone > 0.0 { (1.0 - (now - b.gone) / 220.0).max(0.0) } else { 1.0 };
+            scene.ball = Some(BallView { x: b.x, y: b.y, z: b.z, rot: b.rot, alpha: b.alpha.clamp(0.0, 1.0), scale });
         }
         scene
     }
@@ -1509,10 +2293,11 @@ impl Live {
     }
 
     fn pose(&mut self, now: f64, dt: f64) -> Scene {
-        let o = (self.x, self.y);
+        let hop = if matches!(self.mode, Mode::Sit | Mode::Lie) { 5.0 } else { 11.0 };
+        let o = (self.x, self.y - self.hop * hop);
         let fl = if self.flip < 0.0 { -1.0 } else { 1.0 };
         let rig = &self.rig;
-        let local = |c: &Clip| rig.local(c.name, (now - c.t0) * Self::rate(c.name));
+        let local = |c: &Clip| rig.local(c.name, Self::clip_t(c, now));
         let Some(mut l) = local(&self.cur) else { return Scene::default() };
         let bw = ease((now - self.blend_t0) / self.blend_ms);
         if bw < 1.0 {
@@ -1528,13 +2313,20 @@ impl Live {
         let p = (ptr.0 * fl, ptr.1);
         let w0 = rig::world(&l, &|_, s| s);
         let head = w0.bone(self.ids.head);
-        // where it looks: the icon it works on, a glance, the pointer when it cares, or ahead
+        // where it looks: its bowl, up at people, the icon it works on, the
+        // ball (it has eyes for nothing else), a glance, the pointer when
+        // it cares, or ahead
+        let icon = |k: Option<usize>| k.and_then(|k| self.icons.get(k)).map(|i| (i.x, i.y));
         let focus = match self.mode {
-            Mode::Tidy => self.tidy.icon,
-            _ => self.sw.at,
-        }
-        .and_then(|k| self.icons.get(k))
-        .map(|i| (i.x, i.y));
+            Mode::Eat => {
+                let b = self.bowl_at();
+                Some((b.0, b.1 - BOWL_H))
+            }
+            Mode::Beg => Some(if self.ptr.on { (self.ptr.x, self.ptr.y) } else { (self.x + self.dir * 60.0, self.y - 400.0) }),
+            Mode::Tidy => icon(self.tidy.icon),
+            Mode::Lie | Mode::Pet => icon(self.sw.at),
+            _ => icon(self.sw.at).or(self.ball.on.then(|| self.ball.top())),
+        };
         let mut tgt = None;
         if let Some(f) = focus {
             let g = self.to_world(f, o);
@@ -1558,14 +2350,17 @@ impl Live {
             ly = vy / d * 7.0;
         }
         let pushing = self.mode == Mode::Tidy && self.tidy.step == Some(Step::Push);
-        let eating = self.mode == Mode::Eat;
         let nt = (now - self.nudge_t0) / 260.0;
-        let flick = if (0.0..1.0).contains(&nt) { (nt * std::f64::consts::PI).sin() } else { 0.0 };
+        let flick = if (0.0..1.0).contains(&nt) { (nt * PI).sin() } else { 0.0 };
         if pushing {
             la = 14.0;
         }
-        if eating {
-            la = 22.0;
+        // eating: the head down in the bowl, chewing
+        let eating = self.mode == Mode::Eat && now - self.mode_t0 > 300.0;
+        self.feed.k += (if eating { 1.0 } else { 0.0 } - self.feed.k) * (dt / 180.0).min(1.0);
+        let fk = self.feed.k;
+        if fk > 0.001 {
+            la = la * (1.0 - fk) + (EAT_LOOK + (now / 85.0).sin() * EAT_CHEW) * fk;
         }
         let (ke, kh) = ((dt / 55.0).min(1.0), (dt / 160.0).min(1.0));
         self.look.1 += (lx - self.look.1) * ke;
@@ -1581,18 +2376,17 @@ impl Live {
         let moving = matches!(self.cur.name, "walk" | "run");
         let tail_base = if moving { (now / 400.0).sin() * 4.0 } else { ((now / 720.0).sin() * 3.0 + (now / 310.0).sin() * 1.5) * (1.0 + self.mind.interest * 1.8) };
         let swish_t = (now - self.mind.swish) / 900.0;
-        let swish = if (0.0..1.0).contains(&swish_t) { (swish_t * std::f64::consts::PI * 3.0).sin() * 14.0 * (1.0 - swish_t) } else { 0.0 };
+        let swish = if (0.0..1.0).contains(&swish_t) { (swish_t * PI * 3.0).sin() * 14.0 * (1.0 - swish_t) } else { 0.0 };
         let tail = tail_base + swish + if crouch > 0.0 { (now / 60.0).sin() * 6.0 * crouch } else { 0.0 } + if pushing { 10.0 } else { 0.0 };
-        let chew = if eating { ((now - self.mode_t0) / 160.0).sin().abs() } else { 0.0 };
         let look_a = self.look.0;
         let ids = (self.ids.head, self.ids.neck, self.ids.body, self.ids.tail);
         let fix0 = move |n: usize, s: St| -> St {
             if n == ids.0 {
-                St { a: s.a + look_a + 4.0 * scare + 1.5 * tr - 5.0 * crouch + 16.0 * flick + 4.0 * chew, ..s }
+                St { a: s.a + look_a + 4.0 * scare + 1.5 * tr - 5.0 * crouch + 16.0 * flick, ..s }
             } else if n == ids.1 {
-                St { a: s.a - 6.0 * scare + 3.0 * crouch + if pushing { 6.0 } else { 0.0 } + if eating { 10.0 } else { 0.0 } + 6.0 * flick, y: s.y + breath * 0.5, ..s }
+                St { a: s.a - 6.0 * scare + 3.0 * crouch + if pushing { 6.0 } else { 0.0 } + EAT_NECK * fk + 6.0 * flick, y: s.y + breath * 0.5, ..s }
             } else if n == ids.2 {
-                St { a: s.a - 5.0 * scare - 2.0 * crouch, x: s.x + 24.0 * scare + 2.0 * tr + 7.0 * crouch, y: s.y + 10.0 * scare + breath - 4.0 * crouch, ..s }
+                St { a: s.a - 5.0 * scare - 2.0 * crouch + EAT_BODY * fk, x: s.x + 24.0 * scare + 2.0 * tr + 7.0 * crouch, y: s.y + 10.0 * scare + breath - 4.0 * crouch + EAT_DROP * fk, ..s }
             } else if n == ids.3 {
                 St { a: s.a + tail, ..s }
             } else {
@@ -1666,7 +2460,7 @@ impl Live {
         self.sw.w += (if tt.is_some() { w } else { 0.0 } - self.sw.w) * (dt / 16.0).min(1.0);
         self.sw.claws = claws;
         // claws out as the paw comes down on the pointer
-        if self.mode == Mode::Hunt && self.hunt.act == Some(Act::Slam) {
+        if self.mode == Mode::Ball && self.hunt.act == Some(Act::Slam) {
             let t = (now - self.hunt.t0) / self.anim_ms("scratch");
             self.sw.claws = self.sw.claws.max(ease((t - 0.38) / 0.08) * (1.0 - ease((t - 0.64) / 0.06)));
         }
@@ -1693,24 +2487,22 @@ impl Live {
         }
         // ears: a flick now and then, up and forward when it hunts
         let et = (now - self.mind.ear) / 220.0;
-        let ear_flick = if (0.0..1.0).contains(&et) { (et * std::f64::consts::PI).sin() * 18.0 } else { 0.0 };
-        for ob in &mut wd.objs {
-            if Some(ob.name) == self.ids.ear_top {
-                ob.st.a += ear_flick * self.mind.ear_side - 6.0 * crouch;
+        let ear_flick = if (0.0..1.0).contains(&et) { (et * PI).sin() * 18.0 } else { 0.0 };
+        let side = self.mind.ear_side;
+        let head_c = self.head_centre(&wd);
+        for k in 0..wd.objs.len() {
+            let (n, s) = (wd.objs[k].name, wd.objs[k].st);
+            if Some(n) == self.ids.ear_top {
+                wd.objs[k].st = self.ear_turn(s, head_c, |e| e.a += ear_flick * side - 6.0 * crouch);
             }
-            if Some(ob.name) == self.ids.ear_back {
-                ob.st.a += ear_flick * 0.5 * self.mind.ear_side;
-            }
-            if eating && Some(ob.name) == self.ids.mouth {
-                ob.st.al = 1.0;
-                ob.st.sy *= 0.3 + 0.5 * chew;
-                ob.st.sx *= 0.6;
+            if Some(n) == self.ids.ear_back {
+                wd.objs[k].st = self.ear_turn(s, head_c, |e| e.a += ear_flick * 0.5 * side);
             }
         }
         // a yawn: eyes shut, mouth wide
         let yt = (now - self.mind.yawn) / 1400.0;
         if (0.0..1.0).contains(&yt) && self.mode == Mode::Sit {
-            let k = (yt * std::f64::consts::PI).sin();
+            let k = (yt * PI).sin();
             for ob in &mut wd.objs {
                 if Some(ob.name) == self.ids.mouth {
                     ob.st.al = 1.0;
@@ -1718,15 +2510,18 @@ impl Live {
                     ob.st.sx *= 0.5 + 0.3 * k;
                 }
             }
-            if k > 0.35 {
+            // eyes shut through the middle of it: the closed-eye picture, and the pupils hidden
+            if k > 0.35 && self.closed.is_some() {
                 self.set_eyes(&mut wd, self.closed);
+                for ob in &mut wd.objs {
+                    if self.ids.pupils.contains(&ob.name) {
+                        ob.st.al = 0.0;
+                    }
+                }
             }
         }
-        if matches!(self.mode, Mode::Lie | Mode::Pet) {
-            self.set_eyes(&mut wd, self.closed);
-        }
         // the pupils open wide when it hunts
-        let hunting = matches!(self.mode, Mode::Sit | Mode::Hunt | Mode::Tidy);
+        let hunting = matches!(self.mode, Mode::Sit | Mode::Ball | Mode::Tidy);
         let dil = 1.0 + 0.28 * (self.mind.interest * if hunting { 1.0 } else { 0.0 }).max(crouch).max(if focus.is_some() { 0.6 } else { 0.0 });
         if dil > 1.01 {
             for k in 0..wd.objs.len() {
@@ -1813,19 +2608,47 @@ impl Live {
         g
     }
 
+    /// The middle of the head's picture.
+    fn head_centre(&self, wd: &World) -> Option<(f64, f64)> {
+        wd.objs.iter().find(|o| self.file_name(o.st.f).contains("/head")).and_then(|o| self.centre(&o.st))
+    }
+
+    /// An ear turns and folds about its base on the head, so it stays on.
+    fn ear_turn(&self, s: St, head: Option<(f64, f64)>, f: impl FnOnce(&mut St)) -> St {
+        let mut e = s;
+        let (Some(c), Some(h)) = (self.centre(&s), head) else {
+            f(&mut e);
+            return e;
+        };
+        let p = ((c.0 + h.0) / 2.0, (c.1 + h.1) / 2.0);
+        let (sn, cs) = (-s.a * D2R).sin_cos();
+        let (dx, dy) = (p.0 - s.x, p.1 - s.y);
+        let l = ((dx * cs - dy * sn) / s.sx, (dx * sn + dy * cs) / s.sy);
+        f(&mut e);
+        let (sn, cs) = (e.a * D2R).sin_cos();
+        let (lx, ly) = (l.0 * e.sx, l.1 * e.sy);
+        let q = (e.x + lx * cs - ly * sn, e.y + lx * sn + ly * cs);
+        e.x += p.0 - q.0;
+        e.y += p.1 - q.1;
+        e
+    }
+
     /// The scare on the parts: ears flat, wide eyes, mouth open in a hiss, the tail puffed.
     fn scared(&self, wd: &mut World, k: f64, wob: f64) {
         let mut eyes = None;
+        let head_c = self.head_centre(wd);
         for i in 0..wd.objs.len() {
             let n = wd.objs[i].name;
-            let s = &mut wd.objs[i].st;
             if Some(n) == self.ids.ear_top {
-                s.a += -35.0 * k;
-                s.sy *= 1.0 - 0.25 * k;
+                wd.objs[i].st = self.ear_turn(wd.objs[i].st, head_c, |e| {
+                    e.a += -35.0 * k;
+                    e.sy *= 1.0 - 0.25 * k;
+                });
             }
             if Some(n) == self.ids.ear_back {
-                s.sy *= 1.0 - 0.35 * k;
+                wd.objs[i].st = self.ear_turn(wd.objs[i].st, head_c, |e| e.sy *= 1.0 - 0.35 * k);
             }
+            let s = &mut wd.objs[i].st;
             if Some(n) == self.ids.mouth && k > 0.05 {
                 s.al = 1.0;
                 s.sy *= 0.35 + 0.3 * k;
@@ -1911,7 +2734,7 @@ impl Live {
         if let Some(n) = nose {
             self.nose = n;
             let ahead = -fl.signum();
-            if fl.abs() > 0.95 && self.mode != Mode::Tidy {
+            if fl.abs() > 0.95 && self.mode != Mode::Tidy && self.feed.k < 0.05 && self.cur.name != "beg" {
                 self.rel_nose = ((n.0 - org.0) * ahead, n.1 - org.1);
             }
         }
@@ -1927,9 +2750,10 @@ impl Live {
                 p
             })
             .collect();
-        Scene { parts, icons: Vec::new(), bowl: None, feet: Some(org) }
+        Scene { parts, feet: Some(org), ..Scene::default() }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -1945,6 +2769,14 @@ mod tests {
         l
     }
 
+    /// In its corner, sitting; returns the time.
+    fn settled() -> (Live, f64) {
+        let mut l = live();
+        l.set_lives(true, 0.0);
+        let t = run(&mut l, 0.0, 6000.0);
+        (l, t)
+    }
+
     /// Runs it for `ms` at 60 fps from `t`, returns the end time.
     fn run(l: &mut Live, t: f64, ms: f64) -> f64 {
         let mut t = t;
@@ -1956,25 +2788,60 @@ mod tests {
         t
     }
 
+    /// Runs it, keeping what it said.
+    fn run_out(l: &mut Live, t: f64, ms: f64, out: &mut Vec<Out>) -> f64 {
+        let mut t = t;
+        let end = t + ms;
+        while t < end {
+            t += 16.7;
+            let _ = l.tick(t);
+            out.extend(l.take());
+        }
+        t
+    }
+
+    /// A click at `at`; returns the time after.
+    fn click(l: &mut Live, t: f64, at: (f64, f64)) -> f64 {
+        l.pointer(Some(at), true, t);
+        let t = run(l, t, 50.0);
+        l.pointer(Some(at), false, t);
+        run(l, t, 100.0)
+    }
+
+    fn middle(l: &Live) -> (f64, f64) {
+        let (x0, y0, x1, y1) = l.bounds.unwrap();
+        ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    }
+
+    /// Clicks it three times where it is; returns the time after.
+    fn three_clicks(l: &mut Live, t: f64) -> f64 {
+        let at = middle(l);
+        let mut t = t;
+        for _ in 0..3 {
+            t = click(l, t, at);
+        }
+        t
+    }
+
+    fn voices(out: &[Out], k: Kind) -> usize {
+        out.iter().filter(|o| **o == Out::Voice(k)).count()
+    }
+
     #[test]
     fn it_walks_in_to_its_corner_and_sits() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        assert!(l.shown());
-        let t = run(&mut l, 0.0, 6000.0);
+        let (mut l, t) = settled();
         assert_eq!(l.mode, Mode::Sit, "{:?}", l.mode);
         assert!(dist((l.x, l.y), l.home()) < 1.0);
         let s = l.tick(t + 16.0);
         assert!(s.parts.len() > 20, "{} parts", s.parts.len());
+        assert!(s.bed.is_some() && s.bowl.is_some());
         let (x0, y0, x1, y1) = l.bounds.unwrap();
         assert!(x1 - x0 > 60.0 && y1 - y0 > 90.0, "{:?}", l.bounds);
     }
 
     #[test]
-    fn a_slap_scares_it_out_of_anything() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        let mut t = run(&mut l, 0.0, 6000.0);
+    fn a_slap_sends_it_off_the_screen_it_peeks_back_and_comes_home() {
+        let (mut l, mut t) = settled();
         l.pet(true, t);
         assert_eq!(l.mode, Mode::Pet);
         t = run(&mut l, t, 1000.0);
@@ -1982,92 +2849,188 @@ mod tests {
         assert_eq!(l.mode, Mode::Scare);
         t = run(&mut l, t, 300.0);
         assert!(l.scare > 0.5, "scare {}", l.scare);
-        run(&mut l, t, 2500.0);
-        assert!(matches!(l.mode, Mode::Sit | Mode::SitDown), "{:?}", l.mode);
-    }
-
-    /// Clicks it three times where it sits; returns the time after.
-    fn three_clicks(l: &mut Live, t: f64) -> f64 {
-        let (x0, y0, x1, y1) = l.bounds.unwrap();
-        let at = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-        let mut t = t;
-        for _ in 0..3 {
-            l.pointer(Some(at), true, t);
-            t = run(l, t, 50.0);
-            l.pointer(Some(at), false, t);
-            t = run(l, t, 100.0);
-        }
-        t
-    }
-
-    /// Runs it with the pointer at `at(t)` each frame.
-    fn run_with(l: &mut Live, t: f64, ms: f64, at: &dyn Fn(f64) -> (f64, f64)) -> f64 {
-        let mut t = t;
-        let end = t + ms;
+        let mut seen = Vec::new();
+        let end = t + 20000.0;
         while t < end {
-            t += 16.7;
-            l.pointer(Some(at(t)), false, t);
-            let _ = l.tick(t);
-        }
-        t
-    }
-
-    #[test]
-    fn three_clicks_and_it_pounces_on_a_still_pointer_then_goes_home() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        let mut t = run(&mut l, 0.0, 6000.0);
-        t = three_clicks(&mut l, t);
-        assert_eq!(l.mode, Mode::Hunt);
-        assert!(l.take().contains(&Out::Chirp));
-        // a still pointer up and to the left: it runs there and pounces
-        let at = (l.x - 420.0, l.y - 260.0);
-        let mut jumped = false;
-        let end = t + 6000.0;
-        while t < end {
-            t = run_with(&mut l, t, 16.7, &|_| at);
-            jumped |= l.hunt.act == Some(Act::Jump);
-            if l.hunt.caught > 0 {
+            t = run(&mut l, t, 50.0);
+            if seen.last() != Some(&l.mode) {
+                seen.push(l.mode);
+            }
+            if l.mode == Mode::Sit {
                 break;
             }
         }
-        assert!(jumped, "no pounce");
-        assert_eq!(l.hunt.caught, 1, "missed: cat at {:?}, pointer {:?}", (l.x, l.y), at);
-        // dead prey: it loses interest and walks back to its corner
+        for m in [Mode::Flee, Mode::Gone, Mode::Peek, Mode::WalkHome] {
+            assert!(seen.contains(&m), "{m:?} missing from {seen:?}");
+        }
+        assert_eq!(l.mode, Mode::Sit, "{seen:?}");
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+    }
+
+    #[test]
+    fn three_clicks_bring_a_ball_it_pounces_on_and_bats_and_three_put_it_away() {
+        let (mut l, mut t) = settled();
+        t = three_clicks(&mut l, t);
+        assert_eq!(l.mode, Mode::Ball);
+        assert!(l.ball.on);
+        assert!(l.take().contains(&Out::Chirp));
+        let (mut slams, mut jumps, mut last) = (0, 0, None);
+        let end = t + 12000.0;
+        while t < end {
+            t = run(&mut l, t, 16.7);
+            if l.hunt.act != last {
+                match l.hunt.act {
+                    Some(Act::Slam) => slams += 1,
+                    Some(Act::Jump) => jumps += 1,
+                    _ => {}
+                }
+            }
+            last = l.hunt.act;
+        }
+        assert!(slams >= 2, "{slams} slams, {jumps} jumps");
+        assert!(jumps >= 1, "{slams} slams, {jumps} jumps");
+        // three clicks on the ball put it away; it goes home
+        for _ in 0..3 {
+            let at = l.ball.top();
+            t = click(&mut l, t, at);
+        }
+        assert!(l.ball.gone > 0.0);
         l.mind.next_roam = f64::INFINITY;
-        run_with(&mut l, t, 16000.0, &|_| at);
+        t = run(&mut l, t, 12000.0);
+        assert!(!l.ball.on);
+        assert!(matches!(l.mode, Mode::Sit | Mode::SitDown | Mode::Wash | Mode::Lie), "{:?}", l.mode);
+        assert!(dist((l.x, l.y), l.home()) < 1.0);
+        assert!(l.tick(t + 16.0).ball.is_none());
+    }
+
+    #[test]
+    fn a_ball_thrown_flies_with_the_hand() {
+        let (mut l, mut t) = settled();
+        t = three_clicks(&mut l, t);
+        t = run(&mut l, t, 1500.0);
+        let (x, y) = l.ball.top();
+        l.pointer(Some((x, y)), true, t);
+        assert!(l.held == Some(Held::Ball));
+        for k in 1..8 {
+            t += 16.7;
+            l.pointer(Some((x - k as f64 * 14.0, y - k as f64 * 6.0)), true, t);
+            let _ = l.tick(t);
+        }
+        l.pointer(Some((x - 120.0, y - 50.0)), false, t + 5.0);
+        assert!(!l.ball.held);
+        assert!(l.ball.vx < -300.0 && l.ball.vz > 100.0, "{:?}", (l.ball.vx, l.ball.vz));
+    }
+
+    #[test]
+    fn its_bed_lifted_and_let_go_falls_to_the_bottom_and_it_goes_there() {
+        let (mut l, mut t) = settled();
+        let floor = l.ground.3 - 18.0;
+        let b0 = l.bed_at();
+        let at = (b0.0 - 74.0, b0.1 + 8.0);
+        l.pointer(Some(at), true, t);
+        assert_eq!(l.held, Some(Held::Bed));
+        for k in 1..=30 {
+            t += 16.7;
+            l.pointer(Some((at.0 - k as f64 * 20.0, at.1 - k as f64 * 12.0)), true, t);
+            let _ = l.tick(t);
+        }
+        assert!(l.bed_at().1 < floor - 300.0, "{:?}", l.bed_at());
+        l.pointer(Some((at.0 - 600.0, at.1 - 360.0)), false, t);
+        let mut out = Vec::new();
+        t = run_out(&mut l, t, 2000.0, &mut out);
+        let b = l.bed_at();
+        assert!((b.1 - floor).abs() < 0.5, "{b:?}");
+        assert!((b.0 - (b0.0 - 600.0)).abs() < 1.0, "{b:?}");
+        assert!(out.contains(&Out::Tap { soft: true }), "no thud");
+        assert!(out.iter().any(|o| matches!(o, Out::Moved { .. })));
+        l.mind.next_roam = f64::INFINITY;
+        run(&mut l, t, 15000.0);
         assert!(matches!(l.mode, Mode::Sit | Mode::SitDown), "{:?}", l.mode);
         assert!(dist((l.x, l.y), l.home()) < 1.0);
     }
 
     #[test]
-    fn a_pointer_wiggled_in_front_of_it_gets_the_paw() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        let mut t = run(&mut l, 0.0, 6000.0);
-        t = three_clicks(&mut l, t);
-        let (x, y) = (l.x - 300.0, l.y - 120.0);
-        let (mut slams, mut caught) = (0, 0);
-        let mut last = None;
-        let end = t + 8000.0;
+    fn on_the_charger_it_eats_once_with_its_sounds() {
+        let (mut l, mut t) = settled();
+        l.power(50, true);
+        l.eat(t);
+        let mut out = Vec::new();
+        let (mut ate, mut deep) = (false, 0.0f64);
+        let end = t + 30000.0;
         while t < end {
-            t = run_with(&mut l, t, 16.7, &|t| (x + 14.0 * (t / 70.0).sin(), y + 6.0 * (t / 90.0).cos()));
-            if l.hunt.act == Some(Act::Slam) && last != Some(Act::Slam) {
-                slams += 1;
-            }
-            last = l.hunt.act;
-            caught = caught.max(l.hunt.caught);
+            t = run_out(&mut l, t, 50.0, &mut out);
+            ate |= l.mode == Mode::Eat;
+            deep = deep.max(l.feed.k);
         }
-        assert!(slams >= 2, "{slams} slams");
-        assert!(caught >= 2, "caught {caught}");
+        assert!(ate);
+        assert!(deep > 0.9, "head down {deep}");
+        let n = voices(&out, Kind::Eat);
+        assert!((2..=3).contains(&n), "{n} eating sounds");
+        assert!(!l.want_eat);
+        assert_ne!(l.mode, Mode::ToBowl);
+    }
+
+    #[test]
+    fn on_a_low_battery_it_begs_by_its_bowl_until_fed() {
+        let (mut l, mut t) = settled();
+        l.power(6, false);
+        l.beg(t);
+        let mut out = Vec::new();
+        let mut begged = false;
+        let end = t + 25000.0;
+        while t < end {
+            t = run_out(&mut l, t, 50.0, &mut out);
+            begged |= l.mode == Mode::Beg && l.feed.step == BegStep::Up;
+        }
+        assert!(begged);
+        let n = voices(&out, Kind::Hungry);
+        assert!((2..=5).contains(&n), "{n} meows");
+        let b = l.bowl_at();
+        assert!((l.x - b.0).abs() < 140.0 && (l.y - b.1).abs() < 10.0, "{:?} by {b:?}", (l.x, l.y));
+        l.power(6, true);
+        run(&mut l, t, 2000.0);
+        assert!(!matches!(l.mode, Mode::Beg | Mode::ToBowl), "{:?}", l.mode);
+    }
+
+    #[test]
+    fn it_sleeps_when_the_lid_closes_and_says_hello_once_up_after_it_opens() {
+        let (mut l, mut t) = settled();
+        l.doze(true, t);
+        assert_eq!(l.mode, Mode::Lie);
+        t = run(&mut l, t, 60000.0);
+        assert_eq!(l.mode, Mode::Lie);
+        assert!(l.fps() <= 4.0);
+        l.doze(false, t);
+        t = run(&mut l, t, 1000.0);
+        l.hello(t);
+        let mut out = Vec::new();
+        t = run_out(&mut l, t, 1500.0, &mut out);
+        assert_eq!(l.mode, Mode::Lie, "up too soon");
+        assert_eq!(voices(&out, Kind::Hello), 0);
+        run_out(&mut l, t, 3500.0, &mut out);
+        assert_eq!(voices(&out, Kind::Hello), 1);
+        assert!(!matches!(l.mode, Mode::Lie | Mode::WakeUp), "{:?}", l.mode);
+    }
+
+    #[test]
+    fn asleep_it_sleeps_on_until_a_click_wakes_it() {
+        let (mut l, mut t) = settled();
+        l.lie_down(Mode::Lie, t);
+        t = run(&mut l, t, 60000.0);
+        assert_eq!(l.mode, Mode::Lie);
+        assert_eq!(l.cur.name, "sleeping");
+        let at = middle(&l);
+        t = click(&mut l, t, at);
+        assert_eq!(l.mode, Mode::WakeUp);
+        run(&mut l, t, 2500.0);
+        assert!(!matches!(l.mode, Mode::Lie | Mode::WakeUp), "{:?}", l.mode);
     }
 
     #[test]
     fn it_walks_about_the_desk_on_its_own_and_sits_there() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        let t = run(&mut l, 0.0, 6000.0);
+        let (mut l, t) = settled();
         l.pointer(None, false, t);
+        l.mind.next_roam = t + 1000.0;
         let mut t = t;
         let mut roamed = false;
         let end = t + 40000.0;
@@ -2085,9 +3048,7 @@ mod tests {
 
     #[test]
     fn the_tidy_lines_every_icon_up_in_its_slot() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        let mut t = run(&mut l, 0.0, 6000.0);
+        let (mut l, mut t) = settled();
         let icons = vec![(1, 300.0, 200.0), (2, 600.0, 520.0), (3, 900.0, 140.0), (4, 420.0, 640.0), (5, 1380.0, 60.0), (6, 700.0, 300.0)];
         let slots: Vec<(f64, f64)> = (0..6).map(|r| (1440.0, 60.0 + r as f64 * 92.0)).collect();
         l.tidy(icons, &slots, (47.0, 37.0), t);
@@ -2131,9 +3092,7 @@ mod tests {
 
     #[test]
     fn a_slap_mid_tidy_scares_it_and_then_it_carries_on() {
-        let mut l = live();
-        l.set_lives(true, 0.0);
-        let mut t = run(&mut l, 0.0, 6000.0);
+        let (mut l, mut t) = settled();
         l.tidy(vec![(1, 300.0, 200.0), (2, 600.0, 520.0)], &[(1440.0, 60.0), (1440.0, 152.0)], (47.0, 37.0), t);
         t = run(&mut l, t, 2000.0);
         l.slap(t);

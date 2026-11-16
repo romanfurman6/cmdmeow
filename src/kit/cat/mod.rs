@@ -7,10 +7,14 @@
 //! - `engine`: which mood it is in and what it does next, as plain rules.
 //! - `rig`: the desktop cat's skeleton and its animations, posed at any time.
 //! - `live`: the desktop cat's mind and body: what it does from moment to
-//!   moment, the pointer it plays with, the desktop icons it pushes.
+//!   moment, the ball it chases, its bed and bowl, the desktop icons it
+//!   pushes.
 //! - `grid`: Finder's desktop grid, read from where its icons lie.
+//! - `toys`: its things: the yarn ball people throw, and what is drawn of
+//!   the ball, its bed and its bowl.
 //! - `stage`: the desktop cat's windows, one Core Animation layer a part,
 //!   and the pictures of the icons while they move.
+//! - `props`: the bed, the bowl and the ball on screen, as shape layers.
 //! - `mac`: the menu bar icon, the sounds, Finder and what the Mac feels
 //!   (trackpad, power, wake, lid, pointer).
 //! - `slap`: which jolts of the body are slaps, and the sensor that feels
@@ -32,6 +36,9 @@ mod rig;
 mod slap;
 #[cfg(target_os = "macos")]
 mod stage;
+#[cfg(target_os = "macos")]
+mod props;
+mod toys;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
