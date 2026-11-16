@@ -360,9 +360,12 @@ fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     let mut io = run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
     io.push_str(&run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
     devices::merge(&mut list, &devices::parse_ioreg(&io));
+    let mut st = bt_store().lock_ok();
+    // AirPods that are with the iPhone come under a passing address: name
+    // them as the known pair before anything is matched or remembered
+    st.seen.identify(&mut list);
     devices::merge_extra(&mut list, &profile.paired_pods, &super::ble::adverts(), &super::ble::extra());
     let now = devices::now();
-    let mut st = bt_store().lock_ok();
     let mut history_changed = false;
     for d in &list {
         if let Some(b) = d.battery() {
@@ -371,6 +374,11 @@ fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     }
     if st.seen.update(&list, now) || SEEN_SAVE_EVERY.with_borrow_mut(|e| e.due(SEEN_SAVE)) {
         crate::kit::fs::save_json_later(&Seen::path(), &st.seen, false);
+    }
+    // history only for devices still known (drops the passing addresses)
+    let keys: Vec<String> = st.seen.devices.iter().chain(&list).map(|d| d.key()).collect();
+    if st.history.keep_only(&keys) {
+        crate::kit::fs::save_json_later(&History::path(), &st.history, false);
     }
     if history_changed && HISTORY_SAVE_EVERY.with_borrow_mut(|e| e.due(HISTORY_SAVE)) {
         crate::kit::fs::save_json_later(&History::path(), &st.history, false);
