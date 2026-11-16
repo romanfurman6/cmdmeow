@@ -61,7 +61,7 @@ pub enum Out {
     Purr(bool),
     /// It comes to tidy.
     Mew,
-    /// A chirp: the hunt starts, or it caught the pointer.
+    /// A meow: the hunt starts (a catch is silent).
     Chirp,
 }
 
@@ -1355,7 +1355,6 @@ impl Live {
         self.hunt.rest = now + 650.0;
         self.mind.ear = now;
         self.mind.ear_side = 1.0;
-        self.out.push(Out::Chirp);
     }
 
     fn hunt_think(&mut self, now: f64, dt: f64) {
