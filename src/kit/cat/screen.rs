@@ -198,18 +198,43 @@ pub fn load(script: &Script) -> Option<Frames> {
             wanted.push(r.clip);
         }
     }
-    for i in wanted {
+    // each sheet on its own thread: the act starts (and its sound plays)
+    // when the slowest is in, not after all of them in a row
+    type Parts = Option<Vec<usize>>;
+    let sheet = |name: String, i: usize| -> Parts {
         let c = &CLIPS[i];
-        let sheet = decode(&format!("{}.webp", c.name))?;
+        let sheet = decode(&name)?;
         let parts = cut(sheet, c);
         unsafe { CGImageRelease(sheet) };
-        frames.clip[i] = parts?;
-        if desk::has_overlay(i) {
-            let sheet = decode(&format!("{}_o.webp", c.name))?;
-            let parts = cut(sheet, c);
-            unsafe { CGImageRelease(sheet) };
-            frames.over[i] = parts?;
+        Some(parts?.into_iter().map(|p| p as usize).collect())
+    };
+    let done: Vec<(usize, Parts, Option<Parts>)> = std::thread::scope(|scope| {
+        let jobs: Vec<_> = wanted
+            .iter()
+            .map(|&i| {
+                let name = CLIPS[i].name;
+                let main = scope.spawn(move || sheet(format!("{name}.webp"), i));
+                let over = desk::has_overlay(i).then(|| scope.spawn(move || sheet(format!("{name}_o.webp"), i)));
+                (i, main, over)
+            })
+            .collect();
+        jobs.into_iter().map(|(i, main, over)| (i, main.join().ok().flatten(), over.map(|o| o.join().ok().flatten()))).collect()
+    });
+    let mut missing = false;
+    for (i, main, over) in done {
+        match main {
+            Some(parts) => frames.clip[i] = parts.into_iter().map(|p| p as *mut c_void).collect(),
+            None => missing = true,
         }
+        match over {
+            Some(Some(parts)) => frames.over[i] = parts.into_iter().map(|p| p as *mut c_void).collect(),
+            Some(None) => missing = true,
+            None => {}
+        }
+    }
+    if missing {
+        // `frames` lets go of what did come in
+        return None;
     }
     if let Some(r) = rest {
         frames.rest = own(*frames.clip[r.clip].get(r.f as usize)?);
@@ -289,6 +314,11 @@ pub struct Desk {
     frames: Option<Frames>,
     /// The way out of a held act (the purr, the play), waiting for its end.
     outro: Vec<Shot>,
+    /// When the act began (media time), its intro's and held loop's length:
+    /// the way out starts where the loop starts again, never mid-move.
+    began: f64,
+    intro_secs: f64,
+    hold_secs: f64,
     /// Counts the acts, so a late "it is over" knows it is out of date.
     pub turn: u32,
     /// How the cat rests now, and on which picture.
@@ -319,7 +349,7 @@ impl Desk {
         // back, the cat, the files (added later, under the box's front), the
         // box's front, the mouth over a carried file
         let [bowl, box_back, cat, box_front, mouth] = [(); 5].map(|_| unsafe { layer(&root) });
-        Some(Desk { window, cat, mouth, bowl, box_back, box_front, files: Vec::new(), frames: None, outro: Vec::new(), turn: 0, rest: Rest::Away, still: None })
+        Some(Desk { window, cat, mouth, bowl, box_back, box_front, files: Vec::new(), frames: None, outro: Vec::new(), began: 0.0, intro_secs: 0.0, hold_secs: 0.0, turn: 0, rest: Rest::Away, still: None })
     }
 
     pub fn window(&self) -> &NSWindow {
@@ -450,27 +480,34 @@ impl Desk {
         self.frames = Some(frames);
         let held = !script.hold.is_empty();
         self.outro = script.outro.clone();
+        self.began = unsafe { CACurrentMediaTime() };
+        self.intro_secs = secs;
+        self.hold_secs = Script::secs(&script.hold);
         (!held).then_some(secs)
     }
 
-    /// A held act is over: play its way out. Returns how long that takes
-    /// (None: nothing was held).
-    pub fn end(&mut self) -> Option<f64> {
+    /// A held act is over: play its way out, from the end of the intro or
+    /// of the loop under way (cutting in would make the cat jump). Returns
+    /// (seconds until the way out starts, seconds until it is over); None:
+    /// nothing was held.
+    pub fn end(&mut self) -> Option<(f64, f64)> {
         if self.outro.is_empty() {
             return None;
         }
         let outro = std::mem::take(&mut self.outro);
         let frames = self.frames.as_ref()?;
+        let now = unsafe { CACurrentMediaTime() };
+        let wait = desk::until_loop_ends(now - self.began, self.intro_secs, self.hold_secs);
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-            let _: () = msg_send![&*self.cat, removeAllAnimations];
-            if let Some(a) = group(&outro, frames, CACurrentMediaTime(), false, false) {
+            // added last, it covers the loop once it begins
+            if let Some(a) = group(&outro, frames, now + wait, false, false) {
                 let _: () = msg_send![&*self.cat, addAnimation: &*a, forKey: &*NSString::from_str("outro")];
             }
             let _: () = msg_send![class!(CATransaction), commit];
         }
-        Some(Script::secs(&outro))
+        Some((wait, wait + Script::secs(&outro)))
     }
 
     /// Something is held now (and `end` will play its way out).

@@ -209,6 +209,10 @@ pub struct Script {
     pub tidy_box: Option<f64>,
     /// The files it fetches in a tidy, in order.
     pub fetch: Vec<Fetch>,
+    /// The frame of the intro where the reaction's sound starts (the hiss
+    /// as the fur goes up, the crunch at the first bite); the intro's
+    /// length is the start of the hold (the purr while it lies curled up).
+    pub voice: Option<usize>,
 }
 
 /// One file carried to the box in a tidy. The numbers are frames of the
@@ -238,6 +242,22 @@ impl Script {
     /// Seconds `shots` take.
     pub fn secs(shots: &[Shot]) -> f64 {
         shots.len() as f64 / FPS
+    }
+}
+
+/// Seconds from `t` (since an act began) to where its held loop next
+/// starts again: the end of the intro, or of the round under way. Within
+/// half a frame of a start counts as that start.
+pub fn until_loop_ends(t: f64, intro: f64, hold: f64) -> f64 {
+    let close = 0.5 / FPS;
+    if t < intro || hold <= 0.0 {
+        return (intro - t).max(0.0);
+    }
+    let into = (t - intro) % hold;
+    if into < close {
+        0.0
+    } else {
+        hold - into
     }
 }
 
@@ -360,6 +380,7 @@ pub fn script(what: Do, width: f64, from: Rest, live: bool) -> Script {
         Do::React(Kind::Hiss) => {
             // fur up, then off the screen: it ran away
             a.get_up(from);
+            s.voice = Some(a.out.len());
             a.play("scare_in", 1);
             a.play("scare", 2);
             a.play("scare_out", 1);
@@ -384,6 +405,7 @@ pub fn script(what: Do, width: f64, from: Rest, live: bool) -> Script {
                 a.play("sleep_transition_to", 1);
             }
             s.intro = a.take();
+            s.voice = Some(s.intro.len());
             a.play("sleeping", 1);
             s.hold = a.take();
             a.play("sleep_transition_from", 1);
@@ -400,6 +422,7 @@ pub fn script(what: Do, width: f64, from: Rest, live: bool) -> Script {
             s.bowl = Some(home - BOWL_AHEAD);
             a.get_up(from);
             a.play("eat_in", 1);
+            s.voice = Some(a.out.len());
             a.play("eat", 6);
             a.play("eat_out", 1);
             if live {
@@ -410,6 +433,7 @@ pub fn script(what: Do, width: f64, from: Rest, live: bool) -> Script {
         }
         Do::React(Kind::Hungry) => {
             a.get_up(from);
+            s.voice = Some(a.out.len());
             a.play("beg", 2);
             if live {
                 a.play("sit_tranistion_to", 1);
@@ -418,10 +442,15 @@ pub fn script(what: Do, width: f64, from: Rest, live: bool) -> Script {
             }
         }
         Do::React(Kind::Hello) => {
-            // in from the right edge: a look first, then the walk to its place
-            // (one that lives here hid while the lid was shut)
-            a.x = width + PEEK_OUT;
+            // in from the right edge: a look first, then the walk to its place;
+            // one already sitting in its corner gets up and has the look there
+            if from == Rest::Away {
+                a.x = width + PEEK_OUT;
+            } else {
+                a.get_up(from);
+            }
             a.play("peek_in", 1);
+            s.voice = Some(a.out.len());
             a.play("peek", 1);
             a.play("peek_out", 1);
             if live {
@@ -518,6 +547,46 @@ mod tests {
                 assert!(shot.f < CLIPS[shot.clip].n, "{k:?} {shot:?}");
                 assert!(shot.dir == 1 || shot.dir == -1);
             }
+        }
+    }
+
+    #[test]
+    fn each_sound_starts_with_its_moment() {
+        let at = |k: Kind, from: Rest| {
+            let s = script(Do::React(k), 1512.0, from, true);
+            let v = s.voice.expect("a reaction has a sound");
+            let shot = s.intro.get(v).or(s.hold.first()).copied().unwrap();
+            (CLIPS[shot.clip].name, v, s.intro.len())
+        };
+        for from in [Rest::Away, Rest::Sit, Rest::Sleep] {
+            assert_eq!(at(Kind::Hiss, from).0, "scare_in", "{from:?}");
+            assert_eq!(at(Kind::Eat, from).0, "eat", "{from:?}");
+            assert_eq!(at(Kind::Hungry, from).0, "beg", "{from:?}");
+            assert_eq!(at(Kind::Hello, from).0, "peek", "{from:?}");
+            let (name, v, intro) = at(Kind::Purr, from);
+            assert_eq!((name, v), ("sleeping", intro), "the purr starts as it lies curled up ({from:?})");
+        }
+        // getting up from the corner comes first, in silence
+        assert!(at(Kind::Hiss, Rest::Sit).1 > 0);
+    }
+
+    #[test]
+    fn a_held_act_ends_where_its_loop_starts_again() {
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(near(until_loop_ends(0.3, 1.0, 1.6), 0.7), "still in the intro");
+        assert!(near(until_loop_ends(1.0, 1.0, 1.6), 0.0), "right at the loop's start");
+        assert!(near(until_loop_ends(2.6, 1.0, 1.6), 0.0), "right at a later round's start");
+        assert!(near(until_loop_ends(2.6 + 0.01, 1.0, 1.6), 0.0), "within half a frame of it");
+        assert!(near(until_loop_ends(1.5, 1.0, 1.6), 1.1), "mid-round: to its end");
+        assert!(near(until_loop_ends(5.0, 1.0, 0.0), 0.0), "nothing held");
+    }
+
+    #[test]
+    fn a_cat_at_home_says_hello_where_it_sits() {
+        for from in [Rest::Sit, Rest::Sleep] {
+            let s = script(Do::React(Kind::Hello), 1512.0, from, true);
+            let home = home(1512.0);
+            assert!(s.intro.iter().all(|x| (x.x - home).abs() < 1.0), "{from:?}: no jump to the edge");
         }
     }
 
