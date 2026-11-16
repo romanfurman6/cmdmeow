@@ -155,6 +155,9 @@ pub struct Capture {
     files: Vec<folder::FileShot>,
     files_at: Option<Instant>,
     files_busy: bool,
+    /// The folder was read or saved to already (see `folder_known`).
+    folder_ok: bool,
+    folder_check: Option<(Instant, bool)>,
     tab: Tab,
     vtab: VTab,
     /// Which of the two tools are on: Screenshot (`shot_on`) and Video.
@@ -232,6 +235,8 @@ impl Capture {
             files: Vec::new(),
             files_at: None,
             files_busy: false,
+            folder_ok: false,
+            folder_check: None,
             tab: Tab::History,
             vtab: VTab::Recordings,
             shot_on: true,
@@ -628,6 +633,8 @@ impl Capture {
             }
             Done::Folder(Some(p)) => {
                 self.settings.folder = p;
+                self.folder_ok = false;
+                self.folder_check = None;
                 self.save_settings();
                 self.files.clear();
                 self.files_at = None;
@@ -875,7 +882,13 @@ impl Capture {
     }
 
     /// Re-read the screenshot folder when the list is a few seconds old.
-    fn refresh_files(&mut self) {
+    /// `quiet` (the widget): skip a folder macOS would ask about (Desktop by
+    /// default) until a capture was saved there, so the panel and setup
+    /// never bring up that question; the Folder tab reads it on request.
+    fn refresh_files(&mut self, quiet: bool) {
+        if quiet && !self.folder_known() {
+            return;
+        }
         if self.files_busy || self.files_at.is_some_and(|t| t.elapsed().as_secs_f32() < 3.0) {
             return;
         }
@@ -888,6 +901,25 @@ impl Capture {
             let _ = tx.send(Done::Files(dir, files));
             ctx.request_repaint();
         });
+    }
+
+    /// Can the folder be read without macOS asking? Yes outside the folders
+    /// it asks about, with Full Disk Access, or once a copy was saved there
+    /// (saving already asked) or the Folder tab listed it.
+    fn folder_known(&mut self) -> bool {
+        if !self.folder_ok {
+            let dir = &self.settings.folder;
+            self.folder_ok = self.files_at.is_some() || self.store.shots.iter().any(|s| s.saved.as_deref().is_some_and(|p| p.starts_with(dir)));
+        }
+        if self.folder_ok {
+            return true;
+        }
+        // Full Disk Access may be switched on meanwhile; checking it opens a
+        // file, so at most every few seconds (the widget draws every frame)
+        if self.folder_check.is_none_or(|(t, _)| t.elapsed().as_secs_f32() >= 3.0) {
+            self.folder_check = Some((Instant::now(), !crate::kit::fs::behind_folder_prompt(&self.settings.folder)));
+        }
+        self.folder_check.is_some_and(|(_, ok)| ok)
     }
 
     fn open_file(&mut self, f: &folder::FileShot) {
@@ -1174,6 +1206,24 @@ mod tests {
 
     fn demo() -> Capture {
         Capture::new(&ToolEnv { ctx: egui::Context::default(), demo: true })
+    }
+
+    #[test]
+    fn widget_leaves_a_guarded_folder_alone_until_a_save() {
+        let mut c = demo();
+        // the demo folder is a temp folder: nothing to ask about
+        assert!(c.folder_known());
+        c.settings.folder = crate::kit::fs::home().join("Desktop");
+        c.folder_ok = false;
+        c.folder_check = None;
+        c.files_at = None;
+        assert!(!c.folder_known());
+        c.refresh_files(true);
+        assert!(!c.files_busy, "the widget mustn't list Desktop");
+        // a copy saved there: macOS already asked
+        let id = c.store.shots[0].id;
+        c.store.set_saved(id, c.settings.folder.join("Capture.png"));
+        assert!(c.folder_known());
     }
 
     #[test]
