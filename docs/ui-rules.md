@@ -77,7 +77,7 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 |---|------|-------|
 | R1 | Content starts 24 pt from the window edge, header included. | `sp::PAGE_EDGE` |
 | R2 | Cards: padding 16, gap 16, radius 12. Title, 12, content. A section title sits 12 above its card. | `sp::L`, `sp::M`, `R_CARD` |
-| R3 | Two row heights: settings rows 40 (label left, control right, hairline between), list rows 44 (icon, name, detail). | `sp::SETTINGS_ROW_H`, `sp::ROW_H` |
+| R3 | Two row heights: settings rows 40 (label left, control right, hairline between), list rows 44 (icon, name, detail). Exception: the Disk Map folder list, rows 36 with no bar, a dense list beside the map. | `sp::SETTINGS_ROW_H`, `sp::ROW_H` |
 | R4 | Rows with a bar: 36 tall, name and value on one line, a 4 pt bar 8 pt under them. | `sp::BAR_ROW_H` |
 | R5 | Controls are 28 inside cards and 32 in page headers. | `sp::CONTROL_H`, `sp::HEADER_CONTROL_H` |
 | R6 | One empty state: centred, 56 icon chip, lead title, body up to 400 wide in dim, one secondary button. Inside a card: one caption-size line in the middle. | `sp::XXL` around it |
@@ -152,6 +152,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
 | H7 | A picked or selected item has no hover, because a click on it does nothing: sidebar, group rail, picked segment, picked radio, picked card (H4), single-choice tiles. Items where a click changes state (checkbox, toggle chip, a widget card with its sheet open) keep their hover. | ✅ (PR #242) |
+| H8 | A row's background shows only state: hover (H1) or selected (H3). Size or share never fills a row; show it as a number (R8), an R4 bar under the name, or on a chart or map. | ✅ (PR #242) |
 
 ## 9. Motion
 
@@ -247,3 +248,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-15, Roman: big numbers (hero, number) bold, as the rule says (B over thin, M1 comparison).
 
 2026-11-17, Roman: no hover on a selected item (H7).
+
+2026-11-17, Roman: H8 no share fill behind rows (Disk Map option D); Disk Map list rows stay 36.
