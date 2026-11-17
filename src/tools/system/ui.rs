@@ -82,7 +82,7 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
                 _ => RED(),
             };
             // the hottest chip sensor as a number (the Fans tool reads it); the word without it
-            let cap = crate::tools::fan::data::last_hot().map(|t| format!("{t:.0} °C")).unwrap_or_else(|| s.thermal_word().to_lowercase());
+            let cap = crate::kit::smc::last_hot().map(|t| format!("{t:.0} °C")).unwrap_or_else(|| s.thermal_word().to_lowercase());
             (Icon::Cpu, "CPU".into(), (format!("{:.0}", s.cpu_load), "%".into()), cap, Some((pct(s.cpu_load), c)))
         }
         "battery" => {

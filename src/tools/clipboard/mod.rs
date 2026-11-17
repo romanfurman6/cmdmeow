@@ -390,6 +390,7 @@ fn demo_store() -> Store {
         (60 * 24 + 5, clip("Thanks! I will check the build tonight and send notes.", "Mail", "com.apple.mail"), false),
         (60 * 22, clip("https://developer.apple.com/documentation/appkit/nspasteboard", "Safari", "com.apple.Safari"), false),
         (60 * 26, clip("Alex Morgan · Lisbon, Portugal", "Notes", "com.apple.Notes"), true),
+        (60 * 30, clip("brew install --cask vlc", "Terminal", "com.apple.Terminal"), false),
         (60, Clip { files: vec!["/Users/me/Documents/Q4 report.pdf".into()], app: "Finder".into(), bundle: "com.apple.finder".into(), ..Default::default() }, false),
         (20, clip("#0B6BD8", "Figma", "com.figma.Desktop"), false),
         (12, Clip { png: Some(png), app: "Photos".into(), bundle: "com.apple.Photos".into(), ..Default::default() }, false),
@@ -535,11 +536,11 @@ mod tests {
         let v = c.visible(Filter::All, "");
         assert!(c.store.get(v[0]).unwrap().pinned, "pinned first");
         assert_eq!(c.visible(Filter::Kind(Kind::Color), "").len(), 1);
-        assert_eq!(c.visible(Filter::All, "github").len(), 1);
-        // nothing holds "gthb" as typed: the forgiving match finds the link
-        let v = c.visible(Filter::All, "gthb");
+        assert_eq!(c.visible(Filter::All, "iphone").len(), 1);
+        // nothing holds "iphn" as typed: the forgiving match finds the link
+        let v = c.visible(Filter::All, "iphn");
         assert!(!v.is_empty());
-        assert!(c.store.get(v[0]).unwrap().text.contains("github"));
+        assert!(c.store.get(v[0]).unwrap().text.contains("iphone"));
         assert!(c.visible(Filter::All, "zqxj").is_empty());
     }
 
