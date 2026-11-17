@@ -159,10 +159,13 @@ fn native_wanted() -> bool {
 /// glyph at this size, turned and tinted `color`.
 pub fn draw(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
     let ppp = p.ctx().pixels_per_point();
-    // one texture per pixel size, so it is drawn 1:1 and stays sharp
-    let px = ((r * 2.0 * ppp).ceil() as u32 + 2).clamp(8, 1024);
+    // a texture near the drawn size so it stays sharp; sizes go up in
+    // steps of 8 px so a sweep of sizes (the widget editor, a move between
+    // displays) makes a few textures, not one per size
+    let px = ((r * 2.0 * ppp).ceil() as u32 + 2).div_ceil(8).saturating_mul(8).clamp(8, 1024);
     let tex = glyph_texture(p.ctx(), px);
-    let half = px as f32 / ppp / 2.0;
+    // the glyph reaches px/2 - 1 in the texture: scale it to reach r
+    let half = r * (px as f32 / 2.0) / (px as f32 / 2.0 - 1.0);
     let mut mesh = egui::Mesh::with_texture(tex.id());
     let (sin, cos) = angle.sin_cos();
     for (u, v) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
