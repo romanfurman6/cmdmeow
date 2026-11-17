@@ -1415,6 +1415,11 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let chip_at = Pos2::new(seg_r.left() - 16.0 - cw, hr.center().y);
     let crumbs_end = if cw > 0.0 { chip_at.x - 12.0 } else { seg_r.left() - 16.0 };
     let mut x = loc.right() + 2.0;
+    // no room for "› … › name" before the AI chip: show no crumbs at all,
+    // never a separator or "…" under the chip
+    if x + 10.0 + 26.0 + 40.0 > crumbs_end {
+        crumbs.truncate(1);
+    }
     if crumbs.len() > 1 {
         p.text(Pos2::new(x + 4.0, hr.center().y), Align2::CENTER_CENTER, "›", font(13.0), TEXT_MUTED());
         x += 10.0;
