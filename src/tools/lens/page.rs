@@ -1591,11 +1591,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let selectable = trashable(&k.path);
         let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
         let lit = !previewing && app.lens_hover.as_ref().is_some_and(|h| h.starts_with(&k.path));
+        // inset list: lit rows sit 1 pt in, so two never touch (H1)
+        let lit_r = rr.shrink2(Vec2::new(0.0, crate::kit::glass::LIT_INSET));
         if resp.hovered() || lit || cursor == Some(i) {
-            lp.rect_filled(rr, R_SMALL, white(12));
+            lp.rect_filled(lit_r, R_SMALL, white(ROW_HOVER));
         }
         if cursor == Some(i) {
-            lp.rect_stroke(rr, R_SMALL, Stroke::new(1.0, with_alpha(ACCENT(), 0.6)), StrokeKind::Inside);
+            lp.rect_stroke(lit_r, R_SMALL, Stroke::new(1.0, with_alpha(ACCENT(), 0.6)), StrokeKind::Inside);
         }
         if !previewing {
             reveal::rect(&lp, rr, R_SMALL, app.ai.ring(&ctx, &k.path.to_string_lossy()));
