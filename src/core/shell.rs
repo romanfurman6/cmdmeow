@@ -1137,11 +1137,10 @@ impl App {
     }
 
     fn app_viewport(&mut self, ctx: &egui::Context) {
-        // the same builder the hidden window was made with, only shown:
-        // asking for it active as well made egui build a new window on every
-        // open (focus is asked for below), so the made-ahead one was thrown
-        // away and the click waited for a new window and GPU surface
-        let builder = Self::app_builder().with_visible(true);
+        let mut builder = Self::app_builder().with_visible(true);
+        if self.app_focus {
+            builder = builder.with_active(true);
+        }
         let id = egui::ViewportId::from_hash_of("cmdmeow-app");
         use super::onboard::Finish;
         let mut finish = Finish::No;
