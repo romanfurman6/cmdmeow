@@ -1590,13 +1590,6 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let resp = ui.interact(rr, ui.scope_id().with(("lens-row", i)), Sense::click());
         let selectable = trashable(&k.path);
         let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
-        // its share of the folder, as a faint fill behind the whole row
-        let f = (k.bytes as f32 / shown_node.bytes.max(1) as f32).clamp(0.0, 1.0);
-        let fw = rr.width() * f;
-        if fw >= 3.0 {
-            let fr = Rect::from_min_size(rr.min + Vec2::new(0.0, 2.0), Vec2::new(fw, rr.height() - 4.0));
-            lp.rect_filled(fr, fw.min(R_SMALL * 2.0) / 2.0, with_alpha(ACCENT(), if is_light() { 0.14 } else { 0.10 }));
-        }
         let lit = !previewing && app.lens_hover.as_ref().is_some_and(|h| h.starts_with(&k.path));
         if resp.hovered() || lit || cursor == Some(i) {
             lp.rect_filled(rr, R_SMALL, white(12));

@@ -522,6 +522,8 @@ pub fn group_color(section: &str) -> Color32 {
 /// A flat card: `CARD()` fill with a hairline. `hover` 0..1 lifts it a little,
 /// `selected` adds the blue ring.
 pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
+    // H7: the picked card doesn't hover, a click on it does nothing
+    let hover = if selected { 0.0 } else { hover };
     painter.rect_filled(rect, r, lerp_color(CARD(), RAISED(), hover * 0.5));
     painter.rect_stroke(rect, r, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
     if selected {
@@ -903,7 +905,12 @@ pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> 
 /// dot on the face at a scale (it pops from 0.5 to 1 when turned on).
 #[allow(clippy::too_many_arguments)]
 fn choice_box(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool, radius: f32, click: Click, mark: impl FnOnce(&Painter, Rect, f32)) -> Response {
-    let k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
+    // H7: a picked radio doesn't hover, a click on it does nothing
+    let picked_radio = on && matches!(click, Click::Radio);
+    let mut k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
+    if picked_radio {
+        k.hover = 0.0;
+    }
     let p = ui.painter();
     if on && enabled {
         let t = ui.ctx().animate_bool_with_time(id.with("pop"), on, 0.2);
@@ -1002,6 +1009,8 @@ pub fn segment(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, selected: bool, 
             fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
             base: key::ink(0.14),
             depth: 1.0,
+            // H7: no hover on the picked one, its edge stays put
+            edge: Some((key::ink(0.10), key::ink(0.10))),
             ..key::Look::quiet(0.0, 0.0)
         }
     } else {
