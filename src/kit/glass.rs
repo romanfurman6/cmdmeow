@@ -136,7 +136,7 @@ pub const REC: Color32 = hex(0xFF453A);
 pub const ON_ACTION: Color32 = hex(0x0E1405);
 /// Links and lime text on cards.
 #[allow(non_snake_case)]
-pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x3F6B0A)) }
+pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x2F5208)) }
 /// State: fine. Never a category or chart series (C4).
 #[allow(non_snake_case)]
 pub fn GREEN() -> Color32 { pick(hex(0x94D45A), hex(0x437A20)) }
@@ -1206,6 +1206,26 @@ pub fn selected_fill(p: &Painter, r: Rect, radius: f32) {
     p.rect_filled(r, radius, with_alpha(ACTION(), 0.16));
 }
 
+/// Gap between two lit rows of an inset list (sidebar, group rail): hover
+/// and selected fills sit this far in from the row's top and bottom (H1).
+pub const LIT_INSET: f32 = 1.0;
+
+/// A hover tip for a row of a list or rail: it opens beside the list, on
+/// the side away from it (`right` = its right edge), 8 pt out and centred
+/// on the row, so it never covers another row (P7).
+pub fn tip_beside(resp: Response, text: &str, right: f32) -> Response {
+    if text.is_empty() {
+        return resp;
+    }
+    let gap = (right - resp.rect.right()).max(0.0) + sp::S;
+    let mut t = egui::Tooltip::for_enabled(&resp);
+    t.popup = t.popup.align(egui::RectAlign::RIGHT).align_alternatives(&[]).gap(gap);
+    t.show(|ui| {
+        ui.label(text);
+    });
+    resp
+}
+
 /// A window sidebar row: tint chip (or dashed chip when `planned`), label and
 /// a small right-aligned `meta` text. Selected rows get the blue fill.
 /// `indent`: how far the icon moves right to sit under its section title
@@ -1217,7 +1237,7 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     let p = ui.painter();
     let active_text = ACCENT();
     if selected {
-        // H3: lime at 16%, radius 8, text ACCENT
+        // H3: lime at 16%, radius 8, text ACCENT (rows step 2 apart, H1)
         p.rect_filled(rect, 8.0, with_alpha(ACTION(), 0.16));
     } else if h > 0.0 {
         // H1: ROW_HOVER, inset radius 8 in the sidebar
@@ -1643,7 +1663,8 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Pulse => "waveform.path.ecg",
         Icon::Crop => "crop",
         Icon::Clipboard => "doc.on.clipboard",
-        Icon::Fan => "fanblades",
+        // our own fan glyph (SP11), the same one that turns on the Fan page
+        Icon::Fan => return None,
         Icon::Cup => "cup.and.saucer",
         Icon::Home => "house",
         Icon::Window => "macwindow",
@@ -1894,22 +1915,8 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             boxr(9.0, 3.5, 15.0, 6.5, 0.8);
             open(&[(7.0, 5.0), (5.0, 5.0), (5.0, 21.0), (19.0, 21.0), (19.0, 5.0), (17.0, 5.0)]);
         }
-        Icon::Fan => {
-            // six curved blades around a hub (four straight arms read wrong)
-            stroke_circle(&p, pt(12.0, 12.0), 1.8 * u, st);
-            for k in 0..6 {
-                let a0 = k as f32 * TAU / 6.0;
-                let pts: Vec<Pos2> = (0..=6)
-                    .map(|i| {
-                        let t = i as f32 / 6.0;
-                        let rr = (2.6 + 6.6 * t) * u;
-                        let a = a0 + t * 0.9;
-                        pt(12.0, 12.0) + Vec2::new(a.cos(), a.sin()) * rr
-                    })
-                    .collect();
-                p.add(PathShape::line(pts, PathStroke::new(w, color)));
-            }
-        }
+        // the fan glyph (SP11), filled like the turning one
+        Icon::Fan => crate::kit::spin::draw(p, c, s * 0.46, 0.0, color),
         Icon::Cup => {
             open(&[(4.0, 9.0), (16.0, 9.0), (16.0, 14.0)]);
             arc(11.0, 14.0, 5.0, 0.0, PI);

@@ -550,12 +550,14 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
         let id = ui.scope_id().with(("group", *title));
         let resp = ui.interact(rr, id, Sense::click());
         let hv = ctx.animate_bool(id, resp.hovered());
+        // lit rows never touch: LIT_INSET top and bottom (H1)
+        let lit = rr.shrink2(Vec2::new(0.0, crate::kit::glass::LIT_INSET));
         if sel {
             // H3
-            p.rect_filled(rr, 8.0, with_alpha(ACTION(), 0.16));
+            crate::kit::glass::selected_fill(&p, lit, 8.0);
         } else if hv > 0.0 {
             // ROW_HOVER (ui-rules H1), inset radius 8 in the rail
-            p.rect_filled(rr, 8.0, white((ROW_HOVER as f32 * hv) as u8));
+            p.rect_filled(lit, 8.0, white((ROW_HOVER as f32 * hv) as u8));
         }
         let c = Pos2::new(rr.left() + sp::S + 12.0, rr.center().y);
         p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
@@ -573,7 +575,8 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
             badge(&p, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, &label);
         }
         let resp = match grp {
-            Some(g) => resp.on_hover_text(g.blurb()),
+            // P7: beside the rail, never over the next row
+            Some(g) => crate::kit::glass::tip_beside(resp, g.blurb(), card.right()),
             None => resp,
         };
         if resp.clicked() {

@@ -61,7 +61,8 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
     let add = (0..app.tools.len()).any(|i| app.tools[i].has_page() && !app.tool_on(i));
     let n_rows = pages.len() + planned.len();
     let need = |gap: f32, head: f32, step: f32| n_sections as f32 * (gap + head) + f32::from(u8::from(add)) * (gap + 22.0) + n_rows as f32 * step;
-    let (gap, head, step) = if need(12.0, 18.0, SIDEBAR_ROW_H + 2.0) <= list.height() { (12.0, 18.0, SIDEBAR_ROW_H + 2.0) } else { (6.0, 16.0, SIDEBAR_ROW_H) };
+    let (gap, head, step) = if need(12.0, 18.0, SIDEBAR_ROW_H + 2.0) <= list.height() { (12.0, 18.0, SIDEBAR_ROW_H + 2.0) } else { (6.0, 16.0, SIDEBAR_ROW_H + 2.0) };
+    // rows always step 2 apart, so two lit rows never touch (H1)
     let overflow = (need(gap, head, step) + 4.0 - list.height()).max(0.0);
     let scroll_id = ui.scope_id().with("sidebar-scroll");
     let mut off: f32 = ctx.data(|d| d.get_temp(scroll_id)).unwrap_or(0.0);

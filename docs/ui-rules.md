@@ -36,11 +36,11 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | # | Rule | Status |
 |---|------|---|
 | C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ✅ |
-| C2 | Lime is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). | ✅ |
+| C2 | Lime is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). A selected row's text may be `ACCENT`, its number included (H3). | ✅ |
 | C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ✅ |
 | C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. | ✅ |
 | C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ✅ |
-| C6 | The same thing has the same colour on every screen. | ✅ |
+| C6 | The same thing has the same colour and words on every screen. The disk line under the Disk Map list says what the start ring says ("1.35 TB free of 2.00 TB", disk glyph, `tint::DISK_MAP`). | ✅ |
 | C7 | A legend square only when its colour is on a chart on the same screen. | ✅ |
 | C8 | Contrast in both modes: body text 4.5:1, captions and section titles 3:1, icons and chart marks 3:1. | ✅ |
 | C9 | Neutral marks (You, Other, an app with no icon) use `GRAY`. No system greys. | ✅ |
@@ -62,6 +62,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | L5 | Surfaces that stay dark in both themes (dictation pill, display OSD) use `glass::hud` and fixed light content, never theme ink. |
 | L6 | Disabled or locked: alpha .45 in dark, .62 in light. |
 | L7 | A popover over a card keeps a visible edge in light mode. |
+| L8 | Light `ACCENT` #3F6B0A→#2F5208 (7.6–9:1 on light surfaces), so lime text reads as clearly as ink. |
 
 Light and series values (✅ 2026-11-15): Clean #7DB519→#5B8A14, Monitor #1F8AA0→#177A8E, Amber/Create #C06A12→#A65A0E, Green #4B8625→#437A20, light junk ramp #5B8A14 #507E14 #467318 #3E6A1A #36601B #2F571C #284F1E, dark ramp last step #46824B→#4F8E4E. Monitor series dark #6FD6E8 / #B4EAF3 / #4FA9BC, light #177A8E / #0B4652 / #3A97AB.
 
@@ -107,14 +108,14 @@ Approved by Roman for the base system on 2026-11-15. Canvas: https://claude.ai/a
 
 | # | Rule |
 |---|------|
-| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, square: 32 in headers, 28 in cards and rows), Round (`round_button`, 28, sheet close and refresh), AI chip (`agent_button`, 28). Code still has 30 and 26; the code audit moves them. |
+| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, square: 32 in headers, 28 in cards and rows), Round (`round_button`, 28, sheet close and refresh), AI chip (28, one look `aicheck::ui::ai_look` for the AI Check chip and one-shot asks such as `agent_button`). Code still has 30 and 26; the code audit moves them. |
 | B2 | **Heights:** 44 hero, 32 (page header, footer, dialogs, side, toggle chips), 28 (inside cards and rows). Nothing else: 30, 34, 36 → 32; 24, 26 → 28. |
 | B3 | **Shape:** `R_BUTTON` 10, capped at h/2. Chips h/2. Segmented `R_SMALL` 7, thumb 6, 2 pt gap between segments. |
 | B4 | **Raised-key look, one language for every pressable:** fill, a 1 pt top highlight (white 38% on lime/red; quiet: white 75% light, 8% dark), a darker base under the face. Lime/red base 3 pt (tint mixed 62% to black). Quiet kinds base 2 pt ink 14%, plus a 1 pt hairline ink 10% (18% on hover). |
 | B5 | **Glow** (`kit::key`, PR #217) on lime and red only: `0 6 18 -5`, lime 70%, red 65%; smaller while pressed, none when disabled. |
 | B6 | **Danger colour** is `DANGER()`: #F04438 dark, #D92D20 light, white text. Destructive buttons only; `RED()` stays the state colour (C4). |
 | B7 | **Press:** lime/red face drops 2 pt, quiet 1 pt, text drops 1 pt with no base. Down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)`. Pressing never darkens the fill. Switch knob widens 4 pt while held; checkbox check pops .5→1. Content a caller draws on a pill moves with the face (the helper returns the offset). |
-| B8 | **States.** Hover: colour only, no movement (lime and lime-on fills mix 26% to white, red 22%; quiet fills ink 10–15% with full-ink text, secondary hairline 24%; ghost text gets an ink 7% backdrop; links lighten and underline; AI chip 12% cyan tint, 60% edge; unchecked check/radio edge 70% + 8% fill). Focus (keyboard only): 1 pt ring 2 pt outside, following the radius, in the button colour (lime, danger red, or ink). Disabled: alpha from one shared helper (L6), no hover, press or sound; the base stays. Loading: push buttons only, a 13 pt Core Animation spinner before the label, width locked, no press or sound. On/selected: segmented thumb; switch lime, knob right; check and radio lime; toggle and filter chips, recording shortcut field: lime tint + `ACCENT` edge. |
+| B8 | **States.** Hover: colour only, no movement (lime and lime-on fills mix 26% to white, red 22%; quiet fills ink 10–15% with full-ink text, secondary hairline 24%; ghost text gets an ink 7% backdrop; links lighten and underline; AI chip: idle no fill, AI edge 35% on a 1.5 pt AI base; hover and press 12% AI fill, edge 60%; Checking shows the spinner, "Checking…" and "Stop"; with tips 12% fill and a 45% edge, 18% on hover or while open; failed: amber edge; the agent's mark leads every state but Checking, never a sparkle (T12), and after a check the label is "N tips" or "All good"; unchecked check/radio edge 70% + 8% fill). Focus (keyboard only): 1 pt ring 2 pt outside, following the radius, in the button colour (lime, danger red, or ink). Disabled: alpha from one shared helper (L6), no hover, press or sound; the base stays. Loading: push buttons only, a 13 pt Core Animation spinner before the label, width locked, no press or sound. On/selected: segmented thumb; switch lime, knob right; check and radio lime; toggle and filter chips, recording shortcut field: lime tint + `ACCENT` edge. |
 | B9 | **Choices:** segmented 32 header / 28 card, switch 30×18, checkbox and radio 16, filter chips 28 through one shared helper, tool toggle 28, shortcut recorder 28, action tile 40–44 (icon over label). |
 | B10 | Rows, sidebar items and cards highlight only: no press, no sound. |
 | B11 | Only `kit` helpers draw buttons: no plain `egui::Button`, no hand-drawn capsules. Every helper plays its own click; callers never do. |
@@ -133,7 +134,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | P4 | **Dim** under dialogs, sheets and the loader: one `SCRIM()` over the page area, black 45% dark, ink 24% light. A click on the dim closes a sheet. Esc closes every dialog and sheet, except while work runs (loader). Destructive confirms never close from a click on the dim. | ✅ |
 | P5 | Every removal that can take longer than 0.4 s shows the removal loader (`kit::loader::show`): card 340 wide, padding 24, mark 88, title (lead, verb + "…"), "x of y" (body dim), current path (mono 11 faint, cut in the middle), 28 buttons (Stop where safe; Done, Put back where undo exists). It appears after 0.4 s and stays at least 0.8 s. Scans and measuring keep `spinner()` and the bar. | ✅ |
 | P6 | The loader mark is one shape with the ⌘ cut out; Done turns ⌘ into ✓. | ✅ |
-| P7 | **Tip placement:** a hover tip opens on the side away from the edge its bar is docked to, 8 pt from the bar, and never covers another control. Tips of a top bar with a sub bar open under the sub bar (`glass::tip_below`). | ✅ |
+| P7 | **Tip placement:** a hover tip opens on the side away from the edge its bar is docked to, 8 pt from the bar, and never covers another control. Tips of a top bar with a sub bar open under the sub bar (`glass::tip_below`). A row's tip in a rail or sidebar opens beside it, 8 pt out, centred on the row (`glass::tip_beside`), never at the pointer over the next row. | ✅ |
 | MN1 | **Menus** ("⋯" and right-click) come only from `kit::menu` (`popup`, `context`, `item`, `choice`, `sub`, `note`, `separator`, `danger`); never `ui.button` in a menu. Frame: radius 10, 1 pt edge, Whisper shadow (P1, P2), 4 above and below the rows. | ✅ (canvas https://claude.ai/artifact/4C5Z47zFtr7PiiQD8qPtyv) |
 | MN2 | Menu rows 28, body 13, text 12 in from the edge. A note (state, command) is caption 11 dim, wraps at 320, mono for commands. Hairline separators edge to edge with 4 above and below. | ✅ |
 | MN3 | Menu rows hover with `ROW_HOVER` edge to edge (H2); no press, no sound (B10). | ✅ |
@@ -145,9 +146,9 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 
 | # | Rule | Status |
 |---|------|---|
-| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. | ✅ |
+| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. In inset lists (sidebar, group rail, Clipboard) two lit rows never touch: lit fills sit 1 pt in from the row (`glass::LIT_INSET`) or rows step 2 apart, a 2 pt gap. Edge-to-edge lists (H2) have no gap. | ✅ |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
-| H3 | Selected row (sidebar, group rail): lime at 16% (`with_alpha(ACTION, .16)`), radius 8, text `ACCENT`. | ✅ |
+| H3 | Selected row: lime at 16% (`selected_fill`), text `ACCENT`. Sidebar and group rail: inset, radius 8 (H1). Content lists such as the Uninstaller table: edge to edge with no corners, like hover (H2). | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ✅ |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
@@ -184,6 +185,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 | SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. | ✅ |
 | SP2 | **Disk ring** (`kit`, one function, Cleanup and Disk Map start): 208 across, 12 stroke, track `white(16)`, used arc in the tool tint with a round cap from 12 o'clock clockwise. Centre: free space in hero 28/600 over "free of <total>" in label 12 `TEXT_DIM`. 12 below the ring: a 16 disk icon and the volume name in body `TEXT_SOFT`. Disk Map's own ring (r 64, "X of Y used") goes. | ✅ |
 | SP10 | **Start list rows on the backdrop** (Cleanup groups): a 44 head line with "Last scan 2 days ago" as a 12/600 section title and the total right; rows 44 with a 28 tinted icon circle and the name, hairlines between, `ROW_HOVER` on hover. A group's description shows on hover only. After a scan each row gets a 4 pt bar and a right-aligned size. | ✅ |
+| SP11 | **Fan glyph:** one shape for every fan, turning or still (`kit::spin`): four rounded blades with the hub cut out, so the surface under it shows through (Magnific/Flaticon Premium icon 17711600). Tint `tint::FAN` (C3). It turns with the fan, one turn per 2400/rpm s, on Core Animation (M1). Fan page card: radius 38 on a 44 disc; panel row 12; widgets as before. With no fans it stands still in `white(40)`. `Icon::Fan` (sidebar, headers, tiles) is the same glyph, still, filled; it is the one tool icon that is not an SF Symbol. | ✅ |
 | SP3 | **Group rail** (results): a card 232 wide left of the content, 16 gap, 4 padding, rows 40 with a 24 group chip, name body 13, size right in dim; selection H3. A group shows its item count as a badge (T19), never a colour dot. | ✅ |
 | SP4 | **Bundles**: 3+ alike items fold into one row with an arrow and "N items"; children are 44 rows indented 28. Kept items fold into one "Kept" row. | ✅ |
 | SP5 | **Empty state**: R6. | ✅ |
@@ -250,3 +252,7 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-17, Roman: no hover on a selected item (H7).
 
 2026-11-17, Roman: H8 no share fill behind rows (Disk Map option D); Disk Map list rows stay 36.
+
+2026-11-17, Roman: design review of Disk Map, Uninstaller, the Claude chip and lists (canvas https://claude.ai/artifact/FjuTLwroyGMkCmeRxzjPv7): disk line like the start ring (C6), content-list selection edge to edge with lime text (H3), one AI chip look (B1, B8), row tips beside the list (P7), a 2 pt gap between lit rows in inset lists (H1), darker light ACCENT (L8).
+
+2026-11-17, Roman: fan glyph SP11 (canvas https://claude.ai/artifact/9bAg1MmQ2Dd5depsaAyKnC, option 2), everywhere incl. the Fan tool icon.
