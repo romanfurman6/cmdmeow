@@ -564,17 +564,34 @@ impl Main {
         if self.finder.is_none() {
             let (tx, rx) = mpsc::channel::<Job>();
             let _ = std::thread::Builder::new().name("cat finder".into()).spawn(move || {
-                for job in rx {
-                    match job {
-                        Job::Place(items, ids) => {
-                            if let Err(e) = stage::place(&items) {
-                                if log() {
-                                    eprintln!("[cat] Finder could not place the icons: {e}");
+                while let Ok(first) = rx.recv() {
+                    // what piled up while Finder was busy goes in one go:
+                    // each icon only to the last spot asked for it
+                    let mut items: Vec<(String, f64, f64)> = Vec::new();
+                    let mut ids = Vec::new();
+                    let mut done = Vec::new();
+                    for job in std::iter::once(first).chain(rx.try_iter()) {
+                        match job {
+                            Job::Place(more, more_ids) => {
+                                for it in more {
+                                    items.retain(|o| o.0 != it.0);
+                                    items.push(it);
                                 }
+                                ids.extend(more_ids);
                             }
-                            on_main(move |m| m.placed(ids));
+                            Job::Done(n) => done.push(n),
                         }
-                        Job::Done(n) => on_main(move |m| m.settle(n)),
+                    }
+                    if !items.is_empty() {
+                        if let Err(e) = stage::place(&items) {
+                            if log() {
+                                eprintln!("[cat] Finder could not place the icons: {e}");
+                            }
+                        }
+                        on_main(move |m| m.placed(ids));
+                    }
+                    for n in done {
+                        on_main(move |m| m.settle(n));
                     }
                 }
             });
@@ -586,12 +603,19 @@ impl Main {
     }
 
     /// Finder has placed these icons: each picture goes a moment later, if
-    /// its icon is still where it rested (not pushed or rested again).
+    /// its icon is still where it rested; one moving again (not rested
+    /// again yet) gets its patch over where Finder put it.
     fn placed(&mut self, ids: Vec<(usize, u32)>) {
         later(SETTLE, move |m| {
             let Some(st) = &mut m.stage else { return };
             for (id, n) in ids {
-                if m.rests.get(&id) == Some(&n) && !st.live.lifted(id) {
+                if m.rests.get(&id) != Some(&n) {
+                    continue;
+                }
+                if st.live.lifted(id) {
+                    // it moves on: what Finder shows where it rested is covered
+                    st.repatch(id);
+                } else {
                     st.drop_one(id);
                 }
             }
@@ -613,6 +637,17 @@ impl Main {
         st.show(self.shown);
         self.tidying = false;
         self.wake();
+    }
+
+    /// The cat is switched off: it, its things and what it drew go at once.
+    fn vanish(&mut self) {
+        self.tidying = false;
+        let Some(st) = &mut self.stage else { return };
+        st.live.vanish(now_ms());
+        st.drop_all();
+        self.shown = false;
+        st.show(false);
+        self.hush();
     }
 
     /// Finder has placed every icon that came to rest: their pictures go a
@@ -785,7 +820,9 @@ impl Main {
     /// Listen to what the switches ask for, and to nothing else.
     fn feel(&mut self, p: &Prefs) {
         self.set_live(p.awake() && p.show == Show::Always);
-        if !p.tidy {
+        if !p.awake() {
+            self.vanish();
+        } else if !p.tidy {
             self.end_tidy();
         }
         if p.purr != !self.pads.is_empty() {

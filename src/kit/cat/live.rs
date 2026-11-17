@@ -1092,6 +1092,19 @@ impl Live {
         self.mode == Mode::Tidy || self.tidy.resume || self.icons.iter().any(|i| i.lifted)
     }
 
+    /// The cat is switched off: it and its things go at once.
+    pub fn vanish(&mut self, now: f64) {
+        self.lives = false;
+        self.end_tidy(now);
+        if self.petting {
+            self.petting = false;
+            self.out.push(Out::Purr(false));
+        }
+        self.held = None;
+        self.hunt.act = None;
+        self.set_mode(Mode::Away, now);
+    }
+
     /// Icon `id` is moving (pushed, flying, held), not resting.
     pub fn lifted(&self, id: usize) -> bool {
         self.icons.iter().any(|i| i.id == id && i.lifted)
@@ -1406,12 +1419,17 @@ impl Live {
                     i.vy = 0.0;
                     i.home = true;
                 }
-                if i.home && dist((i.x, i.y), slot) > 0.01 {
+                let d = dist((i.x, i.y), slot);
+                if i.home && d > 0.6 {
                     let e = (s * 14.0).min(1.0);
                     i.x += (slot.0 - i.x) * e;
                     i.y += (slot.1 - i.y) * e;
                     // Finder hears where it ends up
                     snapped.push(k);
+                } else if i.home && d > 0.0 {
+                    // the last of the glide (Finder is told the slot itself)
+                    i.x = slot.0;
+                    i.y = slot.1;
                 }
             }
         }
@@ -1476,7 +1494,7 @@ impl Live {
                 }
             }
         }
-        for k in lifts {
+        for &k in &lifts {
             self.lift(k);
         }
         if taps > 120.0 {
@@ -1486,7 +1504,9 @@ impl Live {
         for k in 0..self.icons.len() {
             let i = &self.icons[k];
             let settled = i.slot.is_none_or(|s| !i.home || dist((i.x, i.y), s) < 0.6);
-            if i.lifted && !i.held() && i.fly.is_none() && Self::speed(i) < 0.5 && settled && self.sw.at != Some(k) {
+            // still pushed by another (one carried over it): not yet
+            let pushed = lifts.contains(&k);
+            if i.lifted && !i.held() && i.fly.is_none() && Self::speed(i) < 0.5 && settled && !pushed && self.sw.at != Some(k) {
                 let (id, x, y) = (i.id, i.slot.filter(|_| i.home).map_or(i.x, |s| s.0), i.slot.filter(|_| i.home).map_or(i.y, |s| s.1));
                 let i = &mut self.icons[k];
                 i.lifted = false;
@@ -3514,11 +3534,12 @@ mod tests {
             let slaps = [if seed % 4 == 0 { f64::INFINITY } else { rnd() * 15_000.0 }, if rnd() < 0.5 { 5_000.0 + rnd() * 20_000.0 } else { f64::INFINITY }];
             let mut done = [false, false];
             let mut finder: HashMap<usize, (f64, f64)> = HashMap::new();
+            let mut rests: HashMap<usize, u32> = HashMap::new();
             while (l.tidying() || done.iter().zip(slaps).any(|(d, s)| !d && s.is_finite())) && t - t0 < 300_000.0 {
                 t += 16.7;
                 for j in 0..2 { if !done[j] && t - t0 > slaps[j] { done[j] = true; l.slap(t); } }
                 let _ = l.tick(t);
-                for o in l.take() { if let Out::Rest { id, x, y } = o { finder.insert(id, (x, y)); } }
+                for o in l.take() { if let Out::Rest { id, x, y } = o { finder.insert(id, (x, y)); *rests.entry(id).or_insert(0) += 1; } }
             }
             let took = (t - t0) / 1000.0;
             let mut msg = Vec::new();
@@ -3528,11 +3549,35 @@ mod tests {
                 if !i.home || dist((i.x, i.y), s) > 1.0 { msg.push(format!("{} not home", i.id)); }
                 let f = finder.get(&i.id).copied().unwrap_or(start[&i.id]);
                 if dist(f, s) > 1.0 { msg.push(format!("{} finder {:?} slot {:?}", i.id, f, s)); }
+                // Finder is asked a few times at most, not every frame
+                if rests.get(&i.id).copied().unwrap_or(0) > 8 { msg.push(format!("{} sent to Finder {} times", i.id, rests[&i.id])); }
             }
             if took > 10.0 + n as f64 * 2.5 { msg.push(format!("slow {took:.0} s for {n}")); }
             if !msg.is_empty() { bad += 1; eprintln!("seed {seed} n {n} slaps {:?} took {took:.0}: {}", slaps, msg.join("; ")); }
         }
         assert_eq!(bad, 0);
+    }
+
+    #[test]
+    fn an_icon_pushed_along_is_sent_to_finder_once_it_stops_not_every_frame() {
+        let (mut l, mut t) = settled();
+        let icons: Vec<(usize, f64, f64)> = (0..26).map(|k| (k + 1, 160.0 + (k % 7) as f64 * 140.0, 120.0 + (k / 7) as f64 * 170.0)).collect();
+        let slots: Vec<(f64, f64)> = (0..26).map(|r| (1440.0 - (r / 8) as f64 * 100.0, 60.0 + (r % 8) as f64 * 92.0)).collect();
+        l.tidy(icons, &slots, (47.0, 37.0), t);
+        let t0 = t;
+        let mut rests: HashMap<usize, u32> = HashMap::new();
+        while l.tidying() && t - t0 < 120_000.0 {
+            t += 16.7;
+            let _ = l.tick(t);
+            for o in l.take() {
+                if let Out::Rest { id, .. } = o {
+                    *rests.entry(id).or_insert(0) += 1;
+                }
+            }
+        }
+        assert!(!l.tidying());
+        let most = rests.values().copied().max().unwrap_or(0);
+        assert!(most <= 3, "an icon was sent to Finder {most} times: {rests:?}");
     }
 
     #[test]

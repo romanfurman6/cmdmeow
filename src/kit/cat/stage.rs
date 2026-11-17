@@ -187,6 +187,31 @@ fn px_rect(shot: &Shot, cell: (f64, f64, f64, f64)) -> NSRect {
     NSRect::new(NSPoint::new(x0, y0), NSSize::new((cell.2 * scale).ceil(), (cell.3 * scale).ceil()))
 }
 
+/// The wallpaper over `cell` (points, top left origin) where `k` was
+/// drawn, on `patches`.
+fn patch_layer(patches: &AnyObject, paper: Option<&Shot>, k: &Kept, cell: (f64, f64, f64, f64), h: f64) -> Option<Retained<AnyObject>> {
+    let shot = paper?;
+    let c = unsafe { CGImageCreateWithImageInRect(shot.0 .0, px_rect(shot, cell)) };
+    if c.is_null() {
+        return None;
+    }
+    let img = Image(c);
+    let img = match &k.ink {
+        Some((ink, w, h)) => keep_only(&img, ink, *w, *h)?,
+        None => img,
+    };
+    unsafe {
+        let _: () = msg_send![class!(CATransaction), begin];
+        let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+        let l = new_layer(patches);
+        let _: () = msg_send![&*l, setBounds: CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: cell.2, height: cell.3 } }];
+        let _: () = msg_send![&*l, setContents: img.0 as *mut AnyObject];
+        let _: () = msg_send![&*l, setPosition: CGPoint { x: cell.0, y: h - cell.1 - cell.3 }];
+        let _: () = msg_send![class!(CATransaction), commit];
+        Some(l)
+    }
+}
+
 /// What Finder showed when the tidy began, and pictures of it.
 pub struct Desktop {
     pub spots: Vec<Spot>,
@@ -553,30 +578,13 @@ impl Stage {
         let mid = self.at.get(&id).copied().unwrap_or(first);
         let Some(k) = self.kept.get(&id) else { return };
         let cell = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
-        // the wallpaper where Finder shows it now, only where it is drawn
-        let patch_img = d.paper.as_ref().and_then(|shot| {
-            let c = unsafe { CGImageCreateWithImageInRect(shot.0 .0, px_rect(shot, cell)) };
-            if c.is_null() {
-                return None;
-            }
-            let img = Image(c);
-            match &k.ink {
-                Some((ink, w, h)) => keep_only(&img, ink, *w, *h),
-                None => Some(img),
-            }
-        });
         let h = self.frame.size.height;
+        // the wallpaper where Finder shows it now, only where it is drawn
+        let patch = patch_layer(&self.patches, d.paper.as_ref(), k, cell, h);
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
             let bounds = CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: cell.2, height: cell.3 } };
-            let patch = patch_img.map(|img| {
-                let l = new_layer(&self.patches);
-                let _: () = msg_send![&*l, setBounds: bounds];
-                let _: () = msg_send![&*l, setContents: img.0 as *mut AnyObject];
-                let _: () = msg_send![&*l, setPosition: CGPoint { x: cell.0, y: h - cell.1 - cell.3 }];
-                l
-            });
             let icon = new_layer(&self.moved);
             let _: () = msg_send![&*icon, setBounds: bounds];
             // y up: the picture at the top of the layer, the label under it
@@ -663,6 +671,24 @@ impl Stage {
     /// show it there.
     pub fn rested(&mut self, id: usize, at: (f64, f64)) {
         self.at.insert(id, at);
+    }
+
+    /// Finder has moved icon `id` to where it came to rest, but it moves on
+    /// (pushed, carried): its wallpaper patch goes there too.
+    pub fn repatch(&mut self, id: usize) {
+        let (Some(d), Some(k), Some(&mid)) = (&self.desktop, self.kept.get(&id), self.at.get(&id)) else { return };
+        let Some(p) = self.proxies.get_mut(&id) else { return };
+        let cell = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
+        let h = self.frame.size.height;
+        let patch = patch_layer(&self.patches, d.paper.as_ref(), k, cell, h);
+        if let Some(old) = std::mem::replace(&mut p.patch, patch) {
+            unsafe {
+                let _: () = msg_send![class!(CATransaction), begin];
+                let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+                let _: () = msg_send![&*old, removeFromSuperlayer];
+                let _: () = msg_send![class!(CATransaction), commit];
+            }
+        }
     }
 
     /// Finder shows icon `id` where it came to rest: its picture and patch go.
