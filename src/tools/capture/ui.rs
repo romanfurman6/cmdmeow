@@ -53,70 +53,40 @@ pub fn widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
             }
         }
         Size::S12 | Size::S14 => {
-            let _ = tile::card(ui, rect, id, false);
+            // W5: the actions alone, no header; the name is in each tip
+            let _ = tile::frame(ui, rect, id, false);
             let p = ui.painter().clone();
-            let mut x0 = rect.left() + 8.0;
-            if size == Size::S12 {
-                tool_chip(&p, Rect::from_min_size(Pos2::new(x0 + 2.0, rect.top() + 9.0), Vec2::splat(18.0)), Icon::Crop, tint::CAPTURE());
-                p.text(Pos2::new(x0 + 26.0, rect.top() + 18.0), Align2::LEFT_CENTER, "Screenshot", font(11.0), TEXT_DIM());
-                let r = Rect::from_min_max(Pos2::new(x0, rect.top() + 32.0), Pos2::new(rect.right() - 8.0, rect.bottom() - 8.0));
-                modes(c, ui, &p, id, r, &[MODES[0], MODES[1]], false);
-            } else {
-                // the round chip every other row has
-                let chip = tile::row_chip(rect);
-                p.circle_filled(chip.center(), 17.0, white(14));
-                icon(&p, Icon::Crop, Rect::from_center_size(chip.center(), Vec2::splat(18.0)), lift(tint::CAPTURE()));
-                x0 = chip.right() + 10.0;
-                modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, rect.top() + 9.0), Pos2::new(rect.right() - 9.0, rect.bottom() - 9.0)), &MODES, false);
-            }
+            let list: &[(Command, &str)] = if size == Size::S12 { &MODES[..2] } else { &MODES };
+            modes(c, ui, &p, id, rect.shrink(4.0), list, true);
         }
         _ => card(c, ui, rect, cx),
     }
 }
 
-/// Capture buttons side by side in `r`: icon, name and (`keys`) shortcut.
+/// Capture actions side by side in `r` (W5): icon, name and (`keys`) the
+/// shortcut, no frames, a hairline between.
 fn modes(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect, list: &[(Command, &str)], keys: bool) {
-    let gap = 6.0;
-    let n = list.len() as f32;
-    let bw = (r.width() - (n - 1.0) * gap) / n;
-    let tall = r.height() >= 48.0;
     let live = c.rec.tray();
-    for (k, (cmd, label)) in list.iter().enumerate() {
-        // while recording, Record is the stop button with the time
-        let (label, fg) = match (&live, cmd) {
-            (Some(t), Command::Record) => (t.trim_start_matches(['●', '❚', ' ']).to_string(), RED()),
-            _ => (label.to_string(), TEXT()),
-        };
-        let label = label.as_str();
-        let b = Rect::from_min_size(Pos2::new(r.left() + k as f32 * (bw + gap), r.top()), Vec2::new(bw, r.height()));
-        let resp = ui.interact(b, id.with(("mode", k)), Sense::click());
-        let h = ui.ctx().animate_bool(id.with(("mode-h", k)), resp.hovered());
-        p.rect_filled(b, R_BUTTON, white((12.0 + 12.0 * h) as u8));
-        // Record is the one red glyph, like a camera's button
-        let fg = if *cmd == Command::Record && fg == TEXT() { RED() } else { fg };
-        if tall {
-            let top = b.top() + if keys { 15.0 } else { 18.0 };
-            icons::draw(p, command_icon(*cmd), Rect::from_center_size(Pos2::new(b.center().x, top), Vec2::splat(17.0)), fg);
-            p.text(Pos2::new(b.center().x, top + 17.0), Align2::CENTER_CENTER, label, font(11.0), fg);
-            if keys {
-                p.text(Pos2::new(b.center().x, top + 29.0), Align2::CENTER_CENTER, key_label(c, *cmd), font(11.0), TEXT_FAINT());
+    let rows: Vec<(String, String, Color32, String)> = list
+        .iter()
+        .map(|(cmd, label)| {
+            let key = key_label(c, *cmd);
+            match (&live, cmd) {
+                // while recording, Record is the stop button with the time
+                (Some(t), Command::Record) => (t.trim_start_matches(['●', '❚', ' ']).to_string(), String::new(), RED(), "Stop and save the recording".to_string()),
+                // Record is the one red glyph, like a camera's button
+                _ => {
+                    let tip = if key.is_empty() { label.to_string() } else { format!("{label} · {key}") };
+                    (label.to_string(), if keys { key } else { String::new() }, if *cmd == Command::Record { RED() } else { TEXT() }, tip)
+                }
             }
-        } else {
-            let g = p.layout_no_wrap(label.to_string(), font(11.0), fg);
-            let w = 15.0 + 5.0 + g.size().x;
-            let x = b.center().x - w / 2.0;
-            icons::draw(p, command_icon(*cmd), Rect::from_center_size(Pos2::new(x + 7.5, b.center().y), Vec2::splat(14.0)), fg);
-            p.galley(Pos2::new(x + 20.0, b.center().y - g.size().y / 2.0), g, fg);
-        }
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        let tip = key_label(c, *cmd);
-        let hover = if live.is_some() && *cmd == Command::Record { "Stop and save the recording".to_string() } else if tip.is_empty() { label.to_string() } else { format!("{label} · {tip}") };
-        if resp.on_hover_text(hover).clicked() {
-            let delay = if matches!(*cmd, Command::Text | Command::Record) { 0 } else { c.settings.delay };
-            c.queue.push((*cmd, delay));
-        }
+        })
+        .collect();
+    let acts: Vec<tile::Action> = rows.iter().map(|(l, s, col, tip)| tile::Action { label: l, sub: s, color: *col, tip }).collect();
+    if let Some(k) = tile::actions(ui, p, id, r, &acts, |p, k, gr, col| icons::draw(p, command_icon(list[k].0), gr, col)) {
+        let cmd = list[k].0;
+        let delay = if matches!(cmd, Command::Text | Command::Record) { 0 } else { c.settings.delay };
+        c.queue.push((cmd, delay));
     }
 }
 
@@ -188,8 +158,8 @@ fn recent_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: 
             p.rect_filled(lr, 4.0, Color32::from_black_alpha(140));
             p.galley(lr.min + Vec2::new(4.0, 1.0), g, Color32::WHITE);
         }
+        // W12: no ring on hover inside the widget, just the hand
         if resp.hovered() {
-            p.rect_stroke(tr, 8.0, Stroke::new(1.5, ACCENT()), StrokeKind::Inside);
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if resp.on_hover_text(format!("{} · {tip}", it.title)).clicked() {
@@ -1332,7 +1302,6 @@ mod tests {
 /// and, at Medium, the latest recordings.
 pub fn video_widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let id = ui.scope_id().with("w-video");
-    let rec = [(Command::Record, "Record")];
     match size {
         Size::S11 => {
             let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
@@ -1344,23 +1313,51 @@ pub fn video_widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &m
             }
         }
         Size::S12 | Size::S14 => {
-            let _ = tile::card(ui, rect, id, false);
+            // Record and Recordings, like Screenshot's actions; the Row adds the last recording
+            let _ = tile::frame(ui, rect, id, false);
             let p = ui.painter().clone();
-            if size == Size::S12 {
-                let x0 = rect.left() + 8.0;
-                tool_chip(&p, Rect::from_min_size(Pos2::new(x0 + 2.0, rect.top() + 9.0), Vec2::splat(18.0)), Icon::Camera, tint::CAPTURE());
-                p.text(Pos2::new(x0 + 26.0, rect.top() + 18.0), Align2::LEFT_CENTER, "Video", font(11.0), TEXT_DIM());
-                let r = Rect::from_min_max(Pos2::new(x0, rect.top() + 32.0), Pos2::new(rect.right() - 8.0, rect.bottom() - 8.0));
-                modes(c, ui, &p, id, r, &rec, false);
-            } else {
-                let chip = tile::row_chip(rect);
-                p.circle_filled(chip.center(), 17.0, white(14));
-                icon(&p, Icon::Camera, Rect::from_center_size(chip.center(), Vec2::splat(18.0)), lift(tint::CAPTURE()));
-                let x0 = chip.right() + 10.0;
-                modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, rect.top() + 9.0), Pos2::new(rect.right() - 9.0, rect.bottom() - 9.0)), &rec, true);
+            let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
+            let keys = key_label(c, Command::Record);
+            let last = if size == Size::S14 { recordings(c).into_iter().next() } else { None };
+            let ago = last.as_ref().map(|it| since((chrono::Local::now() - it.time).num_seconds().max(0))).unwrap_or_default();
+            let n = recordings(c).len();
+            let count = if n == 1 { "1 recording".to_string() } else { format!("{n} recordings") };
+            let mut acts = vec![match &live {
+                Some(t) => tile::Action { label: t, sub: "", color: RED(), tip: "Stop and save the recording" },
+                None => tile::Action { label: "Record", sub: &keys, color: RED(), tip: "Record the screen" },
+            }];
+            let mut glyphs = vec![Ico::Record];
+            if last.is_some() {
+                acts.push(tile::Action { label: "Last", sub: &ago, color: TEXT(), tip: "Open the last recording" });
+                glyphs.push(Ico::Play);
+            }
+            acts.push(tile::Action { label: "Recordings", sub: "", color: TEXT(), tip: &count });
+            glyphs.push(Ico::Folder);
+            match tile::actions(ui, &p, id, rect.shrink(4.0), &acts, |p, k, gr, col| icons::draw(p, glyphs[k], gr, col)) {
+                Some(0) => c.queue.push((Command::Record, 0)),
+                Some(k) if glyphs[k] == Ico::Play => {
+                    if let Some(it) = &last {
+                        run_act(c, Act::Edit, it);
+                    }
+                }
+                Some(_) => {
+                    c.vtab = VTab::Recordings;
+                    cx.open_page(VIDEO_ID, "");
+                }
+                None => {}
             }
         }
         _ => video_card(c, ui, rect, cx),
+    }
+}
+
+/// "just now", "12 min ago", "3 h ago", "2 d ago".
+fn since(secs: i64) -> String {
+    match secs {
+        ..=59 => "just now".into(),
+        60..=3599 => format!("{} min ago", secs / 60),
+        3600..=172_799 => format!("{} h ago", secs / 3600),
+        _ => format!("{} d ago", secs / 86_400),
     }
 }
 
@@ -1382,8 +1379,7 @@ fn video_card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     // one wide Record button: the red dot, its name, the shortcut on the right
     let b = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + MODE_H));
     let resp = ui.interact(b, id.with("record"), Sense::click());
-    let h = ui.ctx().animate_bool(id.with("record-h"), resp.hovered());
-    p.rect_filled(b, R_BUTTON, white((12.0 + 12.0 * h) as u8));
+    p.rect_filled(b, R_BUTTON, white(12));
     let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
     let dot = Pos2::new(b.left() + sp::M + 5.0, b.center().y);
     p.circle_filled(dot, 5.0, RED());

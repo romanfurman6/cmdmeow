@@ -64,7 +64,8 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
         "storage" => {
             let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
             let c = if s.disk_level() == Level::Good { tint::HEALTH() } else { level_color(s.disk_level()) };
-            (Icon::Disk, s.volume_name_or(), split_num(&human_bytes(s.disk_free)), "free".to_string(), Some((used.clamp(0.01, 1.0), c)))
+            let cap = if s.disk_total > 0 { format!("free of {}", human_bytes(s.disk_total)) } else { "free".to_string() };
+            (Icon::Disk, s.volume_name_or(), split_num(&human_bytes(s.disk_free)), cap, Some((used.clamp(0.01, 1.0), c)))
         }
         "memory" => {
             let word = match s.mem_level() {
@@ -80,7 +81,9 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
                 1 => AMBER(),
                 _ => RED(),
             };
-            (Icon::Cpu, "CPU".into(), (format!("{:.0}", s.cpu_load), "%".into()), s.thermal_word().to_lowercase(), Some((pct(s.cpu_load), c)))
+            // the hottest chip sensor as a number (the Fans tool reads it); the word without it
+            let cap = crate::tools::fan::data::last_hot().map(|t| format!("{t:.0} °C")).unwrap_or_else(|| s.thermal_word().to_lowercase());
+            (Icon::Cpu, "CPU".into(), (format!("{:.0}", s.cpu_load), "%".into()), cap, Some((pct(s.cpu_load), c)))
         }
         "battery" => {
             if s.battery.present {
@@ -124,34 +127,16 @@ pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect,
     }
     let Some(mt) = metric(&s, id) else { return };
     let col = tint::HEALTH();
+    let caption = cap_first(&mt.caption);
     let resp = match size {
+        // W4: the ring and the value; the name and the rest in the tip
         Size::S11 => match mt.bar {
-            Some((f, c)) => {
-                // a name with the number: "CPU 16%", "1.44 TB free"
-                let cap = if id == "storage" || id == "battery" { mt.value() } else { format!("{} {}", short_label(id), mt.value()) };
-                tile::small_ring(ui, r, wid, mt.glyph, f, c, &cap, sel)
-            }
+            Some((f, c)) => tile::small_ring(ui, r, wid, mt.glyph, f, c, &mt.value(), sel).on_hover_text(format!("{} · {}", mt.label, caption)),
             None => tile::small(ui, r, wid, mt.glyph, col, &mt.value().replace("/sec", "/s"), &mt.label, sel),
         },
-        Size::S12 => tile::wide(ui, r, wid, mt.glyph, col, &mt.label, &mt.value(), mt.bar.ok_or(mt.caption.as_str()), sel),
-        // Storage's Row is its old Medium: the free space, a bar across, the folders
-        Size::S14 if id == "storage" => {
-            let resp = tile::card(ui, r, wid, sel);
-            let p = ui.painter();
-            let body = tile::head(p, r, mt.glyph, col, &mt.label, "");
-            let big = p.text(Pos2::new(body.left(), body.bottom() - 12.0), Align2::LEFT_BOTTOM, &mt.big, bold(28.0), TEXT());
-            p.text(Pos2::new(big.right() + 4.0, big.bottom() - 5.0), Align2::LEFT_BOTTOM, &mt.unit, font(13.0), TEXT_DIM());
-            if s.disk_total > 0 {
-                p.text(Pos2::new(body.right(), big.bottom() - 5.0), Align2::RIGHT_BOTTOM, format!("of {}", human_bytes(s.disk_total)), font(12.0), TEXT_DIM());
-                let used = 1.0 - s.disk_free as f32 / s.disk_total as f32;
-                bar(p, Rect::from_min_size(Pos2::new(body.left(), body.bottom() - 6.0), egui::Vec2::new(body.width(), 6.0)), used, mt.bar.map(|b| b.1).unwrap_or(tint::HEALTH()));
-            }
-            resp
-        }
+        Size::S12 => tile::wide_full(ui, r, wid, mt.glyph, col, mt.bar, &mt.label, &mt.value(), &caption, ty::caption_color(), sel),
         Size::S14 => {
-            // CPU's graph is the point of its Row, so it gets most of the width
-            let ratio = if id == "cpu" { 0.32 } else { 0.47 };
-            let (resp, right) = tile::row_split_at(ui, r, wid, mt.glyph, col, &mt.label, &mt.value(), &mt.caption, sel, ratio);
+            let (resp, right) = tile::row_split_full(ui, r, wid, mt.glyph, col, mt.bar, &mt.label, &mt.value(), &caption, ty::caption_color(), sel);
             row_body(&s, id, &mt, ui.painter(), right);
             resp
         }
@@ -368,12 +353,12 @@ pub fn detail(mon: &monitor::Shared, d: &str, ui: &mut Ui, rect: Rect, cx: &mut 
 }
 
 /// The one-word name a 1:1 tile has room for.
-fn short_label(id: &str) -> &'static str {
-    match id {
-        "cpu" => "CPU",
-        "memory" => "Mem",
-        "battery" => "Battery",
-        "network" => "Wi-Fi",
-        _ => "",
+/// "normal" -> "Normal": a caption line starts with a capital.
+fn cap_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
     }
 }
+

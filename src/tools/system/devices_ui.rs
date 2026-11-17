@@ -112,62 +112,33 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
                 let p = ui.painter();
                 let c = Pos2::new(r.center().x, r.top() + 32.0);
                 ring_cell(p, c, 22.0, d, 17.0);
-                pct_with_bolt(p, Pos2::new(r.center().x, r.bottom() - 9.0), Align2::CENTER_BOTTOM, b, false, bold(11.0), Tone::of(d).text(b));
-                resp
+                // the colour is in the ring only; the value reads like every other 1:1
+                pct_with_bolt(p, Pos2::new(r.center().x, r.bottom() - 10.0), Align2::CENTER_BOTTOM, b, false, bold(13.0), Tone::of(d).c(TEXT()));
+                resp.on_hover_text(format!("{} · {}", d.name, note(&devs)))
             }
             Some(d) => tile::small(ui, r, wid, d.kind.icon(), tint::HEALTH(), &d.name, "Connected", sel),
             None => tile::small(ui, r, wid, Icon::Bluetooth, tint::HEALTH(), "Devices", "None", sel),
         };
     }
+    // 1:2 and 1:4 (W2, W5): the weakest device as the ring, the rest as bar lines
+    if matches!(size, Size::S12 | Size::S14) {
+        let first = devs.first().filter(|d| d.live());
+        let (glyph, ring_, label, value) = match first {
+            Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), d.name.clone(), pct_text(d.battery())),
+            None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
+        };
+        let caption = if first.is_some() { note(&devs) } else { String::new() };
+        if size == Size::S12 {
+            return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
+        }
+        let (resp, right) = tile::row_split_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
+        let lines: Vec<(String, Option<(f32, Color32)>, String)> = devs.iter().filter(|d| d.live()).skip(1).take(3).map(|d| (d.name.clone(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), pct_text(d.battery()))).collect();
+        tile::lines(ui.painter(), right, &lines, "No other devices");
+        return resp;
+    }
     let resp = tile::card(ui, r, wid, sel);
     let p = ui.painter();
     match size {
-        Size::S12 => {
-            let x0 = r.left() + tile::PAD;
-            let x1 = r.right() - tile::PAD;
-            let live = devs.iter().filter(|d| d.live()).count();
-            p.text(Pos2::new(x1, r.top() + 20.0), Align2::RIGHT_CENTER, live.to_string(), ty::label(), white(166));
-            text_fit(p, Pos2::new(x0, r.top() + 20.0), Align2::LEFT_CENTER, "Devices", ty::title(), TEXT(), x1 - x0 - 30.0);
-            if devs.is_empty() {
-                text_fit(p, Pos2::new(x0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, "None connected", font(12.0), TEXT_FAINT(), x1 - x0);
-                return resp;
-            }
-            let n = devs.len().min(3);
-            let cw = (x1 - x0) / n as f32;
-            for (k, d) in devs.iter().take(n).enumerate() {
-                let cx = x0 + cw * (k as f32 + 0.5);
-                let t = Tone::of(d);
-                device_glyph(p, d, Rect::from_center_size(Pos2::new(cx, r.bottom() - 34.0), Vec2::splat(16.0)), t.c(TEXT_SOFT()));
-                pct_with_bolt(p, Pos2::new(cx, r.bottom() - 10.0), Align2::CENTER_BOTTOM, d.battery(), d.charging && d.live(), bold(12.0), t.text(d.battery()));
-            }
-        }
-        Size::S14 => {
-            if devs.is_empty() {
-                tool_chip(p, Rect::from_min_size(Pos2::new(r.left() + 12.0, r.center().y - 17.0), Vec2::splat(34.0)), Icon::Bluetooth, tint::HEALTH());
-                let x0 = r.left() + 58.0;
-                text_fit(p, Pos2::new(x0, r.center().y), Align2::LEFT_CENTER, "No devices connected", bold(13.0), TEXT(), r.right() - 12.0 - x0);
-                return resp;
-            }
-            let n = devs.len().clamp(1, 5);
-            let cw = (r.width() - 2.0 * tile::PAD) / n.max(4) as f32;
-            let x0 = r.left() + tile::PAD + (r.width() - 2.0 * tile::PAD - cw * n as f32) / 2.0;
-            for (k, d) in devs.iter().take(n).enumerate() {
-                let cx = x0 + cw * (k as f32 + 0.5);
-                let t = Tone::of(d);
-                // the charge inside its ring, the whole name under it (two
-                // lines when it needs them: "Magic / Trackpad")
-                let c = Pos2::new(cx, r.top() + tile::PAD + 16.0);
-                let b = d.battery();
-                tile::ring(p, c, 16.0, 4.0, frac(b), t.ring(b));
-                if d.charging && d.live() {
-                    let at = c + Vec2::new(16.0 * 0.72, -16.0 * 0.72);
-                    p.circle_filled(at, 16.0 * 0.32, BG());
-                    bolt(p, at, 16.0 * 0.42, GREEN());
-                }
-                p.text(c, Align2::CENTER_CENTER, b.map(|b| b.to_string()).unwrap_or_else(|| "–".into()), bold(11.0), t.text(b));
-                text_wrap(p, Pos2::new(cx, c.y + 16.0 + sp::S), Align2::CENTER_TOP, &d.name, font(11.0), t.c(TEXT_DIM()), cw - sp::XS, 2);
-            }
-        }
         Size::S24 => {
             let body = tile::head(p, r, Icon::Bluetooth, tint::HEALTH(), "Devices", &note(&devs));
             if devs.is_empty() {

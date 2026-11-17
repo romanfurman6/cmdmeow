@@ -17,21 +17,37 @@ const GAP: f32 = 12.0;
 /// The Claude widget at `size`.
 pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo], sel: bool) -> egui::Response {
     let id = ui.scope_id().with("w-claude");
-    let t = ui.ctx().input(|i| i.time);
     let session = cl.session().cloned();
     let pct = session.as_ref().map(|l| l.pct).unwrap_or(0.0);
     let col = super::page::usage_color(pct);
     let value = session.as_ref().map(|_| format!("{pct:.0}%")).unwrap_or_else(|| "–".into());
     match size {
-        Size::S11 => tile::small_ring(ui, r, id, Icon::Gauge, pct / 100.0, col, &format!("Session {value}"), sel),
-        Size::S12 => {
-            let st = status(cl);
-            let bar_or = if session.is_some() { Ok(((pct / 100.0).max(0.01), col)) } else { Err(st.as_str()) };
-            tile::wide(ui, r, id, Icon::Gauge, tint::CLAUDE(), &format!("{} · session", cl.provider), &value, bar_or, sel)
+        // W4: the ring and the number; Session and its reset in the tip
+        Size::S11 => {
+            let tip = session.as_ref().map(|l| format!("Session · {}", short_reset(&l.resets))).unwrap_or_else(|| status(cl));
+            tile::small_ring(ui, r, id, Icon::Gauge, pct / 100.0, col, &value, sel).on_hover_text(tip)
         }
-        Size::S14 => {
-            let resp = tile::card(ui, r, id, sel);
-            card(ui.painter(), r, cl, t);
+        // W3, W8: "AI Usage", the session %, when it resets
+        Size::S12 | Size::S14 => {
+            let ring_ = session.as_ref().map(|_| ((pct / 100.0).max(0.01), col));
+            let caption = match &session {
+                Some(l) => cap_reset(&l.resets),
+                None => status(cl),
+            };
+            let value = if session.is_some() { value } else { "–".to_string() };
+            if size == Size::S12 {
+                return tile::wide_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, "AI Usage", &value, &caption, ty::caption_color(), sel);
+            }
+            // the right part adds what the left doesn't have: the week and today's tokens
+            let (resp, right) = tile::row_split_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, "AI Usage", &value, &caption, ty::caption_color(), sel);
+            let mut lines: Vec<(String, Option<(f32, Color32)>, String)> = Vec::new();
+            if let Some(w) = cl.weekly() {
+                lines.push(("Week".into(), Some(((w.pct / 100.0).max(0.01), super::page::usage_color(w.pct))), format!("{:.0}%", w.pct)));
+            }
+            if cl.local.tokens_today > 0 {
+                lines.push(("Today".into(), None, format!("{} tokens", backend::human_tokens(cl.local.tokens_today))));
+            }
+            tile::lines(ui.painter(), right, &lines, &status(cl));
             resp
         }
         _ if all.iter().filter(|i| !i.limits.is_empty()).count() >= 2 => {
@@ -94,48 +110,13 @@ fn status(cl: &UsageInfo) -> String {
     }
 }
 
-/// The panel card: plan, tokens today, then Session and Week bars.
-pub fn card(p: &egui::Painter, r: Rect, cl: &UsageInfo, t: f64) {
-    let x0 = r.left() + 12.0;
-    let x1 = r.right() - 12.0;
-    let hy = r.top() + 17.0;
-    let status = status(cl);
-    let (fresh, fc) = super::parts::fresh(cl);
-    // the time only when it is old: the rows already carry their own times
-    let (status, scol) = if cl.limits.is_empty() || !cl.stale || fresh.is_empty() { (status, white(166)) } else { (fresh, fc) };
-    let sw = text_fit(p, Pos2::new(x1, hy), Align2::RIGHT_CENTER, &status, ty::label(), scol, 170.0).width();
-    text_fit(p, Pos2::new(x0, hy), Align2::LEFT_CENTER, "AI Usage", ty::title(), TEXT(), (x1 - sw - 12.0) - x0);
-    if cl.limits.is_empty() && (cl.loading || !cl.scanned) {
-        spinner(p, Pos2::new(x1 - 8.0, r.top() + 56.0), 7.0, t, TEXT_DIM());
-    }
-    // columns sized by what they hold this frame: the forecast keeps its
-    // full width ("Runs out tomorrow 23:40"), the bar takes what is left
-    let rows = [("Session", cl.session().cloned()), ("Week", cl.weekly().cloned())];
-    let w = |s: &str| p.layout_no_wrap(s.to_string(), font(12.0), TEXT()).size().x;
-    let fc: Vec<String> = rows.iter().map(|(_, l)| l.as_ref().map(super::parts::forecast).unwrap_or_default()).collect();
-    let fw = fc.iter().map(|f| w(f)).fold(0.0, f32::max);
-    let pw = w("100%");
-    let lw = rows.iter().map(|(k, _)| w(k)).fold(0.0, f32::max);
-    let pct_r = x1 - fw - if fw > 0.0 { sp::M } else { 0.0 };
-    let bar_l = x0 + lw + sp::M;
-    let bar_r = pct_r - pw - sp::M;
-    for (k, (label, l)) in rows.iter().enumerate() {
-        let yy = r.top() + 42.0 + k as f32 * 22.0;
-        p.text(Pos2::new(x0, yy), Align2::LEFT_CENTER, *label, font(12.0), TEXT_DIM());
-        let br = Rect::from_min_max(Pos2::new(bar_l, yy - 2.0), Pos2::new(bar_r.max(bar_l), yy + 2.0));
-        let show_bar = br.width() >= 32.0;
-        match l {
-            Some(l) => {
-                if show_bar {
-                    super::parts::pace_bar(p, br, l);
-                }
-                p.text(Pos2::new(pct_r, yy), Align2::RIGHT_CENTER, format!("{:.0}%", l.pct), font(12.0), TEXT());
-                let col = if super::parts::forecast(l).starts_with("Runs out") { RED() } else { TEXT_FAINT() };
-                p.text(Pos2::new(x1, yy), Align2::RIGHT_CENTER, &fc[k], font(12.0), col);
-            }
-            None if show_bar => bar(p, br, 0.0, TEXT_DIM()),
-            None => {}
-        }
+/// "Resets 18:45": a caption line.
+fn cap_reset(s: &str) -> String {
+    let r = short_reset(s);
+    let mut c = r.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => String::new(),
     }
 }
 

@@ -289,6 +289,52 @@ pub fn row_split_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color:
     (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
 }
 
+/// One action of a widget's action strip ([`actions`]).
+pub struct Action<'a> {
+    pub label: &'a str,
+    /// The shortcut (or a short note) under the name; empty for none.
+    pub sub: &'a str,
+    /// Colour of the glyph and name (the one red Record).
+    pub color: Color32,
+    pub tip: &'a str,
+}
+
+/// Actions side by side in `r` (W5): equal shares, no frame or fill, the
+/// content centred, one hairline at 88% of the height between them. No
+/// hover inside the widget (W12): a held action dims and drops 1 pt.
+/// `glyph` draws action `k`'s icon in a rect in a colour. Returns the
+/// clicked action.
+pub fn actions(ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect, acts: &[Action], glyph: impl Fn(&egui::Painter, usize, Rect, Color32)) -> Option<usize> {
+    let n = acts.len().max(1) as f32;
+    let w = r.width() / n;
+    let mut out = None;
+    for (k, a) in acts.iter().enumerate() {
+        let share = Rect::from_min_size(Pos2::new(r.left() + w * k as f32, r.top()), Vec2::new(w, r.height()));
+        if k > 0 {
+            let inset = r.height() * 0.06;
+            p.line_segment([Pos2::new(share.left(), r.top() + inset), Pos2::new(share.left(), r.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
+        }
+        let b = share.shrink(4.0);
+        let key = super::key::press(ui, b, id.with(("act", k)), true, None);
+        let dy = PRESS_DROP * key.press.max(0.0);
+        let fg = press_dim(a.color, key.press);
+        let sub_col = press_dim(TEXT_FAINT(), key.press);
+        // icon 18, 4, name 12, sub 11, as one block in the middle
+        let block = 18.0 + 4.0 + 16.0 + if a.sub.is_empty() { 0.0 } else { 14.0 };
+        let top = b.center().y - block / 2.0 + dy;
+        glyph(p, k, Rect::from_center_size(Pos2::new(b.center().x, top + 9.0), Vec2::splat(18.0)), fg);
+        text_fit(p, Pos2::new(b.center().x, top + 22.0 + 8.0), Align2::CENTER_CENTER, a.label, font(12.0), fg, b.width());
+        if !a.sub.is_empty() {
+            text_fit(p, Pos2::new(b.center().x, top + 38.0 + 7.0), Align2::CENTER_CENTER, a.sub, ty::caption(), sub_col, b.width());
+        }
+        let resp = if a.tip.is_empty() { key.resp } else { key.resp.on_hover_text(a.tip) };
+        if resp.clicked() {
+            out = Some(k);
+        }
+    }
+    out
+}
+
 /// Up to three bar lines stacked in `r` (the right half of a split Row);
 /// `empty` is shown when there are none.
 pub fn lines(p: &egui::Painter, r: Rect, lines: &[(String, Option<(f32, Color32)>, String)], empty: &str) {

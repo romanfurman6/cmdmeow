@@ -132,6 +132,23 @@ pub const HISTORY: usize = 300;
 /// Seconds between samples.
 pub const SAMPLE_SECS: u64 = 2;
 
+static HOT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static HOT_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn unix_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The hottest chip sensor of the last reading (the CPU widget shows it),
+/// while the reading is fresh.
+pub fn last_hot() -> Option<f32> {
+    let at = HOT_AT.load(std::sync::atomic::Ordering::Relaxed);
+    if at == 0 || unix_secs().saturating_sub(at) > 30 {
+        return None;
+    }
+    Some(f32::from_bits(HOT.load(std::sync::atomic::Ordering::Relaxed)))
+}
+
 /// Everything the tool shows.
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
@@ -191,6 +208,8 @@ impl Snapshot {
     /// Add the current reading to the history.
     pub fn push_history(&mut self) {
         let Some((_, hot)) = self.hottest() else { return };
+        HOT.store(hot.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        HOT_AT.store(unix_secs(), std::sync::atomic::Ordering::Relaxed);
         self.history.push_back((self.avg_rpm().unwrap_or(0.0), hot));
         while self.history.len() > HISTORY {
             self.history.pop_front();
