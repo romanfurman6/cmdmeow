@@ -1561,7 +1561,8 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Pulse => "waveform.path.ecg",
         Icon::Crop => "crop",
         Icon::Clipboard => "doc.on.clipboard",
-        Icon::Fan => "fanblades",
+        // our own fan glyph (SP11), the same one that turns on the Fan page
+        Icon::Fan => return None,
         Icon::Cup => "cup.and.saucer",
         Icon::Home => "house",
         Icon::Window => "macwindow",
@@ -1812,22 +1813,8 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             boxr(9.0, 3.5, 15.0, 6.5, 0.8);
             open(&[(7.0, 5.0), (5.0, 5.0), (5.0, 21.0), (19.0, 21.0), (19.0, 5.0), (17.0, 5.0)]);
         }
-        Icon::Fan => {
-            // six curved blades around a hub (four straight arms read wrong)
-            stroke_circle(&p, pt(12.0, 12.0), 1.8 * u, st);
-            for k in 0..6 {
-                let a0 = k as f32 * TAU / 6.0;
-                let pts: Vec<Pos2> = (0..=6)
-                    .map(|i| {
-                        let t = i as f32 / 6.0;
-                        let rr = (2.6 + 6.6 * t) * u;
-                        let a = a0 + t * 0.9;
-                        pt(12.0, 12.0) + Vec2::new(a.cos(), a.sin()) * rr
-                    })
-                    .collect();
-                p.add(PathShape::line(pts, PathStroke::new(w, color)));
-            }
-        }
+        // the fan glyph (SP11), filled like the turning one
+        Icon::Fan => crate::kit::spin::draw(p, c, s * 0.46, 0.0, color),
         Icon::Cup => {
             open(&[(4.0, 9.0), (16.0, 9.0), (16.0, 14.0)]);
             arc(11.0, 14.0, 5.0, 0.0, PI);
