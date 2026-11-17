@@ -364,10 +364,11 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
                 };
                 let resp = ui.interact(r, ui.scope_id().with(("un-row", &a.path)), Sense::click());
                 let sel = u.selected.as_ref() == Some(&a.path);
+                // a content list: selected and hover run edge to edge (H2, H3)
                 if sel {
-                    crate::kit::glass::selected_fill(&p, r.shrink2(Vec2::new(4.0, 1.0)), 7.0);
+                    crate::kit::glass::selected_fill(&p, r, 0.0);
                 } else if resp.hovered() {
-                    p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, white(ROW_HOVER));
+                    p.rect_filled(r, 0.0, white(ROW_HOVER));
                 }
                 if resp.clicked() {
                     u.selected = Some(a.path.clone());

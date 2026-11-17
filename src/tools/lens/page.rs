@@ -1163,7 +1163,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
             let (rr, rresp) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::click());
             let lp = ui.painter();
             if rresp.hovered() {
-                lp.rect_filled(rr, R_SMALL, white(12));
+                lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
                 out.hover = Some((f.path.clone(), f.bytes));
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &f.path);
@@ -1243,7 +1243,7 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
             let (rr, resp) = ui.allocate_exact_size(Vec2::new(w, 34.0), Sense::click());
             let lp = ui.painter().clone();
             if resp.hovered() {
-                lp.rect_filled(rr, R_SMALL, white(12));
+                lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
             let cb = Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(15.0));
@@ -1643,7 +1643,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         // the hidden ones open in a sheet
         let resp = ui.interact(rr, ui.scope_id().with("lens-rest"), if n > 0 && !previewing { Sense::click() } else { Sense::hover() });
         if n > 0 && resp.hovered() {
-            lp.rect_filled(rr, R_SMALL, white(12));
+            lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if n > 0 && resp.clicked() {
@@ -1658,9 +1658,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let used = disk_total.saturating_sub(disk_free);
         let dy = lr.bottom() - disk_h;
         hairline(&p, Pos2::new(lr.left(), dy), Pos2::new(lr.right(), dy));
-        p.text(Pos2::new(x0, dy + 16.0), Align2::LEFT_CENTER, volume_label(&root.path), font(12.0), TEXT_DIM());
-        p.text(Pos2::new(x1, dy + 16.0), Align2::RIGHT_CENTER, format!("{} of {} used", human_bytes(used), human_bytes(disk_total)), font(12.0), TEXT_DIM());
-        bar(&p, Rect::from_min_size(Pos2::new(x0, dy + 28.0), Vec2::new(x1 - x0, 4.0)), (used as f32 / disk_total as f32).clamp(0.01, 1.0), ACCENT());
+        // the same disk, words and tint as the start ring (C6), bar 8 under (R4)
+        let ty0 = dy + 16.0;
+        let total = p.text(Pos2::new(x1, ty0), Align2::RIGHT_CENTER, format!("free of {}", human_bytes(disk_total)), ty::label(), TEXT_DIM());
+        let free = p.text(Pos2::new(total.left() - 4.0, ty0), Align2::RIGHT_CENTER, human_bytes(disk_free), ty::label(), TEXT());
+        icon(&p, Icon::Disk, Rect::from_center_size(Pos2::new(x0 + 8.0, ty0), Vec2::splat(16.0)), TEXT_SOFT());
+        text_fit(&p, Pos2::new(x0 + 22.0, ty0), Align2::LEFT_CENTER, &volume_label(&root.path), ty::body(), TEXT_SOFT(), free.left() - x0 - 22.0 - sp::S);
+        bar(&p, Rect::from_min_size(Pos2::new(x0, ty0 + 8.0 + 8.0), Vec2::new(x1 - x0, 4.0)), (used as f32 / disk_total as f32).clamp(0.01, 1.0), tint::DISK_MAP());
     }
 
     // ---- the map: bubbles (one level) or rings (three levels around the
