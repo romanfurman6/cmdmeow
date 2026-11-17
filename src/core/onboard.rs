@@ -1761,7 +1761,8 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let tile = |ui: &mut Ui, r: Rect, k: usize, on: bool, a: f32| -> egui::Response {
         let m = &ai::PROVIDERS[k];
         let resp = ui.interact(r, ui.scope_id().with(("setup-ai-tile", r.top() as i32, m.id)), if found[k] { Sense::click() } else { Sense::hover() });
-        let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k]);
+        // H7: the picked agent doesn't hover, a click on it does nothing
+        let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k] && !on);
         let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
         // H4: the picked card stays neutral and gets the 1.5 lime ring
         let fill = lerp_color(CARD(), white(30), hov * 0.15);
@@ -1773,7 +1774,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         if !found[k] {
             p.text(Pos2::new(r.right() - 12.0, r.bottom() - 12.0), Align2::RIGHT_BOTTOM, "Not found", ty::caption(), TEXT_FAINT());
         }
-        if resp.hovered() && found[k] {
+        if resp.hovered() && found[k] && !on {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         resp
