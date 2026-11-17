@@ -1330,10 +1330,6 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let loc = Rect::from_min_size(Pos2::new(hr.left() + 20.0 + 64.0, hr.center().y - 14.0), Vec2::new((tg.size().x + 56.0).min(240.0), 28.0));
     let lr_resp = ui.interact(loc, ui.scope_id().with("map-where"), if peek.is_none() { Sense::click() } else { Sense::hover() });
     let at_top = node.path == base;
-    p.rect_filled(loc, R_SMALL, white(if peek.is_some() { 8 } else if lr_resp.hovered() { 32 } else if at_top { 20 } else { 14 }));
-    icon(&p, if volume { Icon::Disk } else { Icon::Folder }, Rect::from_center_size(Pos2::new(loc.left() + 16.0, loc.center().y), Vec2::splat(16.0)), if peek.is_none() { ACCENT() } else { TEXT_MUTED() });
-    text_fit(&p, Pos2::new(loc.left() + 30.0, loc.center().y), Align2::LEFT_CENTER, &root_label, bold(13.0), if at_top { TEXT() } else { TEXT_DIM() }, loc.width() - 50.0);
-    chevron_down(&p, Pos2::new(loc.right() - 12.0, loc.center().y), TEXT_DIM());
     if peek.is_none() && lr_resp.hovered() {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -1414,6 +1410,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let cw = if !busy && !partial { aicheck::ui::chip_width(&app.ai, ui, ai_data) } else { 0.0 };
     let chip_at = Pos2::new(seg_r.left() - 16.0 - cw, hr.center().y);
     let crumbs_end = if cw > 0.0 { chip_at.x - 12.0 } else { seg_r.left() - 16.0 };
+    // the switcher gives way to the chip at narrow widths: its name is cut
+    // (a name the user brings, R10), never drawn under the chip
+    let loc = loc.with_max_x(loc.right().min(crumbs_end + 4.0).max(loc.left() + 64.0));
+    p.rect_filled(loc, R_SMALL, white(if peek.is_some() { 8 } else if lr_resp.hovered() { 32 } else if at_top { 20 } else { 14 }));
+    icon(&p, if volume { Icon::Disk } else { Icon::Folder }, Rect::from_center_size(Pos2::new(loc.left() + 16.0, loc.center().y), Vec2::splat(16.0)), if peek.is_none() { ACCENT() } else { TEXT_MUTED() });
+    text_fit(&p, Pos2::new(loc.left() + 30.0, loc.center().y), Align2::LEFT_CENTER, &root_label, bold(13.0), if at_top { TEXT() } else { TEXT_DIM() }, loc.width() - 50.0);
+    chevron_down(&p, Pos2::new(loc.right() - 12.0, loc.center().y), TEXT_DIM());
     let mut x = loc.right() + 2.0;
     // no room for "› … › name" before the AI chip: show no crumbs at all,
     // never a separator or "…" under the chip
