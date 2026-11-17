@@ -129,9 +129,9 @@ pub enum Out {
     Rest { id: usize, x: f64, y: f64 },
     /// The tidy is over.
     Tidied,
-    /// A paw or a nose met an icon, or the ball or the bowl hit the desk
-    /// (soft: a pat).
-    Tap { soft: bool },
+    /// Something met something: a paw, the mouth, an icon, the ball, the
+    /// bed or the bowl (soft: quieter).
+    Tap { hit: Hit, soft: bool },
     /// A held pointer on the cat: the purr starts or stops.
     Purr(bool),
     /// It comes to tidy.
@@ -143,6 +143,40 @@ pub enum Out {
     /// The bed or the bowl came to rest somewhere new: where they stand
     /// (from the left).
     Moved { bed: f64, bowl: f64 },
+}
+
+/// What made a sound on the desk; each has its own (none of the Mac's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hit {
+    /// A paw on an icon, or two icons knocking.
+    Pat,
+    /// One swipe rakes a heap together.
+    Rake,
+    /// The heap or one icon goes into the mouth.
+    Grab,
+    /// An icon lands in its slot.
+    Land,
+    /// The ball, kicked or bouncing.
+    Ball,
+    /// The bed drops to the floor.
+    Bed,
+    /// The bowl drops to the floor.
+    Bowl,
+}
+
+impl Hit {
+    /// Its file stem in the cat's assets (`pat.mp3` …).
+    pub fn file(self) -> &'static str {
+        match self {
+            Hit::Pat => "pat",
+            Hit::Rake => "rake",
+            Hit::Grab => "grab",
+            Hit::Land => "land",
+            Hit::Ball => "ball",
+            Hit::Bed => "bed",
+            Hit::Bowl => "bowl",
+        }
+    }
 }
 
 /// One part to draw: its picture, where (an affine map from the picture's
@@ -1413,7 +1447,7 @@ impl Live {
             self.lift(k);
         }
         if taps > 120.0 {
-            self.out.push(Out::Tap { soft: true });
+            self.out.push(Out::Tap { hit: Hit::Pat, soft: true });
         }
         // what came to rest goes back to Finder
         for k in 0..self.icons.len() {
@@ -1526,7 +1560,7 @@ impl Live {
         for (n, k) in reach.into_iter().enumerate() {
             self.attach(k, now, n as f64 * 60.0, Hold::Heap);
         }
-        self.out.push(Out::Tap { soft: true });
+        self.out.push(Out::Tap { hit: Hit::Rake, soft: false });
     }
 
     fn middle(&self, ks: &[usize]) -> Option<(f64, f64)> {
@@ -1596,7 +1630,7 @@ impl Live {
                             self.attach(k, now, delay, Hold::Mouth);
                         }
                     }
-                    self.out.push(Out::Tap { soft: true });
+                    self.out.push(Out::Tap { hit: Hit::Grab, soft: false });
                 }
                 if now - self.tidy.t0 > 460.0 {
                     self.tidy.step = Some(Step::Collect);
@@ -1631,7 +1665,7 @@ impl Live {
                     self.go("idle", 120.0, now);
                     self.tidy.dip = now;
                     self.attach(next, now, 150.0, Hold::Mouth);
-                    self.out.push(Out::Tap { soft: true });
+                    self.out.push(Out::Tap { hit: Hit::Grab, soft: false });
                     self.tidy.next = None;
                     self.tidy.wait = now + 380.0;
                     return;
@@ -1752,7 +1786,7 @@ impl Live {
             }
         }
         if taps > 0 {
-            self.out.push(Out::Tap { soft: true });
+            self.out.push(Out::Tap { hit: Hit::Land, soft: false });
         }
     }
 
@@ -1772,7 +1806,7 @@ impl Live {
         i.vx = dx * v;
         i.vy = dy * v;
         i.vr = dx * spin;
-        self.out.push(Out::Tap { soft: self.sw.soft });
+        self.out.push(Out::Tap { hit: Hit::Pat, soft: self.sw.soft });
     }
 
     /// What it wants from its bowl now: to eat (on the charger, once per
@@ -2276,7 +2310,7 @@ impl Live {
         self.ball.vx = self.dir * self.rnd(240.0, 480.0) * power;
         self.ball.vy = self.rnd(-190.0, 190.0) * power;
         self.ball.vz = self.rnd(90.0, 240.0) * power;
-        self.out.push(Out::Tap { soft: false });
+        self.out.push(Out::Tap { hit: Hit::Ball, soft: false });
     }
 
     fn faces(&self, d: f64) -> bool {
@@ -2436,7 +2470,7 @@ impl Live {
         if self.ball.on && !self.ball.held && self.hunt.act != Some(Act::Hold) {
             let area = self.ball_area();
             if self.ball.step(dt, area).is_some_and(|v| v > 300.0) {
-                self.out.push(Out::Tap { soft: true });
+                self.out.push(Out::Tap { hit: Hit::Ball, soft: true });
             }
             // left alone a long while, it fades away
             if self.mode != Mode::Ball && now - self.ball.touched > 45000.0 {
@@ -2448,9 +2482,11 @@ impl Live {
         }
         let floor = self.ground.3;
         let (bed, bowl) = (self.held == Some(Held::Bed), self.held == Some(Held::Bowl));
-        let thud = Self::fall(&mut self.bed, bed, floor - 18.0, dt) | Self::fall(&mut self.bowl, bowl, floor - 20.0, dt);
-        if thud {
-            self.out.push(Out::Tap { soft: true });
+        if Self::fall(&mut self.bed, bed, floor - 18.0, dt) {
+            self.out.push(Out::Tap { hit: Hit::Bed, soft: false });
+        }
+        if Self::fall(&mut self.bowl, bowl, floor - 20.0, dt) {
+            self.out.push(Out::Tap { hit: Hit::Bowl, soft: false });
         }
     }
 
@@ -3205,7 +3241,7 @@ mod tests {
         let b = l.bed_at();
         assert!((b.1 - floor).abs() < 0.5, "{b:?}");
         assert!((b.0 - (b0.0 - 600.0)).abs() < 1.0, "{b:?}");
-        assert!(out.contains(&Out::Tap { soft: true }), "no thud");
+        assert!(out.contains(&Out::Tap { hit: Hit::Bed, soft: false }), "no thud");
         assert!(out.iter().any(|o| matches!(o, Out::Moved { .. })));
         l.mind.next_roam = f64::INFINITY;
         run(&mut l, t, 15000.0);

@@ -9,7 +9,7 @@
 
 use super::engine::{Cmd, Engine, Event};
 use super::grid;
-use super::live::Out;
+use super::live::{Hit, Out};
 use super::stage::{self, Desktop, Stage};
 use super::{face, Kind, Prefs, Show};
 use dispatch2::{DispatchQueue, DispatchTime};
@@ -128,6 +128,8 @@ struct Main {
     fading: Option<Retained<AnyObject>>,
     /// Taps that still sound (each `NSSound` is kept while it plays).
     taps: Vec<Retained<AnyObject>>,
+    /// When each desk sound last started (one at a time per 50 ms).
+    tapped: [Option<Instant>; 7],
     buzz_turn: u32,
     buzzing: bool,
     /// The trackpads being listened to.
@@ -508,7 +510,7 @@ impl Main {
                     }
                 }
                 Out::Tidied => over = true,
-                Out::Tap { soft } => self.tap(soft),
+                Out::Tap { hit, soft } => self.tap(hit, soft),
                 Out::Purr(true) => {
                     let n = self.pick(3);
                     self.play(Kind::Purr, n);
@@ -655,17 +657,22 @@ impl Main {
         }
     }
 
-    /// A paw or a nose met an icon.
-    fn tap(&mut self, soft: bool) {
+    /// Something on the desk met something: its own sound (`pat.mp3` …),
+    /// levelled in the file under the Mac's own sounds.
+    fn tap(&mut self, hit: Hit, soft: bool) {
         if !may_sound() {
             return;
         }
-        let n = self.pick(2);
-        let Some(path) = stage::asset(&format!("tap-{n}.wav")) else { return };
+        let last = &mut self.tapped[hit as usize];
+        if last.is_some_and(|t| t.elapsed() < Duration::from_millis(50)) {
+            return;
+        }
+        *last = Some(Instant::now());
+        let Some(path) = stage::asset(&format!("{}.mp3", hit.file())) else { return };
         self.taps.retain(|s| unsafe { msg_send![&**s, isPlaying] });
         let Some(s) = sound(&path, false) else { return };
         unsafe {
-            let _: () = msg_send![&*s, setVolume: if soft { 0.35f32 } else { 0.7f32 }];
+            let _: () = msg_send![&*s, setVolume: if soft { 0.5f32 } else { 1.0f32 }];
             let _: bool = msg_send![&*s, play];
         }
         self.taps.push(s);
@@ -1441,6 +1448,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         voice: None,
         fading: None,
         taps: Vec::new(),
+        tapped: [None; 7],
         buzz_turn: 0,
         buzzing: false,
         pads: Vec::new(),
