@@ -1016,7 +1016,8 @@ fn ask_member(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], i: usize, agent:
         Some(a) => format!("{}\n{agent}: {}. {}", short_path(&it.path), if a.action == "keep" { "keep" } else { "clean" }, a.why),
         None => short_path(&it.path),
     };
-    let resp = row_hover(ui, rr, &key).on_hover_text(tip);
+    // its own id: the bundle row above is keyed on the same (first) path
+    let resp = row_hover(ui, rr, ("member", &key)).on_hover_text(tip);
     if resp.double_clicked() {
         let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
     }
@@ -1103,7 +1104,8 @@ fn list_member(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, i: usize) -> Opt
     let p = ui.painter().clone();
     let it = &items[i];
     let key = it.path.display().to_string();
-    let resp = row_hover(ui, rr, &key).on_hover_text(format!("{}\n{}", it.reason, short_path(&it.path)));
+    // its own id: the bundle row above is keyed on the same (first) path
+    let resp = row_hover(ui, rr, ("member", &key)).on_hover_text(format!("{}\n{}", it.reason, short_path(&it.path)));
     if resp.double_clicked() {
         let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
     }
