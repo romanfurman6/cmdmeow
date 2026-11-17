@@ -115,8 +115,64 @@ pub enum KeychainRead {
     Failed,
 }
 
-/// Read the item Claude Code keeps its sign-in in. macOS asks the person
-/// the first time (Allow / Always Allow / Deny).
+/// Read the item Claude Code keeps its sign-in in through Apple's
+/// `security` tool, without a prompt. Claude Code writes the item with that
+/// tool, so the item trusts it. Read directly, macOS asks for our app, and
+/// asks again each time Claude Code renews its token (it writes the item
+/// anew, which drops an earlier Always Allow). Failed when the tool doesn't
+/// answer within a few seconds (the item trusts something else and macOS
+/// is asking).
+#[cfg(target_os = "macos")]
+pub fn read_claude_keychain_quiet() -> KeychainRead {
+    let mut cmd = std::process::Command::new("/usr/bin/security");
+    cmd.args(["find-generic-password", "-s", "Claude Code-credentials", "-w"]);
+    match run_secret(cmd, Duration::from_secs(5)) {
+        Some((0, out)) => {
+            let t = out.trim_ascii();
+            if t.is_empty() { KeychainRead::Missing } else { KeychainRead::Found(t.to_vec()) }
+        }
+        // errSecItemNotFound
+        Some((44, _)) => KeychainRead::Missing,
+        _ => KeychainRead::Failed,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn read_claude_keychain_quiet() -> KeychainRead {
+    KeychainRead::Missing
+}
+
+/// Run `cmd` and give its exit code and stdout, or None when it didn't
+/// finish within `wait` (it's killed).
+#[cfg(target_os = "macos")]
+fn run_secret(mut cmd: std::process::Command, wait: Duration) -> Option<(i32, Vec<u8>)> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = stdout.read_to_end(&mut b);
+        b
+    });
+    let start = std::time::Instant::now();
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st.code().unwrap_or(-1),
+            Ok(None) if start.elapsed() < wait => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    Some((code, reader.join().ok()?))
+}
+
+/// Read the item Claude Code keeps its sign-in in, as our app. macOS asks
+/// the person (Allow / Always Allow / Deny), so only when they pressed
+/// Connect and the quiet read failed.
 #[cfg(target_os = "macos")]
 pub fn read_claude_keychain() -> KeychainRead {
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
