@@ -281,11 +281,12 @@ pub fn row_split_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color:
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let x0 = visual(p, rect, glyph, color, ring_);
-    let tw = [(label, ty::label()), (value, ty::lead()), (caption, ty::caption())]
-        .iter()
-        .map(|(t, f)| p.layout_no_wrap(t.to_string(), f.clone(), TEXT()).size().x)
-        .fold(0.0f32, f32::max);
-    let split = (x0 + tw + PAD).min(rect.right() - PAD - ROW_RIGHT_MIN - PAD).round();
+    let w = |t: &str, f: egui::FontId| p.layout_no_wrap(t.to_string(), f, TEXT()).size().x;
+    let tw = w(label, ty::label()).max(w(value, ty::lead())).max(w(caption, ty::caption()));
+    // the right part keeps ROW_RIGHT_MIN, but the value never gets cut:
+    // light mode sets weights a step up, and "679 MB" lost its unit there
+    let floor = x0 + w(value, ty::lead()) + PAD;
+    let split = (x0 + tw + PAD).min(rect.right() - PAD - ROW_RIGHT_MIN - PAD).max(floor).ceil();
     stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], split - PAD - x0);
     let inset = rect.height() * 0.06;
     p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
