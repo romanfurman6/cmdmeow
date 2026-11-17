@@ -7,8 +7,9 @@
 //! On the charger it eats from its bowl, and on a low battery it begs by
 //! it (the food in the bowl is the charge). It falls asleep when the lid
 //! closes and wakes a moment after it opens. People can move its bed and
-//! bowl along the bottom of the screen. It can also tidy the desktop by
-//! pushing the real icons with its nose and paw into Finder's grid.
+//! bowl along the bottom of the screen. It can also tidy the desktop: its
+//! paw rakes a heap of the real icons together, it takes the heap in its
+//! mouth, carries it to Finder's grid and drops each icon into its slot.
 //!
 //! Pure: points down from the top left of the screen, milliseconds. The
 //! Mac side feeds it the pointer and what the Mac felt, and draws the
@@ -67,14 +68,57 @@ pub struct Icon {
     vy: f64,
     pub rot: f64,
     vr: f64,
-    /// at the cat's nose
-    nose: bool,
+    /// on the heap the paw raked together, or in the mouth
+    hold: Hold,
+    /// when it hops onto the heap or into the mouth, for how long, and from where
+    hop: f64,
+    hop_ms: f64,
+    from: Option<(f64, f64, f64)>,
+    tapped: bool,
+    /// its place on the heap
+    j: usize,
+    /// on its way to its slot
+    fly: Option<Fly>,
+    /// how much of its label shows (none on the heap or in the mouth)
+    pub label: f64,
     slot: Option<(f64, f64)>,
     /// in its slot
     home: bool,
     /// moved since the Mac last placed it
     lifted: bool,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hold {
+    No,
+    Heap,
+    Mouth,
+}
+
+/// A flight from the mouth to the slot: from, start, length.
+#[derive(Debug, Clone, Copy)]
+struct Fly {
+    x0: f64,
+    y0: f64,
+    r0: f64,
+    t0: f64,
+    ms: f64,
+}
+
+impl Icon {
+    fn new(id: usize, x: f64, y: f64) -> Icon {
+        Icon { id, x, y, vx: 0.0, vy: 0.0, rot: 0.0, vr: 0.0, hold: Hold::No, hop: 0.0, hop_ms: 0.0, from: None, tapped: false, j: 0, fly: None, label: 1.0, slot: None, home: false, lifted: false }
+    }
+
+    fn held(&self) -> bool {
+        self.hold != Hold::No
+    }
+}
+
+/// Where each icon of the heap lies, ahead of the paws: x, y, turn (degrees).
+const HEAP: [(f64, f64, f64); 8] = [(0.0, 0.0, -4.0), (12.0, -7.0, 7.0), (3.0, -14.0, -9.0), (19.0, 3.0, 5.0), (8.0, 7.0, -6.0), (22.0, -11.0, 10.0), (-3.0, -22.0, 4.0), (15.0, -21.0, -8.0)];
+/// In the mouth each icon hangs from its top edge, fanned out (degrees).
+const FAN: [f64; 8] = [-4.0, 14.0, -16.0, 26.0, -27.0, 6.0, 36.0, -9.0];
 
 /// What the Mac side should do.
 #[derive(Debug, Clone, PartialEq)]
@@ -111,11 +155,23 @@ pub struct Part {
     pub claws: f64,
 }
 
+/// An icon on the move: its middle, its turn in degrees, how much of its
+/// label shows, and whether it is in front of the cat (in its mouth).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Moving {
+    pub id: usize,
+    pub x: f64,
+    pub y: f64,
+    pub rot: f64,
+    pub label: f64,
+    pub front: bool,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Scene {
     pub parts: Vec<Part>,
-    /// The icons being moved: id, middle, turn in degrees.
-    pub icons: Vec<(usize, f64, f64, f64)>,
+    /// The icons being moved.
+    pub icons: Vec<Moving>,
     /// The feet's shadow (middle).
     pub feet: Option<(f64, f64)>,
     /// The bed's middle bottom.
@@ -164,19 +220,20 @@ enum Phase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
+    /// the next heap: the nearest icons, 5 to 8
     Pick,
-    Plan,
-    Approach,
-    Aim,
-    Push,
-    Swat,
-    Watch,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum How {
-    Nose,
-    Paw,
+    /// to the near side of them, facing the grid
+    Goto,
+    /// one sweep of the paw rakes them onto a heap
+    Rake,
+    /// head down, the heap into the mouth
+    Grab,
+    /// the ones the paw missed, picked up one by one
+    Collect,
+    /// to the grid, the heap in the mouth
+    Carry,
+    /// head down: each icon flies to its slot
+    Deal,
 }
 
 struct Ids {
@@ -209,6 +266,8 @@ struct Swipe {
     power: f64,
     hit: bool,
     soft: bool,
+    /// a sweep that rakes the heap's icons together
+    rake: bool,
 }
 
 impl Swipe {
@@ -312,13 +371,21 @@ struct Mind {
 }
 
 struct Tidy {
-    icon: Option<usize>,
     step: Option<Step>,
     t0: f64,
     face: f64,
-    tries: u32,
-    how: How,
     resume: bool,
+    /// this heap's icons, and those of them it holds, in the order they came
+    batch: Vec<usize>,
+    pile: Vec<usize>,
+    /// the one it goes to pick up next, since when
+    next: Option<usize>,
+    since: f64,
+    /// when the head last went down, and until when it waits
+    dip: f64,
+    wait: f64,
+    /// where the raked heap lies
+    spot: Option<(f64, f64)>,
 }
 
 struct Clip {
@@ -395,6 +462,8 @@ pub struct Live {
     bounds: Option<(f64, f64, f64, f64)>,
     tidy: Tidy,
     pub icons: Vec<Icon>,
+    /// Finder's grid for this tidy, in order
+    slots: Vec<(f64, f64)>,
     /// half the width and height of an icon with its label
     cell: (f64, f64),
     ptr: Ptr,
@@ -529,7 +598,8 @@ impl Live {
             nose: (0.0, 0.0),
             last_paw: None,
             bounds: None,
-            tidy: Tidy { icon: None, step: None, t0: 0.0, face: -1.0, tries: 0, how: How::Paw, resume: false },
+            tidy: Tidy { step: None, t0: 0.0, face: -1.0, resume: false, batch: Vec::new(), pile: Vec::new(), next: None, since: 0.0, dip: -1e9, wait: 0.0, spot: None },
+            slots: Vec::new(),
             icons: Vec::new(),
             cell: (47.0, 37.0),
             ptr: Ptr { x: -1e4, y: -1e4, moved: -1e9, ..Ptr::default() },
@@ -968,8 +1038,15 @@ impl Live {
         }
         self.stop_all();
         self.cell = cell;
-        self.icons = icons.into_iter().map(|(id, x, y)| Icon { id, x, y, vx: 0.0, vy: 0.0, rot: 0.0, vr: 0.0, nose: false, slot: None, home: false, lifted: false }).collect();
-        self.assign(slots);
+        self.icons = icons.into_iter().map(|(id, x, y)| Icon::new(id, x, y)).collect();
+        self.slots = slots.to_vec();
+        // what already sits on a slot stays there
+        for &s in slots {
+            if let Some(i) = self.icons.iter_mut().find(|i| i.slot.is_none() && dist((i.x, i.y), s) < 16.0) {
+                i.slot = Some(s);
+                i.home = true;
+            }
+        }
         self.set_mode(Mode::Tidy, now);
         self.tidy.step = Some(Step::Pick);
         self.out.push(Out::Mew);
@@ -1090,9 +1167,12 @@ impl Live {
     fn stop_all(&mut self) {
         self.sw.phase = None;
         self.sw.at = None;
-        self.tidy.icon = None;
+        self.sw.rake = false;
+        // the heap drops where it is
+        self.tidy.next = None;
+        self.tidy.pile.clear();
         for i in &mut self.icons {
-            i.nose = false;
+            i.hold = Hold::No;
         }
     }
 
@@ -1130,6 +1210,7 @@ impl Live {
         self.sw.dir = dir;
         self.sw.power = power;
         self.sw.soft = soft;
+        self.sw.rake = false;
         let k = if soft { 1.5 } else { 1.0 };
         let crouch = if soft { self.rnd(120.0, 200.0) } else { self.rnd(200.0, 380.0) };
         let strike = self.rnd(80.0, 115.0) * k;
@@ -1207,32 +1288,7 @@ impl Live {
         }
     }
 
-    fn turned(&self, by: f64) -> bool {
-        (self.flip - self.want_flip()).abs() <= by
-    }
-
     // ---------------------------------------------------------------- icons
-
-    /// The slots in the order of the picture: the top icons take the top slots.
-    fn assign(&mut self, slots: &[(f64, f64)]) {
-        let mut order: Vec<usize> = (0..self.icons.len()).collect();
-        order.sort_by(|&a, &b| {
-            let (p, q) = (&self.icons[a], &self.icons[b]);
-            (p.y + p.x * 0.05).total_cmp(&(q.y + q.x * 0.05))
-        });
-        let mut free: Vec<(f64, f64)> = slots.to_vec();
-        for i in order {
-            if free.is_empty() {
-                break;
-            }
-            let at = (self.icons[i].x, self.icons[i].y);
-            let best = (0..free.len()).min_by(|&a, &b| (dist(free[a], at) + a as f64 * 40.0).total_cmp(&(dist(free[b], at) + b as f64 * 40.0))).unwrap_or(0);
-            let slot = free.remove(best);
-            let ic = &mut self.icons[i];
-            ic.slot = Some(slot);
-            ic.home = dist(slot, at) < 4.0;
-        }
-    }
 
     fn speed(i: &Icon) -> f64 {
         i.vx.hypot(i.vy)
@@ -1251,7 +1307,7 @@ impl Live {
         let (bw, bh) = self.cell;
         for k in 0..self.icons.len() {
             let i = &mut self.icons[k];
-            if i.nose {
+            if i.held() || i.fly.is_some() {
                 continue;
             }
             i.x += i.vx * s;
@@ -1303,6 +1359,10 @@ impl Live {
         for a in 0..n {
             for b in a + 1..n {
                 let (p, q) = (&self.icons[a], &self.icons[b]);
+                // a flying or held icon passes over what is tidy already
+                if p.fly.is_some() || q.fly.is_some() || (p.held() && q.held()) || (p.held() && q.home) || (q.held() && p.home) {
+                    continue;
+                }
                 let (dx, dy) = (q.x - p.x, q.y - p.y);
                 let (ox, oy) = (bw * 2.0 - dx.abs(), bh * 2.0 - dy.abs());
                 if ox <= 0.0 || oy <= 0.0 {
@@ -1310,7 +1370,7 @@ impl Live {
                 }
                 let along_x = ox / bw < oy / bh;
                 let (nx, ny, over) = if along_x { (if dx < 0.0 { -1.0 } else { 1.0 }, 0.0, ox) } else { (0.0, if dy < 0.0 { -1.0 } else { 1.0 }, oy) };
-                let fa = if p.nose { 0.0 } else if q.nose { 1.0 } else { 0.5 };
+                let fa = if p.held() { 0.0 } else if q.held() { 1.0 } else { 0.5 };
                 let fb = 1.0 - fa;
                 let vn = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny;
                 {
@@ -1359,7 +1419,7 @@ impl Live {
         for k in 0..self.icons.len() {
             let i = &self.icons[k];
             let settled = i.slot.is_none_or(|s| !i.home || dist((i.x, i.y), s) < 0.6);
-            if i.lifted && !i.nose && Self::speed(i) < 0.5 && settled && self.sw.at != Some(k) && self.tidy.icon.is_none_or(|t| t != k || !matches!(self.tidy.step, Some(Step::Push))) {
+            if i.lifted && !i.held() && i.fly.is_none() && Self::speed(i) < 0.5 && settled && self.sw.at != Some(k) {
                 let (id, x, y) = (i.id, i.slot.filter(|_| i.home).map_or(i.x, |s| s.0), i.slot.filter(|_| i.home).map_or(i.y, |s| s.1));
                 let i = &mut self.icons[k];
                 i.lifted = false;
@@ -1374,179 +1434,325 @@ impl Live {
         (self.clamp_x(i.x - face * (self.rel_nose.0 + 36.0)), self.clamp_y(i.y - self.rel_nose.1 - 20.0))
     }
 
-    fn paw_stand(&self, k: usize, face: f64) -> (f64, f64) {
-        let i = &self.icons[k];
-        (self.clamp_x(i.x - face * (self.rel_sh.0 + self.reach * 0.62)), self.clamp_y(i.y - self.rel_sh.1 - self.reach * 0.38))
+    /// The icons still to tidy.
+    fn loose(&self) -> Vec<usize> {
+        (0..self.icons.len()).filter(|&k| {
+            let i = &self.icons[k];
+            !i.home && !i.held() && i.fly.is_none()
+        }).collect()
+    }
+
+    /// The next heap: the icon nearest the nose and the ones nearest to it,
+    /// 5 to 8 of them, with the next free slots (the top ones take the top
+    /// slots). An icon sitting on one of those slots goes on this heap too.
+    fn pick_batch(&mut self) -> bool {
+        let left = self.loose();
+        if left.is_empty() {
+            return false;
+        }
+        // a heap dropped half way (a slap) gives its slots back
+        for &k in &left {
+            self.icons[k].slot = None;
+        }
+        let runs = left.len().div_ceil(7);
+        let n = left.len().div_ceil(runs);
+        let taken: Vec<(f64, f64)> = self.icons.iter().filter_map(|i| i.slot).collect();
+        let free: Vec<(f64, f64)> = self.slots.iter().copied().filter(|s| !taken.iter().any(|t| dist(*t, *s) < 0.5)).take(n).collect();
+        let at = |k: usize| (self.icons[k].x, self.icons[k].y);
+        let nose = self.nose;
+        let seed = *left.iter().min_by(|&&a, &&b| dist(at(a), nose).total_cmp(&dist(at(b), nose))).unwrap_or(&left[0]);
+        let by = |k: usize| {
+            let (p, q) = (at(k), at(seed));
+            (p.0 - q.0).hypot((p.1 - q.1) * 1.3)
+        };
+        let mut order = left.clone();
+        order.sort_by(|&a, &b| by(a).total_cmp(&by(b)));
+        let mut batch: Vec<usize> = order.into_iter().take(n).collect();
+        for s in &free {
+            if let Some(&k) = left.iter().find(|&&k| !batch.contains(&k) && dist(at(k), *s) < 50.0) {
+                batch.pop();
+                batch.insert(0, k);
+            }
+        }
+        let mut by_top = batch.clone();
+        by_top.sort_by(|&a, &b| self.icons[a].y.total_cmp(&self.icons[b].y).then(self.icons[a].x.total_cmp(&self.icons[b].x)));
+        for (k, s) in by_top.into_iter().zip(free.iter().copied()) {
+            self.icons[k].slot = Some(s);
+        }
+        batch.retain(|&k| self.icons[k].slot.is_some());
+        // no room left in the grid: the rest stay where they are
+        if free.is_empty() {
+            for &k in &left {
+                self.icons[k].home = true;
+            }
+        }
+        self.tidy.batch = batch;
+        self.tidy.pile.clear();
+        self.tidy.next = None;
+        !self.tidy.batch.is_empty()
+    }
+
+    /// Icon `k` hops onto the heap or into the mouth, `delay` ms from now.
+    fn attach(&mut self, k: usize, now: f64, delay: f64, to: Hold) {
+        self.lift(k);
+        if !self.tidy.pile.contains(&k) {
+            self.icons[k].j = self.tidy.pile.len();
+            self.tidy.pile.push(k);
+        }
+        let nose = self.nose;
+        let i = &mut self.icons[k];
+        i.hold = to;
+        i.home = false;
+        i.vx = 0.0;
+        i.vy = 0.0;
+        i.vr = 0.0;
+        i.hop = now + delay;
+        i.from = None;
+        i.tapped = false;
+        i.hop_ms = if to == Hold::Mouth { 150.0 } else { 170.0 + (dist((i.x, i.y), nose) * 0.55).min(260.0) };
+    }
+
+    /// The paw's sweep: the heap's icons in reach hop together in front of
+    /// the paws, one a beat after another.
+    fn rake_in(&mut self, now: f64) {
+        self.sw.hit = true;
+        self.tidy.spot = Some((self.nose.0 + self.tidy.face * 40.0, self.nose.1 + 34.0));
+        let nose = self.nose;
+        let mut reach: Vec<usize> = self.tidy.batch.iter().copied().filter(|&k| {
+            let i = &self.icons[k];
+            !i.held() && !i.home && dist((i.x, i.y), nose) < 330.0
+        }).collect();
+        reach.sort_by(|&a, &b| dist((self.icons[a].x, self.icons[a].y), nose).total_cmp(&dist((self.icons[b].x, self.icons[b].y), nose)));
+        for (n, k) in reach.into_iter().enumerate() {
+            self.attach(k, now, n as f64 * 60.0, Hold::Heap);
+        }
+        self.out.push(Out::Tap { soft: true });
+    }
+
+    fn middle(&self, ks: &[usize]) -> Option<(f64, f64)> {
+        (!ks.is_empty()).then(|| {
+            let n = ks.len() as f64;
+            (ks.iter().map(|&k| self.icons[k].x).sum::<f64>() / n, ks.iter().map(|&k| self.icons[k].y).sum::<f64>() / n)
+        })
     }
 
     fn tidy_think(&mut self, now: f64, dt: f64) {
         let Some(step) = self.tidy.step else { return };
-        let ic = self.tidy.icon;
         match step {
             Step::Pick => {
-                let left: Vec<usize> = (0..self.icons.len()).filter(|&k| !self.icons[k].home && self.icons[k].slot.is_some()).collect();
-                if left.is_empty() {
+                // let things stop first
+                if self.loose().iter().any(|&k| Self::speed(&self.icons[k]) > 30.0) {
+                    self.go("idle", 200.0, now);
+                    return;
+                }
+                if !self.pick_batch() {
+                    if self.icons.iter().any(|i| i.held() || i.fly.is_some()) {
+                        return;
+                    }
                     self.tidy.step = None;
                     self.set_mode(Mode::WalkHome, now);
                     self.mind.bored = 0.3;
                     self.out.push(Out::Tidied);
                     return;
                 }
-                if left.iter().any(|&k| Self::speed(&self.icons[k]) > 30.0) {
-                    self.go("idle", 200.0, now);
-                    return;
-                }
-                let me = (self.x, self.y);
-                let k = *left.iter().min_by(|&&a, &&b| dist((self.icons[a].x, self.icons[a].y), me).total_cmp(&dist((self.icons[b].x, self.icons[b].y), me))).unwrap_or(&left[0]);
-                self.tidy.icon = Some(k);
-                self.tidy.tries = 0;
-                self.tidy.step = Some(Step::Plan);
+                let m = self.middle(&self.tidy.batch).unwrap_or((self.x, self.y));
+                let col = self.tidy.batch.iter().filter_map(|&k| self.icons[k].slot).map(|s| s.0).fold(f64::INFINITY, f64::min);
+                self.tidy.face = if col > m.0 { 1.0 } else { -1.0 };
+                self.tidy.step = Some(Step::Goto);
+                self.tidy.since = now;
             }
-            Step::Plan => {
-                let Some(k) = ic.filter(|&k| !self.icons[k].home) else {
-                    self.tidy.step = Some(Step::Pick);
+            Step::Goto => {
+                let rest: Vec<usize> = self.tidy.batch.iter().copied().filter(|&k| !self.icons[k].held() && !self.icons[k].home).collect();
+                let Some(m) = self.middle(&rest) else {
+                    self.tidy.step = Some(Step::Collect);
                     return;
                 };
-                // trade slots instead of shoving a neighbour out: whoever sits on a slot keeps it
-                let slot = self.icons[k].slot.unwrap_or((self.icons[k].x, self.icons[k].y));
-                let at = (self.icons[k].x, self.icons[k].y);
-                let near = (0..self.icons.len()).find(|&o| o != k && !self.icons[o].home && self.icons[o].slot.is_some_and(|s| dist(at, s) < 44.0));
-                let sitter = (0..self.icons.len()).find(|&o| o != k && !self.icons[o].home && self.icons[o].slot.is_some() && dist((self.icons[o].x, self.icons[o].y), slot) < 44.0);
-                if let Some(o) = near.or(sitter) {
-                    let t = self.icons[o].slot;
-                    self.icons[o].slot = self.icons[k].slot;
-                    self.icons[k].slot = t;
-                    for q in [o, k] {
-                        let i = &mut self.icons[q];
-                        if i.slot.is_some_and(|s| dist((i.x, i.y), s) < 12.0) {
-                            i.home = true;
-                            // it is where it belongs; Finder places it there
-                            if !i.lifted {
-                                i.lifted = true;
-                                self.out.push(Out::Lift(i.id));
-                            }
+                let face = self.tidy.face;
+                let to = (self.clamp_x(m.0 - face * (self.rel_nose.0 + 70.0)), self.clamp_y(m.1 - self.rel_nose.1 - 20.0));
+                let run = dist(to, (self.x, self.y)) > 140.0;
+                if self.walk_to(to, dt, run, now) || now - self.tidy.since > 5000.0 {
+                    self.dir = face;
+                    self.go("idle", 120.0, now);
+                    // aimed at the middle of the bunch
+                    self.swipe(now, false, None, None, 0.0, true);
+                    self.sw.rake = true;
+                    self.sw.again = false;
+                    self.tidy.step = Some(Step::Rake);
+                }
+            }
+            Step::Rake => {
+                let landed = self.tidy.pile.iter().all(|&k| now > self.icons[k].hop + self.icons[k].hop_ms + 120.0);
+                if self.sw.phase.is_none() && landed {
+                    self.tidy.step = Some(Step::Grab);
+                    self.tidy.t0 = now;
+                    self.tidy.dip = now;
+                }
+            }
+            Step::Grab => {
+                if now - self.tidy.t0 > 150.0 && self.tidy.pile.iter().any(|&k| self.icons[k].hold == Hold::Heap) {
+                    for k in self.tidy.pile.clone() {
+                        if self.icons[k].hold == Hold::Heap {
+                            let delay = self.icons[k].j as f64 * 12.0;
+                            self.attach(k, now, delay, Hold::Mouth);
                         }
                     }
-                    if self.icons[k].home {
-                        self.tidy.step = Some(Step::Pick);
-                        return;
-                    }
+                    self.out.push(Out::Tap { soft: true });
                 }
-                let i = &self.icons[k];
-                let Some(slot) = i.slot else { return };
-                let (dx, dy) = (slot.0 - i.x, slot.1 - i.y);
-                if dx.hypot(dy) < 12.0 {
+                if now - self.tidy.t0 > 460.0 {
+                    self.tidy.step = Some(Step::Collect);
+                }
+            }
+            Step::Collect => {
+                if now < self.tidy.wait {
+                    return;
+                }
+                let want: Vec<usize> = self.tidy.batch.iter().copied().filter(|&k| !self.icons[k].held() && !self.icons[k].home && self.icons[k].fly.is_none()).collect();
+                if want.is_empty() {
+                    self.tidy.next = None;
+                    self.tidy.step = Some(if self.tidy.pile.is_empty() { Step::Pick } else { Step::Carry });
+                    return;
+                }
+                let nose = self.nose;
+                let next = match self.tidy.next.filter(|k| want.contains(k)) {
+                    Some(k) => k,
+                    None => {
+                        let k = *want.iter().min_by(|&&a, &&b| dist((self.icons[a].x, self.icons[a].y), nose).total_cmp(&dist((self.icons[b].x, self.icons[b].y), nose))).unwrap_or(&want[0]);
+                        let dx = self.icons[k].x - self.x;
+                        self.tidy.face = if dx != 0.0 { dx.signum() } else { self.dir };
+                        self.tidy.since = now;
+                        self.tidy.next = Some(k);
+                        k
+                    }
+                };
+                let ahead = (nose.0 + self.tidy.face * 30.0, nose.1 + 20.0);
+                let at = (self.icons[next].x, self.icons[next].y);
+                if dist(ahead, at) < 60.0 || now - self.tidy.since > 2600.0 {
+                    // head down, the icon into the mouth
+                    self.go("idle", 120.0, now);
+                    self.tidy.dip = now;
+                    self.attach(next, now, 150.0, Hold::Mouth);
+                    self.out.push(Out::Tap { soft: true });
+                    self.tidy.next = None;
+                    self.tidy.wait = now + 380.0;
+                    return;
+                }
+                let to = self.nose_stand(next, self.tidy.face);
+                let run = dist(at, nose) > 120.0;
+                self.walk_to(to, dt, run, now);
+            }
+            Step::Carry => {
+                let sl: Vec<(f64, f64)> = self.tidy.pile.iter().filter_map(|&k| self.icons[k].slot).collect();
+                if sl.is_empty() {
                     self.tidy.step = Some(Step::Pick);
                     return;
                 }
-                self.tidy.face = if dx.abs() > 20.0 { dx.signum() } else { (i.x - self.x).signum() };
-                if self.tidy.face == 0.0 {
-                    self.tidy.face = self.dir;
-                }
-                self.tidy.how = if dx.abs() > 170.0 && dx.abs() > dy.abs() * 1.2 && self.tidy.tries < 4 { How::Nose } else { How::Paw };
-                self.tidy.step = Some(Step::Approach);
-            }
-            Step::Approach => {
-                let Some(k) = ic else { return };
-                let to = if self.tidy.how == How::Nose { self.nose_stand(k, self.tidy.face) } else { self.paw_stand(k, self.tidy.face) };
-                let run = dist(to, (self.x, self.y)) > 150.0;
+                let cy = sl.iter().map(|s| s.1).sum::<f64>() / sl.len() as f64;
+                let cx = sl.iter().map(|s| s.0).fold(f64::INFINITY, f64::min);
+                let face = if cx > self.x { 1.0 } else { -1.0 };
+                self.tidy.face = face;
+                let to = (self.clamp_x(cx - face * (self.rel_nose.0 + 96.0)), self.clamp_y(cy - self.rel_nose.1 - 20.0));
+                let run = dist(to, (self.x, self.y)) > 320.0;
                 if self.walk_to(to, dt, run, now) {
-                    self.dir = self.tidy.face;
-                    self.go("idle", 160.0, now);
-                    self.tidy.step = Some(Step::Aim);
-                    self.tidy.t0 = now;
-                }
-            }
-            Step::Aim => {
-                let Some(k) = ic else { return };
-                if now - self.tidy.t0 < 160.0 || !self.turned(0.2) {
-                    return;
-                }
-                if Self::speed(&self.icons[k]) > 20.0 {
-                    self.tidy.step = Some(Step::Plan);
-                    return;
-                }
-                if self.tidy.how == How::Nose {
-                    self.lift(k);
-                    let i = &mut self.icons[k];
-                    i.nose = true;
-                    i.home = false;
-                    self.tidy.step = Some(Step::Push);
-                    self.tidy.t0 = now;
-                    self.out.push(Out::Tap { soft: true });
-                } else {
-                    let i = &self.icons[k];
-                    let Some(slot) = i.slot else { return };
-                    let (dx, dy) = (slot.0 - i.x, slot.1 - i.y);
-                    let d = dx.hypot(dy).max(0.001);
-                    let near = d < 70.0;
-                    let power = d * if near { 1.0 } else { self.rnd(0.8, 1.05) };
-                    self.swipe(now, false, Some(k), Some((dx / d, dy / d)), power, near);
-                    self.tidy.step = Some(Step::Swat);
-                    self.tidy.tries += 1;
-                }
-            }
-            Step::Push => {
-                let Some(k) = ic else { return };
-                let i = &self.icons[k];
-                let Some(slot) = i.slot else { return };
-                let (dx, dy) = (slot.0 - i.x, slot.1 - i.y);
-                let d = dx.hypot(dy);
-                if d < 46.0 || dx * self.tidy.face < 10.0 {
-                    let i = &mut self.icons[k];
-                    i.nose = false;
-                    let v = (2.0 * FR * (d - 4.0).max(0.0)).sqrt();
-                    i.vx = dx / d.max(0.001) * v;
-                    i.vy = dy / d.max(0.001) * v;
-                    self.nudge_t0 = now;
-                    self.out.push(Out::Tap { soft: true });
-                    self.go("idle", 160.0, now);
-                    self.tidy.step = Some(Step::Watch);
-                    self.tidy.t0 = now;
-                    self.tidy.tries += 1;
-                    return;
-                }
-                self.go("walk", 160.0, now);
-                let v = WALK * dt / 1000.0;
-                self.x = self.clamp_x(self.x + dx / d * v);
-                self.y = self.clamp_y(self.y + dy / d * v);
-            }
-            Step::Swat => {
-                if self.sw.phase.is_none() {
-                    self.tidy.step = Some(Step::Watch);
-                    self.tidy.t0 = now;
-                }
-            }
-            Step::Watch => {
-                let Some(k) = ic else { return };
-                if now - self.tidy.t0 > 250.0 && Self::speed(&self.icons[k]) < 8.0 {
-                    if self.tidy.tries > 7 {
-                        // it never got there: Finder gets it there
+                    self.dir = face;
+                    self.go("idle", 140.0, now);
+                    self.tidy.dip = now;
+                    // the mouth opens: each icon flies to its slot, a beat after the one before
+                    for (n, k) in std::mem::take(&mut self.tidy.pile).into_iter().enumerate() {
                         let i = &mut self.icons[k];
-                        if let Some(s) = i.slot {
-                            i.x = s.0;
-                            i.y = s.1;
-                            i.home = true;
-                        }
+                        i.hold = Hold::No;
+                        i.fly = Some(Fly { x0: i.x, y0: i.y, r0: i.rot, t0: now + 160.0 + n as f64 * 75.0, ms: 430.0 });
                     }
-                    self.tidy.step = Some(if self.icons[k].home { Step::Pick } else { Step::Plan });
+                    self.tidy.step = Some(Step::Deal);
+                    self.tidy.t0 = now;
+                }
+            }
+            Step::Deal => {
+                // watches them land, then the next heap
+                if self.tidy.batch.iter().all(|&k| self.icons[k].fly.is_none()) && now - self.tidy.t0 > 900.0 {
+                    self.mind.swish = now;
+                    self.tidy.step = Some(Step::Pick);
                 }
             }
         }
     }
 
-    /// The icon at the nose rides just ahead of it, bobbing with the step.
-    fn nose_hold(&mut self, now: f64) {
-        let (nx, ny, face) = (self.nose.0, self.nose.1, self.tidy.face);
+    /// The heap: on the desk in front of the paws, then hanging from the
+    /// mouth by the icons' top edges; and the icons flying to their slots.
+    fn hold(&mut self, now: f64) {
+        let (f, nose) = (self.tidy.face, self.nose);
+        let spot = self.tidy.spot.unwrap_or(nose);
+        let moving = matches!(self.cur.name, "walk" | "run");
+        let mut taps = 0;
         for i in &mut self.icons {
-            if i.nose {
-                let (tx, ty) = (nx + face * 36.0, ny + 20.0 + (now / 95.0).sin() * 1.5);
-                i.x += (tx - i.x) * 0.35;
-                i.y += (ty - i.y) * 0.35;
+            if i.held() {
+                if now < i.hop {
+                    continue;
+                }
+                let j = i.j % HEAP.len();
+                let (tx, ty, tr) = if i.hold == Hold::Heap {
+                    let h = HEAP[j];
+                    (spot.0 + f * h.0, spot.1 + h.1, h.2 * f)
+                } else {
+                    let swing = if moving { (now / 105.0 + i.j as f64 * 1.3).sin() * 6.0 } else { (now / 420.0 + i.j as f64).sin() * 1.5 };
+                    let a = (FAN[j] + swing) * f;
+                    let (m, r) = ((nose.0 - f * 6.0, nose.1 + 9.0), a * D2R);
+                    (m.0 - r.sin() * 18.0, m.1 + r.cos() * 18.0, a)
+                };
+                let from = *i.from.get_or_insert((i.x, i.y, i.rot));
+                let hp = (now - i.hop) / i.hop_ms;
+                if hp < 1.0 {
+                    // in the air: an arc from where it lay, turning on the way
+                    let e = 1.0 - (1.0 - hp).powi(3);
+                    let lift = if i.hold == Hold::Mouth { 8.0 } else { 16.0 + i.hop_ms * 0.08 };
+                    i.x = from.0 + (tx - from.0) * e;
+                    i.y = from.1 + (ty - from.1) * e - (hp * PI).sin() * lift;
+                    i.rot = from.2 + (tr - from.2) * e + (hp * PI).sin() * 14.0 * f;
+                } else {
+                    if !i.tapped {
+                        i.tapped = true;
+                        i.from = None;
+                        if i.hold == Hold::Heap {
+                            taps += 1;
+                        }
+                    }
+                    let k = if i.hold == Hold::Mouth { 0.55 } else { 0.4 };
+                    i.x += (tx - i.x) * k;
+                    i.y += (ty - i.y) * k;
+                    i.rot += (tr - i.rot) * 0.3;
+                }
                 i.vx = 0.0;
                 i.vy = 0.0;
-                i.rot += (-4.0 * face - i.rot) * 0.1;
+                i.label += (0.0 - i.label) * 0.2;
+            } else if let Some(fl) = i.fly {
+                let p = (now - fl.t0) / fl.ms;
+                if p < 0.0 {
+                    continue;
+                }
+                let Some(slot) = i.slot else {
+                    i.fly = None;
+                    continue;
+                };
+                let q = p.min(1.0);
+                let e = 1.0 - (1.0 - q).powi(3);
+                i.x = fl.x0 + (slot.0 - fl.x0) * e;
+                i.y = fl.y0 + (slot.1 - fl.y0) * e - (q * PI).sin() * 46.0;
+                i.rot = fl.r0 * (1.0 - q) + (q * PI * 2.2).sin() * 9.0 * (1.0 - q);
+                i.label = q;
+                if q >= 1.0 {
+                    i.fly = None;
+                    i.home = true;
+                    i.x = slot.0;
+                    i.y = slot.1;
+                    i.rot = 0.0;
+                    i.label = 1.0;
+                    taps += 1;
+                }
+            } else {
+                i.label += (1.0 - i.label) * 0.2;
             }
+        }
+        if taps > 0 {
+            self.out.push(Out::Tap { soft: true });
         }
     }
 
@@ -1818,7 +2024,9 @@ impl Live {
         // the swipe's clock
         if let Some(p) = self.sw.phase {
             if now - self.sw.t0 > self.sw.dur(p) {
-                if p == Phase::Strike && !self.sw.hit {
+                if p == Phase::Strike && !self.sw.hit && self.sw.rake {
+                    self.rake_in(now);
+                } else if p == Phase::Strike && !self.sw.hit {
                     if let Some(k) = self.sw.at {
                         // a near miss still lands
                         self.hit_icon(k, (0.0, 0.0));
@@ -2312,8 +2520,8 @@ impl Live {
         self.physics(dt);
         self.things(now, dt);
         let mut scene = if self.mode == Mode::Away { Scene::default() } else { self.pose(now, dt) };
-        self.nose_hold(now);
-        scene.icons = self.icons.iter().filter(|i| i.lifted).map(|i| (i.id, i.x, i.y, i.rot)).collect();
+        self.hold(now);
+        scene.icons = self.icons.iter().filter(|i| i.lifted).map(|i| Moving { id: i.id, x: i.x, y: i.y, rot: i.rot, label: i.label, front: i.hold == Hold::Mouth }).collect();
         if self.lives || self.mode != Mode::Away {
             scene.bed = Some(self.bed_at());
             let (x, y) = self.bowl_at();
@@ -2367,7 +2575,10 @@ impl Live {
                 Some((b.0, b.1 - BOWL_H))
             }
             Mode::Beg => Some(if self.ptr.on { (self.ptr.x, self.ptr.y) } else { (self.x + self.dir * 60.0, self.y - 400.0) }),
-            Mode::Tidy => icon(self.tidy.icon),
+            Mode::Tidy => match self.tidy.step {
+                Some(Step::Deal) => icon(self.tidy.batch.iter().copied().find(|&k| self.icons[k].fly.is_some()).or(self.tidy.batch.last().copied())),
+                _ => icon(self.tidy.next),
+            },
             Mode::Lie | Mode::Pet => icon(self.sw.at),
             _ => icon(self.sw.at).or(self.ball.on.then(|| self.ball.top())),
         };
@@ -2393,11 +2604,14 @@ impl Live {
             lx = vx / d * 10.0;
             ly = vy / d * 7.0;
         }
-        let pushing = self.mode == Mode::Tidy && self.tidy.step == Some(Step::Push);
+        // with the heap in its mouth: the neck a little lower, the tail up
+        let pushing = self.mode == Mode::Tidy && self.tidy.pile.iter().any(|&k| self.icons.get(k).is_some_and(|i| i.hold == Hold::Mouth));
+        let dip = (now - self.tidy.dip) / 320.0;
         let nt = (now - self.nudge_t0) / 260.0;
         let flick = if (0.0..1.0).contains(&nt) { (nt * PI).sin() } else { 0.0 };
-        if pushing {
-            la = 14.0;
+        // head down to the desk and up again: it picks up or lets go
+        if self.mode == Mode::Tidy && (0.0..1.0).contains(&dip) {
+            la = 24.0 * (dip * PI).sin();
         }
         // eating: the head down in the bowl, chewing
         let eating = self.mode == Mode::Eat && now - self.mode_t0 > 300.0;
@@ -2514,13 +2728,16 @@ impl Live {
         // the paw meets an icon during the strike
         if let Some(pw) = wd.bone(self.ids.paw) {
             let paw = (o.0 + pw.x * S * self.flip, o.1 - pw.y * S);
-            if self.sw.phase == Some(Phase::Strike) && !self.sw.hit {
+            if self.sw.phase == Some(Phase::Strike) && !self.sw.hit && self.sw.rake {
+                self.rake_in(now);
+            } else if self.sw.phase == Some(Phase::Strike) && !self.sw.hit {
                 if let Some(last) = self.last_paw {
                     let swing = (paw.0 - last.0, paw.1 - last.1);
                     let r = self.cell.0.min(self.cell.1) * 0.85;
                     let hit = match self.sw.at {
                         Some(k) if self.icons.get(k).is_some_and(|i| dist((i.x, i.y), paw) < r * 1.25) => Some(k),
-                        _ => (0..self.icons.len()).find(|&k| !self.icons[k].nose && dist((self.icons[k].x, self.icons[k].y), paw) < r),
+                        _ if self.sw.rake => None,
+                        _ => (0..self.icons.len()).find(|&k| !self.icons[k].held() && self.icons[k].fly.is_none() && dist((self.icons[k].x, self.icons[k].y), paw) < r),
                     };
                     if let Some(k) = hit {
                         self.hit_icon(k, swing);
@@ -3183,6 +3400,26 @@ mod tests {
         seen.sort();
         seen.dedup();
         assert_eq!(seen.len(), 6);
+    }
+
+    #[test]
+    fn it_carries_five_or_more_at_a_time_in_its_mouth() {
+        let (mut l, mut t) = settled();
+        let icons: Vec<(usize, f64, f64)> = (0..18).map(|k| (k + 1, 200.0 + (k % 6) as f64 * 150.0, 140.0 + (k / 6) as f64 * 180.0)).collect();
+        let slots: Vec<(f64, f64)> = (0..18).map(|r| (1440.0 - (r / 8) as f64 * 100.0, 60.0 + (r % 8) as f64 * 92.0)).collect();
+        l.tidy(icons, &slots, (47.0, 37.0), t);
+        let t0 = t;
+        let mut most = 0;
+        while l.tidying() && t - t0 < 60_000.0 {
+            t += 16.7;
+            let _ = l.tick(t);
+            let _ = l.take();
+            most = most.max(l.icons.iter().filter(|i| i.hold == Hold::Mouth).count());
+        }
+        assert!(!l.tidying(), "never finished; step {:?}", l.tidy.step);
+        assert!(most >= 5, "at most {most} in the mouth");
+        assert!(t - t0 < 30_000.0, "18 icons took {} s", (t - t0) / 1000.0);
+        assert!(l.icons.iter().all(|i| i.home && i.slot.is_some()));
     }
 
     #[test]

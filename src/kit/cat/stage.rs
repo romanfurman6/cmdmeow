@@ -156,10 +156,14 @@ fn up(m: &[f64; 6], ih: f64, h: f64) -> CGAffineTransform {
     CGAffineTransform { a: m[0], b: -m[1], c: -m[2], d: m[3], tx: m[2] * ih + m[4], ty: h - m[3] * ih - m[5] }
 }
 
-/// One pushed icon: its picture, and the wallpaper over its old spot.
+/// One moved icon: its picture and its label on one layer (turned about
+/// the picture's middle), and the wallpaper over its old spot.
 struct Proxy {
     icon: Retained<AnyObject>,
+    label: Option<Retained<AnyObject>>,
     patch: Option<Retained<AnyObject>>,
+    /// in front of the cat (in its mouth)
+    front: bool,
 }
 
 /// What Finder showed when the tidy began, and pictures of it.
@@ -197,6 +201,8 @@ pub struct Stage {
     /// on the desk window: the wallpaper patches, under the icons' pictures
     patches: Retained<AnyObject>,
     moved: Retained<AnyObject>,
+    /// on the cat's window, over the cat: the icons in its mouth
+    mouth: Retained<AnyObject>,
     /// the cat: its shadow and its parts, between its things
     body: Retained<AnyObject>,
     shadow: Retained<AnyObject>,
@@ -286,7 +292,9 @@ impl Stage {
         let (window, root) = make_window(mtm, frame, icon_level + 1, true)?;
         let (desk, droot) = make_window(mtm, frame, icon_level, false)?;
         let (patches, moved) = unsafe { (new_layer(&droot), new_layer(&droot)) };
-        let (body, shadow, props, claws) = unsafe {
+        let (body, shadow, props, claws, mouth) = unsafe {
+            let mouth = new_layer(&root);
+            let _: () = msg_send![&*mouth, setZPosition: 3.5f64];
             let body = new_layer(&root);
             let _: () = msg_send![&*body, setZPosition: 3.0f64];
             let shadow = shape(&body, [0.0, 0.0, 0.0, 0.2]);
@@ -296,14 +304,14 @@ impl Stage {
             let _: () = msg_send![&*claws, setStrokeColor: ink];
             CGColorRelease(ink);
             let _: () = msg_send![&*claws, setHidden: true];
-            (body, shadow, props, claws)
+            (body, shadow, props, claws, mouth)
         };
         let mut live = live;
         live.set_area(frame.size.width, frame.size.height, ground);
         // the desk window lies under the cat's, both see-through
         desk.orderFrontRegardless();
         window.orderFrontRegardless();
-        Some(Stage { window, desk, patches, moved, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), desktop: None, through: true })
+        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), desktop: None, through: true })
     }
 
     /// The first screen's size, points.
@@ -369,12 +377,20 @@ impl Stage {
                 }
             }
             self.props.draw(scene, h);
-            // the icons on the move
-            for &(id, x, y, rot) in &scene.icons {
-                if let Some(p) = self.proxies.get(&id) {
-                    let _: () = msg_send![&*p.icon, setPosition: CGPoint { x, y: h - y }];
-                    let (sn, cs) = (-rot * super::rig::D2R).sin_cos();
+            // the icons on the move: those in the mouth over the cat, on its window
+            for m in &scene.icons {
+                if let Some(p) = self.proxies.get_mut(&m.id) {
+                    if p.front != m.front {
+                        p.front = m.front;
+                        let _: () = msg_send![&*p.icon, removeFromSuperlayer];
+                        let _: () = msg_send![if m.front { &*self.mouth } else { &*self.moved }, addSublayer: &*p.icon];
+                    }
+                    let _: () = msg_send![&*p.icon, setPosition: CGPoint { x: m.x, y: h - m.y }];
+                    let (sn, cs) = (-m.rot * super::rig::D2R).sin_cos();
                     let _: () = msg_send![&*p.icon, setAffineTransform: CGAffineTransform { a: cs, b: sn, c: -sn, d: cs, tx: 0.0, ty: 0.0 }];
+                    if let Some(l) = &p.label {
+                        let _: () = msg_send![&**l, setOpacity: m.label.clamp(0.0, 1.0) as f32];
+                    }
                 }
             }
             let _: () = msg_send![class!(CATransaction), commit];
@@ -502,13 +518,16 @@ impl Stage {
         }
         let mid = (spot.x - d.off.0, spot.y - d.off.1);
         let cell = d.boxes.get(id).copied().unwrap_or_else(|| d.cell(mid));
-        let crop = |shot: &Option<Shot>| -> Option<Image> {
+        let crop = |shot: &Option<Shot>, top: f64, height: f64| -> Option<Image> {
             let (img, origin, scale) = shot.as_ref()?;
-            let r = NSRect::new(NSPoint::new((cell.0 - origin.0) * scale, (cell.1 - origin.1) * scale), NSSize::new(cell.2 * scale, cell.3 * scale));
+            let r = NSRect::new(NSPoint::new((cell.0 - origin.0) * scale, (top - origin.1) * scale), NSSize::new(cell.2 * scale, height * scale));
             let c = unsafe { CGImageCreateWithImageInRect(img.0, r) };
             (!c.is_null()).then_some(Image(c))
         };
-        let (icon_img, paper_img) = (crop(&d.icons), crop(&d.paper));
+        // the picture above this line, the label under it (it fades on the heap)
+        let cut = (mid.1 + d.view.icon / 2.0 + 1.0).clamp(cell.1, cell.1 + cell.3);
+        let (pic_h, label_h) = (cut - cell.1, cell.1 + cell.3 - cut);
+        let (icon_img, label_img, paper_img) = (crop(&d.icons, cell.1, pic_h), crop(&d.icons, cut, label_h).filter(|_| label_h >= 1.0), crop(&d.paper, cell.1, cell.3));
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
@@ -522,19 +541,29 @@ impl Stage {
             });
             let icon = new_layer(&self.moved);
             let _: () = msg_send![&*icon, setBounds: bounds];
+            // y up: the picture at the top of the layer, the label under it
+            let pic = new_layer(&icon);
+            let _: () = msg_send![&*pic, setFrame: CGRect { origin: CGPoint { x: 0.0, y: cell.3 - pic_h }, size: CGSize { width: cell.2, height: pic_h } }];
+            let mut label = None;
             if let Some(img) = &icon_img {
-                let _: () = msg_send![&*icon, setContents: img.0 as *mut AnyObject];
+                let _: () = msg_send![&*pic, setContents: img.0 as *mut AnyObject];
+                if let Some(li) = &label_img {
+                    let l = new_layer(&icon);
+                    let _: () = msg_send![&*l, setFrame: CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: cell.2, height: label_h } }];
+                    let _: () = msg_send![&*l, setContents: li.0 as *mut AnyObject];
+                    label = Some(l);
+                }
             } else if let Some(img) = workspace_icon(&spot.name, d.view.icon) {
                 // no picture of the screen: the file's own icon, without its label
-                let _: () = msg_send![&*icon, setContents: img.0 as *mut AnyObject];
-                let _: () = msg_send![&*icon, setContentsGravity: &*NSString::from_str("top")];
+                let _: () = msg_send![&*pic, setContents: img.0 as *mut AnyObject];
+                let _: () = msg_send![&*pic, setContentsGravity: &*NSString::from_str("top")];
             }
             // turned and placed about the icon's middle
             let anchor = CGPoint { x: (mid.0 - cell.0) / cell.2, y: 1.0 - (mid.1 - cell.1) / cell.3 };
             let _: () = msg_send![&*icon, setAnchorPoint: anchor];
             let _: () = msg_send![&*icon, setPosition: CGPoint { x: mid.0, y: h - mid.1 }];
             let _: () = msg_send![class!(CATransaction), commit];
-            self.proxies.insert(id, Proxy { icon, patch });
+            self.proxies.insert(id, Proxy { icon, label, patch, front: false });
         }
         self.desk.orderFrontRegardless();
     }
