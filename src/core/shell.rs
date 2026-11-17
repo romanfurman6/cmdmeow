@@ -1138,6 +1138,7 @@ impl App {
     fn prewarm_app(&mut self, ctx: &egui::Context) {
         let id = egui::ViewportId::from_hash_of("cmdmeow-app");
         ctx.show_viewport_deferred(id, Self::app_builder().with_visible(false), |_, _| {});
+        crate::kit::native::instant_windows();
     }
 
     fn app_viewport(&mut self, ctx: &egui::Context) {
@@ -1145,6 +1146,8 @@ impl App {
         if self.app_focus {
             builder = builder.with_active(true);
         }
+        // before eframe shows it in this pass
+        crate::kit::native::instant_windows();
         let id = egui::ViewportId::from_hash_of("cmdmeow-app");
         use super::onboard::Finish;
         let mut finish = Finish::No;

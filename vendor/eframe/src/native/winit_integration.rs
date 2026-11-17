@@ -166,7 +166,12 @@ impl LastPaint {
     /// (`refresh_hz`, looked up every few seconds, 60 when unknown)
     /// instead, as painting would have.
     pub fn pace(&mut self, skipped: bool, refresh_hz: impl FnOnce() -> Option<u32>) {
-        if skipped && let Some(last) = self.last_pass {
+        // a window that just came on screen is also painted at most once a
+        // display frame: macOS may hold on to its first frames, and a burst
+        // of paints (5 in 26 ms) used up the GPU's frames, so the next one
+        // waited a full second (`CMDMEOW_OPEN_PACE=0` turns this off)
+        let fresh = !skipped && open_pace() && self.on_screen_since.is_some_and(|t| t.elapsed() < SETTLE);
+        if (skipped || fresh) && let Some(last) = self.last_pass {
             let hz = match self.refresh {
                 Some((hz, at)) if at.elapsed().as_secs() < 3 => hz,
                 _ => {
@@ -199,6 +204,11 @@ pub fn paint_everything_for(d: core::time::Duration) {
 
 fn painting_everything() -> bool {
     PAINT_ALL_UNTIL.lock().ok().and_then(|u| *u).is_some_and(|t| Instant::now() < t)
+}
+
+fn open_pace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("CMDMEOW_OPEN_PACE").is_none_or(|v| v != "0"))
 }
 
 fn paint_always() -> bool {
@@ -459,6 +469,21 @@ mod last_paint_tests {
         lp.on_screen(false);
         lp.on_screen(true);
         assert!(!lp.same(&shapes(0.0), 2.0, [10, 10], true), "hidden and shown again: painted");
+    }
+
+    #[test]
+    fn a_window_that_just_came_on_screen_paints_at_most_once_a_display_frame() {
+        use std::time::{Duration, Instant};
+        let mut lp = LastPaint::default();
+        lp.on_screen(true);
+        lp.pace(false, || Some(30));
+        let t = Instant::now();
+        lp.pace(false, || Some(30));
+        assert!(t.elapsed() >= Duration::from_millis(25), "a burst of paints right after showing waits for the display");
+        lp.on_screen_since = lp.on_screen_since.map(|t| t - SETTLE);
+        let t = Instant::now();
+        lp.pace(false, || Some(30));
+        assert!(t.elapsed() < Duration::from_millis(10), "settled: painted passes don't sleep");
     }
 
     #[test]

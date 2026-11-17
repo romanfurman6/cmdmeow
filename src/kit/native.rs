@@ -62,6 +62,12 @@ mod mac {
                 continue;
             }
             let Some(superview) = (unsafe { content.superview() }) else { continue };
+            // a window can get a new number once it's first shown: the
+            // blur it already has stays its only one
+            if let Some(old) = superview.subviews().iter().find(|v| { use objc2::{runtime::NSObjectProtocol, ClassType}; v.isKindOfClass(NSVisualEffectView::class()) }) {
+                GLASS.with(|g| g.borrow_mut().push((num, old.clone())));
+                continue;
+            }
             w.setOpaque(false);
             w.setBackgroundColor(Some(&NSColor::clearColor()));
             // glass in our own mode, so text stays readable on any wallpaper
@@ -95,6 +101,26 @@ mod mac {
             w.invalidateShadow();
             crate::kit::frame_log::note(|| format!("glass added to window {:?} (visible {})", w.title().to_string(), w.isVisible()));
             GLASS.with(|g| g.borrow_mut().push((num, view)));
+        }
+    }
+
+    /// Our windows appear and disappear at once, without the system's
+    /// fade. During that fade macOS held on to the frames we painted, the
+    /// GPU ran out of them and the next paint waited a full second: the
+    /// window stayed an empty blur that long (2026-11-17, M1). Call before
+    /// a window is shown. `CMDMEOW_OPEN_ANIM=1` keeps the fade (testing).
+    pub fn instant_windows() {
+        use objc2_app_kit::NSWindowAnimationBehavior;
+        static KEEP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *KEEP.get_or_init(|| std::env::var_os("CMDMEOW_OPEN_ANIM").is_some_and(|v| v != "0")) {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        for w in NSApplication::sharedApplication(mtm).windows().iter() {
+            if w.animationBehavior() != NSWindowAnimationBehavior::None && w.contentView().is_some_and(|c| c.class().name().to_string_lossy().contains("Winit")) {
+                w.setAnimationBehavior(NSWindowAnimationBehavior::None);
+                crate::kit::frame_log::note(|| format!("open fade off for window {:?}", w.title().to_string()));
+            }
         }
     }
 
@@ -441,6 +467,7 @@ pub const PLAIN_WINDOW: &str = "plain-";
 #[cfg(not(target_os = "macos"))]
 mod other {
     pub fn apply_glass(_r: f64) {}
+    pub fn instant_windows() {}
     pub fn system_light() -> bool {
         false
     }
