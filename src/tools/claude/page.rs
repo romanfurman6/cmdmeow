@@ -5,7 +5,6 @@
 
 use super::backend::{self, All};
 use super::parts::{self, Measure};
-use super::ui::CLEANUP;
 use crate::core::tool::Cx;
 use crate::kit::ai::{self, settings, Billing, Day, UsageInfo};
 use crate::kit::claude_code::{self as cc, Availability};
@@ -146,7 +145,6 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
     let _ = fresh_col;
 
-    let is_claude = meta.id == "claude";
     let show_usd = settings::get().show_cost;
     let x0 = r.left() + sp::PAGE_EDGE;
     let x1 = r.right() - sp::PAGE_EDGE;
@@ -190,7 +188,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 
     // row 2: the chart, then models over projects
     let y2 = y + ch + GAP;
-    let bottom = r.bottom() - if is_claude { PAGE_FOOTER_H } else { 0.0 } - sp::L;
+    let bottom = r.bottom() - sp::L;
     let chart = Rect::from_min_max(Pos2::new(x0, y2), Pos2::new(x0 + cw * 2.0 + GAP, bottom));
     chart_card(ui, chart, &cl, meta.id, show_usd, demo);
     let col = Rect::from_min_max(Pos2::new(chart.right() + GAP, y2), Pos2::new(x1, bottom));
@@ -207,19 +205,6 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             empty_note(&p, list, &format!("No {} in the last 30 days", title.to_lowercase()));
         }
         parts::share_rows(&p, list, rows, show_usd, &home);
-    }
-
-    if is_claude {
-        let f = page_footer(&p, r, 12.0);
-        if cl.data_bytes > 0 {
-            text_fit(&p, Pos2::new(f.left() + 24.0, f.center().y), Align2::LEFT_CENTER, &format!("{} data on this Mac {}", cl.provider, human_bytes(cl.data_bytes)), ty::label(), TEXT_DIM(), f.width() / 2.0);
-        }
-        let bl = "Review in Cleanup";
-        let bw = button_width(&p, bl, BTN_PRIMARY);
-        let br = Rect::from_min_size(Pos2::new(f.right() - 24.0 - bw, f.center().y - 16.0), Vec2::new(bw, 32.0));
-        if pill_button(ui, br, bl, BTN_PRIMARY, true).clicked() {
-            cx.open_page(CLEANUP, "claude");
-        }
     }
 }
 

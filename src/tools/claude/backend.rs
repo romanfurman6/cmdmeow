@@ -94,7 +94,6 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
     // due right away the first time
     let mut limits_at = vec![Every::default(); n];
     let mut local_at = vec![Every::default(); n];
-    let mut size_at = vec![Every::default(); n];
     let mut status_at = Every::default();
     let mut memory: Vec<alerts::Memory> = (0..n).map(|_| alerts::Memory::default()).collect();
     let mut primed = vec![false; n];
@@ -170,18 +169,6 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             REFRESHING.store(false, Ordering::Relaxed);
             activity::repaint(&ctx);
         }
-        // the data folder walks every file: once per launch, and again on
-        // Refresh, after every provider shows its numbers
-        if !activity::recording() {
-            for i in 0..n {
-                if set.is_on(ai::PROVIDERS[i].id) && providers[i].enabled() && size_at[i].age().is_none() {
-                    size_at[i].mark();
-                    let d = providers[i].data_dir().map(|d| crate::kit::fs::dir_size(&d)).unwrap_or(0);
-                    all[i].lock_ok().data_bytes = d;
-                    activity::repaint(&ctx);
-                }
-            }
-        }
         // outages: a status page per provider that has one
         if set.show_outages && status_at.due(Duration::from_secs(STATUS_SECS)) {
             status_at.mark();
@@ -199,7 +186,7 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
         }
         // wait, but wake early when someone asks for a refresh or the panel opens
         if activity::nap(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS), Some(cc::recheck())) == Wake::Kicked {
-            for e in limits_at.iter_mut().chain(local_at.iter_mut()).chain(size_at.iter_mut()) {
+            for e in limits_at.iter_mut().chain(local_at.iter_mut()) {
                 e.reset();
             }
             status_at.reset();

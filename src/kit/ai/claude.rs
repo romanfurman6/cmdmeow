@@ -435,7 +435,6 @@ pub fn demo_info() -> UsageInfo {
         error: None,
         fetched: Some(Local::now()),
         local: demo_local(),
-        data_bytes: 5_400_000_000,
         billing: Billing::Subscription,
         source: "API",
         ..Default::default()

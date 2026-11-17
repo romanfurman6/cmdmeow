@@ -78,7 +78,6 @@ pub struct UsageInfo {
     pub error: Option<String>,
     pub fetched: Option<DateTime<Local>>,
     pub local: LocalTokens,
-    pub data_bytes: u64,
     pub billing: Billing,
     /// Extra plan detail that can tell the price, e.g. a rate-limit tier
     /// like "default_claude_max_20x".
@@ -153,7 +152,8 @@ pub trait Provider: Send {
     fn fetch_account(&mut self, s: &Shared);
     /// Token counts from local session logs.
     fn local_tokens(&mut self) -> LocalTokens;
-    /// The folder where the assistant keeps its data, for the size shown.
+    /// The folder where the assistant keeps its data; settings use it to
+    /// tell whether the assistant is on this Mac.
     fn data_dir(&self) -> Option<PathBuf> {
         None
     }
