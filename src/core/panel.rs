@@ -90,6 +90,15 @@ pub fn draw_widget(app: &mut App, ui: &mut Ui, w: &Placed, r: Rect, cx: &mut Cx)
 /// `lock`: a required permission is missing, so it shows dimmed and off.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_at(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static str, size: Size, r: Rect, lock: Option<crate::kit::perms::Perm>, cx: &mut Cx) {
+    // W12: inside a widget only the card hovers; a pressed card takes what's on it down
+    let was = crate::kit::glass::set_in_widget(true);
+    draw_inner(app, ui, owner, id, size, r, lock, cx);
+    crate::kit::tile::finish_press(ui.ctx());
+    crate::kit::glass::set_in_widget(was);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_inner(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static str, size: Size, r: Rect, lock: Option<crate::kit::perms::Perm>, cx: &mut Cx) {
     match owner {
         Some(i) => {
             let salt = (app.tools[i].id(), id, size.label());

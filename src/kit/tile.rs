@@ -6,28 +6,113 @@
 use super::glass::*;
 use egui::{Align2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
 
-/// Corner radius of a widget.
-pub const R_TILE: f32 = 12.0;
+/// Corner radius of a widget (R_TILE, SP13 W1).
+pub const R_TILE: f32 = 10.0;
 /// Inner padding of a widget.
 pub const PAD: f32 = 12.0;
+/// How far a pressed widget card sinks: its 1 pt base.
+pub const PRESS_DROP: f32 = 1.0;
 
-/// The card behind a widget. Hover lifts it; `selected` (its sheet is
-/// open) adds the blue ring. A click is the widget's main action.
+thread_local! {
+    /// The card pressed this frame: its layer, the first shape of its face
+    /// and how far it is in. [`finish_press`] moves the face and everything
+    /// drawn on it after the widget is done.
+    static PRESSED: std::cell::Cell<Option<(egui::LayerId, egui::layers::ShapeIdx, f32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Whether the pointer is over the card: true over its buttons and rows
+/// too, because the whole card is what hovers (W12).
+fn over(ui: &Ui, rect: Rect) -> bool {
+    ui.rect_contains_pointer(rect)
+}
+
+/// The card of a widget with one action (W1): hover lifts it, a press
+/// sinks it 1 pt into its base and it springs back. `selected` (its sheet
+/// is open) adds the blue ring.
 pub fn card(ui: &mut Ui, rect: Rect, id: egui::Id, selected: bool) -> Response {
-    let resp = ui.interact(rect, id, Sense::click());
-    let h = ui.ctx().animate_bool(id.with("hover"), resp.hovered());
-    paint_card(ui.painter(), rect, h, selected);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    let k = super::key::press(ui, rect, id, true, None);
+    let h = ui.ctx().animate_bool(id.with("hover"), over(ui, rect));
+    let p = ui.painter();
+    paint_base(p, rect);
+    let face = p.ctx().graphics_mut(|g| g.entry(p.layer_id()).next_idx());
+    paint_face(p, rect, h, selected);
+    if k.press.abs() > 0.001 {
+        PRESSED.with(|c| c.set(Some((p.layer_id(), face, k.press))));
     }
+    k.resp
+}
+
+/// The card of a widget with buttons or rows inside (W1): it hovers as a
+/// whole but doesn't sink; its buttons press instead.
+pub fn frame(ui: &mut Ui, rect: Rect, id: egui::Id, selected: bool) -> Response {
+    let resp = ui.interact(rect, id, Sense::click());
+    let h = ui.ctx().animate_bool(id.with("hover"), over(ui, rect));
+    paint_card(ui.painter(), rect, h, selected);
     resp
 }
 
+/// Call after a widget is drawn: a pressed card moves down with all it holds.
+pub fn finish_press(ctx: &egui::Context) {
+    if let Some((layer, start, press)) = PRESSED.with(|c| c.take()) {
+        ctx.graphics_mut(|g| {
+            let list = g.entry(layer);
+            let end = list.next_idx();
+            if start.0 > end.0 {
+                return;
+            }
+            list.transform_range(start, end, egui::emath::TSTransform::from_translation(Vec2::new(0.0, PRESS_DROP * press)));
+        });
+    }
+}
+
+/// A widget card that isn't interactive (the update banner, a preview).
 pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
+    paint_base(p, rect);
+    paint_face(p, rect, hover, selected);
+}
+
+/// The 1 pt base under the card.
+fn paint_base(p: &egui::Painter, rect: Rect) {
+    p.rect_filled(rect.translate(Vec2::new(0.0, PRESS_DROP)), R_TILE, TILE_BASE());
+}
+
+/// The card itself: see-through CARD (the panel glow shows through), the
+/// shade at its bottom, the top highlight, the light-mode edge.
+fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
+    let shade = TILE_SHADE();
+    if shade.a() > 0 {
+        shade_bottom(p, rect, shade);
+    }
+    let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
+    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
+    let edge = TILE_EDGE();
+    if edge.a() > 0 {
+        p.rect_stroke(rect, R_TILE, Stroke::new(1.0, edge), StrokeKind::Inside);
+    }
     if selected {
         p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
+}
+
+/// A dark wash from 55% of the card's height to `col` at its bottom edge.
+fn shade_bottom(p: &egui::Painter, rect: Rect, col: Color32) {
+    use egui::epaint::{Mesh, Vertex, WHITE_UV};
+    let y0 = rect.top() + rect.height() * 0.55;
+    // the ramp stops where the bottom corners start; a rounded band below
+    // carries the colour it reached there
+    let y1 = (rect.bottom() - R_TILE).max(y0);
+    let at_y1 = with_alpha(col, col.a() as f32 / 255.0 * ((y1 - y0) / (rect.bottom() - y0).max(1.0)));
+    let mut m = Mesh::default();
+    for (y, c) in [(y0, Color32::TRANSPARENT), (y1, at_y1)] {
+        m.vertices.push(Vertex { pos: Pos2::new(rect.left(), y), uv: WHITE_UV, color: c });
+        m.vertices.push(Vertex { pos: Pos2::new(rect.right(), y), uv: WHITE_UV, color: c });
+    }
+    m.add_triangle(0, 1, 2);
+    m.add_triangle(1, 3, 2);
+    p.add(Shape::mesh(m));
+    let band = Rect::from_min_max(Pos2::new(rect.left(), y1), rect.max);
+    p.rect_filled(band, egui::CornerRadius { nw: 0, ne: 0, sw: R_TILE as u8, se: R_TILE as u8 }, at_y1);
 }
 
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,
@@ -52,20 +137,24 @@ pub fn stopped(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str) 
 pub fn small(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, title: &str, sub: &str, selected: bool) -> Response {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
-    icon(p, glyph, Rect::from_min_size(rect.min + Vec2::splat(PAD), Vec2::splat(18.0)), lift(color));
+    icon(p, glyph, Rect::from_min_size(rect.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), lift(color));
     small_text(p, rect, title, sub, TEXT_DIM());
     resp
 }
 
+/// Side padding of a Small widget: "Screenshot" fits at 12 without shrinking.
+pub const SMALL_SIDE: f32 = 10.0;
+
 /// The two lines at the bottom of a Small widget.
+/// (W4: name 12/600, 3 pt, caption 11; 12 from the bottom.)
 pub fn small_text(p: &egui::Painter, rect: Rect, title: &str, sub: &str, sub_col: Color32) {
-    let w = rect.width() - 2.0 * PAD;
-    // a long name ("Screenshot") steps down a size or two before it's cut
-    let fid = [13.0, 12.0, 11.0].into_iter().map(bold).find(|f| p.layout_no_wrap(title.to_string(), f.clone(), TEXT()).size().x <= w).unwrap_or_else(ty::title);
+    let w = rect.width() - 2.0 * SMALL_SIDE;
+    // a long name steps down to 11 before it's cut
+    let fid = [12.0, 11.0].into_iter().map(bold).find(|f| p.layout_no_wrap(title.to_string(), f.clone(), TEXT()).size().x <= w).unwrap_or_else(|| bold(11.0));
     let sub_col = if sub_col == TEXT_DIM() { ty::caption_color() } else { sub_col };
-    let sr = text_fit(p, Pos2::new(rect.left() + PAD, rect.bottom() - 10.0), Align2::LEFT_BOTTOM, sub, ty::caption(), sub_col, w);
-    let tb = if sub.is_empty() { rect.bottom() - 10.0 } else { sr.top() - sp::LINE_GAP };
-    text_fit(p, Pos2::new(rect.left() + PAD, tb), Align2::LEFT_BOTTOM, title, fid, TEXT(), w);
+    let sr = text_fit(p, Pos2::new(rect.left() + SMALL_SIDE, rect.bottom() - PAD), Align2::LEFT_BOTTOM, sub, ty::caption(), sub_col, w);
+    let tb = if sub.is_empty() { rect.bottom() - PAD } else { sr.top() - 3.0 };
+    text_fit(p, Pos2::new(rect.left() + SMALL_SIDE, tb), Align2::LEFT_BOTTOM, title, fid, TEXT(), w);
 }
 
 /// Small (1:1) gauge: a ring with the glyph inside and a caption under it.
@@ -88,14 +177,16 @@ pub fn small_ring(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, frac: f32,
 /// Where a Wide tile's ring sits, and its radius: it takes the tile's
 /// height, less a margin.
 pub fn wide_ring(rect: Rect) -> (Pos2, f32) {
-    let rr = (rect.height() / 2.0 - 11.0).clamp(17.0, 27.0);
+    // W2: 50 in 1:2 and 1:4
+    let rr = (rect.height() / 2.0 - 11.0).clamp(17.0, 25.0);
     (Pos2::new(rect.left() + PAD + rr, rect.center().y), rr)
 }
 
 /// Where a Small tile's ring sits, and its radius: it fills the tile above
 /// a one-line caption.
 pub fn small_ring_at(rect: Rect) -> (Pos2, f32) {
-    let rr = ((rect.height() - 40.0) / 2.0).min(rect.width() / 2.0 - 12.0).clamp(18.0, 30.0);
+    // W2: 44 in 1:1
+    let rr = ((rect.height() - 40.0) / 2.0).min(rect.width() / 2.0 - 12.0).clamp(18.0, 22.0);
     (Pos2::new(rect.center().x, rect.top() + 8.0 + rr), rr)
 }
 
@@ -109,33 +200,50 @@ pub fn wide(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, 
 /// [`wide`] with the caption in `caption_col` (a temperature in its state colour).
 #[allow(clippy::too_many_arguments)]
 pub fn wide_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, bar_or_caption: Result<(f32, Color32), &str>, caption_col: Color32, selected: bool) -> Response {
+    let (ring_, caption) = match bar_or_caption {
+        Ok(r) => (Some(r), ""),
+        Err(c) => (None, c),
+    };
+    wide_full(ui, rect, id, glyph, color, ring_, label, value, caption, caption_col, selected)
+}
+
+/// Wide (1:2) with all three lines (W3): a ring 50 (`ring`) or the glyph 26
+/// in a 40 box on the left; label, value and caption beside it.
+#[allow(clippy::too_many_arguments)]
+pub fn wide_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, ring_: Option<(f32, Color32)>, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool) -> Response {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
-    let cy = rect.center().y;
-    let (c, rr) = wide_ring(rect);
-    let caption = match bar_or_caption {
-        Ok((f, col)) => {
-            let w = (rr * 0.2).clamp(4.0, 5.5);
-            ring(p, c, rr - w / 2.0, w, f, col);
-            icon(p, glyph, Rect::from_center_size(c, Vec2::splat(rr * 0.8)), TEXT_SOFT());
-            ""
-        }
-        Err(cap) => {
-            p.circle_filled(c, rr, white(14));
-            icon(p, glyph, Rect::from_center_size(c, Vec2::splat(rr * 0.9)), lift(color));
-            cap
-        }
-    };
-    let x0 = c.x + rr + sp::M;
+    let x0 = visual(p, rect, glyph, color, ring_);
     let w = rect.right() - PAD - x0;
-    stack_lines(p, x0, cy, &[(label, ty::caption(), ty::caption_color()), (value, ty::title(), TEXT()), (caption, ty::caption(), caption_col)], w);
+    stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], w);
     resp
+}
+
+/// The one visual on the left of a Wide or Row widget (W2): a ring 50 with
+/// the glyph in it, or the glyph 26 in a 40 box in the group colour, no
+/// plate. Returns where the text starts.
+pub fn visual(p: &egui::Painter, rect: Rect, glyph: Icon, color: Color32, ring_: Option<(f32, Color32)>) -> f32 {
+    match ring_ {
+        Some((f, col)) => {
+            let (c, rr) = wide_ring(rect);
+            let w = (rr * 0.22).clamp(4.0, 5.5);
+            ring(p, c, rr - w / 2.0, w, f, col);
+            icon(p, glyph, Rect::from_center_size(c, Vec2::splat(19.0)), TEXT_SOFT());
+            c.x + rr + PAD
+        }
+        None => {
+            let bx = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 20.0), Vec2::splat(40.0));
+            icon(p, glyph, Rect::from_center_size(bx.center(), Vec2::splat(26.0)), lift(color));
+            bx.right() + PAD
+        }
+    }
 }
 
 /// The chip of a split Row (where `row_split` draws it), for widgets that
 /// paint over it.
 pub fn row_chip(rect: Rect) -> Rect {
-    Rect::from_min_size(Pos2::new(rect.left() + 12.0, rect.center().y - 17.0), Vec2::splat(34.0))
+    // the 40 box of [`visual`]
+    Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 20.0), Vec2::splat(40.0))
 }
 
 /// Row (1:4) in two halves. Left: a big chip, the label, a big value and a
@@ -155,20 +263,30 @@ pub fn row_split_at(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
 /// [`row_split_at`] with the caption in `caption_col` (a temperature in its
 /// state colour).
 #[allow(clippy::too_many_arguments)]
-pub fn row_split_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool, ratio: f32) -> (Response, Rect) {
+pub fn row_split_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool, _ratio: f32) -> (Response, Rect) {
+    row_split_full(ui, rect, id, glyph, color, None, label, value, caption, caption_col, selected)
+}
+
+/// Least width of a Row's right part (W5): it has priority over the left.
+pub const ROW_RIGHT_MIN: f32 = 186.0;
+
+/// Row (1:4) per W5: the Wide layout on the left (ring 50 or glyph 26, then
+/// label, value, caption) as wide as its text, a hairline, and the right
+/// part (at least [`ROW_RIGHT_MIN`]) returned for the breakdown.
+#[allow(clippy::too_many_arguments)]
+pub fn row_split_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, ring_: Option<(f32, Color32)>, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool) -> (Response, Rect) {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
-    let chip = row_chip(rect);
-    p.circle_filled(chip.center(), 17.0, white(14));
-    icon(p, glyph, Rect::from_center_size(chip.center(), Vec2::splat(18.0)), lift(color));
-    let split = rect.left() + (rect.width() * ratio).round();
-    let (x0, x1) = (chip.right() + sp::M, split - sp::M);
-    let cy = rect.center().y;
-    // the value shrinks a step before it gets cut
-    let f = if p.layout_no_wrap(value.to_string(), ty::number(), TEXT()).size().x <= x1 - x0 { ty::number() } else { ty::lead() };
-    stack_lines(p, x0, cy, &[(label, ty::caption(), ty::caption_color()), (value, f, TEXT()), (caption, ty::caption(), caption_col)], x1 - x0);
-    p.line_segment([Pos2::new(split, rect.top() + 16.0), Pos2::new(split, rect.bottom() - 16.0)], Stroke::new(1.0, white(15)));
-    (resp, Rect::from_min_max(Pos2::new(split + sp::M, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
+    let x0 = visual(p, rect, glyph, color, ring_);
+    let tw = [(label, ty::label()), (value, ty::lead()), (caption, ty::caption())]
+        .iter()
+        .map(|(t, f)| p.layout_no_wrap(t.to_string(), f.clone(), TEXT()).size().x)
+        .fold(0.0f32, f32::max);
+    let split = (x0 + tw + PAD).min(rect.right() - PAD - ROW_RIGHT_MIN - PAD).round();
+    stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], split - PAD - x0);
+    let inset = rect.height() * 0.06;
+    p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
+    (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
 }
 
 /// Up to three bar lines stacked in `r` (the right half of a split Row);
@@ -263,7 +381,8 @@ pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Colo
     let vw = p.layout_no_wrap(value.to_string(), font(12.0), TEXT()).size().x.max(40.0);
     // the label keeps its full width when it can; the bar takes what's left
     let room = r.width() - vw - lw - 22.0;
-    let bw = if frac.is_some() && room >= 24.0 { room.min((r.width() * 0.3).min(110.0)) } else { 0.0 };
+    // W5: label and value at their own width, the bar takes the rest
+    let bw = if frac.is_some() && room >= 24.0 { room } else { 0.0 };
     p.text(Pos2::new(r.right(), r.center().y), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
     if let (Some((f, c)), true) = (frac, bw > 0.0) {
         bar(p, Rect::from_min_max(Pos2::new(r.right() - vw - 10.0 - bw, r.center().y - 2.0), Pos2::new(r.right() - vw - 10.0, r.center().y + 2.0)), f, c);
@@ -277,51 +396,38 @@ pub fn empty_note(p: &egui::Painter, r: Rect, msg: &str) {
     text_fit(p, r.center(), Align2::CENTER_CENTER, msg, font(12.0), TEXT_FAINT(), r.width() - 16.0);
 }
 
-/// A widget whose data hasn't arrived yet: its glyph and name, and soft
-/// pulsing bars where the numbers will be. Keeps repainting while shown.
+/// A widget whose data hasn't arrived yet (W9): a still skeleton in its
+/// shape, with its glyph and name. Nothing repaints for it.
 pub fn loading(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, title: &str) -> Response {
     let resp = card(ui, rect, id, false);
     let p = ui.painter();
-    let t = ui.input(|i| i.time) as f32;
-    // a slow breath, 0..1
-    let pulse = 0.5 - 0.5 * (t * 3.0).cos();
-    let bar = |r: Rect, k: f32| {
-        let a = 10.0 + 14.0 * (0.5 - 0.5 * (t * 3.0 - k * 0.6).cos());
-        p.rect_filled(r, r.height() / 2.0, white(a as u8));
+    let bar = |r: Rect| {
+        p.rect_filled(r, r.height() / 2.0, white(18));
     };
     let inner = rect.shrink(PAD);
-    let glyph_col = with_alpha(lift(color), 0.55 + 0.35 * pulse);
+    let glyph_col = with_alpha(lift(color), 0.7);
     if rect.height() <= 130.0 && rect.width() <= 130.0 {
         // Small: glyph on top, name at the bottom, a bar for the value
-        icon(p, glyph, Rect::from_min_size(inner.min, Vec2::splat(18.0)), glyph_col);
-        text_fit(p, Pos2::new(inner.left(), rect.bottom() - 26.0), Align2::LEFT_BOTTOM, title, ty::title(), TEXT_DIM(), inner.width());
-        bar(Rect::from_min_size(Pos2::new(inner.left(), rect.bottom() - 20.0), Vec2::new(inner.width() * 0.6, 8.0)), 0.0);
+        icon(p, glyph, Rect::from_min_size(rect.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), glyph_col);
+        text_fit(p, Pos2::new(rect.left() + SMALL_SIDE, rect.bottom() - 26.0), Align2::LEFT_BOTTOM, title, bold(12.0), TEXT_DIM(), rect.width() - 2.0 * SMALL_SIDE);
+        bar(Rect::from_min_size(Pos2::new(rect.left() + SMALL_SIDE, rect.bottom() - 20.0), Vec2::new(inner.width() * 0.6, 8.0)));
     } else if rect.height() <= 130.0 {
-        // Wide / Row: the ring's place on the left, name and a bar beside it
-        let (c, rr) = wide_ring(rect);
-        stroke_circle(p, c, rr - 3.0, Stroke::new(5.0, white((12.0 + 12.0 * pulse) as u8)));
-        icon(p, glyph, Rect::from_center_size(c, Vec2::splat(rr * 0.75)), glyph_col);
-        let x = c.x + rr + 12.0;
-        let w = rect.right() - PAD - x;
-        text_fit(p, Pos2::new(x, rect.center().y - 4.0), Align2::LEFT_BOTTOM, title, ty::caption(), ty::caption_color(), w);
-        bar(Rect::from_min_size(Pos2::new(x, rect.center().y + 2.0), Vec2::new(w * 0.75, 10.0)), 0.0);
+        // Wide / Row: the glyph in its 40 box, name and a bar beside it
+        let x = visual(p, rect, glyph, with_alpha(color, 0.7), None);
+        let w = (rect.right() - PAD - x).min(160.0);
+        text_fit(p, Pos2::new(x, rect.center().y - 4.0), Align2::LEFT_BOTTOM, title, ty::label(), ty::caption_color(), w);
+        bar(Rect::from_min_size(Pos2::new(x, rect.center().y + 2.0), Vec2::new(w * 0.75, 10.0)));
     } else {
-        // Medium and up: glyph and name, then bars down the card
-        icon(p, glyph, Rect::from_min_size(inner.min, Vec2::splat(18.0)), glyph_col);
-        let note = if inner.width() >= 220.0 { p.text(Pos2::new(inner.right(), inner.top() + 9.0), Align2::RIGHT_CENTER, "Loading…", ty::caption(), TEXT_FAINT()).width() + 10.0 } else { 0.0 };
-        text_fit(p, Pos2::new(inner.left() + 26.0, inner.top() + 9.0), Align2::LEFT_CENTER, title, ty::title(), TEXT_DIM(), inner.width() - 26.0 - note);
+        // Medium and up: the name, then bars down the card
+        text_fit(p, Pos2::new(inner.left(), inner.top() + 9.0), Align2::LEFT_CENTER, title, ty::title(), TEXT_DIM(), inner.width());
         let mut y = inner.top() + 32.0;
         let widths = [0.7, 0.45, 0.85, 0.55, 0.65, 0.4];
         let mut k = 0;
         while y + 10.0 <= inner.bottom() + 0.5 && k < widths.len() {
-            bar(Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width() * widths[k], 10.0)), k as f32);
+            bar(Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width() * widths[k], 10.0)));
             y += 22.0;
             k += 1;
         }
-    }
-    // the shimmer moves only where someone sees it
-    if crate::kit::activity::visible() {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     }
     resp
 }
