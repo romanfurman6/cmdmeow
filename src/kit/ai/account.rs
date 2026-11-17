@@ -126,7 +126,13 @@ pub enum KeychainRead {
 pub fn read_claude_keychain_quiet() -> KeychainRead {
     let mut cmd = std::process::Command::new("/usr/bin/security");
     cmd.args(["find-generic-password", "-s", "Claude Code-credentials", "-w"]);
-    match run_secret(cmd, Duration::from_secs(5)) {
+    quiet_read(cmd, Duration::from_secs(5))
+}
+
+/// What `security find-generic-password -w` run as `cmd` gave.
+#[cfg(target_os = "macos")]
+fn quiet_read(cmd: std::process::Command, wait: Duration) -> KeychainRead {
+    match run_secret(cmd, wait) {
         Some((0, out)) => {
             let t = out.trim_ascii();
             if t.is_empty() { KeychainRead::Missing } else { KeychainRead::Found(t.to_vec()) }
@@ -501,6 +507,26 @@ pub fn gemini_usage(home: &Path) -> Result<(String, Vec<Limit>), ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn quiet_keychain_read_maps_exit_codes() {
+        use std::process::Command;
+        let sh = |script: &str| {
+            let mut c = Command::new("/bin/sh");
+            c.args(["-c", script]);
+            c
+        };
+        let wait = Duration::from_secs(2);
+        assert_eq!(quiet_read(sh("echo '{\"a\":1}'"), wait), KeychainRead::Found(b"{\"a\":1}".to_vec()));
+        assert_eq!(quiet_read(sh("exit 0"), wait), KeychainRead::Missing);
+        assert_eq!(quiet_read(sh("exit 44"), wait), KeychainRead::Missing);
+        assert_eq!(quiet_read(sh("exit 51"), wait), KeychainRead::Failed);
+        // a prompt nobody answers: given up on, not waited for
+        let t = std::time::Instant::now();
+        assert_eq!(quiet_read(sh("sleep 10"), Duration::from_millis(300)), KeychainRead::Failed);
+        assert!(t.elapsed() < Duration::from_secs(3));
+    }
 
     #[test]
     fn claude_creds_need_a_usage_scope() {

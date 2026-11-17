@@ -105,7 +105,11 @@ fn read_keychain() -> Option<ClaudeCreds> {
     }
     match account::read_claude_keychain_quiet() {
         KeychainRead::Found(b) => account::parse_claude_creds(&b),
-        KeychainRead::Missing | KeychainRead::Denied | KeychainRead::Failed => None,
+        KeychainRead::Failed => {
+            eprintln!("[ai] claude keychain: quiet read failed");
+            None
+        }
+        KeychainRead::Missing | KeychainRead::Denied => None,
     }
 }
 
