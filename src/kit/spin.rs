@@ -174,8 +174,8 @@ pub fn draw(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
     p.add(mesh);
 }
 
-/// The fan glyph (SP11; Magnific/Flaticon Premium icon 17711600, used
-/// under that licence): outlines in a circle of
+/// The fan glyph (SP11; Flaticon Premium icon 17711600, source and
+/// licence in assets/glyphs/SOURCES.md): outlines in a circle of
 /// radius 1 around the hub, y down. Each is a start point, then cubic
 /// segments as (control, control, end). The second outline is the hub,
 /// cut out (even-odd).
