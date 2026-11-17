@@ -343,10 +343,10 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     let groups = s.groups();
     let rows = groups.len().min(8);
     if rows > 0 {
-        let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * 30.0 + 8.0));
+        let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * SHEET_ROW_H + 8.0));
         glass_card(&p, gr, R_CARD, 0.0, false);
         for (i, g) in groups.iter().take(rows).enumerate() {
-            let cy = gr.top() + 4.0 + 15.0 + i as f32 * 30.0;
+            let cy = gr.top() + 4.0 + SHEET_ROW_H / 2.0 + i as f32 * SHEET_ROW_H;
             p.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 16.5, cy), Vec2::splat(9.0)), 3.0, heat(g.max));
             p.text(Pos2::new(gr.left() + 31.0, cy), Align2::LEFT_CENTER, g.group.label(), font(13.0), TEXT());
             let vr = p.text(Pos2::new(gr.right() - 12.0, cy), Align2::RIGHT_CENTER, format!("{:.0} °C", g.max), font(13.0), heat_text(g.max));
@@ -359,17 +359,19 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     // thermal pressure
     let (hint, col) = thermal_hint(s.thermal);
     let fr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 0.0));
-    let need = p.layout(hint.to_string(), font(12.0), TEXT_FAINT(), w - 24.0).size().y + 35.0;
+    let need = SHEET_ROW_H + 8.0;
     let fr = Rect::from_min_size(fr.min, Vec2::new(w, need));
-    let by = rect.bottom() - 16.0 - 30.0;
+    let by = rect.bottom() - 16.0 - BTN_H;
     if fr.bottom() < by - 8.0 {
         glass_card(&p, fr, R_CARD, 0.0, false);
-        fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, hint);
+        let fr = fr.translate(Vec2::new(0.0, 4.0));
+        let _ = hint; // T1: the word says it
+        fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, "");
     }
 
-    let label = "Open Fan Control";
-    let bw = button_width(&p, label, BTN_PRIMARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0 - bw, by), Vec2::new(bw, 30.0)), label, BTN_PRIMARY, true).clicked() {
+    let label = "Fan Control";
+    let bw = button_width(&p, label, BTN_SECONDARY);
+    if pill_button(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0 - bw, by), Vec2::new(bw, BTN_H)), label, BTN_SECONDARY, true).clicked() {
         cx.open_page(ID, "");
     }
     cmds

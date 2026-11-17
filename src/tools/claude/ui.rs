@@ -169,28 +169,27 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let f = super::parts::forecast(l);
         let col = if f.starts_with("Runs out") { RED() } else { TEXT_FAINT() };
         let fr = text_fit(&p, Pos2::new(lr.left() + 12.0, yy + 32.0), Align2::LEFT_TOP, &f, font(12.0), col, w - 24.0);
-        if let Some((s, c)) = super::parts::pace_label(l) {
-            text_fit(&p, Pos2::new(lr.right() - 12.0, yy + 32.0), Align2::RIGHT_TOP, s, font(12.0), c, lr.right() - 24.0 - fr.right());
-        }
+        let _ = fr; // pace words go (T9): the marker on the bar shows the pace
     }
     y = lr.bottom() + GAP;
 
     // on this Mac
-    let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 184.0));
+    card_title(&p, Pos2::new(x0, y), "On this Mac");
+    y += CARD_TITLE_H;
+    let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 160.0));
     glass_card(&p, ar, R_CARD, 0.0, false);
-    p.text(ar.min + Vec2::new(12.0, 12.0), Align2::LEFT_TOP, "On this Mac", bold(13.0), TEXT());
     let stats = [("last 5 hours", cl.local.tokens_5h), ("today", cl.local.tokens_today), ("7 days", cl.local.tokens_7d)];
     for (i, (k, v)) in stats.iter().enumerate() {
         let x = ar.left() + 12.0 + i as f32 * ((w - 24.0) / 3.0);
-        p.text(Pos2::new(x, ar.top() + 36.0), Align2::LEFT_TOP, backend::human_tokens(*v), bold(22.0), TEXT());
-        p.text(Pos2::new(x, ar.top() + 60.0), Align2::LEFT_TOP, *k, font(11.0), TEXT_FAINT());
+        p.text(Pos2::new(x, ar.top() + 12.0), Align2::LEFT_TOP, backend::human_tokens(*v), ty::number(), TEXT());
+        p.text(Pos2::new(x, ar.top() + 38.0), Align2::LEFT_TOP, *k, ty::caption(), TEXT_DIM());
     }
     let week: Vec<crate::kit::ai::Day> = cl.local.days.iter().rev().take(7).rev().copied().collect();
-    super::parts::day_chart(ui, Rect::from_min_max(Pos2::new(ar.left() + 12.0, ar.top() + 78.0), Pos2::new(ar.right() - 12.0, ar.bottom() - 10.0)), &week, super::parts::Measure::Tokens, None, "detail");
+    super::parts::day_chart(ui, Rect::from_min_max(Pos2::new(ar.left() + 12.0, ar.top() + 56.0), Pos2::new(ar.right() - 12.0, ar.bottom() - 10.0)), &week, super::parts::Measure::Tokens, None, "detail");
     y = ar.bottom() + GAP;
 
     // what uses your limits
-    let by = rect.bottom() - 16.0 - 30.0;
+    let by = rect.bottom() - 16.0 - BTN_H;
     let ur_max = by - GAP;
     let mut lines: Vec<(String, Color32, f32)> = Vec::new();
     match cl.contrib.first() {
@@ -204,7 +203,10 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         None => lines.push((format!("{} reports this once you've used it on this Mac.", cl.provider), TEXT_DIM(), 13.0)),
     }
     let heights: Vec<f32> = lines.iter().map(|(l, c, s)| p.layout(l.clone(), font(*s), *c, w - 24.0).size().y).collect();
-    let mut h = 12.0 + 18.0 + 6.0;
+    let title = if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { "About these limits" } else { "What uses your limits" };
+    card_title(&p, Pos2::new(x0, y), title);
+    y += CARD_TITLE_H;
+    let mut h = 12.0;
     let mut shown = 0;
     for hh in &heights {
         if y + h + hh + 6.0 + 12.0 > ur_max {
@@ -215,8 +217,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     }
     let ur = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h + 6.0));
     glass_card(&p, ur, R_CARD, 0.0, false);
-    p.text(ur.min + Vec2::new(12.0, 12.0), Align2::LEFT_TOP, if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { "About these limits" } else { "What uses your limits" }, bold(13.0), TEXT());
-    let mut ly = ur.top() + 36.0;
+    let mut ly = ur.top() + 12.0;
     for ((l, c, s), hh) in lines.iter().zip(&heights).take(shown) {
         paragraph(&p, Pos2::new(ur.left() + 12.0, ly), l, font(*s), *c, w - 24.0);
         ly += hh + 6.0;
@@ -225,17 +226,17 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     // buttons, bottom right (Cleanup knows Claude's caches only)
     let primary = "Clean Claude caches";
     let pw = button_width(&p, primary, BTN_PRIMARY);
-    let mut pr = Rect::from_min_size(Pos2::new(rect.right() - 16.0 - pw, by), Vec2::new(pw, 30.0));
+    let mut pr = Rect::from_min_size(Pos2::new(rect.right() - 16.0 - pw, by), Vec2::new(pw, BTN_H));
     if cl.provider == crate::kit::ai::claude::NAME {
         if pill_button(ui, pr, primary, BTN_PRIMARY, true).clicked() {
             cx.open_page(CLEANUP, "claude");
         }
     } else {
-        pr = Rect::from_min_size(Pos2::new(rect.right() - 8.0, by), Vec2::new(0.0, 30.0));
+        pr = Rect::from_min_size(Pos2::new(rect.right() - 8.0, by), Vec2::new(0.0, BTN_H));
     }
-    let sw = button_width(&p, "Open page", BTN_SECONDARY);
-    let sr = Rect::from_min_size(Pos2::new(pr.left() - 8.0 - sw, by), Vec2::new(sw, 30.0));
-    if pill_button(ui, sr, "Open page", BTN_SECONDARY, true).clicked() {
+    let sw = button_width(&p, "AI Usage", BTN_SECONDARY);
+    let sr = Rect::from_min_size(Pos2::new(pr.left() - 8.0 - sw, by), Vec2::new(sw, BTN_H));
+    if pill_button(ui, sr, "AI Usage", BTN_SECONDARY, true).clicked() {
         cx.open_page(ID, "");
     }
 }

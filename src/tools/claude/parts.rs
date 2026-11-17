@@ -29,16 +29,6 @@ pub fn limit_color(l: &Limit) -> Color32 {
     }
 }
 
-/// "Ahead of pace" / "On pace" / "Room to spare", with its colour.
-pub fn pace_label(l: &Limit) -> Option<(&'static str, Color32)> {
-    let p = pace::of_limit(l, now())?;
-    Some(match p.state {
-        pace::State::Ahead => ("Ahead of pace", RED()),
-        pace::State::OnPace => ("On pace", TEXT()),
-        pace::State::Room => ("Room to spare", GREEN()),
-    })
-}
-
 /// "Runs out Sat 14:00" when the current rate runs out before the reset, else
 /// when it resets.
 pub fn forecast(l: &Limit) -> String {
