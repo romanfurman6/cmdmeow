@@ -44,10 +44,11 @@ fn chip_label(c: &Check) -> String {
         Phase::Idle => format!("Check with {}", agent_of(c).name()),
         Phase::Running => "Checking…".into(),
         Phase::Failed(_) => "Check failed".into(),
+        // the mark already says who checked
         Phase::Done if c.inline => match c.tips().len() {
-            0 => format!("Checked by {}", agent_of(c).name()),
-            1 => format!("Checked by {} · 1 tip", agent_of(c).name()),
-            n => format!("Checked by {} · {n} tips", agent_of(c).name()),
+            0 => "All good".into(),
+            1 => "1 tip".into(),
+            n => format!("{n} tips"),
         },
         Phase::Done => {
             let recs = c.recs();
@@ -93,24 +94,22 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     let w = chip_width(c, ui, has_data);
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(w, CHIP_H));
     let id = ui.scope_id().with(("ai-chip", c.tool));
-    let resp = ui.interact(r, id, Sense::click());
-    let h = ctx.animate_bool(id.with("h"), resp.hovered());
+    let k = crate::kit::key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
+    let resp = k.resp.clone();
     let filled = matches!(phase, Phase::Done) && !(if c.inline { c.tips() } else { c.recs() }).is_empty() || c.open;
-    let fill = if filled { with_alpha(ai, 0.12 + 0.06 * h) } else { white((8.0 * h) as u8) };
-    p.rect_filled(r, CHIP_H / 2.0, fill);
-    p.rect_stroke(r, CHIP_H / 2.0, Stroke::new(1.0, with_alpha(ai, if filled { 0.45 } else { 0.3 })), StrokeKind::Inside);
-    let gx = r.left() + 10.0 + 7.0;
+    let failed = matches!(phase, Phase::Failed(_));
+    let face = crate::kit::key::paint(&p, r, &ai_look(filled, failed, c.open), &k);
+    let gx = face.left() + 10.0 + 7.0;
     if phase == Phase::Running {
-        spinner(&p, Pos2::new(gx, r.center().y), 5.5, ui.input(|i| i.time), ai);
+        spinner(&p, Pos2::new(gx, face.center().y), 5.5, ui.input(|i| i.time), ai);
         crate::kit::glass::poll(&ctx);
-    } else if phase == Phase::Idle {
-        agent_mark(&p, Rect::from_center_size(Pos2::new(gx, r.center().y), Vec2::splat(12.0)), agent_of(c), None);
     } else {
-        sparkle(&p, Pos2::new(gx, r.center().y), 14.0, if matches!(phase, Phase::Failed(_)) { AMBER() } else { ai });
+        // the agent's mark in every state but Checking; no sparkle (T12)
+        agent_mark(&p, Rect::from_center_size(Pos2::new(gx, face.center().y), Vec2::splat(12.0)), agent_of(c), None);
     }
-    let t = p.text(Pos2::new(gx + 7.0 + 6.0, r.center().y), Align2::LEFT_CENTER, chip_label(c), bold(12.0), TEXT());
+    let t = p.text(Pos2::new(gx + 7.0 + 6.0, face.center().y), Align2::LEFT_CENTER, chip_label(c), bold(12.0), TEXT());
     if phase == Phase::Running {
-        p.text(Pos2::new(t.right() + 8.0, r.center().y), Align2::LEFT_CENTER, "Stop", font(12.0), if resp.hovered() { TEXT() } else { TEXT_DIM() });
+        p.text(Pos2::new(t.right() + 8.0, face.center().y), Align2::LEFT_CENTER, "Stop", font(12.0), if resp.hovered() { TEXT() } else { TEXT_DIM() });
     }
     if resp.hovered() {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -186,9 +185,10 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         crate::kit::glass::float_shadow(&p, rr, 12.0, 1.0);
         p.rect_filled(rr, 12.0, POPOVER());
         p.rect_stroke(rr, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
-        // header: sparkle, AI Check, Check again; the headline (or the error) under it
+        // header: the agent's mark (no sparkle, T12), AI Check, Check again;
+        // the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
-        sparkle(&p, Pos2::new(rr.left() + 14.0 + 7.0, cy), 14.0, AI());
+        agent_mark(&p, Rect::from_center_size(Pos2::new(rr.left() + 14.0 + 7.0, cy), Vec2::splat(12.0)), agent_of(c), None);
         p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, "AI Check", ty::title(), TEXT());
         let again = if matches!(phase, Phase::Failed(_)) { "Try again" } else { "Check again" };
         let aw = p.layout_no_wrap(again.into(), ty::body(), TEXT()).size().x;
@@ -253,23 +253,33 @@ pub fn agent_button_width(ui: &Ui, label: &str) -> f32 {
 /// thing, its left edge centred on `at`: "Ask Claude to set up".
 pub fn agent_button(ui: &mut Ui, at: Pos2, id: egui::Id, a: Agent, label: &str) -> egui::Response {
     let p = ui.painter().clone();
-    let ai = AI();
     let r = Rect::from_min_size(Pos2::new(at.x, at.y - CHIP_H / 2.0), Vec2::new(agent_button_width(ui, label), CHIP_H));
     let k = crate::kit::key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
-    let look = crate::kit::key::Look {
-        fill: Color32::TRANSPARENT,
-        fill_hover: with_alpha(ai, 0.12),
-        base: with_alpha(ai, 0.25),
-        depth: 1.5,
-        edge: Some((with_alpha(ai, 0.35), with_alpha(ai, 0.60))),
-        ring: ai,
-        ..crate::kit::key::Look::quiet(0.0, 0.0)
-    };
-    let face = crate::kit::key::paint(&p, r, &look.radius(CHIP_H / 2.0), &k);
+    let face = crate::kit::key::paint(&p, r, &ai_look(false, false, false), &k);
     let gx = face.left() + 10.0 + 7.0;
     agent_mark(&p, Rect::from_center_size(Pos2::new(gx, face.center().y), Vec2::splat(12.0)), a, None);
     p.text(Pos2::new(gx + 7.0 + 6.0, face.center().y), Align2::LEFT_CENTER, label, bold(12.0), TEXT());
     k.resp
+}
+
+/// The AI chip's key (B8), one look for AI Check and one-shot asks: no fill
+/// and an AI edge on an AI base; hover 12% fill, edge 60%. With tips
+/// (`filled`) 12% fill and a 45% edge, 18% on hover or while its popover is
+/// `open`. A failed check gets an amber edge.
+fn ai_look(filled: bool, failed: bool, open: bool) -> crate::kit::key::Look {
+    let ai = AI();
+    let edge = if failed { AMBER() } else { ai };
+    let (fill, fill_hover) = if filled { (with_alpha(ai, if open { 0.18 } else { 0.12 }), with_alpha(ai, 0.18)) } else { (Color32::TRANSPARENT, with_alpha(ai, 0.12)) };
+    crate::kit::key::Look {
+        fill,
+        fill_hover,
+        base: with_alpha(edge, 0.25),
+        depth: 1.5,
+        edge: Some((with_alpha(edge, if filled { 0.45 } else { 0.35 }), with_alpha(edge, 0.60))),
+        ring: ai,
+        ..crate::kit::key::Look::quiet(0.0, 0.0)
+    }
+    .radius(CHIP_H / 2.0)
 }
 
 /// The agent's mark: Claude's orange burst, Codex's prompt square.
@@ -291,10 +301,6 @@ pub fn agent_mark(p: &egui::Painter, r: Rect, a: Agent, ink: Option<Color32>) {
             p.text(r.center(), Align2::CENTER_CENTER, ">_", mono(r.width() * 0.5), if ink.is_some() { BG() } else { Color32::WHITE });
         }
     }
-}
-
-fn sparkle(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
-    icon(p, Icon::Sparkle, Rect::from_center_size(c, Vec2::splat(s)), col);
 }
 
 /// Text-only button: dim, brighter on hover. True when clicked.
