@@ -132,6 +132,21 @@ impl LastPaint {
         self.shown = None;
     }
 
+    /// Cmd+Meow diagnostic: trace every pass of a window during its first
+    /// 3 s on screen (painted or skipped), to see why a window that just
+    /// opened can show nothing but its blurred background for a while.
+    pub fn trace_fresh(&self, window: &Window, skipped: bool) {
+        let Some(since) = self.on_screen_since else { return };
+        let ms = since.elapsed().as_millis();
+        if ms > 3000 {
+            return;
+        }
+        trace(|| {
+            let s = window.inner_size();
+            format!("open-pass {:?} +{ms} ms {} visible={:?} size={}x{}", window.title(), if skipped { "SKIPPED" } else { "painted" }, window.is_visible(), s.width, s.height)
+        });
+    }
+
     /// Whether the window is on screen now (visible, not minimized). Once
     /// it comes on screen, every pass is painted for [`SETTLE`].
     pub fn on_screen(&mut self, on: bool) {
@@ -140,6 +155,7 @@ impl LastPaint {
             self.on_screen_since = None;
         } else if self.on_screen_since.is_none() {
             self.on_screen_since = Some(Instant::now());
+            trace(|| "a window came on screen".into());
         }
     }
 

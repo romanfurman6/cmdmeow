@@ -93,6 +93,7 @@ mod mac {
             view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable);
             superview.addSubview_positioned_relativeTo(&view, NSWindowOrderingMode::Below, Some(&content));
             w.invalidateShadow();
+            crate::kit::frame_log::note(|| format!("glass added to window {:?} (visible {})", w.title().to_string(), w.isVisible()));
             GLASS.with(|g| g.borrow_mut().push((num, view)));
         }
     }

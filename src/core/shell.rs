@@ -617,6 +617,7 @@ impl App {
     }
 
     pub fn hide(&mut self, ctx: &egui::Context) {
+        crate::kit::frame_log::note(|| "panel hidden".into());
         self.visible = false;
         self.last_hide = Instant::now();
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(false));
@@ -625,6 +626,7 @@ impl App {
     /// Open the full app in its own normal window on a tool's page; the menu
     /// panel steps aside.
     pub fn open_window(&mut self, ctx: &egui::Context, page: usize) {
+        crate::kit::frame_log::note(|| format!("open window asked (panel visible {}, window made {})", self.visible, ctx.input(|i| i.raw.viewports.get(&egui::ViewportId::from_hash_of("cmdmeow-app")).is_some_and(|v| v.native_pixels_per_point.is_some()))));
         self.page = page;
         self.settings_open = false;
         if self.screenshot.is_some() {
@@ -1151,6 +1153,7 @@ impl App {
             self.app_drawn = Some(Instant::now());
             let vctx = ui.ctx().clone();
             if let Some(at) = self.app_asked.take() {
+                crate::kit::frame_log::note(|| format!("window ui first run {} ms after the click", at.elapsed().as_millis()));
                 if crate::kit::fs::is_dev() {
                     eprintln!("[timing] window first frame {} ms after the click", at.elapsed().as_millis());
                 }
