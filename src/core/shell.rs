@@ -617,7 +617,6 @@ impl App {
     }
 
     pub fn hide(&mut self, ctx: &egui::Context) {
-        crate::kit::frame_log::note(|| "panel hidden".into());
         self.visible = false;
         self.last_hide = Instant::now();
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(false));
@@ -626,7 +625,6 @@ impl App {
     /// Open the full app in its own normal window on a tool's page; the menu
     /// panel steps aside.
     pub fn open_window(&mut self, ctx: &egui::Context, page: usize) {
-        crate::kit::frame_log::note(|| format!("open window asked (panel visible {}, window made {})", self.visible, ctx.input(|i| i.raw.viewports.get(&egui::ViewportId::from_hash_of("cmdmeow-app")).is_some_and(|v| v.native_pixels_per_point.is_some()))));
         self.page = page;
         self.settings_open = false;
         if self.screenshot.is_some() {
@@ -772,7 +770,6 @@ impl App {
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         crate::kit::repaint_log::begin(ctx);
-        crate::kit::frame_log::begin();
         crate::kit::url_scheme::after_launch();
         self.follow_links(ctx);
         // the cat's switches changed (in Settings, or it showed a reaction for the first time)
@@ -1052,7 +1049,6 @@ impl eframe::App for App {
         crate::kit::spin::drop_unflushed();
         crate::kit::viewport::end_pass();
         crate::kit::repaint_log::end();
-        crate::kit::frame_log::end(self.app_open.then(|| self.tools.get(self.page).map(|t| t.name())).flatten());
     }
 }
 
@@ -1138,16 +1134,14 @@ impl App {
     fn prewarm_app(&mut self, ctx: &egui::Context) {
         let id = egui::ViewportId::from_hash_of("cmdmeow-app");
         ctx.show_viewport_deferred(id, Self::app_builder().with_visible(false), |_, _| {});
-        crate::kit::native::instant_windows();
     }
 
     fn app_viewport(&mut self, ctx: &egui::Context) {
-        let mut builder = Self::app_builder().with_visible(true);
-        if self.app_focus {
-            builder = builder.with_active(true);
-        }
-        // before eframe shows it in this pass
-        crate::kit::native::instant_windows();
+        // the same builder the hidden window was made with, only shown:
+        // asking for it active as well made egui build a new window on every
+        // open (focus is asked for below), so the made-ahead one was thrown
+        // away and the click waited for a new window and GPU surface
+        let builder = Self::app_builder().with_visible(true);
         let id = egui::ViewportId::from_hash_of("cmdmeow-app");
         use super::onboard::Finish;
         let mut finish = Finish::No;
@@ -1156,7 +1150,6 @@ impl App {
             self.app_drawn = Some(Instant::now());
             let vctx = ui.ctx().clone();
             if let Some(at) = self.app_asked.take() {
-                crate::kit::frame_log::note(|| format!("window ui first run {} ms after the click", at.elapsed().as_millis()));
                 if crate::kit::fs::is_dev() {
                     eprintln!("[timing] window first frame {} ms after the click", at.elapsed().as_millis());
                 }

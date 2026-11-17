@@ -850,7 +850,6 @@ impl WgpuWinitRunning<'_> {
             viewport.last_paint.on_screen(!winit_integration::is_invisible_or_minimized(window));
             let same = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], pending_deltas.is_empty());
             let skip = same && !wants_shot;
-            viewport.last_paint.trace_fresh(window, skip);
             viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
             let vsync_secs = if skip {
                 0.0
@@ -866,17 +865,15 @@ impl WgpuWinitRunning<'_> {
                         true
                     }
                 });
-                winit_integration::timed_paint(window, || {
-                    painter.paint_and_update_textures(
-                        viewport_id,
-                        pixels_per_point,
-                        app.clear_color(&egui_ctx.global_style().visuals),
-                        &clipped_primitives,
-                        pending_deltas,
-                        screenshot_commands,
-                        window,
-                    )
-                })
+                painter.paint_and_update_textures(
+                    viewport_id,
+                    pixels_per_point,
+                    app.clear_color(&egui_ctx.global_style().visuals),
+                    &clipped_primitives,
+                    pending_deltas,
+                    screenshot_commands,
+                    window,
+                )
             };
 
             for action in viewport.actions_requested.drain(..) {
@@ -1021,10 +1018,6 @@ impl WgpuWinitRunning<'_> {
                     *focused
                 };
 
-                // Cmd+Meow patch
-                if let Some(window) = viewport_id.and_then(|id| shared.viewports.get(&id)).and_then(|v| v.window.as_ref()) {
-                    winit_integration::trace(|| format!("window {:?} focused: {focused}", window.title()));
-                }
                 shared.focused_viewport = focused.then_some(viewport_id).flatten();
             }
 
@@ -1071,10 +1064,6 @@ impl WgpuWinitRunning<'_> {
                     && let Some(viewport) = shared.viewports.get_mut(&viewport_id)
                 {
                     viewport.info.occluded = Some(*is_occluded);
-                    // Cmd+Meow patch: an occluded window gets no ui and no paint
-                    if let Some(window) = &viewport.window {
-                        winit_integration::trace(|| format!("window {:?} occluded: {is_occluded}", window.title()));
-                    }
                 }
             }
 
@@ -1365,21 +1354,18 @@ fn render_immediate_viewport(
     let size = window.inner_size();
     viewport.last_paint.on_screen(viewport.info.visible().unwrap_or(true) && !winit_integration::is_invisible_or_minimized(window));
     let skip = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty());
-    viewport.last_paint.trace_fresh(window, skip);
     viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
     if !skip {
         let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
-        winit_integration::timed_paint(window, || {
-            painter.paint_and_update_textures(
-                ids.this,
-                pixels_per_point,
-                [0.0, 0.0, 0.0, 0.0],
-                &clipped_primitives,
-                &mut viewport.pending_delta,
-                vec![],
-                window,
-            )
-        });
+        painter.paint_and_update_textures(
+            ids.this,
+            pixels_per_point,
+            [0.0, 0.0, 0.0, 0.0],
+            &clipped_primitives,
+            &mut viewport.pending_delta,
+            vec![],
+            window,
+        );
     }
 
     egui_winit.handle_platform_output(window, platform_output);

@@ -39,41 +39,6 @@ pub fn remember_window(id: egui::ViewportId, window: &std::sync::Arc<winit::wind
 /// The app turns it off while such overlays are up.
 pub static SKIP_HIDDEN_SLEEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Cmd+Meow patch: where eframe tells the app what it saw (a slow paint, a
-/// window covered or uncovered, focus coming or going), once the app asks
-/// for it ([`crate::set_trace`]). Nothing is formatted while it's unset.
-pub static TRACE: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
-
-/// Send one line to the app's trace, if it asked for one.
-pub fn trace(line: impl FnOnce() -> String) {
-    if let Some(f) = TRACE.get() {
-        f(&line());
-    }
-}
-
-/// A paint (GPU frame, waiting for the display included) longer than this
-/// is traced.
-pub const SLOW_PAINT: core::time::Duration = core::time::Duration::from_millis(100);
-
-/// Microseconds spent painting, over all windows, since the app last asked
-/// ([`crate::take_paint_micros`]).
-pub static PAINT_MICROS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Time one paint of `window`: add it up, and trace it when slow.
-pub fn timed_paint<R>(window: &Window, paint: impl FnOnce() -> R) -> R {
-    if TRACE.get().is_none() {
-        return paint();
-    }
-    let t = std::time::Instant::now();
-    let out = paint();
-    let d = t.elapsed();
-    PAINT_MICROS.fetch_add(d.as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
-    if d >= SLOW_PAINT {
-        trace(|| format!("slow paint {} ms in window {:?}", d.as_millis(), window.title()));
-    }
-    out
-}
-
 pub fn sleep_if_invisible_or_minimized(window: Option<&Window>) {
     if !SKIP_HIDDEN_SLEEP.load(std::sync::atomic::Ordering::Relaxed) && window.is_some_and(is_invisible_or_minimized) {
         profiling::scope!("minimized_sleep");
@@ -100,7 +65,8 @@ pub struct LastPaint {
     on_screen_since: Option<Instant>,
 }
 
-/// How long a window that just came on screen is painted every pass: frames
+/// How long a window that just came on screen is painted every pass (and
+/// at most once a display frame, see [`LastPaint::pace`]): frames
 /// painted while it was hidden, or while macOS was ordering it in, may never
 /// reach the screen, so a skip right then left it blank for up to a second.
 const SETTLE: core::time::Duration = core::time::Duration::from_millis(500);
@@ -132,21 +98,6 @@ impl LastPaint {
         self.shown = None;
     }
 
-    /// Cmd+Meow diagnostic: trace every pass of a window during its first
-    /// 3 s on screen (painted or skipped), to see why a window that just
-    /// opened can show nothing but its blurred background for a while.
-    pub fn trace_fresh(&self, window: &Window, skipped: bool) {
-        let Some(since) = self.on_screen_since else { return };
-        let ms = since.elapsed().as_millis();
-        if ms > 3000 {
-            return;
-        }
-        trace(|| {
-            let s = window.inner_size();
-            format!("open-pass {:?} +{ms} ms {} visible={:?} size={}x{}", window.title(), if skipped { "SKIPPED" } else { "painted" }, window.is_visible(), s.width, s.height)
-        });
-    }
-
     /// Whether the window is on screen now (visible, not minimized). Once
     /// it comes on screen, every pass is painted for [`SETTLE`].
     pub fn on_screen(&mut self, on: bool) {
@@ -155,7 +106,6 @@ impl LastPaint {
             self.on_screen_since = None;
         } else if self.on_screen_since.is_none() {
             self.on_screen_since = Some(Instant::now());
-            trace(|| "a window came on screen".into());
         }
     }
 
@@ -167,9 +117,11 @@ impl LastPaint {
     /// instead, as painting would have.
     pub fn pace(&mut self, skipped: bool, refresh_hz: impl FnOnce() -> Option<u32>) {
         // a window that just came on screen is also painted at most once a
-        // display frame: macOS may hold on to its first frames, and a burst
-        // of paints (5 in 26 ms) used up the GPU's frames, so the next one
-        // waited a full second (`CMDMEOW_OPEN_PACE=0` turns this off)
+        // display frame: while macOS brings it in, it holds on to the frames
+        // we hand it, and a burst of paints (5 in 26 ms) used up the GPU's
+        // frames; the next paint then waited a full second and the window
+        // stayed an empty blur (2026-11-17, M1). `CMDMEOW_OPEN_PACE=0` turns
+        // this off
         let fresh = !skipped && open_pace() && self.on_screen_since.is_some_and(|t| t.elapsed() < SETTLE);
         if (skipped || fresh) && let Some(last) = self.last_pass {
             let hz = match self.refresh {
