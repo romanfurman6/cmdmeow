@@ -28,7 +28,8 @@ fn slider(ui: &mut Ui, r: Rect, id: egui::Id, value: f32, color: Color32) -> Opt
     let track = Rect::from_min_max(Pos2::new(r.left(), r.center().y - 3.0), Pos2::new(r.right(), r.center().y + 3.0));
     p.rect_filled(track, 3.0, with_alpha(TEXT(), 0.12));
     p.rect_filled(Rect::from_min_max(track.min, Pos2::new(x, track.max.y)), 3.0, color);
-    let lift = ui.ctx().animate_bool(id.with("hover"), resp.hovered() || resp.dragged());
+    // W12: in a widget the knob grows only while it's dragged
+    let lift = ui.ctx().animate_bool(id.with("hover"), (resp.hovered() && !in_widget()) || resp.dragged());
     let c = Pos2::new(x, r.center().y);
     p.circle_filled(c + Vec2::new(0.0, 1.0), KNOB + 1.0, Color32::from_black_alpha(40));
     p.circle_filled(c, KNOB + lift, white(250));
@@ -110,45 +111,51 @@ fn control(d: &mut Displays, ui: &mut Ui, r: Rect, id: egui::Id, s: &Screen, c: 
 
 pub fn widget(d: &mut Displays, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let id = ui.scope_id().with("w-displays");
-    if tile::card(ui, rect, id, false).clicked() {
-        cx.open_page(ID, "");
-    }
     let screens = d.screens();
     let color = tint::DISPLAYS();
+    let ours: Vec<Screen> = screens.iter().filter(|s| s.adjustable()).cloned().collect();
+    if size == Size::S14 {
+        // W5: the Row template; each display's bar is its brightness slider
+        let value = ours.first().map(|s| pct(s.brightness)).unwrap_or_else(|| "None".into());
+        let cap = match ours.len() {
+            0 => String::new(),
+            1 => "1 connected".to_string(),
+            n => format!("{n} connected"),
+        };
+        let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Sun, color, None, "Displays", &value, &cap, ty::caption_color(), false);
+        if resp.clicked() {
+            cx.open_page(ID, "");
+        }
+        let p = ui.painter().clone();
+        if ours.is_empty() {
+            text_fit(&p, right.center(), Align2::CENTER_CENTER, "No external display", font(12.0), TEXT_FAINT(), right.width());
+            return;
+        }
+        let n = ours.len().min(3);
+        let lh = (right.height() / n as f32).min(24.0);
+        let top = right.center().y - lh * n as f32 / 2.0;
+        for (k, s) in ours.iter().take(n).enumerate() {
+            let lr = Rect::from_min_size(Pos2::new(right.left(), top + k as f32 * lh), Vec2::new(right.width(), lh));
+            let v = p.text(Pos2::new(lr.right(), lr.center().y), Align2::RIGHT_CENTER, pct(s.brightness), font(12.0), TEXT());
+            let name = text_fit(&p, Pos2::new(lr.left(), lr.center().y), Align2::LEFT_CENTER, &s.name, font(12.0), white(166), lr.width() * 0.4);
+            let sr = Rect::from_min_max(Pos2::new(name.right() + 10.0, lr.center().y - 8.0), Pos2::new(v.left() - 10.0, lr.center().y + 8.0));
+            if sr.width() > 24.0 {
+                if let Some(b) = slider(ui, sr, id.with(("bright", s.id)), s.brightness, color) {
+                    d.set(Cmd::Brightness(s.id, b));
+                }
+            }
+        }
+        return;
+    }
+    if tile::frame(ui, rect, id, false).clicked() {
+        cx.open_page(ID, "");
+    }
     let p = ui.painter().clone();
-    let ours: Vec<&Screen> = screens.iter().filter(|s| s.adjustable()).collect();
     if ours.is_empty() {
         tile::empty_note(&p, rect, "No external display");
         return;
     }
     let inner = rect.shrink(PAD);
-    if size == Size::S14 {
-        // one row: every monitor together
-        let first = ours[0].clone();
-        let title = if ours.len() == 1 { first.name.clone() } else { format!("{} displays", ours.len()) };
-        text_fit(&p, Pos2::new(inner.left(), inner.top() + 8.0), Align2::LEFT_CENTER, &title, ty::title(), TEXT(), inner.width() - 40.0);
-        let speakers = ours.iter().find(|s| s.volume.is_some()).map(|s| (*s).clone());
-        let right = if speakers.is_some() { inner.right() - 30.0 } else { inner.right() };
-        let row = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - 22.0), Pos2::new(right, inner.bottom()));
-        let ir = Rect::from_center_size(Pos2::new(row.left() + 9.0, row.center().y), Vec2::splat(16.0));
-        icon(&p, Icon::Sun, ir, TEXT_DIM());
-        p.text(Pos2::new(inner.right(), inner.top() + 8.0), Align2::RIGHT_CENTER, pct(first.brightness), mono(12.0), TEXT_SOFT());
-        let sr = Rect::from_min_max(Pos2::new(row.left() + 28.0, row.top()), row.max);
-        if let Some(v) = slider(ui, sr, id.with("all"), first.brightness, color) {
-            for s in &ours {
-                d.set(Cmd::Brightness(s.id, v));
-            }
-        }
-        if let Some(s) = speakers {
-            let br = Rect::from_center_size(Pos2::new(inner.right() - 10.0, row.center().y), Vec2::splat(22.0));
-            let resp = ui.interact(br, id.with("mute"), Sense::click());
-            icon(&p, row_icon(&s, Ctl::Volume), br.shrink(3.0), if resp.hovered() { TEXT() } else { TEXT_DIM() });
-            if resp.on_hover_text(if s.muted { "Unmute" } else { "Mute" }).clicked() {
-                d.set(Cmd::Mute(s.id, !s.muted));
-            }
-        }
-        return;
-    }
     // Medium: a row per control, the display's name over its slider
     let list = rows(&screens, 4);
     let h = inner.height() / list.len().max(3) as f32;

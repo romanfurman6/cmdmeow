@@ -8,7 +8,7 @@ use super::onboard;
 use super::shell::App;
 use crate::kit::glass::*;
 use crate::kit::perms::{Perm, Status};
-use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
+use egui::{Align2, Pos2, Rect, Ui, Vec2};
 
 
 /// Keep the statuses of every enabled tool's needs fresh (at most once a second).
@@ -120,17 +120,3 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     }
 }
 
-/// Over a locked widget: a lock in the corner; a click asks for the permission.
-pub fn widget_cover(app: &mut App, ui: &mut Ui, r: Rect, perm: Perm, id: egui::Id) {
-    let p = ui.painter().clone();
-    let c = Pos2::new(r.right() - 16.0, r.top() + 16.0);
-    p.circle_filled(c, 11.0, RAISED());
-    icon(&p, Icon::Lock, Rect::from_center_size(c, Vec2::splat(12.0)), TEXT_SOFT());
-    let resp = ui.interact(r, id.with("perm-lock"), Sense::click());
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    if resp.on_hover_text(format!("Needs {}", perm.name())).clicked() {
-        app.perm_watch.ask(perm, ui.ctx().input(|i| i.time));
-    }
-}

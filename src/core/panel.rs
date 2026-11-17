@@ -90,15 +90,30 @@ pub fn draw_widget(app: &mut App, ui: &mut Ui, w: &Placed, r: Rect, cx: &mut Cx)
 /// `lock`: a required permission is missing, so it shows dimmed and off.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_at(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static str, size: Size, r: Rect, lock: Option<crate::kit::perms::Perm>, cx: &mut Cx) {
+    // W12: inside a widget only the card hovers; a pressed card takes what's on it down
+    let was = crate::kit::glass::set_in_widget(true);
+    draw_inner(app, ui, owner, id, size, r, lock, cx);
+    crate::kit::tile::finish_press(ui.ctx());
+    crate::kit::glass::set_in_widget(was);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_inner(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static str, size: Size, r: Rect, lock: Option<crate::kit::perms::Perm>, cx: &mut Cx) {
     match owner {
         Some(i) => {
             let salt = (app.tools[i].id(), id, size.label());
-            let mut child = ui.new_child(UiBuilder::new().max_rect(r).id_salt(salt));
-            if lock.is_some() {
-                child.disable();
-                // ink on a pale card fades further than white on a dark one
-                child.multiply_opacity(if crate::kit::glass::is_light() { 0.62 } else { 0.45 });
+            if let Some(perm) = lock {
+                // W10: the widget's name and what it needs, readable; only the glyph is dimmed
+                let b = app.tools[i].badge();
+                let title = app.tools[i].widgets().into_iter().find(|w| w.id == id).map(|w| w.title).unwrap_or_else(|| app.tools[i].name());
+                let mut child = ui.new_child(UiBuilder::new().max_rect(r).id_salt((salt, "locked")));
+                let lid = child.scope_id();
+                if crate::kit::tile::locked(&mut child, r, lid, b.icon, title, perm.name()).on_hover_text(format!("Needs {}", perm.name())).clicked() {
+                    app.perm_watch.ask(perm, ui.ctx().input(|i| i.time));
+                }
+                return;
             }
+            let mut child = ui.new_child(UiBuilder::new().max_rect(r).id_salt(salt));
             // screenshots only: CMB_DEMO_LOADING shows every tool that can load as loading
             let demo = {
                 static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -126,9 +141,6 @@ pub fn draw_at(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static st
                     crate::kit::perms::relaunch();
                     cx.quit();
                 }
-            }
-            if let Some(perm) = lock {
-                super::gate::widget_cover(app, ui, r, perm, ui.scope_id().with(salt));
             }
         }
         None => {}

@@ -227,7 +227,8 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         let st = e.state(now);
         (st, e.mode(), detail_short(&e, st, now))
     };
-    let resp = tile::card(ui, rect, id, false);
+    // 1:1 is one button and sinks; 1:2 holds the switch, so only the switch presses (W1)
+    let resp = if size == Size::S11 { tile::card(ui, rect, id, false) } else { tile::frame(ui, rect, id, false) };
     let p = ui.painter().clone();
     if size == Size::S11 {
         let sr = Rect::from_min_size(Pos2::new(rect.center().x - 25.0, rect.top() + 7.0), Vec2::splat(50.0));
@@ -236,7 +237,7 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
             State::WindDown { left } => (clock(left), AMBER()),
             _ => (mode.label().to_string(), if mode == Mode::Off { TEXT_DIM() } else { TEXT_SOFT() }),
         };
-        p.text(Pos2::new(rect.center().x, rect.bottom() - 9.0), Align2::CENTER_BOTTOM, word, bold(11.0), col);
+        p.text(Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, word, bold(13.0), col);
         if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
             k.toggle(Via::Panel);
         }
@@ -256,8 +257,9 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         text_fit(&p, Pos2::new(x, y1), Align2::LEFT_CENTER, &title(st), tf, TEXT(), w);
         text_first_fit(&p, Pos2::new(x, y2), Align2::LEFT_CENTER, &line2, font(11.0), TEXT_DIM(), w);
     }
-    let cr = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - 24.0), inner.max);
-    if let Some(m) = control(ui, cr, id.with("mode"), mode, font(11.0)) {
+    // W7: the panel's segmented control at its own size, 28 with 12 labels
+    let cr = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - sp::CONTROL_H), inner.max);
+    if let Some(m) = control(ui, cr, id.with("mode"), mode, font(12.0)) {
         k.set_mode(m, Via::Panel);
     } else if resp.clicked() {
         cx.open_page(ID, "");

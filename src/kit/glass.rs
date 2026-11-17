@@ -20,6 +20,26 @@ use std::f32::consts::{PI, TAU};
 
 static LIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+thread_local! {
+    static IN_WIDGET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// True while a panel widget draws: nothing inside a widget lights up on
+/// hover, only the whole card does (SP13 W12).
+pub fn in_widget() -> bool {
+    IN_WIDGET.with(|c| c.get())
+}
+
+/// Mark the start (`true`) or end of a widget's drawing; returns the old mark.
+pub fn set_in_widget(on: bool) -> bool {
+    IN_WIDGET.with(|c| c.replace(on))
+}
+
+/// Text of a control inside a widget while it's held (W12): dimmed to half.
+pub fn press_dim(c: Color32, press: f32) -> Color32 {
+    with_alpha(c, c.a() as f32 / 255.0 * (1.0 - 0.5 * press.clamp(0.0, 1.0)))
+}
+
 /// True while the app is drawn in light mode.
 pub fn is_light() -> bool {
     LIGHT.load(std::sync::atomic::Ordering::Relaxed)
@@ -59,6 +79,20 @@ pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 2
 /// Hovered card, quick-action tiles and selected rows.
 #[allow(non_snake_case)]
 pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 28), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
+/// Widget card (S2w, docs/ui-rules.md SP13 W1): the 1 pt top highlight…
+#[allow(non_snake_case)]
+pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 23), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
+/// …the 1 pt base under the card: black in dark, ink in light, so it stays
+/// darker than the panel glow wherever the card sits…
+#[allow(non_snake_case)]
+pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
+/// …the shade at the card's bottom (dark only)…
+#[allow(non_snake_case)]
+pub fn TILE_SHADE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 26), Color32::TRANSPARENT) }
+/// …and the inner edge that keeps a white card visible on the white glow
+/// (light only).
+#[allow(non_snake_case)]
+pub fn TILE_EDGE() -> Color32 { pick(Color32::TRANSPARENT, Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
@@ -636,9 +670,12 @@ pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Re
     let rect = align.anchor_size(pos, galley.size());
     let id = ui.scope_id().with(("link", label, pos.x as i32, pos.y as i32));
     let k = key::press(ui, rect.expand(4.0), id, true, Some(Click::Text));
-    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), k.hover);
+    // W12: a link in a widget doesn't light up or underline; it dims while held
+    let hover = if in_widget() { 0.0 } else { k.hover };
+    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), hover);
+    let col = if in_widget() { press_dim(col, k.press) } else { col };
     let at = rect.min + k.offset(1.0);
-    if k.hover > 0.5 {
+    if hover > 0.5 {
         let y = at.y + rect.height() - 1.0;
         ui.painter().hline(at.x..=at.x + rect.width(), y, Stroke::new(1.0, col));
     }
@@ -968,13 +1005,20 @@ pub fn segmented_font(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], se
     p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
     let n = labels.len().max(1) as f32;
-    let gap = 2.0;
+    // B3: 4 pt, so a hovered segment never touches the picked one
+    let gap = 4.0;
     let w = (inner.width() - gap * (n - 1.0)) / n;
     let mut out = None;
     for (i, l) in labels.iter().enumerate() {
         let r = Rect::from_min_size(Pos2::new(inner.left() + (w + gap) * i as f32, inner.top()), Vec2::new(w, inner.height()));
         let (k, face) = segment(ui, &p, r, id.with(i), i == selected, true);
-        let col = if i == selected { TEXT() } else { lerp_color(TEXT_DIM(), TEXT(), k.hover) };
+        let col = if i == selected {
+            TEXT()
+        } else if in_widget() {
+            press_dim(TEXT_DIM(), k.press)
+        } else {
+            lerp_color(TEXT_DIM(), TEXT(), k.hover)
+        };
         text_fit(&p, face.center(), Align2::CENTER_CENTER, l, label_font.clone(), col, r.width() - 8.0);
         if k.resp.clicked() && i != selected {
             out = Some(i);
@@ -1014,7 +1058,9 @@ pub fn segment(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, selected: bool, 
             ..key::Look::quiet(0.0, 0.0)
         }
     } else {
-        key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, 0.07) }
+        // W12: inside a widget only the card hovers
+        let hover = if in_widget() { 0.0 } else { 0.07 };
+        key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, hover) }
     };
     let face = key::paint(p, r, &look.radius(6.0), &k);
     (k, face)
@@ -1390,6 +1436,33 @@ pub fn text_wrap(p: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId
     let out = g.rect.translate(at.to_vec2());
     p.galley(at, g, color);
     out
+}
+
+/// Someone else's text (a clip, a dictation) on one line from `pos` (left,
+/// vertical centre): what doesn't fit fades out over its last 24 pt instead
+/// of ending in "…" (W8). Returns the rect it takes.
+pub fn text_fade(painter: &Painter, pos: Pos2, text: &str, font: FontId, color: Color32, max_w: f32) -> Rect {
+    let one_line: String = text.split('\n').next().unwrap_or("").chars().take(400).collect();
+    let g = painter.layout_no_wrap(one_line.clone(), font.clone(), color);
+    if g.size().x <= max_w || max_w <= 0.0 {
+        return painter.text(pos, Align2::LEFT_CENTER, one_line, font, color);
+    }
+    let fade = 24.0f32.min(max_w / 2.0);
+    let mut job = egui::text::LayoutJob::default();
+    let glyphs = g.rows.first().map(|r| r.row.glyphs.clone()).unwrap_or_default();
+    for gl in glyphs {
+        let right = gl.pos.x + gl.advance_width;
+        if right > max_w {
+            break;
+        }
+        let k = ((max_w - right) / fade).clamp(0.0, 1.0);
+        let c = with_alpha(color, color.a() as f32 / 255.0 * k);
+        job.append(&gl.chr.to_string(), 0.0, egui::TextFormat::simple(font.clone(), c));
+    }
+    let gal = painter.layout_job(job);
+    let r = Rect::from_min_size(Pos2::new(pos.x, pos.y - gal.size().y / 2.0), gal.size());
+    painter.galley(r.min, gal, color);
+    r
 }
 
 /// Text that is cut with an ellipsis to fit `max_w`.

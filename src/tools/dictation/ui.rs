@@ -185,7 +185,7 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
                 let resp = tile::card(ui, rect, id, false);
                 let p = ui.painter();
                 p.rect_stroke(rect, tile::R_TILE, Stroke::new(1.5, LIVE), StrokeKind::Inside);
-                icon(p, Icon::Mic, Rect::from_min_size(rect.min + Vec2::splat(tile::PAD), Vec2::splat(18.0)), LIVE);
+                icon(p, Icon::Mic, Rect::from_min_size(rect.min + Vec2::new(tile::SMALL_SIDE, tile::PAD), Vec2::splat(20.0)), LIVE);
                 tile::small_text(p, rect, "Listening", &key, TEXT_DIM());
                 resp
             } else {
@@ -193,7 +193,11 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
             }
         }
         Size::S14 => {
-            let (resp, right) = tile::row_split(ui, rect, id, Icon::Mic, if listening { LIVE } else { TINT() }, "Dictation", &today, &key, false);
+            // W5: left like 1:1, the latest dictations on the right, one line each
+            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Mic, if listening { LIVE } else { TINT() }, "Dictation", &today, false);
+            if listening {
+                ui.painter().rect_stroke(rect, tile::R_TILE, Stroke::new(1.5, LIVE), StrokeKind::Inside);
+            }
             latest(d, ui, right, 2);
             resp
         }
@@ -218,15 +222,13 @@ fn latest(d: &Dictation, ui: &mut Ui, r: Rect, n: usize) {
         text_fit(p, r.center(), Align2::CENTER_CENTER, &format!("Hold {} and speak", d.shortcut_label()), font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    // two items (the Row size) get two lines each, so a sentence isn't cut
-    // to its first words; longer lists stay one line per item
-    let rows = if n <= 2 { 2 } else { 1 };
-    let lh = if n <= 2 { r.height() / n as f32 } else { (r.height() / n as f32).min(26.0) };
+    // one line per item, fading at the edge (W8: someone's words, not ours)
+    let lh = (r.height() / n as f32).min(24.0);
     let top = r.center().y - lh * items.len() as f32 / 2.0;
     for (k, s) in items.iter().enumerate() {
         let y = top + lh * (k as f32 + 0.5);
         let ag = p.text(Pos2::new(r.right(), y), Align2::RIGHT_CENTER, ago(s.at), font(11.0), TEXT_FAINT());
-        text_wrap(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0, rows);
+        text_fade(p, Pos2::new(r.left(), y), &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0);
     }
 }
 

@@ -1542,7 +1542,10 @@ fn mini_panel(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt((tid, wid_s, "sample")));
                 child.multiply_opacity(d);
                 // a sample that fails stays blank; the live tool isn't stopped for it
+                let was = crate::kit::glass::set_in_widget(true);
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tool.widget_ui(wid_s, size, &mut child, r, &mut cx)));
+                crate::kit::tile::finish_press(&ctx);
+                crate::kit::glass::set_in_widget(was);
             }
         })
         .response
