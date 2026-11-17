@@ -78,8 +78,8 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 |---|------|-------|
 | R1 | Content starts 24 pt from the window edge, header included. | `sp::PAGE_EDGE` |
 | R2 | Cards: padding 16, gap 16, radius 12. Title, 12, content. A section title sits 12 above its card. | `sp::L`, `sp::M`, `R_CARD` |
-| R3 | Two row heights: settings rows 40 (label left, control right, hairline between), list rows 44 (icon, name, detail). Exception: the Disk Map folder list, rows 36 with no bar, a dense list beside the map. | `sp::SETTINGS_ROW_H`, `sp::ROW_H` |
-| R4 | Rows with a bar: 36 tall, name and value on one line, a 4 pt bar 8 pt under them. | `sp::BAR_ROW_H` |
+| R3 | Two row heights: settings rows 40 (label left, control right, hairline between), list rows 44 (icon, name, detail). Exception: the Disk Map folder list, rows 36 with no bar, a dense list beside the map. Widget sheets (SP12): every list row 32 (`SHEET_ROW_H`), switch rows 40. | `sp::SETTINGS_ROW_H`, `sp::ROW_H` |
+| R4 | Rows with a bar: 36 tall, name and value on one line, a 4 pt bar 8 pt under them. A value with no limit (AI Usage Today) shows as a number with no bar. | `sp::BAR_ROW_H` |
 | R5 | Controls are 28 inside cards and 32 in page headers. | `sp::CONTROL_H`, `sp::HEADER_CONTROL_H` |
 | R6 | One empty state: centred, 56 icon chip, lead title, body up to 400 wide in dim, one secondary button. Inside a card: one caption-size line in the middle. | `sp::XXL` around it |
 | R7 | Chips say a state (Normal, Charging, In menu bar), never an action: 11/600 on a 16% tint. | `chip()` |
@@ -88,8 +88,9 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R10 | Text the app writes is never cut with "…": it wraps or the layout changes. Only names and paths people bring may be cut. Find cut text with `CMDMEOW_FIT_LOG=1`. | `text_wrap()` |
 | R11 | A list's section title is 12/600 in a 44 row: 16 above, 12 below to the first row; its link sits on the same line. Table heads sit in a 36 row with the hairline at its bottom. | `section_title()`, `sp::SECTION_H`, `sp::TABLE_HEAD_H` |
 | R12 | Scroll bars float in a 14 gutter on the right, taken only when the content scrolls. Content in a scroll area takes `ui.available_width()`. | `sp::SCROLL_GUTTER` |
+| R14 | A master switch is the first row of its card. While it is off, the rows that depend on it show disabled (L6) and keep their values. | |
 
-Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60, sheet header 58.
+Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60, sheet header 58, sheet buttons 32.
 
 ## 5. Surfaces
 
@@ -97,6 +98,7 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 |---|------|---|
 | S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. | ✅ |
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. | ✅ |
+| S2w | **Widget card** (`kit::tile` only: panel widgets, the widget editor and gallery; the panel update banner and the Uninstaller inline confirm also use it): `CARD` fill, no border, see-through so the S1 panel glow shows. 1 pt top highlight `TILE_HI` (white 9% dark / 95% light), 1 pt base under the card `TILE_BASE` (black 35% dark / ink 14% light); light adds an inner 1 pt edge ink 8%, dark a bottom shade 10%. Radius `R_TILE` 10 (selected ring and Dictation live ring follow it). Hover CARD→RAISED 50%. A single-action card presses like `kit::key` (34 ms, down 1 pt, base to 0, spring back); a card with buttons or rows inside doesn't move, its inner items press. Page cards keep S2. | ⏳ code |
 | S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
 | S4 | A list is one card with full-bleed rows and hairlines between them. No card per item. | ✅ |
 | S5 | Cards and page content have no shadow. Floating surfaces get only the "Whisper" shadow (P2). | ✅ |
@@ -108,16 +110,16 @@ Approved by Roman for the base system on 2026-11-15. Canvas: https://claude.ai/a
 
 | # | Rule |
 |---|------|
-| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, square: 32 in headers, 28 in cards and rows), Round (`round_button`, 28, sheet close and refresh), AI chip (28, one look `aicheck::ui::ai_look` for the AI Check chip and one-shot asks such as `agent_button`). Code still has 30 and 26; the code audit moves them. |
+| B1 | **Kinds.** Hero (`hero_button`, 44, lime): one per empty or first-visit screen. Primary (`pill_button` PRIMARY, lime): one per view or dialog. Danger (`pill_button` DANGER): destructive confirm only. Secondary (`pill_button` SECONDARY): quiet. Side (`side_button`): quiet, with keycaps. Text (`ghost_button`, `link`): no fill. Icon (`icon_button`, square: 32 in headers, 28 in cards and rows), Round (`round_button`, 28, sheet close and refresh), AI chip (28, one look `aicheck::ui::ai_look` for the AI Check chip and one-shot asks such as `agent_button`). Refresh (↻) is a round button in the header beside close, never a footer button. Code still has 30 and 26; the code audit moves them. |
 | B2 | **Heights:** 44 hero, 32 (page header, footer, dialogs, side, toggle chips), 28 (inside cards and rows). Nothing else: 30, 34, 36 → 32; 24, 26 → 28. |
-| B3 | **Shape:** `R_BUTTON` 10, capped at h/2. Chips h/2. Segmented `R_SMALL` 7, thumb 6, 2 pt gap between segments. |
+| B3 | **Shape:** `R_BUTTON` 10, capped at h/2. Chips h/2. Segmented `R_SMALL` 7, thumb 6, 4 pt gap between segments. |
 | B4 | **Raised-key look, one language for every pressable:** fill, a 1 pt top highlight (white 38% on lime/red; quiet: white 75% light, 8% dark), a darker base under the face. Lime/red base 3 pt (tint mixed 62% to black). Quiet kinds base 2 pt ink 14%, plus a 1 pt hairline ink 10% (18% on hover). |
 | B5 | **Glow** (`kit::key`, PR #217) on lime and red only: `0 6 18 -5`, lime 70%, red 65%; smaller while pressed, none when disabled. |
 | B6 | **Danger colour** is `DANGER()`: #F04438 dark, #D92D20 light, white text. Destructive buttons only; `RED()` stays the state colour (C4). |
 | B7 | **Press:** lime/red face drops 2 pt, quiet 1 pt, text drops 1 pt with no base. Down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)`. Pressing never darkens the fill. Switch knob widens 4 pt while held; checkbox check pops .5→1. Content a caller draws on a pill moves with the face (the helper returns the offset). |
 | B8 | **States.** Hover: colour only, no movement (lime and lime-on fills mix 26% to white, red 22%; quiet fills ink 10–15% with full-ink text, secondary hairline 24%; ghost text gets an ink 7% backdrop; links lighten and underline; AI chip: idle no fill, AI edge 35% on a 1.5 pt AI base; hover and press 12% AI fill, edge 60%; Checking shows the spinner, "Checking…" and "Stop"; with tips 12% fill and a 45% edge, 18% on hover or while open; failed: amber edge; the agent's mark leads every state but Checking, never a sparkle (T12), and after a check the label is "N tips" or "All good"; unchecked check/radio edge 70% + 8% fill). Focus (keyboard only): 1 pt ring 2 pt outside, following the radius, in the button colour (lime, danger red, or ink). Disabled: alpha from one shared helper (L6), no hover, press or sound; the base stays. Loading: push buttons only, a 13 pt Core Animation spinner before the label, width locked, no press or sound. On/selected: segmented thumb; switch lime, knob right; check and radio lime; toggle and filter chips, recording shortcut field: lime tint + `ACCENT` edge. |
 | B9 | **Choices:** segmented 32 header / 28 card, switch 30×18, checkbox and radio 16, filter chips 28 through one shared helper, tool toggle 28, shortcut recorder 28, action tile 40–44 (icon over label). |
-| B10 | Rows, sidebar items and cards highlight only: no press, no sound. |
+| B10 | Rows, sidebar items and cards highlight only: no press, no sound. Exception: actions and rows inside a widget (SP13 W12). |
 | B11 | Only `kit` helpers draw buttons: no plain `egui::Button`, no hand-drawn capsules. Every helper plays its own click; callers never do. |
 
 Consts: `KEY_BASE` 3, `KEY_DROP` 2, `KEY_BASE_QUIET` 2, `KEY_DROP_QUIET` 1, `PRESS_IN` .05, `PRESS_OUT` .16.
@@ -146,7 +148,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 
 | # | Rule | Status |
 |---|------|---|
-| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. In inset lists (sidebar, group rail, Clipboard) two lit rows never touch: lit fills sit 1 pt in from the row (`glass::LIT_INSET`) or rows step 2 apart, a 2 pt gap. Edge-to-edge lists (H2) have no gap. | ✅ |
+| H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. In inset lists (sidebar, group rail, Clipboard) two lit rows never touch: lit fills sit 1 pt in from the row (`glass::LIT_INSET`) or rows step 2 apart, a 2 pt gap. Edge-to-edge lists (H2) have no gap. Inside a widget nothing hovers but the whole card (SP13 W12); inner clickables show the pointer cursor. | ✅ |
 | H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
 | H3 | Selected row: lime at 16% (`selected_fill`), text `ACCENT`. Sidebar and group rail: inset, radius 8 (H1). Content lists such as the Uninstaller table: edge to edge with no corners, like hover (H2). | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ✅ |
@@ -186,13 +188,33 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 | SP2 | **Disk ring** (`kit`, one function, Cleanup and Disk Map start): 208 across, 12 stroke, track `white(16)`, used arc in the tool tint with a round cap from 12 o'clock clockwise. Centre: free space in hero 28/600 over "free of <total>" in label 12 `TEXT_DIM`. 12 below the ring: a 16 disk icon and the volume name in body `TEXT_SOFT`. Disk Map's own ring (r 64, "X of Y used") goes. | ✅ |
 | SP10 | **Start list rows on the backdrop** (Cleanup groups): a 44 head line with "Last scan 2 days ago" as a 12/600 section title and the total right; rows 44 with a 28 tinted icon circle and the name, hairlines between, `ROW_HOVER` on hover. A group's description shows on hover only. After a scan each row gets a 4 pt bar and a right-aligned size. | ✅ |
 | SP11 | **Fan glyph:** one shape for every fan, turning or still (`kit::spin`): four rounded blades with the hub cut out, so the surface under it shows through (Magnific/Flaticon Premium icon 17711600). Tint `tint::FAN` (C3). It turns with the fan, one turn per 2400/rpm s, on Core Animation (M1). Fan page card: radius 38 on a 44 disc; panel row 12; widgets as before. With no fans it stands still in `white(40)`. `Icon::Fan` (sidebar, headers, tiles) is the same glyph, still, filled; it is the one tool icon that is not an SF Symbol. | ✅ |
+| SP12 | **Widget sheet** (the window a widget opens beside the panel; `system::sheets`, AI Usage, Fans): header 58 with the tool tile 30, title lead 15 and a label 12 subtitle, close and, where it refreshes, ↻ (round 28) on the right. Then hero 28/600 with its unit 13/600 and a label 12 dim caption, then a bar or a graph. Cards 14 apart, titles over them (R2, `card_title`), every row 32, switch rows 40, controls 28 inside cards. Bottom right: buttons 32, one primary for the sheet's main action; a link to a page is secondary and named by the tool ("Disk Map", "AI Usage", "Fan Control"). A line under a value only when it changes the decision (T4). Thermal state is "Thermal pressure" with the macOS words Nominal, Fair, Serious, Critical. | ⏳ code |
 | SP3 | **Group rail** (results): a card 232 wide left of the content, 16 gap, 4 padding, rows 40 with a 24 group chip, name body 13, size right in dim; selection H3. A group shows its item count as a badge (T19), never a colour dot. | ✅ |
 | SP4 | **Bundles**: 3+ alike items fold into one row with an arrow and "N items"; children are 44 rows indented 28. Kept items fold into one "Kept" row. | ✅ |
 | SP5 | **Empty state**: R6. | ✅ |
 | SP6 | **Locked tool**: a permission screen per tool that names what is missing in the words of the fix (T16), not a dimmed page. | ✅ |
 | SP7 | **Big state + control** (Keep Awake): centred scene, title hero 28, detail body dim in a fixed 18 line (kept when empty), then one segmented control 32 tall (Off · Auto · On). The control is the only switch, so state and control never disagree (T17). | ✅ |
 | SP8 | **Hourly chart**: 24 columns, gap 4, 72 tall, stacked series in lavender steps (On = `tint::KEEP_AWAKE`, Auto = `series::util(1)`; never `GREEN`, C4) (top corners radius 3), dashed `white(26)` guides with 11 faint labels in a 36 right gutter, 00/06/12/18 under it. Hover a column → tooltip plus 1.5 outline, linked to the list below. Legend sits on the section title row (10 swatch, label 12 dim, value bold 12). | ✅ |
-| SP9 | **Widgets**: 1:1 (scene + one word, tap toggles) and 1:2 (scene + two lines + control) only. | ✅ |
+| SP9 | **Keep Awake widgets**: 1:1 (scene + one word, tap toggles) and 1:2 (scene + two lines + control) only. All widgets also follow SP13. | ✅ |
+
+### SP13 Widgets (W1–W12) ⏳ code
+
+Approved by Roman 2026-11-17 (widget review canvas https://claude.ai/artifact/Gdvrk5REUpSfDMyhK9awnK). The card itself is S2w.
+
+| # | Rule |
+|---|------|
+| W1 | Card. Widget card (S2w): CARD fill, no border, see-through; one S1 panel glow, top centre, shows through all cards. Radius R_TILE 10, padding 12. TILE_HI 1 pt top highlight (white 9% dark / 95% light), TILE_BASE 1 pt base (black 35% dark / ink 14% light); dark adds TILE_SHADE (black 10%) at the bottom, light adds an 8% ink inner edge. Hover CARD → RAISED 50%. A single-action card presses: down 1 pt, base to 0, spring back (key::PRESS_IN/OUT). Cards with inner buttons or rows don't move. Nothing inside has its own fill or border except buttons. |
+| W2 | One visual. Metric = ring: 44 in 1:1, 50 in 1:2 and 1:4; track 10%, arc in group or state colour. Other widgets = group-coloured icon without a plate: 26 in a 40 box in 1:2 and 1:4 (text starts at 64 px), 20 in 1:1. |
+| W3 | Text. Label 12 TEXT_DIM / value 15·600 / caption 11; always three lines in 1:2 and 1:4. Foreign text in the value slot (clip) 13·400 with fade. 2:4 main number hero 28·600, unit attached: "17%", "2 225 rpm". |
+| W4 | Small 1:1. Metric: centred ring 44 + value 13·600. The value may drop its word when ring + hover tooltip explain it (Storage "1.44 TB", tooltip "free of 2 TB"; T14 exception). Action: group-coloured icon 20 top-left, bottom name 12·600, 3 pt, shortcut 11. Padding 12 top/bottom, 8–10 sides. |
+| W5 | Row 1:4. Right part has priority, min 186 px. Left part takes its text width (ring 50 or icon 26 + three lines); list widgets (Clipboard, Dictation) use the 1:1 layout on the left. Then a HAIRLINE_STRONG divider; right side up to 3 lines (12, height 20): label and value at their own width, bar takes the rest, or a graph with a labelled time. A line whose data has no limit shows a number without a bar (R4 exception). Actions: no border or fill, equal shares with 4 inset, centred content, one HAIRLINE_STRONG divider at 88% height between them. |
+| W6 | Medium 2:4, Large 4:4. Header 13·600, right side caption 11 or ACCENT link 12, no chips. Rows fill the height, hairlines between. A size with nothing to fill it is removed from the size list. |
+| W7 | Buttons. 28 pt, quiet, from kit (glass::segmented, switch). Selected segment = raised thumb. No lime glowing buttons in the panel. |
+| W8 | Words. A value says what it is: free, items, connected. One unit form: KB/s, 17%. Names as in the tool: AI Usage. App text never truncates with "…"; foreign text (clips, dictation) fades. Demo data follows R-examples (everyday, no code or personal URLs). |
+| W9 | Loading. Static skeleton in the widget's shape with its icon. No 33 ms repaint (R-anim). |
+| W10 | No permission. Only the glyph is dimmed; the widget name, what it needs (value line, e.g. "Bluetooth") and the caption "Needs access" stay readable. No lock badge, no "Locked". Tooltip "Needs Bluetooth" (T16). Click asks for the permission. |
+| W11 | Empty. Header and buttons stay. Instead of data one centred line 12 TEXT_FAINT with icon: "No screenshots yet". No dashed frame. Action as ACCENT link: Resume, Connect. |
+| W12 | Hover. Only the whole card hovers (CARD → RAISED 50%). Nothing inside a widget highlights: no list rows, actions, segments or links. Every clickable shows the pointer cursor; bars, graphs and captions don't. Inner press feedback: the pressed action or row dims icon and label to 50% and drops 1 pt while held, no fill (B7/B10 exception for widgets). Pages and menus keep H1, H2, B8. |
 
 ## 12. Writing text ✅
 
@@ -227,7 +249,7 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 
 | # | Rule | Instead of | Write |
 |---|------|------------|-------|
-| T14 | Every number and time says what it is, with a word or a symbol, never a bare value. | "17:04", "4 / 8", "1/2" | "Updated 17:04", "↻ 19:53", or drop it |
+| T14 | Every number and time says what it is, with a word or a symbol, never a bare value. Rates are KB/s, MB/s, never /sec. In a 1:1 widget the ring and its hover tooltip may name the value ("1.44 TB", tip "free of 2 TB"). | "17:04", "4 / 8", "1/2" | "Updated 17:04", "↻ 19:53", or drop it |
 | T15 | One column, one kind of data. Don't mix counts, shortcuts and states in the same place. | sidebar right column: "11", "⇧⌘2", "Set up" | shortcuts only |
 | T16 | A locked or disabled thing says what is missing, in the words of the fix. | lock icon; "Full Disk Access · Finding files to clean up" | "Needs Full Disk Access" |
 | T17 | A big state and its control never disagree. If something else holds the state, say who. | "Awake" with the switch off | "Awake · by Claude" |
@@ -256,3 +278,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-17, Roman: design review of Disk Map, Uninstaller, the Claude chip and lists (canvas https://claude.ai/artifact/FjuTLwroyGMkCmeRxzjPv7): disk line like the start ring (C6), content-list selection edge to edge with lime text (H3), one AI chip look (B1, B8), row tips beside the list (P7), a 2 pt gap between lit rows in inset lists (H1), darker light ACCENT (L8).
 
 2026-11-17, Roman: fan glyph SP11 (canvas https://claude.ai/artifact/9bAg1MmQ2Dd5depsaAyKnC, option 2), everywhere incl. the Fan tool icon.
+
+2026-11-17, Roman: widget sheets SP12 (canvas https://claude.ai/artifact/WN6VdfbDibWn1ZcZ9tA35t) with R3, B1 and T14 additions; R14 master switch (Settings › Cat); widget card S2w, R_TILE 10, B3 segment gap 4, no hover inside widgets (H1), R4 and T14 widget concessions (widget review canvas https://claude.ai/artifact/Gdvrk5REUpSfDMyhK9awnK). Green text in light checked against L8: sheets have no ACCENT text, state GREEN sits on cards at 4.9:1 (C9).

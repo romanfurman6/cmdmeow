@@ -290,17 +290,13 @@ fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
     p.text(c, Align2::CENTER_CENTER, format!("{:.0}%", l.pct), ty::lead(), TEXT());
     let tx = c.x + rr + sp::L;
     let w = inner.right() - tx;
-    // pace over the forecast, the block centred on the ring; the forecast
-    // wraps ("Runs out tomorrow" / "23:40") rather than being cut
+    // the forecast centred on the ring; it wraps ("Runs out tomorrow" /
+    // "23:40") rather than being cut. No pace words (T9): the ring's marker
+    // shows the pace
     let fc = parts::forecast(l);
     let fg = p.layout(fc.clone(), ty::label(), TEXT_DIM(), w);
-    let pace = parts::pace_label(l);
-    let ph = if pace.is_some() { line_h(p, &ty::title()) + sp::XS } else { 0.0 };
-    let top = c.y - (ph + fg.size().y) / 2.0;
-    if let Some((s, col)) = pace {
-        text_fit(p, Pos2::new(tx, top), Align2::LEFT_TOP, s, ty::title(), col, w);
-    }
-    text_wrap(p, Pos2::new(tx, top + ph), Align2::LEFT_TOP, &fc, ty::label(), TEXT_DIM(), w, 3);
+    let top = c.y - fg.size().y / 2.0;
+    text_wrap(p, Pos2::new(tx, top), Align2::LEFT_TOP, &fc, ty::label(), TEXT_DIM(), w, 3);
 }
 
 /// A subscription: the 30 days at API prices against the plan's price.
