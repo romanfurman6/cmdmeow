@@ -393,9 +393,10 @@ fn demo_store() -> Store {
         (60, Clip { files: vec!["/Users/me/Documents/Q4 report.pdf".into()], app: "Finder".into(), bundle: "com.apple.finder".into(), ..Default::default() }, false),
         (20, clip("#0B6BD8", "Figma", "com.figma.Desktop"), false),
         (12, Clip { png: Some(png), app: "Photos".into(), bundle: "com.apple.Photos".into(), ..Default::default() }, false),
-        (6, clip("fn main() {\n    let app = App::new();\n    app.tool(\"clipboard\")\n       .run()?;\n}", "Zed", "dev.zed.Zed"), true),
-        (2, clip("https://github.com/romanfurman6/cmdmeow/pull/9", "Safari", "com.apple.Safari"), false),
-        (0, clip("Ship the clipboard widget before Friday, then we test it on the real Mac together.", "Slack", "com.tinyspeck.slackmacgap"), false),
+        // R-examples: everyday clips, no code or our own links
+        (6, clip("Flight TP 1352 · Fri 18:40 · Gate 14", "Mail", "com.apple.mail"), true),
+        (2, clip("https://www.apple.com/shop/buy-iphone", "Safari", "com.apple.Safari"), false),
+        (0, clip("Buy bread, milk and coffee on the way home", "Messages", "com.apple.MobileSMS"), false),
     ];
     let _ = std::fs::create_dir_all(dir.join("blobs"));
     for (ago, c, pin) in items {

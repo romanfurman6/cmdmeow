@@ -245,7 +245,8 @@ pub fn ink(a: f32) -> Color32 {
 pub fn paint(p: &Painter, rect: Rect, look: &Look, key: &Key) -> Rect {
     let a = if key.enabled { 1.0 } else { disabled_alpha() };
     let press = if key.enabled { key.press } else { 0.0 };
-    let hover = if key.enabled { key.hover } else { 0.0 };
+    // W12: inside a panel widget only the whole card hovers
+    let hover = if key.enabled && !super::glass::in_widget() { key.hover } else { 0.0 };
     paint_at(p, rect, look, hover, press, a, key.focus)
 }
 

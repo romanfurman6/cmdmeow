@@ -670,9 +670,12 @@ pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Re
     let rect = align.anchor_size(pos, galley.size());
     let id = ui.scope_id().with(("link", label, pos.x as i32, pos.y as i32));
     let k = key::press(ui, rect.expand(4.0), id, true, Some(Click::Text));
-    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), k.hover);
+    // W12: a link in a widget doesn't light up or underline; it dims while held
+    let hover = if in_widget() { 0.0 } else { k.hover };
+    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), hover);
+    let col = if in_widget() { press_dim(col, k.press) } else { col };
     let at = rect.min + k.offset(1.0);
-    if k.hover > 0.5 {
+    if hover > 0.5 {
         let y = at.y + rect.height() - 1.0;
         ui.painter().hline(at.x..=at.x + rect.width(), y, Stroke::new(1.0, col));
     }

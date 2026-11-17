@@ -893,7 +893,7 @@ fn state_cell(p: &egui::Painter, x: f32, cy: f32, label: Option<&str>, running: 
 /// The ⋯ button of a row.
 fn icon_dots(ui: &mut Ui, r: Rect, id: egui::Id) -> egui::Response {
     let resp = ui.interact(r, id, Sense::click());
-    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
+    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !in_widget());
     let p = ui.painter();
     if h > 0.0 {
         p.rect_filled(r, 6.0, white((18.0 * h) as u8));

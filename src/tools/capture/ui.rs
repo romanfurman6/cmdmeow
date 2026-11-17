@@ -97,7 +97,7 @@ pub fn card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     c.drain_done();
     let p = ui.painter().clone();
     let id = ui.scope_id().with("capture-card");
-    tile::paint_card(&p, rect, 0.0, false);
+    let _ = tile::frame(ui, rect, id.with("frame"), false);
     let (x0, x1, mut y) = card_head(ui, &p, rect, Icon::Crop, "Screenshot");
     if link(ui, Pos2::new(x1, y - sp::M - 10.0), Align2::RIGHT_CENTER, "History", 12.0).clicked() {
         c.tab = Tab::History;
@@ -1370,7 +1370,7 @@ fn video_card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     c.drain_done();
     let p = ui.painter().clone();
     let id = ui.scope_id().with("video-card");
-    tile::paint_card(&p, rect, 0.0, false);
+    let _ = tile::frame(ui, rect, id.with("frame"), false);
     let (x0, x1, mut y) = card_head(ui, &p, rect, Icon::Camera, "Video");
     if link(ui, Pos2::new(x1, y - sp::M - 10.0), Align2::RIGHT_CENTER, "Recordings", 12.0).clicked() {
         c.vtab = VTab::Recordings;

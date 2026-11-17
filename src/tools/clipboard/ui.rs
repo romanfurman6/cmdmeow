@@ -194,7 +194,7 @@ pub fn widget(c: &mut Clipboard, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
 pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let id = ui.scope_id().with("clipboard-card");
-    tile::paint_card(&p, rect, 0.0, false);
+    let _ = tile::frame(ui, rect, id.with("frame"), false);
     let x0 = rect.left() + 12.0;
     let x1 = rect.right() - 12.0;
     let mut y = rect.top() + 10.0;
@@ -255,7 +255,6 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let ids: Vec<u64> = c.visible(Filter::All, "").into_iter().take(fit.min(PANEL_ROWS)).collect();
     if ids.is_empty() {
         let r = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, rect.bottom() - 12.0));
-        dashed_rect(&p, r, 8.0, white(40));
         let msg = if paused { "Recording is paused" } else { "Copy something and it shows up here" };
         text_fit(&p, r.center(), Align2::CENTER_CENTER, msg, font(12.0), TEXT_FAINT(), r.width() - 16.0);
         return;

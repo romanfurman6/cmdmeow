@@ -132,6 +132,27 @@ pub fn stopped(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str) 
     resp
 }
 
+/// A widget whose tool needs a permission it doesn't have (W10): the glyph
+/// dimmed, the widget's name, what it needs and "Needs access", all
+/// readable. A click asks for the permission (the caller does it).
+pub fn locked(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str, needs: &str) -> Response {
+    let dim = with_alpha(TEXT_DIM(), if is_light() { 0.62 } else { 0.45 });
+    if rect.width() <= 130.0 {
+        let resp = card(ui, rect, id, false);
+        let p = ui.painter();
+        icon(p, glyph, Rect::from_min_size(rect.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), dim);
+        small_text(p, rect, title, "Needs access", TEXT_SOFT());
+        return resp;
+    }
+    let resp = card(ui, rect, id, false);
+    let p = ui.painter();
+    let bx = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 20.0), Vec2::splat(40.0));
+    icon(p, glyph, Rect::from_center_size(bx.center(), Vec2::splat(26.0)), dim);
+    let x0 = bx.right() + PAD;
+    stack_lines(p, x0, rect.center().y, &[(title, ty::label(), ty::caption_color()), (needs, ty::lead(), TEXT()), ("Needs access", ty::caption(), TEXT_SOFT())], rect.right() - PAD - x0);
+    resp
+}
+
 /// Small (1:1): the glyph on top, a bold line and a dim line at the bottom.
 #[allow(clippy::too_many_arguments)]
 pub fn small(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, title: &str, sub: &str, selected: bool) -> Response {
@@ -188,23 +209,6 @@ pub fn small_ring_at(rect: Rect) -> (Pos2, f32) {
     // W2: 44 in 1:1
     let rr = ((rect.height() - 40.0) / 2.0).min(rect.width() / 2.0 - 12.0).clamp(18.0, 22.0);
     (Pos2::new(rect.center().x, rect.top() + 8.0 + rr), rr)
-}
-
-/// Wide (1:2): a ring (or the glyph) on the left; label, value and caption
-/// stacked on the right.
-#[allow(clippy::too_many_arguments)]
-pub fn wide(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, bar_or_caption: Result<(f32, Color32), &str>, selected: bool) -> Response {
-    wide_col(ui, rect, id, glyph, color, label, value, bar_or_caption, ty::caption_color(), selected)
-}
-
-/// [`wide`] with the caption in `caption_col` (a temperature in its state colour).
-#[allow(clippy::too_many_arguments)]
-pub fn wide_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, bar_or_caption: Result<(f32, Color32), &str>, caption_col: Color32, selected: bool) -> Response {
-    let (ring_, caption) = match bar_or_caption {
-        Ok(r) => (Some(r), ""),
-        Err(c) => (None, c),
-    };
-    wide_full(ui, rect, id, glyph, color, ring_, label, value, caption, caption_col, selected)
 }
 
 /// Wide (1:2) with all three lines (W3): a ring 50 (`ring`) or the glyph 26
@@ -264,34 +268,6 @@ pub fn visual(p: &egui::Painter, rect: Rect, glyph: Icon, color: Color32, ring_:
             bx.right() + PAD
         }
     }
-}
-
-/// The chip of a split Row (where `row_split` draws it), for widgets that
-/// paint over it.
-pub fn row_chip(rect: Rect) -> Rect {
-    // the 40 box of [`visual`]
-    Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 20.0), Vec2::splat(40.0))
-}
-
-/// Row (1:4) in two halves. Left: a big chip, the label, a big value and a
-/// caption. The right half is returned for a breakdown (bar lines, a
-/// sparkline…), so the row shows as much as a Medium's first lines.
-#[allow(clippy::too_many_arguments)]
-pub fn row_split(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, selected: bool) -> (Response, Rect) {
-    row_split_at(ui, rect, id, glyph, color, label, value, caption, selected, 0.47)
-}
-
-/// [`row_split`] with the left part `ratio` of the width.
-#[allow(clippy::too_many_arguments)]
-pub fn row_split_at(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, selected: bool, ratio: f32) -> (Response, Rect) {
-    row_split_col(ui, rect, id, glyph, color, label, value, caption, ty::caption_color(), selected, ratio)
-}
-
-/// [`row_split_at`] with the caption in `caption_col` (a temperature in its
-/// state colour).
-#[allow(clippy::too_many_arguments)]
-pub fn row_split_col(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool, _ratio: f32) -> (Response, Rect) {
-    row_split_full(ui, rect, id, glyph, color, None, label, value, caption, caption_col, selected)
 }
 
 /// Least width of a Row's right part (W5): it has priority over the left.
@@ -408,7 +384,8 @@ pub fn head_with(p: &egui::Painter, rect: Rect, title: &str, caption: &str, note
     let x0 = rect.left() + PAD;
     let x1 = rect.right() - PAD;
     let top = rect.top() + PAD;
-    let nr = text_fit(p, Pos2::new(x1, top + 8.0), Align2::RIGHT_CENTER, note, ty::label(), white(166), (x1 - x0) * 0.5);
+    // W6: the note on the right is a caption
+    let nr = text_fit(p, Pos2::new(x1, top + 8.0), Align2::RIGHT_CENTER, note, ty::caption(), ty::caption_color(), (x1 - x0) * 0.5);
     let tw = if note.is_empty() { x1 - x0 } else { nr.left() - x0 - 8.0 };
     text_fit(p, Pos2::new(x0, top + 8.0), Align2::LEFT_CENTER, title, ty::title(), TEXT(), tw);
     let mut y = top + 16.0;
@@ -479,9 +456,8 @@ pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Colo
     text_fit(p, Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, label, font(12.0), white(166), r.width() - vw - bw - 22.0);
 }
 
-/// A dashed box with a quiet message (nothing to show yet).
+/// A quiet line where the data would be (W11): no frame round it.
 pub fn empty_note(p: &egui::Painter, r: Rect, msg: &str) {
-    dashed_rect(p, r, 8.0, white(40));
     text_fit(p, r.center(), Align2::CENTER_CENTER, msg, font(12.0), TEXT_FAINT(), r.width() - 16.0);
 }
 
