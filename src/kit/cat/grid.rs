@@ -196,6 +196,62 @@ pub fn ink_box(mask: &Mask, mids: &[(f64, f64)], i: usize, icon: f64, guess: (f6
     (a0, b0, a1 - a0, b1 - b0)
 }
 
+/// Which pixels of the picture `(px, py, w, h)` (pixels of `mask`, top
+/// left) are icon `i`'s own: nearer its picture and the label under it
+/// than any other icon's. A messy desk has names that run into the
+/// neighbours' squares; without this a lifted icon takes those pieces
+/// along, and its patch of wallpaper covers them up.
+/// Each icon is a line down its middle, from the top of its picture to the
+/// foot of a two-line label; `mids`: the pictures' middles; `icon`: their size.
+pub fn owned(mask: &Mask, mids: &[(f64, f64)], i: usize, icon: f64, (px, py, w, h): (usize, usize, usize, usize)) -> Vec<bool> {
+    let Some(&(mx, my)) = mids.get(i) else { return vec![true; w * h] };
+    let (top, foot) = (-icon / 2.0, icon / 2.0 + icon * 1.5);
+    let far = icon * 4.0;
+    let near: Vec<(f64, f64)> = mids.iter().enumerate().filter(|&(k, &(ox, oy))| k != i && (ox - mx).abs() < far && (oy - my).abs() < far).map(|(_, &o)| o).collect();
+    let d = |(x, y): (f64, f64), (ox, oy): (f64, f64)| -> f64 {
+        let dy = y - oy;
+        let out = if dy < top { top - dy } else if dy > foot { dy - foot } else { 0.0 };
+        (x - ox).hypot(out)
+    };
+    let mut own = Vec::with_capacity(w * h);
+    for row in 0..h {
+        for col in 0..w {
+            let p = (mask.origin.0 + (px + col) as f64 / mask.scale, mask.origin.1 + (py + row) as f64 / mask.scale);
+            let mine = d(p, (mx, my));
+            own.push(near.iter().all(|&o| mine <= d(p, o)));
+        }
+    }
+    own
+}
+
+/// Where icon's own pixels (`own`, the rectangle `(x0, y0, w, h)` of
+/// `mask`) are drawn, `r` pixels around: what its wallpaper patch covers.
+pub fn drawn(mask: &Mask, own: &[bool], (x0, y0, w, h): (usize, usize, usize, usize), r: usize) -> Vec<bool> {
+    let ink: Vec<bool> = (0..w * h).map(|k| own[k] && mask.alpha[(y0 + k / w) * mask.w + x0 + k % w] > 8).collect();
+    // grow by r: along the rows, then down the columns
+    let mut rows = vec![false; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            if ink[y * w + x] {
+                for xx in x.saturating_sub(r)..(x + r + 1).min(w) {
+                    rows[y * w + xx] = true;
+                }
+            }
+        }
+    }
+    let mut out = vec![false; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            if rows[y * w + x] {
+                for yy in y.saturating_sub(r)..(y + r + 1).min(h) {
+                    out[yy * w + x] = true;
+                }
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +332,34 @@ mod tests {
         let m = mask(600, 400, &[(168, 68, 232, 132), (168, 168, 232, 232)]);
         let b = ink_box(&m, &[(200.0, 100.0), (200.0, 200.0)], 0, 64.0, (151.0, 62.0, 98.0, 115.0));
         assert!(b.1 + b.3 <= 166.0 + 1e-9, "{b:?}");
+    }
+
+    #[test]
+    fn a_neighbours_name_running_into_the_box_is_not_ours() {
+        // icon 0 at (200, 100); icon 1 sits lower right and its label runs
+        // under icon 0's picture
+        let m = mask(600, 400, &[]);
+        let mids = [(200.0, 100.0), (270.0, 160.0)];
+        let own = owned(&m, &mids, 0, 64.0, (130, 60, 140, 160));
+        let at = |x: usize, y: usize| own[(y - 60) * 140 + (x - 130)];
+        // our picture and our label straight under it
+        assert!(at(200, 100) && at(200, 150) && at(180, 170));
+        // the neighbour's label, under its own picture, is not ours
+        assert!(!at(262, 215) && !at(255, 200));
+        // with no neighbour everything is ours
+        assert!(owned(&m, &mids[..1], 0, 64.0, (130, 60, 140, 160)).iter().all(|&b| b));
+    }
+
+    #[test]
+    fn the_patch_covers_our_ink_and_a_little_around_it_only() {
+        let m = mask(40, 40, &[(10, 10, 12, 12), (30, 10, 32, 12)]);
+        // the right half is someone else's
+        let own: Vec<bool> = (0..40 * 40).map(|k| k % 40 < 25).collect();
+        let d = drawn(&m, &own, (0, 0, 40, 40), 2);
+        assert!(d[11 * 40 + 11] && d[8 * 40 + 8] && d[11 * 40 + 13]);
+        assert!(!d[11 * 40 + 14] && !d[20 * 40 + 11]);
+        // the neighbour's ink is not covered
+        assert!(!d[11 * 40 + 31]);
     }
 
     #[test]

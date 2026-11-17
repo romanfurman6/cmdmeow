@@ -945,7 +945,8 @@ impl Live {
             self.petting = false;
             self.out.push(Out::Purr(false));
         }
-        let tidying = self.mode == Mode::Tidy;
+        // a second slap while it is still scared keeps the tidy to come
+        let tidying = self.mode == Mode::Tidy || self.tidy.resume;
         self.stop_all();
         self.tidy.resume = tidying;
         self.hunt.act = None;
@@ -1086,8 +1087,33 @@ impl Live {
         self.out.push(Out::Mew);
     }
 
+    /// A tidy is on: under way, waiting out a scare, or an icon still moving.
     pub fn tidying(&self) -> bool {
-        self.mode == Mode::Tidy || self.icons.iter().any(|i| i.lifted)
+        self.mode == Mode::Tidy || self.tidy.resume || self.icons.iter().any(|i| i.lifted)
+    }
+
+    /// Icon `id` is moving (pushed, flying, held), not resting.
+    pub fn lifted(&self, id: usize) -> bool {
+        self.icons.iter().any(|i| i.id == id && i.lifted)
+    }
+
+    /// The tidy is switched off: it stops where it is. The icons are let go
+    /// (Finder shows each where it last came to rest) and the cat goes home.
+    pub fn end_tidy(&mut self, now: f64) {
+        self.stop_all();
+        self.tidy.step = None;
+        self.tidy.resume = false;
+        self.tidy.batch.clear();
+        self.tidy.spot = None;
+        self.icons.clear();
+        self.slots.clear();
+        if self.mode == Mode::Tidy {
+            if self.lives {
+                self.set_mode(Mode::WalkHome, now);
+            } else {
+                self.set_mode(Mode::Leave, now);
+            }
+        }
     }
 
     /// What happened since it was last asked.
@@ -1339,6 +1365,7 @@ impl Live {
         let s = dt / 1000.0;
         let (gx0, gy0, gx1, gy1) = self.ground;
         let (bw, bh) = self.cell;
+        let mut snapped = Vec::new();
         for k in 0..self.icons.len() {
             let i = &mut self.icons[k];
             if i.held() || i.fly.is_some() {
@@ -1379,12 +1406,17 @@ impl Live {
                     i.vy = 0.0;
                     i.home = true;
                 }
-                if i.home {
-                    let k = (s * 14.0).min(1.0);
-                    i.x += (slot.0 - i.x) * k;
-                    i.y += (slot.1 - i.y) * k;
+                if i.home && dist((i.x, i.y), slot) > 0.01 {
+                    let e = (s * 14.0).min(1.0);
+                    i.x += (slot.0 - i.x) * e;
+                    i.y += (slot.1 - i.y) * e;
+                    // Finder hears where it ends up
+                    snapped.push(k);
                 }
             }
+        }
+        for k in snapped {
+            self.lift(k);
         }
         // icons push each other: an icon with its label is a box
         let n = self.icons.len();
@@ -1394,7 +1426,8 @@ impl Live {
             for b in a + 1..n {
                 let (p, q) = (&self.icons[a], &self.icons[b]);
                 // a flying or held icon passes over what is tidy already
-                if p.fly.is_some() || q.fly.is_some() || (p.held() && q.held()) || (p.held() && q.home) || (q.held() && p.home) {
+                // and what is tidy stays put: a loose icon is pushed off it
+                if p.fly.is_some() || q.fly.is_some() || (p.held() && q.held()) || (p.home && q.home) || (p.held() && q.home) || (q.held() && p.home) {
                     continue;
                 }
                 let (dx, dy) = (q.x - p.x, q.y - p.y);
@@ -1404,7 +1437,7 @@ impl Live {
                 }
                 let along_x = ox / bw < oy / bh;
                 let (nx, ny, over) = if along_x { (if dx < 0.0 { -1.0 } else { 1.0 }, 0.0, ox) } else { (0.0, if dy < 0.0 { -1.0 } else { 1.0 }, oy) };
-                let fa = if p.held() { 0.0 } else if q.held() { 1.0 } else { 0.5 };
+                let fa = if p.held() || p.home { 0.0 } else if q.held() || q.home { 1.0 } else { 0.5 };
                 let fb = 1.0 - fa;
                 let vn = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny;
                 {
@@ -3456,6 +3489,121 @@ mod tests {
         assert!(most >= 5, "at most {most} in the mouth");
         assert!(t - t0 < 30_000.0, "18 icons took {} s", (t - t0) / 1000.0);
         assert!(l.icons.iter().all(|i| i.home && i.slot.is_some()));
+    }
+
+    /// Random desks (some icons already in Finder's grid at a tight pitch)
+    /// and random slaps, one or two: every icon ends in its own slot and
+    /// Finder is told so, in good time.
+    #[test]
+    fn random_desks_and_slaps_always_end_tidy() {
+        let mut bad = 0;
+        for seed in 1..60u64 {
+            let mut r = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let mut rnd = move || { r ^= r << 13; r ^= r >> 7; r ^= r << 17; (r % 10_000) as f64 / 10_000.0 };
+            let (mut l, mut t) = settled();
+            let slots: Vec<(f64, f64)> = (0..40).map(|k| (1450.0 - (k / 9) as f64 * 88.0, 70.0 + (k % 9) as f64 * 92.0)).collect();
+            let mut icons = Vec::new();
+            let on_grid = (rnd() * 12.0) as usize;
+            for &(x, y) in &slots[..on_grid] { icons.push((icons.len() + 1, x, y)); }
+            let loose = 6 + (rnd() * 22.0) as usize;
+            for _ in 0..loose { icons.push((icons.len() + 1, 60.0 + rnd() * 1250.0, 60.0 + rnd() * 780.0)); }
+            let n = icons.len();
+            let start: HashMap<usize, (f64, f64)> = icons.iter().map(|&(id, x, y)| (id, (x, y))).collect();
+            l.tidy(icons, &slots, (47.0, 37.0), t);
+            let t0 = t;
+            let slaps = [if seed % 4 == 0 { f64::INFINITY } else { rnd() * 15_000.0 }, if rnd() < 0.5 { 5_000.0 + rnd() * 20_000.0 } else { f64::INFINITY }];
+            let mut done = [false, false];
+            let mut finder: HashMap<usize, (f64, f64)> = HashMap::new();
+            while (l.tidying() || done.iter().zip(slaps).any(|(d, s)| !d && s.is_finite())) && t - t0 < 300_000.0 {
+                t += 16.7;
+                for j in 0..2 { if !done[j] && t - t0 > slaps[j] { done[j] = true; l.slap(t); } }
+                let _ = l.tick(t);
+                for o in l.take() { if let Out::Rest { id, x, y } = o { finder.insert(id, (x, y)); } }
+            }
+            let took = (t - t0) / 1000.0;
+            let mut msg = Vec::new();
+            if l.tidying() { msg.push(format!("stuck step {:?}", l.tidy.step)); }
+            for i in &l.icons {
+                let Some(s) = i.slot else { msg.push(format!("{} no slot", i.id)); continue };
+                if !i.home || dist((i.x, i.y), s) > 1.0 { msg.push(format!("{} not home", i.id)); }
+                let f = finder.get(&i.id).copied().unwrap_or(start[&i.id]);
+                if dist(f, s) > 1.0 { msg.push(format!("{} finder {:?} slot {:?}", i.id, f, s)); }
+            }
+            if took > 10.0 + n as f64 * 2.5 { msg.push(format!("slow {took:.0} s for {n}")); }
+            if !msg.is_empty() { bad += 1; eprintln!("seed {seed} n {n} slaps {:?} took {took:.0}: {}", slaps, msg.join("; ")); }
+        }
+        assert_eq!(bad, 0);
+    }
+
+    #[test]
+    fn switched_off_mid_tidy_it_lets_go_of_everything_and_goes_home() {
+        let (mut l, mut t) = settled();
+        let icons: Vec<(usize, f64, f64)> = (0..14).map(|k| (k + 1, 160.0 + (k % 7) as f64 * 140.0, 120.0 + (k / 7) as f64 * 170.0)).collect();
+        let slots: Vec<(f64, f64)> = (0..14).map(|r| (1440.0 - (r / 8) as f64 * 100.0, 60.0 + (r % 8) as f64 * 92.0)).collect();
+        l.tidy(icons, &slots, (47.0, 37.0), t);
+        let t0 = t;
+        // until it carries some in its mouth
+        while !l.icons.iter().any(|i| i.hold == Hold::Mouth) && t - t0 < 30_000.0 {
+            t += 16.7;
+            let _ = l.tick(t);
+        }
+        assert!(l.icons.iter().any(|i| i.lifted), "nothing moved");
+        let id = l.icons.iter().find(|i| i.lifted).unwrap().id;
+        assert!(l.lifted(id));
+        l.set_lives(false, t);
+        l.end_tidy(t);
+        assert!(!l.tidying() && !l.lifted(id));
+        let _ = l.take();
+        t = run_out(&mut l, t, 20_000.0, &mut Vec::new());
+        assert!(l.take().iter().all(|o| !matches!(o, Out::Lift(_) | Out::Rest { .. })), "it moved icons after the switch went off");
+        assert!(!l.shown(), "still on screen at {t}");
+    }
+
+    #[test]
+    fn a_slap_at_any_moment_of_a_tidy_still_ends_with_every_icon_placed() {
+        for slap_at in [1500.0, 3000.0, 4500.0, 6000.0, 7500.0, 9400.0, 11000.0, 13000.0] {
+            let (mut l, mut t) = settled();
+            let icons: Vec<(usize, f64, f64)> = (0..26).map(|k| (k + 1, 160.0 + (k % 7) as f64 * 140.0, 120.0 + (k / 7) as f64 * 170.0)).collect();
+            let slots: Vec<(f64, f64)> = (0..26).map(|r| (1440.0 - (r / 8) as f64 * 100.0, 60.0 + (r % 8) as f64 * 92.0)).collect();
+            l.tidy(icons, &slots, (47.0, 37.0), t);
+            let t0 = t;
+            let mut finder: HashMap<usize, (f64, f64)> = HashMap::new();
+            let mut slapped = false;
+            while l.tidying() && t - t0 < 120_000.0 {
+                t += 16.7;
+                if !slapped && t - t0 > slap_at {
+                    slapped = true;
+                    l.slap(t);
+                }
+                let _ = l.tick(t);
+                for o in l.take() {
+                    if let Out::Rest { id, x, y } = o {
+                        finder.insert(id, (x, y));
+                    }
+                }
+            }
+            // a little more for the last icons to settle
+            t = run_out(&mut l, t, 2000.0, &mut Vec::new());
+            for o in l.take() {
+                if let Out::Rest { id, x, y } = o {
+                    finder.insert(id, (x, y));
+                }
+            }
+            assert!(!l.tidying(), "slap at {slap_at}: never finished, step {:?}", l.tidy.step);
+            assert!(t - t0 < 60_000.0, "slap at {slap_at}: took {} s", (t - t0) / 1000.0);
+            for i in &l.icons {
+                let s = i.slot.unwrap_or_else(|| panic!("slap at {slap_at}: icon {} has no slot", i.id));
+                assert!(i.home && dist((i.x, i.y), s) < 1.0, "slap at {slap_at}: icon {} at {:?}, slot {:?}", i.id, (i.x, i.y), s);
+                let f = finder.get(&i.id).copied().unwrap_or_else(|| panic!("slap at {slap_at}: Finder never told about icon {}", i.id));
+                assert!(dist(f, s) < 1.0, "slap at {slap_at}: Finder has icon {} at {f:?}, slot {s:?}", i.id);
+            }
+            let mut seen: Vec<(f64, f64)> = Vec::new();
+            for i in &l.icons {
+                let s = i.slot.unwrap();
+                assert!(!seen.iter().any(|o| dist(*o, s) < 1.0), "slap at {slap_at}: two icons in {s:?}");
+                seen.push(s);
+            }
+        }
     }
 
     #[test]

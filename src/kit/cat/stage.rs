@@ -166,6 +166,27 @@ struct Proxy {
     front: bool,
 }
 
+/// An icon's pictures, cut out the first time it moves (Finder draws it
+/// elsewhere after): around its picture's middle, the rectangle it and its
+/// label take, and where the label begins.
+struct Kept {
+    cell: (f64, f64, f64, f64),
+    pic_h: f64,
+    label_h: f64,
+    pic: Option<Image>,
+    label: Option<Image>,
+    file_icon: Option<Image>,
+    /// which pixels of that rectangle it drew (for its wallpaper patch)
+    ink: Option<(Vec<bool>, usize, usize)>,
+}
+
+/// `cell` (points, top left origin) in `shot`'s pixels, whole pixels.
+fn px_rect(shot: &Shot, cell: (f64, f64, f64, f64)) -> NSRect {
+    let (_, origin, scale) = shot;
+    let (x0, y0) = (((cell.0 - origin.0) * scale).floor().max(0.0), ((cell.1 - origin.1) * scale).floor().max(0.0));
+    NSRect::new(NSPoint::new(x0, y0), NSSize::new((cell.2 * scale).ceil(), (cell.3 * scale).ceil()))
+}
+
 /// What Finder showed when the tidy began, and pictures of it.
 pub struct Desktop {
     pub spots: Vec<Spot>,
@@ -180,6 +201,10 @@ pub struct Desktop {
     /// what each icon and its label really cover, measured on `icons`
     /// (by index into `spots`; empty without a picture)
     pub boxes: Vec<(f64, f64, f64, f64)>,
+    /// the see-through mask of `icons`, and the middles of the icons'
+    /// pictures (by index into `spots`): which pixels are whose
+    pub mask: Option<grid::Mask>,
+    pub mids: Vec<(f64, f64)>,
 }
 
 unsafe impl Send for Desktop {}
@@ -216,6 +241,10 @@ pub struct Stage {
     /// the first screen, AppKit points
     frame: NSRect,
     proxies: HashMap<usize, Proxy>,
+    /// each moved icon's pictures, and where Finder shows those whose
+    /// picture went (by index into `desktop.spots`)
+    kept: HashMap<usize, Kept>,
+    at: HashMap<usize, (f64, f64)>,
     pub desktop: Option<Desktop>,
     through: bool,
 }
@@ -311,7 +340,7 @@ impl Stage {
         // the desk window lies under the cat's, both see-through
         desk.orderFrontRegardless();
         window.orderFrontRegardless();
-        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), desktop: None, through: true })
+        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), kept: HashMap::new(), at: HashMap::new(), desktop: None, through: true })
     }
 
     /// The first screen's size, points.
@@ -508,31 +537,40 @@ impl Stage {
     // ------------------------------------------------------------ icons
 
     /// Icon `id` (an index into `desktop.spots`) starts to move: its picture
-    /// rides on the desk window, and the wallpaper covers its old spot.
+    /// rides on the desk window, and the wallpaper covers its old spot (or
+    /// the spot Finder has shown it at since its picture last went).
     pub fn lift(&mut self, id: usize) {
-        let h = self.frame.size.height;
-        let Some(d) = &self.desktop else { return };
-        let Some(spot) = d.spots.get(id) else { return };
         if self.proxies.contains_key(&id) {
             return;
         }
-        let mid = (spot.x - d.off.0, spot.y - d.off.1);
-        let cell = d.boxes.get(id).copied().unwrap_or_else(|| d.cell(mid));
-        let crop = |shot: &Option<Shot>, top: f64, height: f64| -> Option<Image> {
-            let (img, origin, scale) = shot.as_ref()?;
-            let r = NSRect::new(NSPoint::new((cell.0 - origin.0) * scale, (top - origin.1) * scale), NSSize::new(cell.2 * scale, height * scale));
-            let c = unsafe { CGImageCreateWithImageInRect(img.0, r) };
-            (!c.is_null()).then_some(Image(c))
-        };
-        // the picture above this line, the label under it (it fades on the heap)
-        let cut = (mid.1 + d.view.icon / 2.0 + 1.0).clamp(cell.1, cell.1 + cell.3);
-        let (pic_h, label_h) = (cut - cell.1, cell.1 + cell.3 - cut);
-        let (icon_img, label_img, paper_img) = (crop(&d.icons, cell.1, pic_h), crop(&d.icons, cut, label_h).filter(|_| label_h >= 1.0), crop(&d.paper, cell.1, cell.3));
+        let Some(d) = &self.desktop else { return };
+        let Some(spot) = d.spots.get(id) else { return };
+        let first = (spot.x - d.off.0, spot.y - d.off.1);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.kept.entry(id) {
+            let Some(k) = Self::cut_out(d, id, first) else { return };
+            e.insert(k);
+        }
+        let mid = self.at.get(&id).copied().unwrap_or(first);
+        let Some(k) = self.kept.get(&id) else { return };
+        let cell = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
+        // the wallpaper where Finder shows it now, only where it is drawn
+        let patch_img = d.paper.as_ref().and_then(|shot| {
+            let c = unsafe { CGImageCreateWithImageInRect(shot.0 .0, px_rect(shot, cell)) };
+            if c.is_null() {
+                return None;
+            }
+            let img = Image(c);
+            match &k.ink {
+                Some((ink, w, h)) => keep_only(&img, ink, *w, *h),
+                None => Some(img),
+            }
+        });
+        let h = self.frame.size.height;
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
             let bounds = CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: cell.2, height: cell.3 } };
-            let patch = paper_img.map(|img| {
+            let patch = patch_img.map(|img| {
                 let l = new_layer(&self.patches);
                 let _: () = msg_send![&*l, setBounds: bounds];
                 let _: () = msg_send![&*l, setContents: img.0 as *mut AnyObject];
@@ -543,17 +581,17 @@ impl Stage {
             let _: () = msg_send![&*icon, setBounds: bounds];
             // y up: the picture at the top of the layer, the label under it
             let pic = new_layer(&icon);
-            let _: () = msg_send![&*pic, setFrame: CGRect { origin: CGPoint { x: 0.0, y: cell.3 - pic_h }, size: CGSize { width: cell.2, height: pic_h } }];
+            let _: () = msg_send![&*pic, setFrame: CGRect { origin: CGPoint { x: 0.0, y: cell.3 - k.pic_h }, size: CGSize { width: cell.2, height: k.pic_h } }];
             let mut label = None;
-            if let Some(img) = &icon_img {
+            if let Some(img) = &k.pic {
                 let _: () = msg_send![&*pic, setContents: img.0 as *mut AnyObject];
-                if let Some(li) = &label_img {
+                if let Some(li) = &k.label {
                     let l = new_layer(&icon);
-                    let _: () = msg_send![&*l, setFrame: CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: cell.2, height: label_h } }];
+                    let _: () = msg_send![&*l, setFrame: CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize { width: cell.2, height: k.label_h } }];
                     let _: () = msg_send![&*l, setContents: li.0 as *mut AnyObject];
                     label = Some(l);
                 }
-            } else if let Some(img) = workspace_icon(&spot.name, d.view.icon) {
+            } else if let Some(img) = &k.file_icon {
                 // no picture of the screen: the file's own icon, without its label
                 let _: () = msg_send![&*pic, setContents: img.0 as *mut AnyObject];
                 let _: () = msg_send![&*pic, setContentsGravity: &*NSString::from_str("top")];
@@ -566,6 +604,79 @@ impl Stage {
             self.proxies.insert(id, Proxy { icon, label, patch, front: false });
         }
         self.desk.orderFrontRegardless();
+    }
+
+    /// Icon `id`'s own pixels in the pictures taken when the tidy began,
+    /// its picture's middle at `mid`.
+    fn cut_out(d: &Desktop, id: usize, mid: (f64, f64)) -> Option<Kept> {
+        let spot = d.spots.get(id)?;
+        let cell = d.boxes.get(id).copied().unwrap_or_else(|| d.cell(mid));
+        // only this icon's own pixels: the picture keeps what is its own,
+        // the wallpaper patch covers only where it was drawn
+        let (own, ink) = match (&d.mask, &d.icons) {
+            (Some(m), Some(shot)) => {
+                let r = px_rect(shot, cell);
+                let (x0, y0) = (r.origin.x as usize, r.origin.y as usize);
+                let (w, h) = ((r.size.width as usize).min(m.w.saturating_sub(x0)), (r.size.height as usize).min(m.h.saturating_sub(y0)));
+                let own = grid::owned(m, &d.mids, id, d.view.icon, (x0, y0, w, h));
+                let ink = grid::drawn(m, &own, (x0, y0, w, h), (2.0 * m.scale).round() as usize);
+                (Some((own, w, h)), Some((ink, w, h)))
+            }
+            _ => (None, None),
+        };
+        let whole = d.icons.as_ref().and_then(|shot| {
+            let c = unsafe { CGImageCreateWithImageInRect(shot.0 .0, px_rect(shot, cell)) };
+            if c.is_null() {
+                return None;
+            }
+            let img = Image(c);
+            match &own {
+                Some((k, w, h)) => keep_only(&img, k, *w, *h),
+                None => Some(img),
+            }
+        });
+        let scale = d.icons.as_ref().map_or(1.0, |s| s.2);
+        // the picture above this line, the label under it (it fades on the heap)
+        let cut = (mid.1 + d.view.icon / 2.0 + 1.0).clamp(cell.1, cell.1 + cell.3);
+        let (pic_h, label_h) = (cut - cell.1, cell.1 + cell.3 - cut);
+        let part = |top: f64, height: f64| -> Option<Image> {
+            let img = whole.as_ref()?;
+            let r = NSRect::new(NSPoint::new(0.0, ((top - cell.1) * scale).round()), NSSize::new(cell.2 * scale, (height * scale).round()));
+            let c = unsafe { CGImageCreateWithImageInRect(img.0, r) };
+            (!c.is_null()).then_some(Image(c))
+        };
+        let pic = part(cell.1, pic_h);
+        let label = pic.as_ref().and_then(|_| part(cut, label_h).filter(|_| label_h >= 1.0));
+        let file_icon = if pic.is_none() { workspace_icon(&spot.name, d.view.icon) } else { None };
+        Some(Kept { cell: (cell.0 - mid.0, cell.1 - mid.1, cell.2, cell.3), pic_h, label_h, pic, label, file_icon, ink })
+    }
+
+    /// A new tidy: what Finder shows now, and pictures of it.
+    pub fn set_desktop(&mut self, d: Desktop) {
+        self.drop_all();
+        self.kept.clear();
+        self.at.clear();
+        self.desktop = Some(d);
+    }
+
+    /// Icon `id` came to rest at `at` (its picture's middle): Finder will
+    /// show it there.
+    pub fn rested(&mut self, id: usize, at: (f64, f64)) {
+        self.at.insert(id, at);
+    }
+
+    /// Finder shows icon `id` where it came to rest: its picture and patch go.
+    pub fn drop_one(&mut self, id: usize) {
+        let Some(p) = self.proxies.remove(&id) else { return };
+        unsafe {
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+            let _: () = msg_send![&*p.icon, removeFromSuperlayer];
+            if let Some(patch) = p.patch {
+                let _: () = msg_send![&*patch, removeFromSuperlayer];
+            }
+            let _: () = msg_send![class!(CATransaction), commit];
+        }
     }
 
     /// Finder shows every pushed icon at its new spot: the pictures go.
@@ -601,6 +712,35 @@ fn workspace_icon(name: &str, size: f64) -> Option<Image> {
         let mut rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(px, px));
         let cg: *mut c_void = msg_send![&*image, CGImageForProposedRect: &mut rect as *mut NSRect, context: std::ptr::null::<AnyObject>(), hints: std::ptr::null::<AnyObject>()];
         (!cg.is_null()).then(|| Image(CGImageRetain(cg)))
+    }
+}
+
+/// `img` with every pixel outside `keep` (w × h, rows from the top) made
+/// see-through.
+fn keep_only(img: &Image, keep: &[bool], w: usize, h: usize) -> Option<Image> {
+    unsafe {
+        let (iw, ih) = (CGImageGetWidth(img.0), CGImageGetHeight(img.0));
+        let space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        let ctx = CGBitmapContextCreate(std::ptr::null_mut(), iw, ih, 8, iw * 4, space, 1);
+        CGColorSpaceRelease(space);
+        if ctx.is_null() {
+            return None;
+        }
+        CGContextDrawImage(ctx, NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(iw as f64, ih as f64)), img.0);
+        let data = CGBitmapContextGetData(ctx);
+        if !data.is_null() {
+            for y in 0..ih {
+                for x in 0..iw {
+                    let k = if x < w && y < h { keep[y * w + x] } else { false };
+                    if !k {
+                        std::ptr::write_bytes(data.add((y * iw + x) * 4), 0, 4);
+                    }
+                }
+            }
+        }
+        let out = CGBitmapContextCreateImage(ctx);
+        CGContextRelease(ctx);
+        (!out.is_null()).then_some(Image(out))
     }
 }
 
