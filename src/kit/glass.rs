@@ -1114,6 +1114,9 @@ pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     cy
 }
 
+/// Height a [`card_title`] takes above its card: the title and 12 (R2).
+pub const CARD_TITLE_H: f32 = 28.0;
+
 /// The title over a settings card ("Providers", "After a capture"):
 /// section 12/600, dim, 12 above the card (R2, R11).
 pub fn card_title(p: &Painter, pos: Pos2, label: impl ToString) -> Rect {
@@ -1146,12 +1149,13 @@ pub fn sheet_header(ui: &mut Ui, rect: Rect, glyph: Icon, color: Color32, title:
 
 /// A sheet's big number: "1.44 TB free of 2 TB". Returns the height used.
 pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str) -> f32 {
-    let g = p.layout_no_wrap(big.to_owned(), bold(34.0), TEXT());
+    // hero 28/600 (type scale), unit title 13/600 soft, caption label 12 dim
+    let g = p.layout_no_wrap(big.to_owned(), ty::hero(), TEXT());
     let (w, h) = (g.size().x, g.size().y);
     let base = pos.y + h * 0.80;
     p.galley(pos, g, TEXT());
-    let u = p.text(Pos2::new(pos.x + w + 6.0, base), Align2::LEFT_BOTTOM, unit, bold(15.0), TEXT_SOFT());
-    p.text(Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base), Align2::LEFT_BOTTOM, caption, font(13.0), TEXT_DIM());
+    let u = p.text(Pos2::new(pos.x + w + 4.0, base), Align2::LEFT_BOTTOM, unit, bold(13.0), TEXT_SOFT());
+    p.text(Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base), Align2::LEFT_BOTTOM, caption, ty::label(), TEXT_DIM());
     h
 }
 
@@ -1279,15 +1283,18 @@ pub fn page_footer(p: &Painter, r: Rect, window_radius: f32) -> Rect {
 
 /// Height of [`sheet_header`].
 pub const SHEET_HEADER_H: f32 = 58.0;
+/// One row height for every list in a panel sheet (legend, facts,
+/// processes, apps); switches use settings rows (R3).
+pub const SHEET_ROW_H: f32 = 32.0;
 
 /// A label/value row inside a group card, with an optional hint line under it.
 /// Returns the height used.
 pub fn fact_row(p: &Painter, r: Rect, label: &str, value: &str, value_col: Color32, hint: &str) -> f32 {
-    let top = r.top() + 8.0;
+    let top = r.top() + (SHEET_ROW_H - 16.0) / 2.0;
     let vr = p.text(Pos2::new(r.right() - 12.0, top), Align2::RIGHT_TOP, value, bold(13.0), value_col);
     text_fit(p, Pos2::new(r.left() + 12.0, top), Align2::LEFT_TOP, label, font(13.0), TEXT_DIM(), (vr.left() - r.left() - 24.0).max(40.0));
     if hint.is_empty() {
-        return 32.0;
+        return SHEET_ROW_H;
     }
     let h = paragraph(p, Pos2::new(r.left() + 12.0, top + 19.0), hint, font(12.0), TEXT_FAINT(), r.width() - 24.0);
     27.0 + h + 8.0
@@ -1302,7 +1309,9 @@ pub fn legend_row(p: &Painter, r: Rect, color: Color32, label: &str, value: &str
         p.rect_filled(Rect::from_center_size(c, Vec2::splat(9.0)), 3.0, color);
     }
     let vr = p.text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, value, font(13.0), value_col);
-    text_fit(p, Pos2::new(r.left() + 31.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), (vr.left() - r.left() - 40.0).max(40.0));
+    // no square: the label starts at the card's text column
+    let lx = if color == Color32::TRANSPARENT { 12.0 } else { 31.0 };
+    text_fit(p, Pos2::new(r.left() + lx, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), (vr.left() - r.left() - lx - 9.0).max(40.0));
 }
 
 /// The height of one line of `font`.
@@ -1984,7 +1993,7 @@ pub fn human_bytes(b: u64) -> String {
 }
 
 pub fn human_rate(bps: f64) -> String {
-    format!("{}/sec", human_bytes(bps.max(0.0) as u64))
+    format!("{}/s", human_bytes(bps.max(0.0) as u64))
 }
 
 pub fn human_duration(secs: u64) -> String {
