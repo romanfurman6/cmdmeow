@@ -219,6 +219,33 @@ pub fn wide_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Colo
     resp
 }
 
+/// Wide (1:2) for a widget whose value is someone else's text (W3): the
+/// glyph, the label, the text at 13/400 fading at the edge, the caption.
+#[allow(clippy::too_many_arguments)]
+pub fn wide_clip(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str, clip: &str, caption: &str, selected: bool) -> Response {
+    let resp = card(ui, rect, id, selected);
+    let p = ui.painter();
+    let x0 = visual(p, rect, glyph, color, None);
+    clip_lines(p, x0, rect.center().y, rect.right() - PAD - x0, label, clip, caption);
+    resp
+}
+
+/// Label, a faded clip and a caption stacked at `x0` around `cy`.
+pub fn clip_lines(p: &egui::Painter, x0: f32, cy: f32, w: f32, label: &str, clip: &str, caption: &str) {
+    let fonts = [ty::label(), font(13.0), ty::caption()];
+    let hs: Vec<f32> = fonts.iter().map(|f| line_h(p, f)).collect();
+    let n = if caption.is_empty() { 2 } else { 3 };
+    let total: f32 = hs[..n].iter().sum::<f32>() + sp::LINE_GAP * (n - 1) as f32;
+    let mut y = cy - total / 2.0;
+    text_fit(p, Pos2::new(x0, y + hs[0] / 2.0), Align2::LEFT_CENTER, label, fonts[0].clone(), ty::caption_color(), w);
+    y += hs[0] + sp::LINE_GAP;
+    text_fade(p, Pos2::new(x0, y + hs[1] / 2.0), clip, fonts[1].clone(), TEXT(), w);
+    y += hs[1] + sp::LINE_GAP;
+    if n == 3 {
+        text_fit(p, Pos2::new(x0, y + hs[2] / 2.0), Align2::LEFT_CENTER, caption, fonts[2].clone(), ty::caption_color(), w);
+    }
+}
+
 /// The one visual on the left of a Wide or Row widget (W2): a ring 50 with
 /// the glyph in it, or the glyph 26 in a 40 box in the group colour, no
 /// plate. Returns where the text starts.
@@ -333,6 +360,22 @@ pub fn actions(ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect, acts: &[Ac
         }
     }
     out
+}
+
+/// Row (1:4) of a list widget (W5: Clipboard, Dictation): the left part is
+/// the 1:1 layout (glyph on top, name and count at the bottom) so the list
+/// on the right gets most of the width. Returns the right part.
+#[allow(clippy::too_many_arguments)]
+pub fn row_split_list(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, title: &str, sub: &str, selected: bool) -> (Response, Rect) {
+    let resp = card(ui, rect, id, selected);
+    let p = ui.painter();
+    let left = Rect::from_min_size(rect.min, Vec2::new(rect.height(), rect.height()));
+    icon(p, glyph, Rect::from_min_size(left.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), lift(color));
+    small_text(p, left, title, sub, TEXT_DIM());
+    let split = left.right();
+    let inset = rect.height() * 0.06;
+    p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
+    (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
 }
 
 /// Up to three bar lines stacked in `r` (the right half of a split Row);

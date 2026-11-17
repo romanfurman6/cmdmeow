@@ -1406,6 +1406,33 @@ pub fn text_wrap(p: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId
     out
 }
 
+/// Someone else's text (a clip, a dictation) on one line from `pos` (left,
+/// vertical centre): what doesn't fit fades out over its last 24 pt instead
+/// of ending in "…" (W8). Returns the rect it takes.
+pub fn text_fade(painter: &Painter, pos: Pos2, text: &str, font: FontId, color: Color32, max_w: f32) -> Rect {
+    let one_line: String = text.split('\n').next().unwrap_or("").chars().take(400).collect();
+    let g = painter.layout_no_wrap(one_line.clone(), font.clone(), color);
+    if g.size().x <= max_w || max_w <= 0.0 {
+        return painter.text(pos, Align2::LEFT_CENTER, one_line, font, color);
+    }
+    let fade = 24.0f32.min(max_w / 2.0);
+    let mut job = egui::text::LayoutJob::default();
+    let glyphs = g.rows.first().map(|r| r.row.glyphs.clone()).unwrap_or_default();
+    for gl in glyphs {
+        let right = gl.pos.x + gl.advance_width;
+        if right > max_w {
+            break;
+        }
+        let k = ((max_w - right) / fade).clamp(0.0, 1.0);
+        let c = with_alpha(color, color.a() as f32 / 255.0 * k);
+        job.append(&gl.chr.to_string(), 0.0, egui::TextFormat::simple(font.clone(), c));
+    }
+    let gal = painter.layout_job(job);
+    let r = Rect::from_min_size(Pos2::new(pos.x, pos.y - gal.size().y / 2.0), gal.size());
+    painter.galley(r.min, gal, color);
+    r
+}
+
 /// Text that is cut with an ellipsis to fit `max_w`.
 #[track_caller]
 pub fn text_fit(painter: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId, color: Color32, max_w: f32) -> Rect {
