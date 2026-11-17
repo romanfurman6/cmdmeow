@@ -231,8 +231,12 @@ impl Props {
         shape(&front, &band(-RT * 0.62, -RT * 0.62 + 7.0), Some((SHINE, 1.0)), None);
         shape(&front, &band(RT * 0.55, RT * 0.55 + 14.0), Some((SHADE, 1.0)), None);
         shape(&front, &Path::new().line(&wall, true), None, Some((INK, 3.0)));
+        // the steel of the rim sits just inside the outline: at the ends, where
+        // the arc runs straight down, a stroke on the outline itself pokes
+        // out past the ink on either side
+        let steel: Vec<Option<(f64, f64)>> = arc((0.0, BOWL_H), (RT - 1.4, -(RY - 1.4)), 0.0, PI, 0.0, 28).into_iter().map(Some).collect();
+        shape(&front, &Path::new().line(&steel, false), None, Some((RIM, 5.0)));
         let rim: Vec<Option<(f64, f64)>> = near.into_iter().map(Some).collect();
-        shape(&front, &Path::new().line(&rim, false), None, Some((RIM, 5.0)));
         shape(&front, &Path::new().line(&rim, false), None, Some((INK, 2.6)));
         let lip: Vec<Option<(f64, f64)>> = arc((0.0, BOWL_H - 2.6), (RT - 1.0, -(RY - 0.6)), 0.0, PI * 0.08, PI * 0.92, 22).into_iter().map(Some).collect();
         shape(&front, &Path::new().line(&lip, false), None, Some((INK, 1.6)));

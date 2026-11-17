@@ -9,7 +9,7 @@
 
 use super::engine::{Cmd, Engine, Event};
 use super::grid;
-use super::live::Out;
+use super::live::{Hit, Out};
 use super::stage::{self, Desktop, Stage};
 use super::{face, Kind, Prefs, Show};
 use dispatch2::{DispatchQueue, DispatchTime};
@@ -18,6 +18,7 @@ use objc2::runtime::AnyObject;
 use objc2::{class, msg_send, MainThreadMarker};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CStr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -121,6 +122,9 @@ struct Main {
     finder: Option<Sender<Job>>,
     /// Pushes so far: a settle asked for before a later push is dropped.
     lifts: u32,
+    /// Rests so far, by icon: a picture goes only once Finder has placed
+    /// its icon's last rest.
+    rests: HashMap<usize, u32>,
     seed: u32,
     /// The sound that plays (`NSSound`) and whether it is the looping purr.
     voice: Option<(Retained<AnyObject>, bool)>,
@@ -128,6 +132,8 @@ struct Main {
     fading: Option<Retained<AnyObject>>,
     /// Taps that still sound (each `NSSound` is kept while it plays).
     taps: Vec<Retained<AnyObject>>,
+    /// When each desk sound last started (one at a time per 50 ms).
+    tapped: [Option<Instant>; 7],
     buzz_turn: u32,
     buzzing: bool,
     /// The trackpads being listened to.
@@ -148,8 +154,9 @@ type Waiting = Box<dyn FnOnce(&mut Main)>;
 
 /// Work for Finder, done in order on its own thread.
 enum Job {
-    /// Place these items (Finder's points).
-    Place(Vec<(String, f64, f64)>),
+    /// Place these items (Finder's points), then tell the main thread
+    /// which icons (and which of their rests) Finder shows now.
+    Place(Vec<(String, f64, f64)>, Vec<(usize, u32)>),
     /// Everything before this is placed: tell the main thread (with the
     /// count of pushes when it was asked).
     Done(u32),
@@ -489,6 +496,7 @@ impl Main {
     /// What the desktop cat did this frame.
     fn outs(&mut self, outs: Vec<Out>) {
         let mut placed = Vec::new();
+        let mut ids = Vec::new();
         let mut over = false;
         for o in outs {
             if log() && !matches!(o, Out::Tap { .. }) {
@@ -502,13 +510,17 @@ impl Main {
                     }
                 }
                 Out::Rest { id, x, y } => {
-                    let Some(d) = self.stage.as_ref().and_then(|st| st.desktop.as_ref()) else { continue };
-                    if let Some(s) = d.spots.get(id) {
-                        placed.push((s.name.clone(), x + d.off.0, y + d.off.1));
-                    }
+                    let Some(st) = &mut self.stage else { continue };
+                    let Some(d) = &st.desktop else { continue };
+                    let Some(s) = d.spots.get(id) else { continue };
+                    placed.push((s.name.clone(), x + d.off.0, y + d.off.1));
+                    st.rested(id, (x, y));
+                    let n = self.rests.entry(id).or_insert(0);
+                    *n = n.wrapping_add(1);
+                    ids.push((id, *n));
                 }
                 Out::Tidied => over = true,
-                Out::Tap { soft } => self.tap(soft),
+                Out::Tap { hit, soft } => self.tap(hit, soft),
                 Out::Purr(true) => {
                     let n = self.pick(3);
                     self.play(Kind::Purr, n);
@@ -534,7 +546,7 @@ impl Main {
         }
         let rested = !placed.is_empty();
         if rested {
-            self.finder_job(Job::Place(placed));
+            self.finder_job(Job::Place(placed, ids));
         }
         // the last icon is still: once Finder has placed it, the pictures go
         let still = self.stage.as_ref().is_some_and(|st| !st.live.tidying());
@@ -552,16 +564,34 @@ impl Main {
         if self.finder.is_none() {
             let (tx, rx) = mpsc::channel::<Job>();
             let _ = std::thread::Builder::new().name("cat finder".into()).spawn(move || {
-                for job in rx {
-                    match job {
-                        Job::Place(items) => {
-                            if let Err(e) = stage::place(&items) {
-                                if log() {
-                                    eprintln!("[cat] Finder could not place the icons: {e}");
+                while let Ok(first) = rx.recv() {
+                    // what piled up while Finder was busy goes in one go:
+                    // each icon only to the last spot asked for it
+                    let mut items: Vec<(String, f64, f64)> = Vec::new();
+                    let mut ids = Vec::new();
+                    let mut done = Vec::new();
+                    for job in std::iter::once(first).chain(rx.try_iter()) {
+                        match job {
+                            Job::Place(more, more_ids) => {
+                                for it in more {
+                                    items.retain(|o| o.0 != it.0);
+                                    items.push(it);
                                 }
+                                ids.extend(more_ids);
+                            }
+                            Job::Done(n) => done.push(n),
+                        }
+                    }
+                    if !items.is_empty() {
+                        if let Err(e) = stage::place(&items) {
+                            if log() {
+                                eprintln!("[cat] Finder could not place the icons: {e}");
                             }
                         }
-                        Job::Done(n) => on_main(move |m| m.settle(n)),
+                        on_main(move |m| m.placed(ids));
+                    }
+                    for n in done {
+                        on_main(move |m| m.settle(n));
                     }
                 }
             });
@@ -570,6 +600,54 @@ impl Main {
         if let Some(tx) = &self.finder {
             let _ = tx.send(job);
         }
+    }
+
+    /// Finder has placed these icons: each picture goes a moment later, if
+    /// its icon is still where it rested; one moving again (not rested
+    /// again yet) gets its patch over where Finder put it.
+    fn placed(&mut self, ids: Vec<(usize, u32)>) {
+        later(SETTLE, move |m| {
+            let Some(st) = &mut m.stage else { return };
+            for (id, n) in ids {
+                if m.rests.get(&id) != Some(&n) {
+                    continue;
+                }
+                if st.live.lifted(id) {
+                    // it moves on: what Finder shows where it rested is covered
+                    st.repatch(id);
+                } else {
+                    st.drop_one(id);
+                }
+            }
+            if !st.moving() {
+                st.show(m.shown);
+            }
+        });
+    }
+
+    /// The cat is switched off: a tidy stops where it is, and what it drew
+    /// goes (Finder shows each icon where it last came to rest).
+    fn end_tidy(&mut self) {
+        let Some(st) = &mut self.stage else { return };
+        if !self.tidying && !st.live.tidying() && !st.moving() {
+            return;
+        }
+        st.live.end_tidy(now_ms());
+        st.drop_all();
+        st.show(self.shown);
+        self.tidying = false;
+        self.wake();
+    }
+
+    /// The cat is switched off: it, its things and what it drew go at once.
+    fn vanish(&mut self) {
+        self.tidying = false;
+        let Some(st) = &mut self.stage else { return };
+        st.live.vanish(now_ms());
+        st.drop_all();
+        self.shown = false;
+        st.show(false);
+        self.hush();
     }
 
     /// Finder has placed every icon that came to rest: their pictures go a
@@ -626,11 +704,17 @@ impl Main {
     }
 
     fn tidy_go(&mut self, spots: Vec<grid::Spot>, view: grid::View, icons: Option<stage::Shot>, paper: Option<stage::Shot>) {
+        // switched off while Finder was asked
+        if !super::tidy_on() {
+            self.tidying = false;
+            return;
+        }
         let Some((_, ground)) = MainThreadMarker::new().and_then(stage::first_screen) else {
             self.tidying = false;
             return;
         };
-        let off = stage::finder_offset(&spots, view.icon, icons.as_ref());
+        let mask = stage::mask(icons.as_ref());
+        let off = stage::finder_offset(&spots, view.icon, mask.as_ref());
         // the middles of the icons' pictures
         let mids: Vec<grid::Spot> = spots.iter().map(|s| grid::Spot { name: s.name.clone(), x: s.x - off.0, y: s.y - off.1 }).collect();
         let pitch = grid::pitch(&mids, view);
@@ -639,9 +723,16 @@ impl Main {
         if log() {
             eprintln!("[cat] tidy: offset {off:?}, pitch {pitch:?}, icons shot {}, wallpaper shot {}, {} slot(s)", icons.is_some(), paper.is_some(), slots.len());
         }
-        let desktop = Desktop { spots, view, pitch, off, icons, paper };
+        let middles: Vec<(f64, f64)> = mids.iter().map(|s| (s.x, s.y)).collect();
+        let mut desktop = Desktop { spots, view, pitch, off, icons, paper, boxes: Vec::new(), mask: None, mids: middles };
+        // what each icon and its name really cover: the picture lifted and the patch over its old spot
+        if let Some(m) = &mask {
+            let mids = &desktop.mids;
+            desktop.boxes = (0..mids.len()).map(|i| grid::ink_box(m, mids, i, view.icon, desktop.cell(mids[i]))).collect();
+        }
+        desktop.mask = mask;
         self.with_stage(move |st, now| {
-            st.desktop = Some(desktop);
+            st.set_desktop(desktop);
             st.live.tidy(at, &slots, (pitch.0 * 0.46, pitch.1 * 0.46), now);
         });
         if self.broken {
@@ -649,17 +740,22 @@ impl Main {
         }
     }
 
-    /// A paw or a nose met an icon.
-    fn tap(&mut self, soft: bool) {
+    /// Something on the desk met something: its own sound (`pat.mp3` …),
+    /// levelled in the file under the Mac's own sounds.
+    fn tap(&mut self, hit: Hit, soft: bool) {
         if !may_sound() {
             return;
         }
-        let n = self.pick(2);
-        let Some(path) = stage::asset(&format!("tap-{n}.wav")) else { return };
+        let last = &mut self.tapped[hit as usize];
+        if last.is_some_and(|t| t.elapsed() < Duration::from_millis(50)) {
+            return;
+        }
+        *last = Some(Instant::now());
+        let Some(path) = stage::asset(&format!("{}.mp3", hit.file())) else { return };
         self.taps.retain(|s| unsafe { msg_send![&**s, isPlaying] });
         let Some(s) = sound(&path, false) else { return };
         unsafe {
-            let _: () = msg_send![&*s, setVolume: if soft { 0.35f32 } else { 0.7f32 }];
+            let _: () = msg_send![&*s, setVolume: if soft { 0.5f32 } else { 1.0f32 }];
             let _: bool = msg_send![&*s, play];
         }
         self.taps.push(s);
@@ -724,6 +820,11 @@ impl Main {
     /// Listen to what the switches ask for, and to nothing else.
     fn feel(&mut self, p: &Prefs) {
         self.set_live(p.awake() && p.show == Show::Always);
+        if !p.awake() {
+            self.vanish();
+        } else if !p.tidy {
+            self.end_tidy();
+        }
         if p.purr != !self.pads.is_empty() {
             if p.purr {
                 self.pads = pads_start();
@@ -1431,10 +1532,12 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         tidying: false,
         finder: None,
         lifts: 0,
+        rests: HashMap::new(),
         seed: seed | 1,
         voice: None,
         fading: None,
         taps: Vec::new(),
+        tapped: [None; 7],
         buzz_turn: 0,
         buzzing: false,
         pads: Vec::new(),

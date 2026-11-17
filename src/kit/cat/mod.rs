@@ -157,16 +157,74 @@ impl Prefs {
     }
 }
 
+/// Settings › Cat: three switches. `cat` turns everything off; under it,
+/// the Mac's own events (charger, lid, trackpad, slaps, low battery) and
+/// the tidy shortcut each have their own. What the cat does follows from
+/// them ([`Switches::prefs`]).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(default)]
+pub struct Switches {
+    pub cat: bool,
+    pub hardware: bool,
+    pub tidy: bool,
+}
+
+/// The cat starts switched off; turned on, everything under it works.
+impl Default for Switches {
+    fn default() -> Self {
+        Switches { cat: false, hardware: true, tidy: true }
+    }
+}
+
+impl Switches {
+    /// Everything on: what a demo shows.
+    pub fn all_on() -> Switches {
+        Switches { cat: true, hardware: true, tidy: true }
+    }
+
+    /// What the cat reacts to, with these switches. On, it lives on the desk.
+    pub fn prefs(self) -> Prefs {
+        let hw = self.cat && self.hardware;
+        Prefs { purr: hw, hiss: hw, meow: hw, eat: hw, greet: hw, watch: self.cat, show: if self.cat { Show::Always } else { Show::Off }, tidy: self.cat && self.tidy, seen: Vec::new() }
+    }
+
+    /// The switches from a save made before there were three of them.
+    pub fn from_old(p: &Prefs) -> Switches {
+        if !p.awake() {
+            return Switches::default();
+        }
+        Switches { cat: true, hardware: p.purr || p.hiss || p.meow || p.eat || p.greet, tidy: p.tidy }
+    }
+}
+
+/// Where the switches are saved (the older per-reaction save is [`STORAGE_KEY`]).
+pub const SWITCHES_KEY: &str = "cat-switches";
+
+static SWITCHES: Mutex<Option<Switches>> = Mutex::new(None);
+
+pub fn switches() -> Switches {
+    SWITCHES.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or_default()
+}
+
+/// The switches as Settings left them.
+pub fn set_switches(s: Switches) {
+    let mut slot = SWITCHES.lock().unwrap_or_else(|e| e.into_inner());
+    if *slot == Some(s) {
+        return;
+    }
+    *slot = Some(s);
+    drop(slot);
+    // a switch under an off Cat changes nothing the cat does, but is kept
+    UNSAVED.store(true, Ordering::Relaxed);
+    set_prefs(s.prefs());
+}
+
 static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
 /// The switches changed since they were last saved.
 static UNSAVED: AtomicBool = AtomicBool::new(false);
 
-pub fn prefs() -> Prefs {
-    PREFS.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()
-}
-
-/// The switches as Settings left them.
-pub fn set_prefs(p: Prefs) {
+/// What the cat reacts to (from [`set_switches`]).
+fn set_prefs(p: Prefs) {
     if keep(p.clone()) {
         send(engine::Event::Prefs(p));
     }
@@ -237,11 +295,13 @@ fn send(ev: engine::Event) {
 }
 
 /// Bring the cat to life in the menu bar icon `status_item` (an
-/// `NSStatusItem`), with the switches as they were saved. Call once, on
-/// the main thread. Links `cmdmeow://cat/purr` (hiss, hungry, eat, hello)
-/// make it react.
-pub fn start(saved: Option<Prefs>, status_item: *mut std::ffi::c_void) {
-    let p = saved.unwrap_or_default();
+/// `NSStatusItem`), with the switches as they were saved (`older`: a save
+/// from before the three switches). Call once, on the main thread. Links
+/// `cmdmeow://cat/purr` (hiss, hungry, eat, hello) make it react.
+pub fn start(saved: Option<Switches>, older: Option<Prefs>, status_item: *mut std::ffi::c_void) {
+    let s = saved.or_else(|| older.as_ref().map(Switches::from_old)).unwrap_or_default();
+    *SWITCHES.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+    let p = s.prefs();
     *PREFS.lock().unwrap_or_else(|e| e.into_inner()) = Some(p.clone());
     crate::kit::url_scheme::route("cat", |action| Kind::from_slug(action).map(simulate).is_some());
     #[cfg(target_os = "macos")]
@@ -263,6 +323,32 @@ mod tests {
         let p = Prefs::all_on();
         assert!(p.purr && p.hiss && p.meow && p.eat && p.greet && !p.watch && p.awake());
         assert!(Prefs { watch: true, ..Prefs::default() }.awake());
+    }
+
+    #[test]
+    fn three_switches_turn_the_reactions_on_and_off() {
+        let off = Switches::default();
+        assert!(!off.cat && off.hardware && off.tidy);
+        assert!(!off.prefs().awake());
+        assert_eq!(off.prefs().show, Show::Off);
+        let on = Switches::all_on().prefs();
+        assert!(on.purr && on.hiss && on.meow && on.eat && on.greet && on.watch && on.tidy);
+        assert_eq!(on.show, Show::Always);
+        let quiet = Switches { hardware: false, ..Switches::all_on() }.prefs();
+        assert!(!quiet.purr && !quiet.hiss && !quiet.meow && !quiet.eat && !quiet.greet && quiet.watch && quiet.tidy);
+        let no_tidy = Switches { tidy: false, ..Switches::all_on() }.prefs();
+        assert!(no_tidy.purr && !no_tidy.tidy);
+        // Cat off wins over the switches under it
+        assert!(!Switches { cat: false, ..Switches::all_on() }.prefs().awake());
+    }
+
+    #[test]
+    fn a_save_from_before_the_three_switches_carries_over() {
+        let old: Prefs = serde_json::from_str(r#"{"purr":true,"show":"Always","tidy":true}"#).unwrap();
+        assert_eq!(Switches::from_old(&old), Switches { cat: true, hardware: true, tidy: true });
+        let old: Prefs = serde_json::from_str(r#"{"tidy":true}"#).unwrap();
+        assert_eq!(Switches::from_old(&old), Switches { cat: true, hardware: false, tidy: true });
+        assert_eq!(Switches::from_old(&Prefs::default()), Switches::default());
     }
 
     #[test]

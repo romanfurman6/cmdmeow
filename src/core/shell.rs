@@ -150,8 +150,9 @@ impl App {
         // the icon is the cat's face (see kit::cat)
         #[cfg(target_os = "macos")]
         if let Some(item) = tray.as_ref().and_then(|t| t.ns_status_item()) {
-            let saved = cc.storage.and_then(|s| eframe::get_value(s, crate::kit::cat::STORAGE_KEY));
-            crate::kit::cat::start(saved, objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void);
+            let saved = cc.storage.and_then(|s| eframe::get_value(s, crate::kit::cat::SWITCHES_KEY));
+            let older = cc.storage.and_then(|s| eframe::get_value(s, crate::kit::cat::STORAGE_KEY));
+            crate::kit::cat::start(saved, older, objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void);
         }
 
         // screenshots always use the default widgets
@@ -270,7 +271,7 @@ impl App {
             eframe::set_value(storage, super::settings::STORAGE_KEY, &WidgetPrefs::from_entries(&self.widgets));
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
-            eframe::set_value(storage, crate::kit::cat::STORAGE_KEY, &crate::kit::cat::prefs());
+            eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
     }
 

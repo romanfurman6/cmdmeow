@@ -15,7 +15,10 @@ own licences, not this repository's.
 - Pixabay Content License: https://pixabay.com/service/license-summary/
 - Mixkit Sound Effects Free License: https://mixkit.co/license/#sfxFree
 
-`tap-1`, `tap-2` are made here (a short filtered knock), not recorded.
+`pat`, `rake`, `grab`, `land`, `ball`, `bed` and `bowl` (the desk cat's
+own sounds: a paw on an icon, the rake, the mouth, an icon landing, the
+ball, the bed and the bowl dropping) were generated for this app with
+Magnific's sound-effect generator, then cut and levelled here.
 
 # The desktop cat
 
