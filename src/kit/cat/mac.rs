@@ -630,7 +630,8 @@ impl Main {
             self.tidying = false;
             return;
         };
-        let off = stage::finder_offset(&spots, view.icon, icons.as_ref());
+        let mask = stage::mask(icons.as_ref());
+        let off = stage::finder_offset(&spots, view.icon, mask.as_ref());
         // the middles of the icons' pictures
         let mids: Vec<grid::Spot> = spots.iter().map(|s| grid::Spot { name: s.name.clone(), x: s.x - off.0, y: s.y - off.1 }).collect();
         let pitch = grid::pitch(&mids, view);
@@ -639,7 +640,12 @@ impl Main {
         if log() {
             eprintln!("[cat] tidy: offset {off:?}, pitch {pitch:?}, icons shot {}, wallpaper shot {}, {} slot(s)", icons.is_some(), paper.is_some(), slots.len());
         }
-        let desktop = Desktop { spots, view, pitch, off, icons, paper };
+        let mut desktop = Desktop { spots, view, pitch, off, icons, paper, boxes: Vec::new() };
+        // what each icon and its name really cover: the picture lifted and the patch over its old spot
+        if let Some(m) = &mask {
+            let mids: Vec<(f64, f64)> = mids.iter().map(|s| (s.x, s.y)).collect();
+            desktop.boxes = (0..mids.len()).map(|i| grid::ink_box(m, &mids, i, view.icon, desktop.cell(mids[i]))).collect();
+        }
         self.with_stage(move |st, now| {
             st.desktop = Some(desktop);
             st.live.tidy(at, &slots, (pitch.0 * 0.46, pitch.1 * 0.46), now);

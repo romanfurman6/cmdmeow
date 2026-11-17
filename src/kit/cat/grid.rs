@@ -134,6 +134,68 @@ pub fn slots(spots: &[Spot], pitch: (f64, f64), area: (f64, f64, f64, f64), n: u
     out
 }
 
+/// A picture's see-through mask: alpha 0–255 per pixel, rows from the top,
+/// `scale` pixels a point, its top left pixel at `origin` (points).
+pub struct Mask {
+    pub alpha: Vec<u8>,
+    pub w: usize,
+    pub h: usize,
+    pub origin: (f64, f64),
+    pub scale: f64,
+}
+
+impl Mask {
+    fn at(&self, x: f64, y: f64) -> (isize, isize) {
+        (((x - self.origin.0) * self.scale).floor() as isize, ((y - self.origin.1) * self.scale).floor() as isize)
+    }
+}
+
+/// The rectangle (x, y, w, h: points, top left) that icon `i`'s picture and
+/// label really cover on `mask`, Finder's icons alone: whatever is not
+/// see-through below the top of `guess`, out to halfway to the icons beside
+/// it and down to the top of the one under it, with 2 points to spare.
+/// Long names wrap to two lines and wide ones run past the grid's pitch, so
+/// a rectangle worked out from the text size misses part of them.
+/// `mids`: the middles of the icons' pictures; `icon`: their size.
+pub fn ink_box(mask: &Mask, mids: &[(f64, f64)], i: usize, icon: f64, guess: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
+    let Some(&(mx, my)) = mids.get(i) else { return guess };
+    let half = icon / 2.0;
+    let (mut x0, y0, mut x1, mut y1) = (mx - icon * 1.6, guess.1, mx + icon * 1.6, my + half + icon * 1.5);
+    for (k, &(ox, oy)) in mids.iter().enumerate() {
+        if k == i {
+            continue;
+        }
+        if (oy - my).abs() < icon {
+            if ox > mx {
+                x1 = x1.min((mx + ox) / 2.0);
+            } else {
+                x0 = x0.max((mx + ox) / 2.0);
+            }
+        } else if oy > my && (ox - mx).abs() < icon * 1.6 {
+            y1 = y1.min(oy - half - 2.0);
+        }
+    }
+    let ((px0, py0), (px1, py1)) = (mask.at(x0, y0), mask.at(x1, y1));
+    let (px0, py0) = (px0.max(0) as usize, py0.max(0) as usize);
+    let (px1, py1) = ((px1.max(0) as usize).min(mask.w), (py1.max(0) as usize).min(mask.h));
+    // the picture's square always counts, even where it is see-through
+    let (mut a0, mut b0, mut a1, mut b1) = (mx - half, my - half, mx + half, my + half);
+    for py in py0..py1 {
+        let row = &mask.alpha[py * mask.w..(py + 1) * mask.w];
+        for (px, &al) in row.iter().enumerate().take(px1).skip(px0) {
+            if al > 24 {
+                let (x, y) = (mask.origin.0 + px as f64 / mask.scale, mask.origin.1 + py as f64 / mask.scale);
+                a0 = a0.min(x);
+                b0 = b0.min(y);
+                a1 = a1.max(x + 1.0 / mask.scale);
+                b1 = b1.max(y + 1.0 / mask.scale);
+            }
+        }
+    }
+    let (a0, b0, a1, b1) = ((a0 - 2.0).max(x0), (b0 - 2.0).max(y0), (a1 + 2.0).min(x1), (b1 + 2.0).min(y1));
+    (a0, b0, a1 - a0, b1 - b0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +240,48 @@ mod tests {
         // an empty desktop: a column at the right edge
         let out = slots(&[], (100.0, 90.0), (0.0, 25.0, 1512.0, 900.0), 3);
         assert_eq!(out, vec![(1456.0, 70.0), (1456.0, 160.0), (1456.0, 250.0)]);
+    }
+
+    /// A 1 pt = 1 px mask with the given filled rectangles (x0, y0, x1, y1).
+    fn mask(w: usize, h: usize, fills: &[(usize, usize, usize, usize)]) -> Mask {
+        let mut alpha = vec![0u8; w * h];
+        for &(x0, y0, x1, y1) in fills {
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    alpha[y * w + x] = 255;
+                }
+            }
+        }
+        Mask { alpha, w, h, origin: (0.0, 0.0), scale: 1.0 }
+    }
+
+    #[test]
+    fn the_ink_box_takes_in_a_long_two_line_name() {
+        // a 64 icon at (200, 100), its name 150 wide on two lines under it
+        let m = mask(600, 400, &[(168, 68, 232, 132), (125, 136, 275, 168)]);
+        let guess = (151.0, 62.0, 98.0, 115.0);
+        let b = ink_box(&m, &[(200.0, 100.0)], 0, 64.0, guess);
+        assert!(b.0 <= 123.0 && b.0 + b.2 >= 277.0, "{b:?}");
+        assert!(b.1 + b.3 >= 170.0, "{b:?}");
+    }
+
+    #[test]
+    fn the_ink_box_stops_halfway_to_a_neighbour() {
+        // two icons 100 apart in a row, labels wide enough to meet
+        let m = mask(600, 400, &[(168, 68, 232, 132), (268, 68, 332, 132), (140, 136, 249, 150), (251, 136, 360, 150)]);
+        let b = ink_box(&m, &[(200.0, 100.0), (300.0, 100.0)], 0, 64.0, (151.0, 62.0, 98.0, 115.0));
+        assert!(b.0 + b.2 <= 250.0 + 1e-9, "{b:?}");
+        assert!(b.0 <= 138.0, "{b:?}");
+        // and above the icon under it
+        let m = mask(600, 400, &[(168, 68, 232, 132), (168, 168, 232, 232)]);
+        let b = ink_box(&m, &[(200.0, 100.0), (200.0, 200.0)], 0, 64.0, (151.0, 62.0, 98.0, 115.0));
+        assert!(b.1 + b.3 <= 166.0 + 1e-9, "{b:?}");
+    }
+
+    #[test]
+    fn an_empty_mask_still_covers_the_picture() {
+        let m = mask(600, 400, &[]);
+        let b = ink_box(&m, &[(200.0, 100.0)], 0, 64.0, (151.0, 62.0, 98.0, 115.0));
+        assert!(b.0 <= 168.0 && b.1 <= 68.0 && b.0 + b.2 >= 232.0 && b.1 + b.3 >= 132.0, "{b:?}");
     }
 }

@@ -173,6 +173,9 @@ pub struct Desktop {
     /// with the point of the screen at their top left and pixels a point
     pub icons: Option<Shot>,
     pub paper: Option<Shot>,
+    /// what each icon and its label really cover, measured on `icons`
+    /// (by index into `spots`; empty without a picture)
+    pub boxes: Vec<(f64, f64, f64, f64)>,
 }
 
 unsafe impl Send for Desktop {}
@@ -498,7 +501,7 @@ impl Stage {
             return;
         }
         let mid = (spot.x - d.off.0, spot.y - d.off.1);
-        let cell = d.cell(mid);
+        let cell = d.boxes.get(id).copied().unwrap_or_else(|| d.cell(mid));
         let crop = |shot: &Option<Shot>| -> Option<Image> {
             let (img, origin, scale) = shot.as_ref()?;
             let r = NSRect::new(NSPoint::new((cell.0 - origin.0) * scale, (cell.1 - origin.1) * scale), NSSize::new(cell.2 * scale, cell.3 * scale));
@@ -716,29 +719,33 @@ pub fn shoot(done: impl FnOnce(Option<Shot>, Option<Shot>) + Send + 'static) {
     unsafe { SCShareableContent::getShareableContentExcludingDesktopWindows_onScreenWindowsOnly_completionHandler(false, true, &block) };
 }
 
-/// Whether Finder's `desktop position` is the middle of the icon's picture
-/// or its top left corner: whichever square holds more of the icons'
-/// pixels in the picture of them. Returns position minus middle.
-pub fn finder_offset(spots: &[Spot], icon: f64, shot: Option<&Shot>) -> (f64, f64) {
-    let Some((img, origin, scale)) = shot else { return (0.0, 0.0) };
+/// The see-through mask of a picture of the icons (read once per tidy).
+pub fn mask(shot: Option<&Shot>) -> Option<grid::Mask> {
+    let (img, origin, scale) = shot?;
     let (w, h) = unsafe { (CGImageGetWidth(img.0), CGImageGetHeight(img.0)) };
     let alpha = unsafe {
         let space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         let ctx = CGBitmapContextCreate(std::ptr::null_mut(), w, h, 8, w * 4, space, 1);
         CGColorSpaceRelease(space);
         if ctx.is_null() {
-            return (0.0, 0.0);
+            return None;
         }
         CGContextDrawImage(ctx, NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w as f64, h as f64)), img.0);
         let data = CGBitmapContextGetData(ctx);
+        // the bitmap's rows run from the top
         let px: Vec<u8> = if data.is_null() { Vec::new() } else { (0..w * h).map(|i| *data.add(i * 4 + 3)).collect() };
         CGContextRelease(ctx);
         px
     };
-    if alpha.is_empty() {
-        return (0.0, 0.0);
-    }
-    // the bitmap's rows run from the top
+    (!alpha.is_empty()).then_some(grid::Mask { alpha, w, h, origin: *origin, scale: *scale })
+}
+
+/// Whether Finder's `desktop position` is the middle of the icon's picture
+/// or its top left corner: whichever square holds more of the icons'
+/// pixels in the picture of them. Returns position minus middle.
+pub fn finder_offset(spots: &[Spot], icon: f64, mask: Option<&grid::Mask>) -> (f64, f64) {
+    let Some(m) = mask else { return (0.0, 0.0) };
+    let (alpha, w, h, origin, scale) = (&m.alpha, m.w, m.h, m.origin, m.scale);
     let sum = |x0: f64, y0: f64| -> u64 {
         let (px0, py0) = (((x0 - origin.0) * scale).max(0.0) as usize, ((y0 - origin.1) * scale).max(0.0) as usize);
         let n = (icon * scale) as usize;
