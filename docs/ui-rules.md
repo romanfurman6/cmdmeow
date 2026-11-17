@@ -151,6 +151,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ✅ |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
+| H7 | A picked or selected item has no hover, because a click on it does nothing: sidebar, group rail, picked segment, picked radio, picked card (H4), single-choice tiles. Items where a click changes state (checkbox, toggle chip, a widget card with its sheet open) keep their hover. | ✅ (PR #242) |
 
 ## 9. Motion
 
@@ -244,3 +245,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-15, Roman: per-screen audit fixes approved (canvas https://claude.ai/artifact/XuR6xDoEmxzkmKMtCwcRmQ), including the new P7 tip placement.
 
 2026-11-15, Roman: big numbers (hero, number) bold, as the rule says (B over thin, M1 comparison).
+
+2026-11-17, Roman: no hover on a selected item (H7).
