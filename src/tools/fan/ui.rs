@@ -22,9 +22,9 @@ pub fn LINE() -> Color32 { crate::kit::glass::tint::FAN() }
 #[allow(non_snake_case)]
 pub fn HOT_LINE() -> Color32 { crate::kit::glass::AMBER() }
 
-/// Still blades at `angle` (turning ones go through `kit::spin::blades`).
-pub fn blades(p: &egui::Painter, c: Pos2, r: f32, angle: f32, color: Color32, hub: Color32) {
-    crate::kit::spin::draw(p, c, r, angle, color, hub);
+/// The fan glyph standing still at `angle` (turning ones go through `kit::spin::blades`).
+pub fn blades(p: &egui::Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
+    crate::kit::spin::draw(p, c, r, angle, color);
 }
 
 /// A 270° dial: track plus the filled part for `frac`.
@@ -158,7 +158,7 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             let (c, rr) = tile::small_ring_at(rect);
             let w = (rr * 0.2).clamp(4.0, 6.0);
             ring(p, c, rr - w / 2.0, w, frac, LINE());
-            crate::kit::spin::blades(p, "fan-avg", c, rr * 0.7, rpm.unwrap_or(0.0), BLADE(), BG());
+            crate::kit::spin::blades(p, "fan-avg", c, rr * 0.7, rpm.unwrap_or(0.0), BLADE());
             text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 9.0), Align2::CENTER_BOTTOM, &value, font(11.0), TEXT_SOFT(), rect.width() - 10.0);
             resp
         }
@@ -190,7 +190,7 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         };
         if let Some((c, cover, br, hub)) = spot {
             p.circle_filled(c, cover, hub);
-            crate::kit::spin::blades(p, "fan-avg", c, br, r, BLADE(), hub);
+            crate::kit::spin::blades(p, "fan-avg", c, br, r, BLADE());
         }
     }
     if resp.clicked() {
@@ -269,7 +269,7 @@ fn mini_fan(p: &egui::Painter, r: Rect, f: &Fan, name: &str) {
     p.rect_filled(r, 8.0, white(8));
     let c = Pos2::new(r.left() + 8.0 + 18.0, r.center().y);
     ring(p, c, 17.0, 3.0, f.frac(), LINE());
-    crate::kit::spin::blades(p, &format!("fan-card-{name}"), c, 12.0, f.rpm, BLADE(), CARD());
+    crate::kit::spin::blades(p, &format!("fan-card-{name}"), c, 12.0, f.rpm, BLADE());
     let x = c.x + 26.0;
     let (ly1, ly2) = two_lines_y(&p, r.center().y, &font(11.0), &bold(15.0));
     p.text(Pos2::new(x, ly1), Align2::LEFT_CENTER, name, font(11.0), TEXT_DIM());

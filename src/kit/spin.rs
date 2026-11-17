@@ -1,4 +1,4 @@
-//! Things that move without redrawing the window: fan blades, the arc of
+//! Things that move without redrawing the window: the fan glyph, the arc of
 //! work going on, a progress bar easing to its value.
 //!
 //! egui redraws a whole window for any change, so blades turning at 30 fps
@@ -17,18 +17,17 @@
 //! Widgets call [`blades`], [`arc`] or [`bar`] while drawing; the shell
 //! calls [`flush`] at the end of every pass of a window that may show them.
 
-use egui::{Color32, LayerId, Painter, Pos2, Rect, Shape, Stroke, Vec2};
+use egui::{Color32, LayerId, Painter, Pos2, Rect, Vec2};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::f32::consts::{PI, TAU};
 
 pub use crate::kit::loader::MarkState;
 
 /// What a request draws.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Look {
-    /// Five blades around a hub filled with this.
-    Blades { hub: Color32 },
+    /// The fan glyph (SP11): four rounded blades, the hub cut out.
+    Blades,
     /// An open circle turning: work going on.
     Arc,
     /// A bar filled to `frac` on a faint track.
@@ -93,15 +92,16 @@ fn push(p: &Painter, req: Request) {
     PENDING.with(|q| q.borrow_mut().push((id, req)));
 }
 
-/// Five blades around a hub at `c`, turning with the fan's `rpm`; `hub`
-/// fills the middle. Drawn natively or by egui when the pass ends.
-pub fn blades(p: &Painter, key: &str, c: Pos2, r: f32, rpm: f32, color: Color32, hub: Color32) {
+/// The fan glyph at `c`, reaching `r` from its hub, turning with the fan's
+/// `rpm`. Its hub is cut out: whatever is under it shows through. Drawn
+/// natively or by egui when the pass ends.
+pub fn blades(p: &Painter, key: &str, c: Pos2, r: f32, rpm: f32, color: Color32) {
     // CMDMEOW_SPIN_RPM=<n>: turn at n rpm whatever the fans do (to check
     // the blades on a cool Mac)
     static TEST_RPM: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
     let rpm = TEST_RPM.get_or_init(|| std::env::var("CMDMEOW_SPIN_RPM").ok().and_then(|v| v.parse().ok())).unwrap_or(rpm);
     let rect = Rect::from_center_size(c, Vec2::splat(r * 2.0));
-    push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Blades { hub }, tps: turns_per_sec(rpm), always: false });
+    push(p, Request { painter: p.clone(), key: key.to_string(), rect, color, look: Look::Blades, tps: turns_per_sec(rpm), always: false });
 }
 
 /// A turning arc of radius `r` at `c`: something is being worked on.
@@ -155,20 +155,86 @@ fn native_wanted() -> bool {
     ALLOWED.with(|a| a.get()) && *ENV.get_or_init(|| std::env::var("CMDMEOW_NATIVE_SPIN").map(|v| v != "0").unwrap_or(true))
 }
 
-/// The shape egui draws for blades at `angle`.
-pub fn draw(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32, hub: Color32) {
-    for pts in blade_outlines(c, r, angle) {
-        p.add(Shape::convex_polygon(pts, color, Stroke::NONE));
+/// The fan glyph at `angle`, drawn by egui: a white texture of the
+/// glyph at this size, turned and tinted `color`.
+pub fn draw(p: &Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
+    let ppp = p.ctx().pixels_per_point();
+    // a texture near the drawn size so it stays sharp; sizes go up in
+    // steps of 8 px so a sweep of sizes (the widget editor, a move between
+    // displays) makes a few textures, not one per size
+    let px = ((r * 2.0 * ppp).ceil() as u32 + 2).div_ceil(8).saturating_mul(8).clamp(8, 1024);
+    let tex = glyph_texture(p.ctx(), px);
+    // the glyph reaches px/2 - 1 in the texture: scale it to reach r
+    let half = r * (px as f32 / 2.0) / (px as f32 / 2.0 - 1.0);
+    let mut mesh = egui::Mesh::with_texture(tex.id());
+    let (sin, cos) = angle.sin_cos();
+    for (u, v) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+        let (x, y) = ((u * 2.0 - 1.0) * half, (v * 2.0 - 1.0) * half);
+        mesh.vertices.push(egui::epaint::Vertex { pos: c + Vec2::new(x * cos - y * sin, x * sin + y * cos), uv: Pos2::new(u, v), color });
     }
-    p.circle_filled(c, r * 0.24, hub);
-    crate::kit::glass::stroke_circle(p, c, r * 0.24, Stroke::new(1.0, crate::kit::glass::white(46)));
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(mesh);
+}
+
+/// The fan glyph (SP11; Flaticon Premium icon 17711600, source and
+/// licence in assets/glyphs/SOURCES.md): outlines in a circle of
+/// radius 1 around the hub, y down. Each is a start point, then cubic
+/// segments as (control, control, end). The second outline is the hub,
+/// cut out (even-odd).
+const GLYPH: &[&[[f32; 2]]] = &[
+    &[[0.6696, -0.4512], [0.5534, -0.3566], [0.4371, -0.2621], [0.3209, -0.1675], [0.2976, -0.2140], [0.2651, -0.2559], [0.2232, -0.2884], [0.2883, -0.4233], [0.3302, -0.5953], [0.3302, -0.6837], [0.3302, -0.8604], [0.1860, -0.9999], [0.0140, -0.9999], [-0.1628, -0.9999], [-0.5859, -0.9301], [-0.4464, -0.6790], [-0.3503, -0.5628], [-0.2542, -0.4465], [-0.1581, -0.3303], [-0.2046, -0.3070], [-0.2465, -0.2745], [-0.2790, -0.2326], [-0.4139, -0.2977], [-0.5859, -0.3396], [-0.6743, -0.3396], [-0.8510, -0.3396], [-0.9905, -0.1954], [-0.9905, -0.0233], [-0.9905, 0.1534], [-0.9208, 0.5766], [-0.6696, 0.4370], [-0.5534, 0.3409], [-0.4371, 0.2448], [-0.3209, 0.1487], [-0.2976, 0.1952], [-0.2651, 0.2371], [-0.2232, 0.2696], [-0.2883, 0.4045], [-0.3302, 0.5766], [-0.3302, 0.6649], [-0.3302, 0.8416], [-0.1860, 0.9811], [-0.0140, 0.9811], [0.1628, 0.9811], [0.5859, 0.9114], [0.4464, 0.6603], [0.3503, 0.5440], [0.2542, 0.4277], [0.1581, 0.3115], [0.2046, 0.2882], [0.2465, 0.2557], [0.2790, 0.2138], [0.4139, 0.2789], [0.5859, 0.3208], [0.6743, 0.3208], [0.8510, 0.3208], [0.9905, 0.1766], [0.9905, 0.0046], [0.9905, -0.1675], [0.9208, -0.5907], [0.6696, -0.4512]],
+    &[[0.0000, 0.1720], [-0.0977, 0.1720], [-0.1721, 0.0929], [-0.1721, -0.0001], [-0.1721, -0.0977], [-0.0930, -0.1721], [0.0000, -0.1721], [0.0977, -0.1721], [0.1721, -0.0931], [0.1721, -0.0001], [0.1721, 0.0929], [0.0977, 0.1720], [0.0000, 0.1720]],
+];
+
+/// [`GLYPH`] as a tiny-skia path, scaled by `k` around `(c, c)`.
+fn glyph_skia(c: f32, k: f32) -> Option<tiny_skia::Path> {
+    let at = |q: [f32; 2]| (c + q[0] * k, c + q[1] * k);
+    let mut pb = tiny_skia::PathBuilder::new();
+    for o in GLYPH {
+        let (x, y) = at(o[0]);
+        pb.move_to(x, y);
+        for seg in o[1..].chunks_exact(3) {
+            let ((x1, y1), (x2, y2), (x, y)) = (at(seg[0]), at(seg[1]), at(seg[2]));
+            pb.cubic_to(x1, y1, x2, y2, x, y);
+        }
+        pb.close();
+    }
+    pb.finish()
+}
+
+/// The glyph filling a `px` square (the glyph's reach 1 px in from the
+/// edge), white with coverage as alpha, made once per size.
+fn glyph_texture(ctx: &egui::Context, px: u32) -> egui::TextureHandle {
+    let id = egui::Id::NULL.with(("cmdmeow-fan-glyph", px));
+    if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return t;
+    }
+    let mut rgba = vec![0u8; (px * px * 4) as usize];
+    if let (Some(mut pm), Some(path)) = (tiny_skia::Pixmap::new(px, px), glyph_skia(px as f32 / 2.0, px as f32 / 2.0 - 1.0)) {
+        let mut ink = tiny_skia::Paint::default();
+        ink.set_color_rgba8(255, 255, 255, 255);
+        ink.anti_alias = true;
+        pm.fill_path(&path, &ink, tiny_skia::FillRule::EvenOdd, tiny_skia::Transform::identity(), None);
+        rgba = pm.take();
+        // premultiplied white → straight white with the coverage as alpha
+        for c in rgba.chunks_exact_mut(4) {
+            if c[3] > 0 {
+                c[..3].fill(255);
+            }
+        }
+    }
+    let ci = egui::ColorImage::from_rgba_unmultiplied([px as usize, px as usize], &rgba);
+    let t = ctx.load_texture("cmdmeow-fan-glyph", ci, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, t.clone()));
+    t
 }
 
 /// What egui draws for `req` at `angle`.
 fn draw_req(req: &Request, angle: f32) {
     let (p, c, r) = (&req.painter, req.rect.center(), req.rect.width() / 2.0);
     match req.look {
-        Look::Blades { hub } => draw(p, c, r, angle, req.color, hub),
+        Look::Blades => draw(p, c, r, angle, req.color),
         Look::Arc => {
             p.add(egui::epaint::PathShape::line(crate::kit::glass::arc_points(c, r, angle, angle + ARC_SPAN, 40), egui::epaint::PathStroke::new(ARC_WIDTH, req.color)));
         }
@@ -191,24 +257,6 @@ fn stroke_end(w: f32, h: f32, frac: f32) -> f64 {
         return if frac > 0.0 { 1.0 } else { 0.0 };
     }
     (((w * frac - h) / (w - h)).clamp(0.0, 1.0) as f64).max(1e-4)
-}
-
-/// Each blade: an ellipse along it, leaned back a little like a real blade.
-fn blade_outlines(c: Pos2, r: f32, angle: f32) -> Vec<Vec<Pos2>> {
-    (0..5)
-        .map(|k| {
-            let a = angle + k as f32 * TAU / 5.0;
-            let center = c + Vec2::angled(a) * r * 0.52;
-            let lean = a + 0.35;
-            let (ax, ay) = (Vec2::angled(lean) * r * 0.46, Vec2::angled(lean + PI / 2.0) * r * 0.19);
-            (0..16)
-                .map(|i| {
-                    let u = i as f32 / 16.0 * TAU;
-                    center + ax * u.cos() + ay * u.sin()
-                })
-                .collect()
-        })
-        .collect()
 }
 
 /// Is any egui layer drawn over `layer` covering `rect`?
@@ -408,28 +456,20 @@ mod native {
         }
     }
 
-    /// The blades' outline in a square of side 2r, centre (r, r), y down.
+    /// The fan glyph in a square of side 2r, centre (r, r), y down (fill it even-odd).
     fn blades_path(r: f32) -> *mut c_void {
-        let c = Pos2::new(r, r);
+        let at = |q: [f32; 2]| ((r + q[0] * r) as f64, (r + q[1] * r) as f64);
         unsafe {
             let path = CGPathCreateMutable();
-            for pts in super::blade_outlines(c, r, 0.0) {
-                CGPathMoveToPoint(path, std::ptr::null(), pts[0].x as f64, pts[0].y as f64);
-                for q in &pts[1..] {
-                    CGPathAddLineToPoint(path, std::ptr::null(), q.x as f64, q.y as f64);
+            for o in super::GLYPH {
+                let (x, y) = at(o[0]);
+                CGPathMoveToPoint(path, std::ptr::null(), x, y);
+                for seg in o[1..].chunks_exact(3) {
+                    let ((x1, y1), (x2, y2), (x, y)) = (at(seg[0]), at(seg[1]), at(seg[2]));
+                    CGPathAddCurveToPoint(path, std::ptr::null(), x1, y1, x2, y2, x, y);
                 }
                 CGPathCloseSubpath(path);
             }
-            path
-        }
-    }
-
-    fn hub_path(r: f32) -> *mut c_void {
-        // as glass::stroke_circle: a 1 pt line just inside the hub's edge
-        let hr = (r * 0.24) as f64 - 0.5;
-        unsafe {
-            let path = CGPathCreateMutable();
-            CGPathAddEllipseInRect(path, std::ptr::null(), ns_rect(r as f64 - hr, r as f64 - hr, hr * 2.0, hr * 2.0));
             path
         }
     }
@@ -511,7 +551,7 @@ mod native {
 
     fn kind(look: Look) -> u8 {
         match look {
-            Look::Blades { .. } => 0,
+            Look::Blades => 0,
             Look::Arc => 1,
             Look::Bar { .. } => 2,
             Look::Mark { .. } => 3,
@@ -569,7 +609,7 @@ mod native {
             let k = kind(look);
             let size = Rect::from_min_size(Pos2::ZERO, rect.size());
             let (second, edge) = match look {
-                Look::Blades { hub } => (Some(hub), crate::kit::glass::white(46)),
+                Look::Blades => (None, Color32::TRANSPARENT),
                 Look::Arc => (None, Color32::TRANSPARENT),
                 Look::Bar { .. } => (None, super::track()),
                 Look::Mark { track, bg, .. } => (Some(bg), track),
@@ -617,11 +657,10 @@ mod native {
                 if l.shape != Some((k, size)) {
                     let (w, h, r) = (rect.width(), rect.height(), rect.width() / 2.0);
                     match look {
-                        Look::Blades { .. } => {
+                        Look::Blades => {
                             set_path(&l.a, blades_path(r));
-                            set_path(&l.b, hub_path(r));
-                            let _: () = msg_send![&*l.b, setLineWidth: 1.0f64];
-                            let _: () = msg_send![&*l.b, setHidden: false];
+                            let _: () = msg_send![&*l.a, setFillRule: &*NSString::from_str("even-odd")];
+                            let _: () = msg_send![&*l.b, setHidden: true];
                         }
                         Look::Arc => {
                             set_path(&l.a, arc_path(r));
@@ -652,10 +691,9 @@ mod native {
                 if l.colors != Some((color, second, edge, space_ptr)) {
                     let sp = space.as_deref();
                     match look {
-                        Look::Blades { hub } => {
+                        Look::Blades => {
                             set_color(&l.a, false, Some(color), sp);
-                            set_color(&l.b, false, Some(hub), sp);
-                            set_color(&l.b, true, Some(edge), sp);
+                            set_color(&l.a, true, None, sp);
                         }
                         Look::Arc => {
                             set_color(&l.a, false, None, sp);
@@ -989,6 +1027,43 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::Shape;
+
+    #[test]
+    fn the_fan_glyph_has_blades_and_an_open_hub() {
+        let px = 64u32;
+        let path = glyph_skia(32.0, 31.0).expect("the glyph builds");
+        let mut pm = tiny_skia::Pixmap::new(px, px).unwrap();
+        let mut ink = tiny_skia::Paint::default();
+        ink.set_color_rgba8(255, 255, 255, 255);
+        pm.fill_path(&path, &ink, tiny_skia::FillRule::EvenOdd, tiny_skia::Transform::identity(), None);
+        let alpha = |x: u32, y: u32| pm.pixel(x, y).unwrap().alpha();
+        assert_eq!(alpha(32, 32), 0, "the hub is cut out");
+        assert_eq!(alpha(32, 6), 255, "a blade reaches up");
+        assert_eq!(alpha(32, 58), 255, "and down");
+        assert_eq!(alpha(4, 4), 0, "nothing in the corners");
+        // every point on the outline (not the control points) stays inside
+        // the circle the glyph is sized to
+        for o in GLYPH {
+            for q in o.iter().step_by(3) {
+                assert!((q[0] * q[0] + q[1] * q[1]).sqrt() <= 1.001, "{q:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn blades_without_native_layers_are_drawn_by_egui() {
+        set_allowed(false);
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0))), ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| {
+            blades(ui.painter(), "fan-test", Pos2::new(60.0, 60.0), 38.0, 1400.0, Color32::WHITE);
+            flush(ui.ctx());
+        });
+        out.textures_delta.clear();
+        set_allowed(true);
+        assert!(out.shapes.iter().any(|s| matches!(s.shape, Shape::Mesh(_))), "the glyph is a textured mesh");
+    }
 
     #[test]
     fn a_new_speed_carries_on_from_the_same_angle() {
