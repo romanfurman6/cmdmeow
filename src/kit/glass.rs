@@ -89,10 +89,10 @@ pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255
 pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
 /// …the glass sheen down from its top (white, fading out by 60%)…
 #[allow(non_snake_case)]
-pub fn TILE_SHEEN() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 13), Color32::from_rgba_unmultiplied(255, 255, 255, 46)) }
+pub fn TILE_SHEEN() -> Color32 { Color32::TRANSPARENT }
 /// …and the shade up from its bottom (dark only: black 10%, fading out by 45%).
 #[allow(non_snake_case)]
-pub fn TILE_SHADE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 26), Color32::TRANSPARENT) }
+pub fn TILE_SHADE() -> Color32 { Color32::TRANSPARENT }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
