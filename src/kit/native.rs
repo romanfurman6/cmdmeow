@@ -398,8 +398,26 @@ mod mac {
             let _: () = msg_send![&*alert, setInformativeText: &*NSString::from_str(body)];
             let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str(ok)];
             let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+            // over Finder even when the app isn't frontmost yet (just
+            // launched by a double-click): floating, and kept on deactivate
+            let w: Retained<AnyObject> = msg_send![&*alert, window];
+            let _: () = msg_send![&*w, setHidesOnDeactivate: false];
+            /// NSModalPanelWindowLevel
+            const MODAL_LEVEL: isize = 8;
+            let _: () = msg_send![&*w, setLevel: MODAL_LEVEL];
+            let _: () = msg_send![&*w, orderFrontRegardless];
             let r: isize = msg_send![&*alert, runModal];
             r == FIRST
+        }
+    }
+
+    /// The app is frontmost.
+    pub fn app_active() -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            msg_send![&*app, isActive]
         }
     }
 
@@ -492,6 +510,9 @@ mod other {
     }
     pub fn app_alive(_pid: i32) -> bool {
         false
+    }
+    pub fn app_active() -> bool {
+        true
     }
     /// No alert off macOS: never confirmed.
     pub fn confirm(_title: &str, _body: &str, _ok: &str) -> bool {

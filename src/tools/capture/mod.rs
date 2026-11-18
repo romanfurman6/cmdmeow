@@ -184,6 +184,9 @@ pub struct Capture {
     /// Whether a secret key is in the Keychain: read once, off the frame loop
     /// (and never in demo mode, where a Keychain prompt would block).
     pub(crate) has_secret: Option<bool>,
+    /// Storage files opened from Finder, waiting for the app to come to the
+    /// front (a cold launch) so their alert isn't hidden behind Finder.
+    storage_files: Vec<(PathBuf, Instant)>,
 }
 
 impl Capture {
@@ -264,6 +267,7 @@ impl Capture {
             uploads: share::Uploads::default(),
             share_secret: String::new(),
             has_secret: if env.demo { Some(false) } else { None },
+            storage_files: Vec::new(),
         };
         c.apply_keys();
         c
@@ -335,7 +339,7 @@ impl Capture {
         };
         // a file from anywhere could point uploads at someone else's bucket:
         // the person sees where they'd go and says yes
-        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{} at {}", st.bucket, st.endpoint), "Use") {
+        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, st.endpoint), "Use") {
             return;
         }
         if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
@@ -1159,8 +1163,18 @@ impl Tool for Capture {
         }
         // not in demo mode (screenshots), where a Keychain prompt would block
         if self.links.is_some() {
-            for f in share::import::take() {
-                self.import_storage(&f);
+            let now = Instant::now();
+            self.storage_files.extend(share::import::take().into_iter().map(|f| (f, now)));
+            if !self.storage_files.is_empty() {
+                // up to 2 s for the launch to bring the app forward
+                let ready = crate::kit::native::app_active() || self.storage_files.iter().any(|(_, at)| at.elapsed().as_secs_f32() > 2.0);
+                if ready {
+                    for (f, _) in std::mem::take(&mut self.storage_files) {
+                        self.import_storage(&f);
+                    }
+                } else {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
             }
         }
         while let Ok(d) = self.rx.try_recv() {

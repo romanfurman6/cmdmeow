@@ -863,7 +863,10 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let p = ui.painter().clone();
     let shared = super::share::all();
     let ready = c.settings.share.set_up(VIDEO_ACCOUNT);
-    let sub = if ready { format!("{} shared · {}.{}", shared.len(), c.settings.share.bucket.trim(), c.settings.share.endpoint.trim()) } else { String::new() };
+    let sub = if ready { format!("{} shared · {}.{}", shared.len(), c.settings.share.bucket.trim(), {
+        let e = c.settings.share.endpoint.trim();
+        e.strip_prefix("https://").or_else(|| e.strip_prefix("http://")).unwrap_or(e).trim_end_matches('/')
+    }) } else { String::new() };
     // the main agent's chat walks them through a bucket and keys
     let agent = crate::kit::agent::main();
     let ask = super::share::setup::label(agent);
