@@ -167,6 +167,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | M2 | Every animation is finite or tied to visible work, and stops repainting when done. | ✅ |
 | M3 | Press: down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)` (B7). Hover fades via `animate_bool`. | ✅ |
 | M4 | Loader: fill eases 0.6 s, wave loops 1.6 s linear, ⌘→✓ crossfade 0.25 s plus one 0.46 s hop. | ✅ |
+| M5 | **Window open:** if the window's first frame isn't drawn 150 ms after it appears, show the S1 backdrop and the P6 loader mark (56 pt, centred, lime fill rising on a loop). Fade in and out 120 ms. No text, card or frame. Core Animation under egui's frame (M1). | ⏳ code |
 
 ## 10. Sound ✅
 
@@ -303,3 +304,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman ("щоб було консістент"): Uninstaller and Disk Map start screens follow SP1 like Cleanup, variant A (canvas https://claude.ai/artifact/EQCfEUPxzBcgPzX6mwRhJJ).
 
 2026-11-18, Roman: buttons look like widgets (canvas https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34): 1 pt base everywhere, quiet keys use the widget surface (B4), glow only on main keys ≥ 32 pt, softer (B5); press drops 1 pt onto the base for every kind (B7).
+
+2026-11-18, Roman: M5 window-open loader, look A (canvas https://claude.ai/artifact/KxiUnErRbP6J3sadUv6B1z).
