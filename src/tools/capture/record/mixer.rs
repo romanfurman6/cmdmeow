@@ -13,6 +13,14 @@ use std::collections::VecDeque;
 pub const RATE: u32 = 48_000;
 /// How far a source may lag before its missing part counts as silence.
 pub const MAX_LAG: i64 = (RATE / 4) as i64;
+/// A buffer that says it starts this close to where the last one ended
+/// follows it: device clocks drift and timestamps jitter by a few frames,
+/// and a frame of silence (or a dropped one) at every such step is a click.
+/// Further off is a real gap or overlap.
+pub const SNAP: i64 = (RATE / 50) as i64;
+/// Frames of smoothed drift before a buffer is stretched or squeezed by one
+/// frame to follow its timestamps again.
+const DRIFT_STEP: f64 = 2.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Src {
@@ -27,6 +35,12 @@ struct Track {
     on: bool,
     start: i64,
     buf: VecDeque<f32>,
+    /// Frames came before, so the next buffer is expected at `end()`.
+    seen: bool,
+    /// How far the buffers' own times run ahead of where they land
+    /// (frames, smoothed): the device's clock against the recording's.
+    drift: f64,
+    resampler: Resampler,
 }
 
 impl Track {
@@ -64,8 +78,36 @@ impl Mixer {
         }
     }
 
+    /// `pcm`, which starts at timeline frame `at`, as interleaved stereo at
+    /// [`RATE`], ready for [`Mixer::push`]. Each source keeps its own
+    /// resampler, so buffers join without a seam, and a source whose clock
+    /// runs a little off the recording's is stretched or squeezed by a frame
+    /// now and then instead of gaining gaps.
+    pub fn resample(&mut self, s: Src, at: i64, pcm: &Pcm) -> Vec<f32> {
+        let t = self.track(s);
+        if !t.on {
+            return Vec::new();
+        }
+        let off = if t.seen { at - t.end() } else { 0 };
+        let mut stretch = 0;
+        if off.abs() > SNAP {
+            // a real gap or overlap: what follows starts afresh
+            t.drift = 0.0;
+            t.resampler = Resampler::default();
+        } else {
+            t.drift += 0.2 * (off as f64 - t.drift);
+            if t.drift >= DRIFT_STEP && off >= 1 {
+                stretch = 1;
+            } else if t.drift <= -DRIFT_STEP && off <= -1 {
+                stretch = -1;
+            }
+        }
+        t.resampler.process(pcm, stretch)
+    }
+
     /// Add `stereo` (interleaved) frames that start at timeline frame `at`.
-    /// Overlap with what came before is dropped, a gap becomes silence.
+    /// A buffer within [`SNAP`] of where the last one ended follows it
+    /// directly; a bigger overlap is dropped, a bigger gap becomes silence.
     pub fn push(&mut self, s: Src, at: i64, stereo: &[f32]) {
         let pos = self.pos;
         let gain = if s == Src::Mic { self.mic_gain } else { 1.0 };
@@ -77,6 +119,8 @@ impl Mixer {
             t.start = pos;
         }
         let end = t.end();
+        let at = if t.seen && (at - end).abs() <= SNAP { end } else { at };
+        t.seen = true;
         let mut skip = 0usize;
         if t.buf.is_empty() && at > t.start {
             t.start = at;
@@ -189,28 +233,86 @@ impl Pcm<'_> {
     }
 }
 
-/// Any layout and rate → interleaved stereo at [`RATE`] (linear resampling;
-/// mono goes to both sides, extra channels are dropped).
-pub fn to_stereo(pcm: &Pcm) -> Vec<f32> {
-    let n = pcm.frames();
-    if n == 0 || pcm.channels == 0 {
-        return Vec::new();
-    }
-    let ratio = pcm.rate / RATE as f64;
-    let out_n = if (ratio - 1.0).abs() < 1e-9 { n } else { ((n as f64) / ratio).floor().max(1.0) as usize };
-    let mut out = Vec::with_capacity(out_n * 2);
-    for i in 0..out_n {
-        let x = i as f64 * ratio;
-        let a = (x.floor() as usize).min(n - 1);
-        let b = (a + 1).min(n - 1);
-        let f = (x - a as f64) as f32;
-        for ch in 0..2 {
-            let ch = if pcm.channels == 1 { 0 } else { ch };
-            let v = pcm.sample(a, ch) * (1.0 - f) + pcm.sample(b, ch) * f;
-            out.push(v);
+/// One source's way to [`RATE`]: linear resampling that carries on from one
+/// buffer to the next (where the next output frame falls, and the last
+/// frame to draw the line from), so buffers of any size join without a seam
+/// and the frames that come out add up to the rate's ratio exactly.
+#[derive(Default)]
+pub struct Resampler {
+    rate: f64,
+    /// Where the next output frame falls, in input frames from the start of
+    /// the next buffer: -1…0 when it lies between the last buffer's final
+    /// frame and the next one's first.
+    phase: f64,
+    last: [f32; 2],
+}
+
+impl Resampler {
+    /// `pcm` as interleaved stereo at [`RATE`] (mono goes to both sides,
+    /// extra channels are dropped). `stretch` makes this buffer one frame
+    /// longer (1) or shorter (-1) than its rate gives.
+    pub fn process(&mut self, pcm: &Pcm, stretch: i64) -> Vec<f32> {
+        let n = pcm.frames();
+        if n == 0 || pcm.channels == 0 || !(pcm.rate > 0.0) {
+            return Vec::new();
         }
+        if pcm.rate != self.rate {
+            // another device or format: nothing carries over
+            self.rate = pcm.rate;
+            self.phase = 0.0;
+        }
+        let frame = |i: usize| [pcm.sample(i, 0), pcm.sample(i, if pcm.channels == 1 { 0 } else { 1 })];
+        let mix = |p: [f32; 2], q: [f32; 2], f: f32| [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+        let ratio = pcm.rate / RATE as f64;
+        let last_i = (n - 1) as f64;
+        if (ratio - 1.0).abs() < 1e-9 && self.phase == 0.0 {
+            let count = n as i64 + if n >= 8 { stretch } else { 0 };
+            let mut out = Vec::with_capacity(count as usize * 2);
+            if count == n as i64 {
+                // already at the rate: the frames as they are
+                for i in 0..n {
+                    out.extend(frame(i));
+                }
+            } else {
+                // the same stretch of sound over one frame more or less,
+                // ending on the buffer's last frame so the next goes on as it is
+                let step = last_i / (count - 1) as f64;
+                for k in 0..count {
+                    let x = (k as f64 * step).min(last_i);
+                    let a = x.floor() as usize;
+                    out.extend(mix(frame(a), frame((a + 1).min(n - 1)), (x - a as f64) as f32));
+                }
+            }
+            self.last = frame(n - 1);
+            return out;
+        }
+        let want = (n as f64 / ratio + stretch as f64).max(1.0);
+        let step = n as f64 / want;
+        let mut out = Vec::with_capacity((want as usize + 2) * 2);
+        let mut x = self.phase;
+        while x <= last_i {
+            let a = x.floor();
+            let f = (x - a) as f32;
+            let v = if a < 0.0 {
+                mix(self.last, frame(0), f)
+            } else {
+                let i = a as usize;
+                mix(frame(i), frame((i + 1).min(n - 1)), f)
+            };
+            out.extend(v);
+            x += step;
+        }
+        self.phase = x - n as f64;
+        self.last = frame(n - 1);
+        out
     }
-    out
+}
+
+/// Any layout and rate → interleaved stereo at [`RATE`], for one buffer on
+/// its own.
+#[cfg(test)]
+pub fn to_stereo(pcm: &Pcm) -> Vec<f32> {
+    Resampler::default().process(pcm, 0)
 }
 
 #[cfg(test)]
@@ -270,23 +372,23 @@ mod tests {
     #[test]
     fn gaps_become_silence_and_overlaps_are_dropped() {
         let mut m = Mixer::new(true, false);
-        m.push(Src::System, 0, &tone(0.5, 10));
-        m.push(Src::System, 20, &tone(0.5, 10));
-        m.push(Src::System, 25, &tone(0.9, 10)); // 5 frames overlap
+        m.push(Src::System, 0, &tone(0.5, 2000));
+        m.push(Src::System, 4000, &tone(0.5, 2000));
+        m.push(Src::System, 4500, &tone(0.9, 2000)); // 1500 frames overlap
         let (_, out) = m.pull(false).unwrap();
-        assert_eq!(out.len() / 2, 35);
-        assert!(out[20..40].iter().all(|&v| v == 0.0));
-        assert_eq!(out[2 * 30], 0.9);
+        assert_eq!(out.len() / 2, 6500);
+        assert!(out[2 * 2000..2 * 4000].iter().all(|&v| v == 0.0));
+        assert_eq!(out[2 * 6000], 0.9);
     }
 
     #[test]
     fn late_audio_for_handed_out_time_is_dropped() {
         let mut m = Mixer::new(true, false);
-        m.push(Src::System, 0, &tone(0.5, 10));
+        m.push(Src::System, 0, &tone(0.5, 2000));
         m.pull(false).unwrap();
-        m.push(Src::System, 5, &tone(0.2, 10));
+        m.push(Src::System, 500, &tone(0.2, 2000));
         let (at, out) = m.pull(false).unwrap();
-        assert_eq!((at, out.len() / 2), (10, 5));
+        assert_eq!((at, out.len() / 2), (2000, 500));
     }
 
     #[test]
@@ -310,14 +412,102 @@ mod tests {
 
     #[test]
     fn mono_and_other_rates_become_stereo_48k() {
-        let mono: Vec<f32> = (0..441).map(|i| i as f32).collect();
-        let pcm = Pcm { rate: 44_100.0, channels: 1, planes: vec![&mono], interleaved: true };
-        let out = to_stereo(&pcm);
-        assert_eq!(out.len() / 2, 480);
+        // two buffers of 441 frames at 44.1 kHz are 960 frames at 48 kHz; the
+        // last one lies past the final input frame and comes with the next buffer
+        let mono: Vec<f32> = (0..882).map(|i| i as f32).collect();
+        let mut r = Resampler::default();
+        let mut out = Vec::new();
+        for half in mono.chunks(441) {
+            out.extend(r.process(&Pcm { rate: 44_100.0, channels: 1, planes: vec![half], interleaved: true }, 0));
+        }
+        assert_eq!(out.len() / 2, 959);
         assert_eq!(out[0], out[1]);
+        // a ramp stays a ramp across the join
+        let step = 44_100.0 / 48_000.0;
+        for (k, v) in out.iter().step_by(2).enumerate() {
+            assert!((v - k as f32 * step).abs() < 1e-2, "frame {k}: {v}");
+        }
         let l = [1.0f32, 1.0, 1.0];
         let r = [2.0f32, 2.0, 2.0];
         let planar = Pcm { rate: 48_000.0, channels: 2, planes: vec![&l, &r], interleaved: false };
         assert_eq!(to_stereo(&planar), vec![1.0, 2.0, 1.0, 2.0, 1.0, 2.0]);
+    }
+
+    /// A 440 Hz tone from a microphone at `rate` in buffers of `n` frames,
+    /// each stamped with its own time (a clock `ppm` off the recording's),
+    /// the way the recorder feeds the mixer. Returns the mixed left channel.
+    fn mic_tone(rate: f64, n: usize, ppm: f64, secs: f64) -> Vec<f32> {
+        let mut m = Mixer::new(false, true);
+        let mut out = Vec::new();
+        let total = (rate * secs) as usize;
+        let mut i = 0;
+        while i + n <= total {
+            let buf: Vec<f32> = (i..i + n).map(|k| (std::f64::consts::TAU * 440.0 * k as f64 / rate).sin() as f32 * 0.5).collect();
+            let at = (i as f64 / rate * (1.0 + ppm * 1e-6) * RATE as f64).round() as i64;
+            let stereo = m.resample(Src::Mic, at, &Pcm { rate, channels: 1, planes: vec![&buf], interleaved: true });
+            m.push(Src::Mic, at, &stereo);
+            while let Some((_, mix)) = m.pull(false) {
+                out.extend(mix.iter().step_by(2));
+            }
+            i += n;
+        }
+        out
+    }
+
+    /// The biggest bend in the wave (second difference): a clean 440 Hz
+    /// tone bends by well under 0.03 a frame; an inserted or dropped frame
+    /// by ten times that.
+    fn worst_bend(x: &[f32]) -> f32 {
+        x.windows(3).map(|w| (w[0] - 2.0 * w[1] + w[2]).abs()).fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn a_microphone_at_any_rate_records_without_clicks() {
+        for (rate, n) in [(48_000.0, 512), (44_100.0, 512), (44_100.0, 441), (24_000.0, 480), (16_000.0, 320), (96_000.0, 1024)] {
+            let out = mic_tone(rate, n, 0.0, 5.0);
+            assert!(worst_bend(&out) < 0.03, "{rate} Hz in buffers of {n}: bend {}", worst_bend(&out));
+            // and all of it is there: 5 s less the last, partial buffer
+            let want = 5.0 * RATE as f64;
+            assert!((out.len() as f64 - want).abs() < RATE as f64 * 0.03, "{rate} Hz: {} frames", out.len());
+        }
+    }
+
+    #[test]
+    fn a_drifting_device_clock_is_followed_without_clicks() {
+        for ppm in [50.0, -50.0, 300.0, -300.0] {
+            let out = mic_tone(48_000.0, 512, ppm, 20.0);
+            assert!(worst_bend(&out) < 0.03, "{ppm} ppm: bend {}", worst_bend(&out));
+            // the sound keeps up with its timestamps: 20 s at this drift is
+            // up to 288 frames, and the mixer stays within a few of them
+            let want = 20.0 * RATE as f64 * (1.0 + ppm * 1e-6);
+            assert!((out.len() as f64 - want).abs() < 600.0, "{ppm} ppm: {} frames, want {want}", out.len());
+        }
+    }
+
+    #[test]
+    fn a_real_gap_is_still_silence() {
+        let mut m = Mixer::new(false, true);
+        let buf = vec![0.5f32; 480];
+        let pcm = || Pcm { rate: 48_000.0, channels: 1, planes: vec![&buf], interleaved: true };
+        for at in [0, 480] {
+            let s = m.resample(Src::Mic, at, &pcm());
+            m.push(Src::Mic, at, &s);
+        }
+        // a quarter of a second went missing
+        let at = 960 + RATE as i64 / 4;
+        let s = m.resample(Src::Mic, at, &pcm());
+        m.push(Src::Mic, at, &s);
+        let (_, out) = m.pull(true).unwrap();
+        assert_eq!(out.len() / 2, 960 + RATE as usize / 4 + 480);
+        assert!(out[2 * 960..2 * (960 + RATE as usize / 4)].iter().all(|&v| v == 0.0));
+        assert_eq!(out[2 * (960 + RATE as usize / 4)], 0.5);
+        // a few frames early or late is jitter, not a gap
+        let mut m = Mixer::new(false, true);
+        for at in [0, 483, 958] {
+            let s = m.resample(Src::Mic, at, &pcm());
+            m.push(Src::Mic, at, &s);
+        }
+        let (_, out) = m.pull(true).unwrap();
+        assert!(out.iter().all(|&v| v == 0.5), "no silence slipped in");
     }
 }
