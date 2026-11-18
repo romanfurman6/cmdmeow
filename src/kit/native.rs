@@ -381,6 +381,28 @@ mod mac {
         NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(|a| !a.isTerminated())
     }
 
+    /// A standard macOS alert with `ok` and Cancel, brought to the front
+    /// (the app may have no window up). True on `ok`. Main thread only;
+    /// blocks until answered.
+    pub fn confirm(title: &str, body: &str, ok: &str) -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        use objc2_foundation::NSString;
+        /// NSAlertFirstButtonReturn
+        const FIRST: isize = 1000;
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            let _: () = msg_send![&*app, activateIgnoringOtherApps: true];
+            let alert: Retained<AnyObject> = msg_send![class!(NSAlert), new];
+            let _: () = msg_send![&*alert, setMessageText: &*NSString::from_str(title)];
+            let _: () = msg_send![&*alert, setInformativeText: &*NSString::from_str(body)];
+            let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str(ok)];
+            let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+            let r: isize = msg_send![&*alert, runModal];
+            r == FIRST
+        }
+    }
+
     /// Move a file or folder to the Trash the way Finder does: it lands in the
     /// Trash of its own volume (so external drives work) and can be put back.
     pub fn trash_item(p: &std::path::Path) -> Result<(), String> {
@@ -469,6 +491,10 @@ mod other {
         false
     }
     pub fn app_alive(_pid: i32) -> bool {
+        false
+    }
+    /// No alert off macOS: never confirmed.
+    pub fn confirm(_title: &str, _body: &str, _ok: &str) -> bool {
         false
     }
     /// Move into ~/.Trash. Refuses (instead of deleting) when the item is on

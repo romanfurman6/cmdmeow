@@ -333,6 +333,11 @@ impl Capture {
             self.hud("Not a Cmd+Meow sharing file");
             return;
         };
+        // a file from anywhere could point uploads at someone else's bucket:
+        // the person sees where they'd go and says yes
+        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{} at {}", st.bucket, st.endpoint), "Use") {
+            return;
+        }
         if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
             self.hud(format!("Couldn't save to the Keychain: {e}"));
             return;

@@ -2,8 +2,8 @@
 //! (`cmdmeow-sharing.cmdmeow` in Downloads): opening it (double-click, or a
 //! drop on the Sharing page) fills the Sharing page, puts the secret key in
 //! the Keychain and moves the file to the Trash. Only on the person's own
-//! action, never on its own: a downloaded file must not quietly point
-//! uploads at someone else's bucket.
+//! action, and after a macOS alert that names the bucket: a downloaded file
+//! must not quietly point uploads at someone else's bucket.
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};

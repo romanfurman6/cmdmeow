@@ -27,8 +27,11 @@ pub fn chat_url(a: Agent) -> String {
     let q = encode(&prompt(), true);
     match a {
         Agent::Claude if claude_desktop() => {
-            let downloads = std::env::var("HOME").map(|h| format!("{h}/Downloads")).unwrap_or_default();
-            format!("claude://cowork/new?q={q}&folder={}", encode(&downloads, true))
+            // without a home folder, Claude offers the file as a download
+            match std::env::var("HOME").ok().filter(|h| !h.is_empty()) {
+                Some(h) => format!("claude://cowork/new?q={q}&folder={}", encode(&format!("{h}/Downloads"), true)),
+                None => format!("claude://cowork/new?q={q}"),
+            }
         }
         Agent::Claude => format!("https://claude.ai/new?q={q}"),
         Agent::Codex => format!("https://chatgpt.com/?q={q}"),

@@ -66,11 +66,12 @@ static PENDING_FILES: Mutex<Vec<std::path::PathBuf>> = Mutex::new(Vec::new());
 /// Let `f` take the files Finder opens with the app (double-click, Open
 /// With). Files that came early are handed over now.
 pub fn on_files(f: impl Fn(std::path::PathBuf) + Send + 'static) {
-    let early = std::mem::take(&mut *PENDING_FILES.lock().unwrap_or_else(|e| e.into_inner()));
-    for p in early {
+    // holding the handler's lock: a file can't slip in between the two
+    let mut h = FILE_HANDLER.lock().unwrap_or_else(|e| e.into_inner());
+    for p in std::mem::take(&mut *PENDING_FILES.lock().unwrap_or_else(|e| e.into_inner())) {
         f(p);
     }
-    *FILE_HANDLER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(f));
+    *h = Some(Box::new(f));
 }
 
 /// Finder opened `path` with the app.
