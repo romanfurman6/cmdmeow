@@ -22,6 +22,20 @@ fn pct_text(b: Option<u8>) -> String {
     b.map(|b| format!("{b}%")).unwrap_or_else(|| "–".into())
 }
 
+/// A device's name without its owner ("Roman's AirPods Pro" → "AirPods
+/// Pro"), the way it reads in a small space.
+pub fn short_name(name: &str) -> String {
+    for sep in ["'s ", "’s ", "s' ", "s’ "] {
+        if let Some(i) = name.find(sep) {
+            let rest = name[i + sep.len()..].trim();
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
 fn frac(b: Option<u8>) -> f32 {
     b.map(|b| (b as f32 / 100.0).clamp(0.02, 1.0)).unwrap_or(0.0)
 }
@@ -124,7 +138,7 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
     if matches!(size, Size::S12 | Size::S14) {
         let first = devs.first().filter(|d| d.live());
         let (glyph, ring_, label, value) = match first {
-            Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), d.name.clone(), pct_text(d.battery())),
+            Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), short_name(&d.name), pct_text(d.battery())),
             None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
         };
         let caption = if first.is_some() { note(&devs) } else { String::new() };
@@ -132,8 +146,27 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
             return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
         }
         let (resp, right) = tile::row_split_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
-        let lines: Vec<(String, Option<(f32, Color32)>, String)> = devs.iter().filter(|d| d.live()).skip(1).take(3).map(|d| (d.name.clone(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), pct_text(d.battery()))).collect();
-        tile::lines(ui.painter(), right, &lines, "No other devices");
+        let others: Vec<&Device> = devs.iter().filter(|d| d.live()).skip(1).collect();
+        let line = |name: &str, b: Option<u8>, v: String| (name.to_string(), b.map(|b| (frac(Some(b)), devices::color(b))), v);
+        let lines: Vec<(String, Option<(f32, Color32)>, String)> = match first {
+            // one device: its parts (AirPods: left, right and case), not "no other devices"
+            Some(d) if others.is_empty() => {
+                let mut v = Vec::new();
+                if d.left.is_some() {
+                    v.push(line("Left", d.left, pct_text(d.left)));
+                }
+                if d.right.is_some() {
+                    v.push(line("Right", d.right, pct_text(d.right)));
+                }
+                if d.case.is_some() {
+                    v.push(line("Case", d.case, pct_text(d.case)));
+                }
+                v
+            }
+            // the device's kind ("Mouse", "Trackpad"), not a name cut at the bar
+            _ => others.iter().map(|d| line(&d.short(), d.battery(), pct_text(d.battery()))).collect(),
+        };
+        tile::lines(ui.painter(), right, &lines, "");
         return resp;
     }
     let resp = tile::card(ui, r, wid, sel);
@@ -172,18 +205,23 @@ fn device_line_sub(p: &egui::Painter, lr: Rect, d: &Device, sub: &str) {
     let cy = lr.center().y;
     device_glyph(p, d, Rect::from_center_size(Pos2::new(lr.left() + 9.0, cy), Vec2::splat(17.0)), t.c(TEXT_SOFT()));
     let vr = pct_with_bolt(p, Pos2::new(lr.right(), cy), Align2::RIGHT_CENTER, b, d.charging && d.live(), bold(12.0), t.text(b));
-    // the bar only when the name still has room next to it
+    // the bar only when the name still has room next to it; it ends at the
+    // same x on every line ("100%" is the widest charge), so bars line up
     let bw = if lr.width() >= 300.0 { 64.0 } else { 0.0 };
-    let bx1 = vr.left() - 10.0;
+    let col = p.layout_no_wrap("100%".into(), bold(12.0), TEXT()).size().x.max(vr.width());
+    let bx1 = lr.right() - col - 10.0;
     if bw > 0.0 {
         bar(p, Rect::from_min_max(Pos2::new(bx1 - bw, cy - 2.0), Pos2::new(bx1, cy + 2.0)), frac(b).max(0.01), t.ring(b));
     }
     let tx = lr.left() + 26.0;
     let tw = bx1 - bw - tx - if bw > 0.0 { 10.0 } else { 0.0 };
+    // a device's name is someone's text: it fades, never "…"
     if sub.is_empty() {
-        text_fit(p, Pos2::new(tx, cy), Align2::LEFT_CENTER, &d.name, font(12.0), t.c(TEXT()), tw);
+        text_fade(p, Pos2::new(tx, cy), &d.name, font(12.0), t.c(TEXT()), tw);
     } else {
-        two_lines(p, tx, cy, &d.name, font(12.0), t.c(TEXT()), sub, font(11.0), TEXT_FAINT(), tw);
+        let (y1, y2) = two_lines_y(p, cy, &font(12.0), &font(11.0));
+        text_fade(p, Pos2::new(tx, y1), &d.name, font(12.0), t.c(TEXT()), tw);
+        text_fade(p, Pos2::new(tx, y2), sub, font(11.0), TEXT_FAINT(), tw);
     }
 }
 
@@ -423,4 +461,14 @@ fn dots(ui: &mut Ui, r: Rect, row: Rect, id: egui::Id) -> (Response, f32) {
         p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT().gamma_multiply(shown));
     }
     (resp.on_hover_text("More"), shown)
+}
+
+#[cfg(test)]
+mod short_name_tests {
+    #[test]
+    fn owner_is_dropped() {
+        assert_eq!(super::short_name("Roman's AirPods Pro"), "AirPods Pro");
+        assert_eq!(super::short_name("Roman’s AirPods Pro"), "AirPods Pro");
+        assert_eq!(super::short_name("Magic Mouse"), "Magic Mouse");
+    }
 }
