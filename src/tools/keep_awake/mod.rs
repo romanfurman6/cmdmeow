@@ -307,7 +307,10 @@ impl Tool for KeepAwake {
             "awake-winddown" => (State::WindDown { left: 0 }, false),
             _ => return None,
         };
-        let (e, t) = demo_engine_auto(state, idle);
+        let (mut e, t) = demo_engine_auto(state, idle);
+        if std::env::var_os("CMB_DEMO_MOUSE").is_some() {
+            e.settings.shortcut = Shortcut::mouse(4, false, false, true, false);
+        }
         *self.engine.lock_ok() = e;
         self.demo_now = Some(t);
         Some(View::Page)

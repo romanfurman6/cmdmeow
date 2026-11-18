@@ -227,7 +227,8 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         let st = e.state(now);
         (st, e.mode(), detail_short(&e, st, now))
     };
-    let resp = tile::card(ui, rect, id, false);
+    // 1:1 is one button and sinks; 1:2 holds the switch, so only the switch presses (W1)
+    let resp = if size == Size::S11 { tile::card(ui, rect, id, false) } else { tile::frame(ui, rect, id, false) };
     let p = ui.painter().clone();
     if size == Size::S11 {
         let sr = Rect::from_min_size(Pos2::new(rect.center().x - 25.0, rect.top() + 7.0), Vec2::splat(50.0));
@@ -236,7 +237,7 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
             State::WindDown { left } => (clock(left), AMBER()),
             _ => (mode.label().to_string(), if mode == Mode::Off { TEXT_DIM() } else { TEXT_SOFT() }),
         };
-        p.text(Pos2::new(rect.center().x, rect.bottom() - 9.0), Align2::CENTER_BOTTOM, word, bold(11.0), col);
+        p.text(Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, word, bold(13.0), col);
         if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
             k.toggle(Via::Panel);
         }
@@ -256,8 +257,9 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         text_fit(&p, Pos2::new(x, y1), Align2::LEFT_CENTER, &title(st), tf, TEXT(), w);
         text_first_fit(&p, Pos2::new(x, y2), Align2::LEFT_CENTER, &line2, font(11.0), TEXT_DIM(), w);
     }
-    let cr = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - 24.0), inner.max);
-    if let Some(m) = control(ui, cr, id.with("mode"), mode, font(11.0)) {
+    // W7: the panel's segmented control at its own size, 28 with 12 labels
+    let cr = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - sp::CONTROL_H), inner.max);
+    if let Some(m) = control(ui, cr, id.with("mode"), mode, font(12.0)) {
         k.set_mode(m, Via::Panel);
     } else if resp.clicked() {
         cx.open_page(ID, "");
@@ -301,12 +303,11 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     y = cr.bottom();
 
     let e = k.engine.lock_ok();
-    let shortcut = e.settings.shortcut.as_ref().map(|s| s.display());
-    today(ui, &p, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, r.bottom() - sp::XL)), &e, now, shortcut, id.with("today"));
+    today(ui, &p, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, r.bottom() - sp::XL)), &e, now, id.with("today"));
 }
 
-/// On's shortcut in the header: click, then press the keys. Esc keeps the
-/// old one, ⌫ removes it.
+/// On's shortcut in the header: click, then press the keys (or a mouse
+/// button). Esc keeps the old one, ⌫ removes it.
 fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut KeyRec, now: i64, id: egui::Id) {
     if keys.recording {
         keys.seen = Some(std::time::Instant::now());
@@ -341,7 +342,7 @@ fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut Key
         dashed_rect(p, br, R_SMALL, white(60));
     }
     p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it").clicked() {
+    if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
         keys.recording = !rec;
         keys.seen = Some(std::time::Instant::now());
     }
@@ -365,16 +366,11 @@ fn hours(spans: &[Span], day: i64) -> [(i64, i64); 24] {
 }
 
 /// A Today row's words: what kept it awake, and the dim part after it.
-fn row_words(s: &Span, shortcut: Option<&str>) -> (String, String) {
+/// On rows say only "On": the time range already says when, and where it
+/// was switched on is noise.
+fn row_words(s: &Span) -> (String, String) {
     if !s.agent {
-        let from = match s.via {
-            Some(Via::Panel) => "you, from the panel".to_string(),
-            Some(Via::Shortcut) => format!("you, {}", shortcut.unwrap_or("shortcut")),
-            Some(Via::Page) => "you, on this page".to_string(),
-            Some(Via::Link) => format!("you, {}://", if crate::kit::fs::is_dev() { "cmdmeow-dev" } else { "cmdmeow" }),
-            None => "you".to_string(),
-        };
-        return ("On".into(), from);
+        return ("On".into(), String::new());
     }
     (names(&s.agents()), s.projects().join(", "))
 }
@@ -382,7 +378,7 @@ fn row_words(s: &Span, shortcut: Option<&str>) -> (String, String) {
 /// Today: minutes awake per hour (On and Auto stacked), the time in each,
 /// and what kept the Mac awake, newest first. Hovering an hour or a row
 /// lights up the other.
-fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, shortcut: Option<String>, id: egui::Id) {
+fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) {
     let day = today_start(now);
     let spans = e.today(now);
     let live = e.current(now).is_some();
@@ -499,18 +495,12 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, shortcut: Opti
             let du_left = du.left().min(x1 - 64.0);
             let end = if now_row { "now".to_string() } else { time_of_day(s.end) };
             let tm = p.text(Pos2::new(du_left - sp::COL_GAP, c.y), Align2::RIGHT_CENTER, format!("{} – {end}", time_of_day(s.start)), font(12.0), TEXT_FAINT());
-            let (what, from) = row_words(s, shortcut.as_deref());
+            let (what, from) = row_words(s);
             let nx = c.x + 10.0 + sp::S + 2.0;
-            let chip_w = if now_row { p.layout_no_wrap("Now".into(), bold(11.0), TEXT_SOFT()).size().x + 16.0 + sp::S } else { 0.0 };
-            let room = tm.left() - sp::COL_GAP - nx - chip_w;
+            let room = tm.left() - sp::COL_GAP - nx;
             let w = text_fit(&p, Pos2::new(nx, c.y), Align2::LEFT_CENTER, &what, ty::body(), TEXT(), room);
-            let mut end_x = w.right();
             if !from.is_empty() && room - w.width() > 24.0 {
-                let d = text_fit(&p, Pos2::new(end_x, c.y), Align2::LEFT_CENTER, &format!(" · {from}"), ty::body(), TEXT_FAINT(), room - w.width());
-                end_x = d.right();
-            }
-            if now_row {
-                chip(&p, Pos2::new(end_x + sp::S, c.y), Align2::LEFT_CENTER, "Now", (white(20), TEXT_SOFT()));
+                text_fit(&p, Pos2::new(w.right(), c.y), Align2::LEFT_CENTER, &format!(" · {from}"), ty::body(), TEXT_FAINT(), room - w.width());
             }
         }
     });
@@ -551,8 +541,8 @@ mod tests {
     fn rows_say_who() {
         use super::super::sessions::Source;
         let on = Span { start: 0, end: 1, agent: false, by: None, who: vec![], via: Some(Via::Shortcut) };
-        assert_eq!(row_words(&on, Some("⌃⌥⌘K")), ("On".to_string(), "you, ⌃⌥⌘K".to_string()));
+        assert_eq!(row_words(&on), ("On".to_string(), String::new()));
         let auto = Span { start: 0, end: 1, agent: true, by: Some(Source::Codex), who: vec![(Source::Codex, "api-server".into())], via: None };
-        assert_eq!(row_words(&auto, None), ("Codex".to_string(), "api-server".to_string()));
+        assert_eq!(row_words(&auto), ("Codex".to_string(), "api-server".to_string()));
     }
 }

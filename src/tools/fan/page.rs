@@ -46,13 +46,13 @@ pub fn page(s: &Snapshot, l: &Live, ui: &mut Ui, r: Rect, _cx: &mut Cx) -> Vec<C
     if n > 0 {
         for (i, f) in s.fans.iter().take(n).enumerate() {
             let fr = Rect::from_min_size(Pos2::new(x0 + i as f32 * (fan_w + GAP), y), Vec2::new(fan_w, ROW1_H));
-            glass_card(&p, fr, 14.0, 0.0, false);
+            glass_card(&p, fr, R_CARD, 0.0, false);
             p.text(fr.min + Vec2::new(12.0, 12.0), Align2::LEFT_TOP, format!("{} fan", fan_name(i, s.fans.len())).replace("Fan fan", "Fan"), bold(13.0), TEXT());
             let c = Pos2::new(fr.center().x, fr.top() + 100.0);
             dial(&p, c, 58.0, 7.0, f.frac(), tint::FAN());
             p.circle_filled(c, 44.0, BG());
             crate::kit::glass::stroke_circle(&p, c, 44.0, Stroke::new(1.0, white(15)));
-            crate::kit::spin::blades(&p, &format!("fan-{i}"), c, 40.0, f.rpm, BLADE(), RAISED());
+            crate::kit::spin::blades(&p, &format!("fan-{i}"), c, 38.0, f.rpm, BLADE());
             let g = p.layout_no_wrap(rpm_text(f.rpm), bold(28.0), TEXT());
             let u = p.layout_no_wrap("rpm".into(), font(13.0), TEXT_DIM());
             let tw = g.size().x + 4.0 + u.size().x;
@@ -66,10 +66,10 @@ pub fn page(s: &Snapshot, l: &Live, ui: &mut Ui, r: Rect, _cx: &mut Cx) -> Vec<C
         hx = x0 + n as f32 * (fan_w + GAP);
     } else if s.loaded {
         let fr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(fan_w * 2.0 + GAP, ROW1_H));
-        glass_card(&p, fr, 14.0, 0.0, false);
+        glass_card(&p, fr, R_CARD, 0.0, false);
         let c = Pos2::new(fr.left() + 56.0, fr.top() + 64.0);
         crate::kit::glass::stroke_circle(&p, c, 32.0, Stroke::new(1.5, white(30)));
-        blades(&p, c, 24.0, 0.3, white(40), CARD());
+        blades(&p, c, 24.0, 0.3, white(40));
         let title = if s.has_smc { "This Mac has no fans" } else { "Fan speed isn't available" };
         let (ly1, ly2) = two_lines_y(&p, c.y, &bold(15.0), &font(12.0));
         p.text(Pos2::new(fr.left() + 104.0, ly1), Align2::LEFT_CENTER, title, bold(15.0), TEXT());
@@ -121,7 +121,7 @@ fn mode_height(s: &Snapshot, l: &Live) -> f32 {
 /// and for Fixed a speed slider, for Curve the curve editor.
 fn mode_card(ui: &mut Ui, mr: Rect, s: &Snapshot, l: &Live, cmds: &mut Vec<Cmd>) {
     let p = ui.painter().clone();
-    glass_card(&p, mr, 14.0, 0.0, false);
+    glass_card(&p, mr, R_CARD, 0.0, false);
     let lx = mr.left() + 14.0;
     let rx = mr.right() - 14.0;
     if s.fans.is_empty() {
@@ -348,7 +348,7 @@ fn curve_editor(ui: &mut Ui, r: Rect, st: &Settings, fan: &Fan, temp: Option<f32
 /// GPU), each cell a sensor coloured on the heat scale, plus the other
 /// parts as small rows and the scale itself.
 fn heat_map(p: &egui::Painter, r: Rect, s: &Snapshot) {
-    glass_card(p, r, 14.0, 0.0, false);
+    glass_card(p, r, R_CARD, 0.0, false);
     p.text(r.min + Vec2::new(12.0, 12.0), Align2::LEFT_TOP, "Chip heat map", bold(13.0), TEXT());
     let groups = s.groups();
     if groups.is_empty() {
@@ -409,7 +409,7 @@ fn heat_map(p: &egui::Painter, r: Rect, s: &Snapshot) {
 
 /// Last 10 minutes: average fan speed (filled) and the hottest sensor.
 fn history(p: &egui::Painter, r: Rect, s: &Snapshot) {
-    glass_card(p, r, 14.0, 0.0, false);
+    glass_card(p, r, R_CARD, 0.0, false);
     let ty = r.top() + 20.0;
     p.text(Pos2::new(r.left() + 14.0, ty), Align2::LEFT_CENTER, "Last 10 minutes", bold(13.0), TEXT());
     let mut lx = r.right() - 14.0;

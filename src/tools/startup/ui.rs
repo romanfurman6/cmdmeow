@@ -517,14 +517,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Note(t) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), 36.0));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    glass_card(&p, r, R_CARD, 0.0, false);
                     text_fit(&p, Pos2::new(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, t, font(12.0), TEXT_DIM(), r.width() - 28.0);
                     y += 40.0;
                 }
                 Row::Allow => {
                     use crate::kit::perms::{Perm, Status};
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), 58.0));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    glass_card(&p, r, R_CARD, 0.0, false);
                     icon(&p, Icon::Script, Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::splat(18.0)), TEXT_SOFT());
                     let denied = s.events.0 == Status::Denied;
                     let label = if denied { "Open Settings" } else { "Allow access" };
@@ -893,7 +893,7 @@ fn state_cell(p: &egui::Painter, x: f32, cy: f32, label: Option<&str>, running: 
 /// The ⋯ button of a row.
 fn icon_dots(ui: &mut Ui, r: Rect, id: egui::Id) -> egui::Response {
     let resp = ui.interact(r, id, Sense::click());
-    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
+    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() && !in_widget());
     let p = ui.painter();
     if h > 0.0 {
         p.rect_filled(r, 6.0, white((18.0 * h) as u8));
@@ -914,43 +914,31 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
     };
     let n = suggested.len();
     match size {
-        Size::S11 => {
-            let resp = tile::card(ui, rect, id, false);
-            let p = ui.painter();
-            tool_chip(p, Rect::from_min_size(rect.min + Vec2::splat(9.0), Vec2::splat(24.0)), Icon::Power, tint::STARTUP());
-            if n > 0 {
-                count_badge(p, Pos2::new(rect.right() - 9.0, rect.top() + 9.0), n);
-            }
-            tile::small_text(p, rect, &if loaded { total.to_string() } else { "…".into() }, "at startup", TEXT_DIM());
-            if resp.clicked() {
-                cx.open_page(super::ID, if n > 0 { "suggested" } else { "" });
-            }
-        }
-        Size::S12 => {
-            let resp = tile::card(ui, rect, id, false);
-            let p = ui.painter().clone();
-            let (x0, x1) = (rect.left() + tile::PAD, rect.right() - tile::PAD);
-            tool_chip(&p, Rect::from_min_size(Pos2::new(x0, rect.top() + 9.0), Vec2::splat(18.0)), Icon::Power, tint::STARTUP());
-            p.text(Pos2::new(x0 + 24.0, rect.top() + 18.0), Align2::LEFT_CENTER, "Startup", bold(12.0), TEXT());
-            p.text(Pos2::new(x1, rect.top() + 18.0), Align2::RIGHT_CENTER, total.to_string(), font(11.0), TEXT_DIM());
-            let cy = rect.bottom() - 21.0;
-            if let Some(k) = undo {
-                p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, format!("{k} off"), font(12.0), GREEN());
-                let br = Rect::from_min_max(Pos2::new(x1 - 54.0, cy - 12.0), Pos2::new(x1, cy + 12.0));
-                if pill_button(ui, br, "Undo", BTN_SECONDARY, !busy).clicked() {
-                    s.undo();
-                }
-            } else if n > 0 {
-                p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, format!("{n} can go"), font(12.0), TEXT_SOFT());
-                let br = Rect::from_min_max(Pos2::new(x1 - 64.0, cy - 12.0), Pos2::new(x1, cy + 12.0));
-                if pill_button(ui, br, "Turn off", BTN_PRIMARY, !busy).clicked() {
-                    s.turn_off_suggested();
+        // W4, W3, W7: the count and what can go; no button in the panel, the card opens Startup
+        Size::S11 | Size::S12 => {
+            let value = if loaded { plural(total, "item") } else { "…".into() };
+            let (cap, cap_col) = match undo {
+                Some(k) => (format!("{k} turned off"), GREEN()),
+                None if n > 0 => (format!("{n} suggested"), AMBER()),
+                None => (format!("{running} running"), ty::caption_color()),
+            };
+            let resp = if size == Size::S11 {
+                let resp = tile::card(ui, rect, id, false);
+                let p = ui.painter();
+                icon(p, Icon::Power, Rect::from_min_size(rect.min + Vec2::new(tile::SMALL_SIDE, tile::PAD), Vec2::splat(20.0)), lift(tint::STARTUP()));
+                // what can go matters more than the count; the count is in the tip then
+                if n > 0 && undo.is_none() {
+                    tile::small_text(p, rect, "Startup", &cap, AMBER());
+                    resp.on_hover_text(value)
+                } else {
+                    tile::small_text(p, rect, "Startup", &value, TEXT_DIM());
+                    resp.on_hover_text(cap)
                 }
             } else {
-                p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, format!("{running} running · all needed"), font(12.0), TEXT_DIM());
-            }
+                tile::wide_full(ui, rect, id, Icon::Power, tint::STARTUP(), None, "Startup", &value, &cap, cap_col, false)
+            };
             if resp.clicked() {
-                cx.open_page(super::ID, "");
+                cx.open_page(super::ID, if n > 0 { "suggested" } else { "" });
             }
         }
         _ => {
@@ -963,9 +951,10 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
             let mut right = x1;
             if undo.is_none() && n > 0 {
                 let label = format!("Turn off {n}");
-                let bw = button_width(&p, &label, BTN_PRIMARY) - 6.0;
+                let bw = button_width(&p, &label, BTN_SECONDARY) - 6.0;
                 let br = Rect::from_min_max(Pos2::new(x1 - bw, cy - 12.0), Pos2::new(x1, cy + 12.0));
-                if pill_button(ui, br, &label, BTN_PRIMARY, !busy).clicked() {
+                // W7: a quiet button; no lime in the panel
+                if pill_button(ui, br, &label, BTN_SECONDARY, !busy).clicked() {
                     s.turn_off_suggested();
                 }
                 right = br.left() - 8.0;
@@ -1013,14 +1002,6 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
             }
         }
     }
-}
-
-/// A red count in the corner of the 1:1 widget.
-fn count_badge(p: &egui::Painter, pos: Pos2, n: usize) {
-    let g = p.layout_no_wrap(n.to_string(), bold(11.0), ON_ACTION);
-    let r = Align2::RIGHT_TOP.anchor_size(pos, Vec2::new((g.size().x + 10.0).max(18.0), 18.0));
-    p.rect_filled(r, 9.0, tint::STARTUP());
-    p.galley(r.center() - g.size() / 2.0, g, ON_ACTION);
 }
 
 #[cfg(test)]

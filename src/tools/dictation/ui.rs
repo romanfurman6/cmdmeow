@@ -5,7 +5,6 @@ use super::settings::{Engine, SILENCE_CHOICES};
 use super::{mac, Dictation, Note, Phase, Tab, ID, TINT};
 use crate::core::tool::{Cx, Size};
 use crate::kit::glass::*;
-use crate::kit::hotkeys::Shortcut;
 use crate::kit::perms::{Perm, Status};
 use crate::kit::tile;
 use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, ViewportBuilder, ViewportId};
@@ -185,7 +184,7 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
                 let resp = tile::card(ui, rect, id, false);
                 let p = ui.painter();
                 p.rect_stroke(rect, tile::R_TILE, Stroke::new(1.5, LIVE), StrokeKind::Inside);
-                icon(p, Icon::Mic, Rect::from_min_size(rect.min + Vec2::splat(tile::PAD), Vec2::splat(18.0)), LIVE);
+                icon(p, Icon::Mic, Rect::from_min_size(rect.min + Vec2::new(tile::SMALL_SIDE, tile::PAD), Vec2::splat(20.0)), LIVE);
                 tile::small_text(p, rect, "Listening", &key, TEXT_DIM());
                 resp
             } else {
@@ -193,7 +192,11 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
             }
         }
         Size::S14 => {
-            let (resp, right) = tile::row_split(ui, rect, id, Icon::Mic, if listening { LIVE } else { TINT() }, "Dictation", &today, &key, false);
+            // W5: left like 1:1, the latest dictations on the right, one line each
+            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Mic, if listening { LIVE } else { TINT() }, "Dictation", &today, false);
+            if listening {
+                ui.painter().rect_stroke(rect, tile::R_TILE, Stroke::new(1.5, LIVE), StrokeKind::Inside);
+            }
             latest(d, ui, right, 2);
             resp
         }
@@ -218,15 +221,13 @@ fn latest(d: &Dictation, ui: &mut Ui, r: Rect, n: usize) {
         text_fit(p, r.center(), Align2::CENTER_CENTER, &format!("Hold {} and speak", d.shortcut_label()), font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    // two items (the Row size) get two lines each, so a sentence isn't cut
-    // to its first words; longer lists stay one line per item
-    let rows = if n <= 2 { 2 } else { 1 };
-    let lh = if n <= 2 { r.height() / n as f32 } else { (r.height() / n as f32).min(26.0) };
+    // one line per item, fading at the edge (W8: someone's words, not ours)
+    let lh = (r.height() / n as f32).min(24.0);
     let top = r.center().y - lh * items.len() as f32 / 2.0;
     for (k, s) in items.iter().enumerate() {
         let y = top + lh * (k as f32 + 0.5);
         let ag = p.text(Pos2::new(r.right(), y), Align2::RIGHT_CENTER, ago(s.at), font(11.0), TEXT_FAINT());
-        text_wrap(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0, rows);
+        text_fade(p, Pos2::new(r.left(), y), &s.text, font(12.0), TEXT_SOFT(), ag.left() - r.left() - 8.0);
     }
 }
 
@@ -672,33 +673,24 @@ fn settings_page(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     });
 }
 
-/// While recording: the next key press with a modifier becomes the shortcut.
+/// While recording: the next key press with a modifier, or extra mouse
+/// button, becomes the shortcut.
 fn record_key(d: &mut Dictation, ui: &mut Ui, cx: &mut Cx) {
+    use crate::kit::hotkeys::{listen, Heard};
     if !d.recording_key {
         return;
     }
     d.recording_seen = std::time::Instant::now();
-    let mut result: Option<Option<Shortcut>> = None;
-    let mut cancel = false;
-    ui.input(|i| {
-        for e in &i.events {
-            if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
-                let plain = !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
-                if *key == egui::Key::Escape && plain {
-                    cancel = true;
-                } else if (*key == egui::Key::Backspace || *key == egui::Key::Delete) && plain {
-                    result = Some(None);
-                } else if let Some(s) = Shortcut::from_press(*key, *modifiers) {
-                    result = Some(Some(s));
-                }
-            }
+    let s = match listen(ui.ctx()) {
+        Heard::Nothing => None,
+        Heard::Cancel => {
+            d.recording_key = false;
+            return;
         }
-    });
-    if cancel {
-        d.recording_key = false;
-        return;
-    }
-    if let Some(s) = result {
+        Heard::Remove => Some(None),
+        Heard::Set(s) => Some(Some(s)),
+    };
+    if let Some(s) = s {
         if let Some(w) = s.as_ref().and_then(|s| s.conflict()) {
             cx.toast(format!("{}: {w}", s.as_ref().map(|s| s.display()).unwrap_or_default()));
         }
@@ -737,7 +729,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
         dashed_rect(p, br, 6.0, white(60));
     }
     p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it.").clicked() {
+    if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
         d.recording_key = !rec;
         // counts as drawn now, so the next tick doesn't take it for abandoned
         d.recording_seen = std::time::Instant::now();

@@ -5,26 +5,40 @@
 //!
 //! - `face`: what the cat looks like in each mood, as plain drawing.
 //! - `engine`: which mood it is in and what it does next, as plain rules.
-//! - `desk`: what the desktop cat does for each reaction, frame by frame.
-//! - `screen`: the desktop cat's window, played with Core Animation.
-//! - `mac`: the menu bar icon, the desktop cat, the sounds and what the Mac
-//!   feels (trackpad, power, wake, lid, pointer).
+//! - `rig`: the desktop cat's skeleton and its animations, posed at any time.
+//! - `live`: the desktop cat's mind and body: what it does from moment to
+//!   moment, the ball it chases, its bed and bowl, the desktop icons it
+//!   pushes.
+//! - `grid`: Finder's desktop grid, read from where its icons lie.
+//! - `toys`: its things: the yarn ball people throw, and what is drawn of
+//!   the ball, its bed and its bowl.
+//! - `stage`: the desktop cat's windows, one Core Animation layer a part,
+//!   and the pictures of the icons while they move.
+//! - `props`: the bed, the bowl and the ball on screen, as shape layers.
+//! - `mac`: the menu bar icon, the sounds, Finder and what the Mac feels
+//!   (trackpad, power, wake, lid, pointer).
 //! - `slap`: which jolts of the body are slaps, and the sensor that feels
 //!   them.
 //!
-//! Nothing here draws with egui or asks it for frames: the cat has its own
-//! thread, which sleeps until something moves.
+//! Nothing here draws with egui or asks it for frames: the menu bar face
+//! has its own thread, which sleeps until something moves, and the desktop
+//! cat a timer that fires only while it is on screen.
 
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
-mod desk;
 mod engine;
 pub mod face;
+mod grid;
+mod live;
 #[cfg(target_os = "macos")]
 mod mac;
-#[cfg(target_os = "macos")]
-mod screen;
+mod rig;
 mod slap;
+#[cfg(target_os = "macos")]
+mod stage;
+#[cfg(target_os = "macos")]
+mod props;
+mod toys;
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -117,7 +131,7 @@ pub struct Prefs {
     /// The eyes follow the pointer.
     pub watch: bool,
     pub show: Show,
-    /// The tidy shortcut carries the desktop's files into a folder.
+    /// The tidy shortcut: the cat pushes the desktop icons into Finder's grid.
     pub tidy: bool,
     /// Reactions the big cat has shown already (their slugs).
     pub seen: Vec<String>,
@@ -143,16 +157,74 @@ impl Prefs {
     }
 }
 
+/// Settings › Cat: three switches. `cat` turns everything off; under it,
+/// the Mac's own events (charger, lid, trackpad, slaps, low battery) and
+/// the tidy shortcut each have their own. What the cat does follows from
+/// them ([`Switches::prefs`]).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(default)]
+pub struct Switches {
+    pub cat: bool,
+    pub hardware: bool,
+    pub tidy: bool,
+}
+
+/// The cat starts switched off; turned on, everything under it works.
+impl Default for Switches {
+    fn default() -> Self {
+        Switches { cat: false, hardware: true, tidy: true }
+    }
+}
+
+impl Switches {
+    /// Everything on: what a demo shows.
+    pub fn all_on() -> Switches {
+        Switches { cat: true, hardware: true, tidy: true }
+    }
+
+    /// What the cat reacts to, with these switches. On, it lives on the desk.
+    pub fn prefs(self) -> Prefs {
+        let hw = self.cat && self.hardware;
+        Prefs { purr: hw, hiss: hw, meow: hw, eat: hw, greet: hw, watch: self.cat, show: if self.cat { Show::Always } else { Show::Off }, tidy: self.cat && self.tidy, seen: Vec::new() }
+    }
+
+    /// The switches from a save made before there were three of them.
+    pub fn from_old(p: &Prefs) -> Switches {
+        if !p.awake() {
+            return Switches::default();
+        }
+        Switches { cat: true, hardware: p.purr || p.hiss || p.meow || p.eat || p.greet, tidy: p.tidy }
+    }
+}
+
+/// Where the switches are saved (the older per-reaction save is [`STORAGE_KEY`]).
+pub const SWITCHES_KEY: &str = "cat-switches";
+
+static SWITCHES: Mutex<Option<Switches>> = Mutex::new(None);
+
+pub fn switches() -> Switches {
+    SWITCHES.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or_default()
+}
+
+/// The switches as Settings left them.
+pub fn set_switches(s: Switches) {
+    let mut slot = SWITCHES.lock().unwrap_or_else(|e| e.into_inner());
+    if *slot == Some(s) {
+        return;
+    }
+    *slot = Some(s);
+    drop(slot);
+    // a switch under an off Cat changes nothing the cat does, but is kept
+    UNSAVED.store(true, Ordering::Relaxed);
+    set_prefs(s.prefs());
+}
+
 static PREFS: Mutex<Option<Prefs>> = Mutex::new(None);
 /// The switches changed since they were last saved.
 static UNSAVED: AtomicBool = AtomicBool::new(false);
 
-pub fn prefs() -> Prefs {
-    PREFS.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()
-}
-
-/// The switches as Settings left them.
-pub fn set_prefs(p: Prefs) {
+/// What the cat reacts to (from [`set_switches`]).
+fn set_prefs(p: Prefs) {
     if keep(p.clone()) {
         send(engine::Event::Prefs(p));
     }
@@ -185,20 +257,20 @@ pub fn tidy_shortcut() -> crate::kit::hotkeys::Shortcut {
     crate::kit::hotkeys::Shortcut { cmd: true, shift: false, alt: true, ctrl: true, key: "T".into() }
 }
 
-/// Puts the last tidy's files back where they were.
+/// Puts the last tidy's icons back where they were.
 pub const PUT_BACK_KEYS: &str = "⇧⌃⌥⌘T";
 pub fn put_back_shortcut() -> crate::kit::hotkeys::Shortcut {
     crate::kit::hotkeys::Shortcut { shift: true, ..tidy_shortcut() }
 }
 
-/// The put back shortcut was pressed: the last tidy's files go back.
+/// The put back shortcut was pressed: the last tidy's icons go back.
 pub fn put_back() {
     #[cfg(target_os = "macos")]
     mac::put_back();
 }
 
-/// The tidy shortcut was pressed: the cat carries the desktop's files
-/// into a folder (main thread).
+/// The tidy shortcut was pressed: the cat pushes the desktop icons into
+/// Finder's grid (main thread).
 pub fn tidy() {
     #[cfg(target_os = "macos")]
     mac::tidy();
@@ -223,11 +295,13 @@ fn send(ev: engine::Event) {
 }
 
 /// Bring the cat to life in the menu bar icon `status_item` (an
-/// `NSStatusItem`), with the switches as they were saved. Call once, on
-/// the main thread. Links `cmdmeow://cat/purr` (hiss, hungry, eat, hello)
-/// make it react.
-pub fn start(saved: Option<Prefs>, status_item: *mut std::ffi::c_void) {
-    let p = saved.unwrap_or_default();
+/// `NSStatusItem`), with the switches as they were saved (`older`: a save
+/// from before the three switches). Call once, on the main thread. Links
+/// `cmdmeow://cat/purr` (hiss, hungry, eat, hello) make it react.
+pub fn start(saved: Option<Switches>, older: Option<Prefs>, status_item: *mut std::ffi::c_void) {
+    let s = saved.or_else(|| older.as_ref().map(Switches::from_old)).unwrap_or_default();
+    *SWITCHES.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+    let p = s.prefs();
     *PREFS.lock().unwrap_or_else(|e| e.into_inner()) = Some(p.clone());
     crate::kit::url_scheme::route("cat", |action| Kind::from_slug(action).map(simulate).is_some());
     #[cfg(target_os = "macos")]
@@ -249,6 +323,32 @@ mod tests {
         let p = Prefs::all_on();
         assert!(p.purr && p.hiss && p.meow && p.eat && p.greet && !p.watch && p.awake());
         assert!(Prefs { watch: true, ..Prefs::default() }.awake());
+    }
+
+    #[test]
+    fn three_switches_turn_the_reactions_on_and_off() {
+        let off = Switches::default();
+        assert!(!off.cat && off.hardware && off.tidy);
+        assert!(!off.prefs().awake());
+        assert_eq!(off.prefs().show, Show::Off);
+        let on = Switches::all_on().prefs();
+        assert!(on.purr && on.hiss && on.meow && on.eat && on.greet && on.watch && on.tidy);
+        assert_eq!(on.show, Show::Always);
+        let quiet = Switches { hardware: false, ..Switches::all_on() }.prefs();
+        assert!(!quiet.purr && !quiet.hiss && !quiet.meow && !quiet.eat && !quiet.greet && quiet.watch && quiet.tidy);
+        let no_tidy = Switches { tidy: false, ..Switches::all_on() }.prefs();
+        assert!(no_tidy.purr && !no_tidy.tidy);
+        // Cat off wins over the switches under it
+        assert!(!Switches { cat: false, ..Switches::all_on() }.prefs().awake());
+    }
+
+    #[test]
+    fn a_save_from_before_the_three_switches_carries_over() {
+        let old: Prefs = serde_json::from_str(r#"{"purr":true,"show":"Always","tidy":true}"#).unwrap();
+        assert_eq!(Switches::from_old(&old), Switches { cat: true, hardware: true, tidy: true });
+        let old: Prefs = serde_json::from_str(r#"{"tidy":true}"#).unwrap();
+        assert_eq!(Switches::from_old(&old), Switches { cat: true, hardware: false, tidy: true });
+        assert_eq!(Switches::from_old(&Prefs::default()), Switches::default());
     }
 
     #[test]

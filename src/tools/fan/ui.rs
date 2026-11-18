@@ -22,9 +22,9 @@ pub fn LINE() -> Color32 { crate::kit::glass::tint::FAN() }
 #[allow(non_snake_case)]
 pub fn HOT_LINE() -> Color32 { crate::kit::glass::AMBER() }
 
-/// Still blades at `angle` (turning ones go through `kit::spin::blades`).
-pub fn blades(p: &egui::Painter, c: Pos2, r: f32, angle: f32, color: Color32, hub: Color32) {
-    crate::kit::spin::draw(p, c, r, angle, color, hub);
+/// The fan glyph standing still at `angle` (turning ones go through `kit::spin::blades`).
+pub fn blades(p: &egui::Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
+    crate::kit::spin::draw(p, c, r, angle, color);
 }
 
 /// A 270° dial: track plus the filled part for `frac`.
@@ -126,9 +126,11 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let groups = s.groups();
         let lh = 24.0;
         let fit = ((rect.bottom() - 10.0 - (y0 + 22.0)) / lh).floor().max(0.0) as usize;
-        for (i, g) in groups.iter().take(fit).enumerate() {
+        let shown: Vec<(&str, String)> = groups.iter().take(fit).map(|g| (g.group.label(), format!("{:.0} °C", g.max))).collect();
+        let cols = tile::bar_cols(p, &shown.iter().map(|(l, v)| (*l, v.as_str())).collect::<Vec<_>>());
+        for (i, (g, (label, v))) in groups.iter().zip(&shown).enumerate() {
             let lr = Rect::from_min_size(Pos2::new(x0, y0 + 22.0 + i as f32 * lh), Vec2::new(x1 - x0, lh));
-            tile::bar_line(p, lr, g.group.label(), Some((heat_pos(g.max).max(0.03), heat(g.max))), &format!("{:.0} °C", g.max));
+            tile::bar_line(p, lr, label, Some((heat_pos(g.max).max(0.03), heat(g.max))), v, cols);
         }
         return;
     }
@@ -158,19 +160,17 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             let (c, rr) = tile::small_ring_at(rect);
             let w = (rr * 0.2).clamp(4.0, 6.0);
             ring(p, c, rr - w / 2.0, w, frac, LINE());
-            crate::kit::spin::blades(p, "fan-avg", c, rr * 0.7, rpm.unwrap_or(0.0), BLADE(), BG());
-            text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 9.0), Align2::CENTER_BOTTOM, &value, font(11.0), TEXT_SOFT(), rect.width() - 10.0);
-            resp
+            crate::kit::spin::blades(p, "fan-avg", c, rr * 0.7, rpm.unwrap_or(0.0), BLADE());
+            // W4: the value at 13/600 like every 1:1; the hottest part in the tip
+            text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, &value, bold(13.0), TEXT(), rect.width() - 10.0);
+            if hot.is_empty() { resp } else { resp.on_hover_text(hot.clone()) }
         }
-        Size::S12 => tile::wide_col(ui, rect, id, Icon::Fan, tint::FAN(), "Fans", &value, if rpm.is_some() { Ok((frac.max(0.02), LINE())) } else { Err(hot.as_str()) }, hot_col, sel),
+        Size::S12 => tile::wide_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, sel),
         _ => {
             // the hottest part is a line on the right; the left says how hard the fans work
-            let load = hot.clone();
-            let (resp, right) = tile::row_split_col(ui, rect, id, Icon::Fan, tint::FAN(), "Fans", &value, &load, hot_col, sel, 0.47);
-            let mut lines: Vec<(String, Option<(f32, Color32)>, String)> = s.fans.iter().take(2).enumerate().map(|(i, f)| (fan_name(i, s.fans.len()), Some((f.frac().max(0.02), LINE())), format!("{} rpm", rpm_text(f.rpm)))).collect();
-            if let Some((g, c)) = hottest_text(s) {
-                lines.push((g, None, format!("{c:.0} °C")));
-            }
+            let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, sel);
+            // each fan; the hottest part is already the caption on the left
+            let lines: Vec<(String, Option<(f32, Color32)>, String)> = s.fans.iter().take(3).enumerate().map(|(i, f)| (fan_name(i, s.fans.len()), Some((f.frac().max(0.02), LINE())), format!("{} rpm", rpm_text(f.rpm)))).collect();
             let empty = if !s.loaded { "Reading…" } else if s.has_smc { "No fans · cools passively" } else { "Fan speed unavailable" };
             tile::lines(ui.painter(), right, &lines, empty);
             resp
@@ -179,18 +179,17 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     // spinning blades over the chip
     if let Some(r) = rpm {
         let p = ui.painter();
-        // over the static glyph: the ring's centre (Wide) or the round chip (Row)
+        // over the static glyph in the ring's centre (Wide and Row alike)
         let spot = match size {
-            Size::S12 => {
+            Size::S12 | Size::S14 => {
                 let (c, rr) = tile::wide_ring(rect);
                 Some((c, rr * 0.62, rr * 0.55, BG()))
             }
-            Size::S14 => Some((tile::row_chip(rect).center(), 12.0, 10.0, lerp_color(BG(), TEXT(), 0.06))),
             _ => None,
         };
         if let Some((c, cover, br, hub)) = spot {
             p.circle_filled(c, cover, hub);
-            crate::kit::spin::blades(p, "fan-avg", c, br, r, BLADE(), hub);
+            crate::kit::spin::blades(p, "fan-avg", c, br, r, BLADE());
         }
     }
     if resp.clicked() {
@@ -269,7 +268,7 @@ fn mini_fan(p: &egui::Painter, r: Rect, f: &Fan, name: &str) {
     p.rect_filled(r, 8.0, white(8));
     let c = Pos2::new(r.left() + 8.0 + 18.0, r.center().y);
     ring(p, c, 17.0, 3.0, f.frac(), LINE());
-    crate::kit::spin::blades(p, &format!("fan-card-{name}"), c, 12.0, f.rpm, BLADE(), CARD());
+    crate::kit::spin::blades(p, &format!("fan-card-{name}"), c, 12.0, f.rpm, BLADE());
     let x = c.x + 26.0;
     let (ly1, ly2) = two_lines_y(&p, r.center().y, &font(11.0), &bold(15.0));
     p.text(Pos2::new(x, ly1), Align2::LEFT_CENTER, name, font(11.0), TEXT_DIM());
@@ -346,10 +345,10 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     let groups = s.groups();
     let rows = groups.len().min(8);
     if rows > 0 {
-        let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * 30.0 + 8.0));
+        let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * SHEET_ROW_H + 8.0));
         glass_card(&p, gr, R_CARD, 0.0, false);
         for (i, g) in groups.iter().take(rows).enumerate() {
-            let cy = gr.top() + 4.0 + 15.0 + i as f32 * 30.0;
+            let cy = gr.top() + 4.0 + SHEET_ROW_H / 2.0 + i as f32 * SHEET_ROW_H;
             p.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 16.5, cy), Vec2::splat(9.0)), 3.0, heat(g.max));
             p.text(Pos2::new(gr.left() + 31.0, cy), Align2::LEFT_CENTER, g.group.label(), font(13.0), TEXT());
             let vr = p.text(Pos2::new(gr.right() - 12.0, cy), Align2::RIGHT_CENTER, format!("{:.0} °C", g.max), font(13.0), heat_text(g.max));
@@ -362,17 +361,19 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     // thermal pressure
     let (hint, col) = thermal_hint(s.thermal);
     let fr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 0.0));
-    let need = p.layout(hint.to_string(), font(12.0), TEXT_FAINT(), w - 24.0).size().y + 35.0;
+    let need = SHEET_ROW_H + 8.0;
     let fr = Rect::from_min_size(fr.min, Vec2::new(w, need));
-    let by = rect.bottom() - 16.0 - 30.0;
+    let by = rect.bottom() - 16.0 - BTN_H;
     if fr.bottom() < by - 8.0 {
         glass_card(&p, fr, R_CARD, 0.0, false);
-        fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, hint);
+        let fr = fr.translate(Vec2::new(0.0, 4.0));
+        let _ = hint; // T1: the word says it
+        fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, "");
     }
 
-    let label = "Open Fan Control";
-    let bw = button_width(&p, label, BTN_PRIMARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0 - bw, by), Vec2::new(bw, 30.0)), label, BTN_PRIMARY, true).clicked() {
+    let label = "Fan Control";
+    let bw = button_width(&p, label, BTN_SECONDARY);
+    if pill_button(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0 - bw, by), Vec2::new(bw, BTN_H)), label, BTN_SECONDARY, true).clicked() {
         cx.open_page(ID, "");
     }
     cmds

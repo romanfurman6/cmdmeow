@@ -751,6 +751,20 @@ pub fn open_bluetooth_settings() {
 
 /// The devices the demo screenshots show.
 pub fn demo() -> Vec<Device> {
+    // CMDMEOW_DEMO_DEVICES=one: just AirPods (their parts fill a Row);
+    // =long: the longest names a widget meets, for checking nothing is cut
+    match std::env::var("CMDMEOW_DEMO_DEVICES").as_deref() {
+        Ok("one") => return vec![Device { name: "Roman's AirPods Pro".into(), kind: Kind::Earbuds, left: Some(52), right: Some(55), case: Some(80), ..Default::default() }],
+        Ok("long") => {
+            return vec![
+                Device { name: "Roman's AirPods Pro (2nd generation)".into(), kind: Kind::Earbuds, left: Some(12), right: Some(9), case: Some(100), ..Default::default() },
+                Device { name: "Magic Keyboard with Touch ID and Numeric Keypad".into(), kind: Kind::Keyboard, main: Some(100), ..Default::default() },
+                Device { name: "Logitech MX Master 3S for Mac".into(), kind: Kind::Mouse, main: Some(64), ..Default::default() },
+                Device { name: "Xbox Wireless Controller".into(), kind: Kind::Gamepad, main: Some(100), ..Default::default() },
+            ]
+        }
+        _ => {}
+    }
     let trend = |from: u8, to: u8| (0..40).map(|i| (from as i32 + (to as i32 - from as i32) * i / 39) as u8).collect::<Vec<u8>>();
     vec![
         Device { name: "AirPods Pro".into(), kind: Kind::Earbuds, left: Some(42), right: Some(38), case: Some(71), case_charging: true, ..Default::default() },

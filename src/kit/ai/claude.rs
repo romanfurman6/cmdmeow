@@ -97,19 +97,19 @@ static HANDED: std::sync::Mutex<Option<ClaudeCreds>> = std::sync::Mutex::new(Non
 
 /// Claude Code's sign-in from the Keychain, read again once the person let
 /// us (setup's permission row or Settings › AI Usage): never before that,
-/// and only while a window is open, in case macOS asks again (someone is
-/// there to answer). A Deny is remembered until they connect again.
+/// and only while a window is open. Only the quiet read: macOS never asks
+/// here, so a token Claude Code renewed doesn't bring its prompt back.
 fn read_keychain() -> Option<ClaudeCreds> {
     if !may_read(&super::settings::get().claude_keychain, crate::kit::activity::visible()) {
         return None;
     }
-    match account::read_claude_keychain() {
+    match account::read_claude_keychain_quiet() {
         KeychainRead::Found(b) => account::parse_claude_creds(&b),
-        KeychainRead::Denied => {
-            super::settings::update(true, |s| s.claude_keychain = "denied".into());
+        KeychainRead::Failed => {
+            eprintln!("[ai] claude keychain: quiet read failed");
             None
         }
-        KeychainRead::Missing | KeychainRead::Failed => None,
+        KeychainRead::Missing | KeychainRead::Denied => None,
     }
 }
 
@@ -129,11 +129,14 @@ pub enum Connect {
     Failed,
 }
 
-/// The person asked to use Claude Code's sign-in: read the Keychain now
-/// (macOS shows its Allow / Always Allow / Deny prompt) and remember the
-/// answer. Blocks while the prompt is up; run it off the ui thread.
+/// The person asked to use Claude Code's sign-in: read the Keychain now and
+/// remember the answer. Quietly when the item lets us; else as our app,
+/// and macOS shows its Allow / Always Allow / Deny prompt. Blocks while the
+/// prompt is up; run it off the ui thread.
 pub fn connect_keychain() -> Connect {
-    match account::read_claude_keychain() {
+    let quiet = account::read_claude_keychain_quiet();
+    let read = if matches!(quiet, KeychainRead::Found(_) | KeychainRead::Missing) { quiet } else { account::read_claude_keychain() };
+    match read {
         KeychainRead::Found(b) => {
             super::settings::update(true, |s| s.claude_keychain = "ok".into());
             *HANDED.lock_ok() = account::parse_claude_creds(&b);
@@ -432,7 +435,6 @@ pub fn demo_info() -> UsageInfo {
         error: None,
         fetched: Some(Local::now()),
         local: demo_local(),
-        data_bytes: 5_400_000_000,
         billing: Billing::Subscription,
         source: "API",
         ..Default::default()

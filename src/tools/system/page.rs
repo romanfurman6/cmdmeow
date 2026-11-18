@@ -20,6 +20,9 @@ use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Ui, UiBuilder, Vec2};
 const BENTO_MIN_W: f32 = 760.0;
 /// Below this body height the bento scrolls.
 const BENTO_MIN_H: f32 = 520.0;
+/// Past this the cards stop growing and the grid stays at the top: charts
+/// and rings don't stretch to fill a tall window.
+const BENTO_MAX_H: f32 = 2.0 * 340.0 + sp::L;
 
 fn level_color(l: Level) -> Color32 {
     match l {
@@ -109,7 +112,7 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     } else {
         // 3 columns (1.4 : 1 : 1) × 2 rows
         let fits = inner.width() >= BENTO_MIN_W;
-        let total_h = if fits { (body.height() - 2.0 * sp::L).max(BENTO_MIN_H) } else { 6.0 * 250.0 + 5.0 * sp::L };
+        let total_h = if fits { (body.height() - 2.0 * sp::L).clamp(BENTO_MIN_H, BENTO_MAX_H) } else { 6.0 * 250.0 + 5.0 * sp::L };
         let mut child = ui.new_child(UiBuilder::new().max_rect(body).id_salt("health-page"));
         ScrollArea::vertical().id_salt("health-scroll").auto_shrink([false, false]).show(&mut child, |ui| {
             let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), total_h + 2.0 * sp::L), Sense::hover());
@@ -190,18 +193,19 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
 
 /// Card title (13/600), an optional status chip after it, and an optional
 /// big value on the right. Returns the y where the content starts.
-fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Color32)>, big: Option<(&str, &str)>) -> f32 {
+fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Color32)>, big: Option<&str>) -> f32 {
     let mut right = r.right();
-    if let Some((num, unit)) = big {
-        let u = p.text(Pos2::new(r.right(), r.top() + 26.0), Align2::RIGHT_BOTTOM, unit, ty::body(), ty::caption_color());
-        let n = p.text(Pos2::new(u.left() - 3.0, r.top() + 28.0), Align2::RIGHT_BOTTOM, num, ty::hero(), TEXT());
+    // the title names the big number ("CPU load"), the number stays plain ("16%")
+    if let Some(num) = big {
+        let n = p.text(Pos2::new(r.right(), r.top() + 28.0), Align2::RIGHT_BOTTOM, num, ty::hero(), TEXT());
         right = n.left() - sp::M;
     }
-    let cy = r.top() + 9.0;
-    let t = text_fit(p, Pos2::new(r.left(), cy), Align2::LEFT_CENTER, title, ty::title(), TEXT(), right - r.left());
+    // the title sits on the big number's baseline in every card, so titles
+    // in a row line up too
+    let t = text_fit(p, Pos2::new(r.left(), r.top() + 26.0), Align2::LEFT_BOTTOM, title, ty::title(), TEXT(), right - r.left());
     if let Some((label, c)) = status {
         if t.right() + 80.0 < right {
-            chip(p, Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, label, (with_alpha(c, 0.16), c));
+            chip(p, Pos2::new(t.right() + sp::S, t.center().y), Align2::LEFT_CENTER, label, (with_alpha(c, 0.16), c));
         }
     }
     r.top() + 28.0 + sp::M
@@ -233,6 +237,26 @@ fn ring_stat(p: &egui::Painter, area: Rect, frac: f32, color: Color32, value: &s
     p.text(c + Vec2::new(0.0, 15.0), Align2::CENTER_CENTER, caption, ty::caption(), ty::caption_color());
 }
 
+/// A big ring with a whole value ("1.44 TB") and a caption under it
+/// ("free of 2.00 TB"), the disk ring of SP2.
+fn ring_stat_words(p: &egui::Painter, area: Rect, frac: f32, color: Color32, value: &str, caption: &str) {
+    let rr = (area.width().min(area.height()) / 2.0).min(78.0);
+    if rr < 24.0 {
+        return;
+    }
+    let c = area.center();
+    let w = (rr * 0.14).clamp(8.0, 12.0);
+    tile::ring(p, c, rr - w / 2.0, w, frac.max(0.01), color);
+    let inner = 2.0 * (rr - w) - 8.0;
+    let mut font = ty::number();
+    let tw = p.layout_no_wrap(value.to_string(), font.clone(), TEXT()).size().x;
+    if tw > inner {
+        font.size = (font.size * inner / tw).max(11.0);
+    }
+    text_fit(p, c - Vec2::new(0.0, 7.0), Align2::CENTER_CENTER, value, font, TEXT(), inner);
+    text_fit(p, c + Vec2::new(0.0, 15.0), Align2::CENTER_CENTER, caption, ty::label(), TEXT_DIM(), inner);
+}
+
 fn level_status(l: Level) -> Color32 {
     match l {
         Level::Good => GREEN(),
@@ -258,14 +282,15 @@ fn legend(p: &egui::Painter, r: Rect, rows: &[(Option<Color32>, String, String)]
 }
 
 fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
-    let load = format!("{:.0}", s.cpu_load);
-    let y = card_title(p, r, "CPU", Some((s.thermal_word(), level_status(s.thermal_level()))), Some((&load, "%")));
+    let load = format!("{:.0}%", s.cpu_load);
+    let th = (["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], level_status(s.thermal_level()));
+    let y = card_title(p, r, "CPU load", if s.thermal_level() == Level::Good { None } else { Some(th) }, Some(&load));
     let foot = r.bottom() - 18.0;
     let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), foot - sp::M));
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
     tile::spark_to(p, gr, &s.cpu_history, level_color(s.thermal_level()), (peak * 1.15).max(25.0));
     let mut x = r.left();
-    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system), format!("Idle {:.0}%", (100.0 - s.cpu_user - s.cpu_system).max(0.0))] {
+    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system), format!("Idle {:.0}%", (100.0 - s.cpu_load).max(0.0))] {
         x = p.text(Pos2::new(x, foot + 9.0), Align2::LEFT_CENTER, t, ty::label(), white(166)).right() + sp::L;
     }
 }
@@ -274,27 +299,24 @@ fn disk_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<Sh
     let name = if s.volume_name.is_empty() { "Macintosh HD".to_string() } else { s.volume_name.clone() };
     let y = card_title(p, r, &name, None, None);
     let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
-    let mut rows: Vec<(Option<Color32>, String, String)> = vec![
-        (None, "Used".to_string(), human_bytes(s.disk_total.saturating_sub(s.disk_free))),
-        (None, "Size".to_string(), human_bytes(s.disk_total)),
-    ];
+    let mut rows: Vec<(Option<Color32>, String, String)> = vec![(None, "Used".to_string(), human_bytes(s.disk_total.saturating_sub(s.disk_free)))];
     if !s.smart_status.is_empty() {
-        rows.push((None, "Drive".to_string(), s.smart_status.clone()));
+        rows.push((None, "Drive health".to_string(), s.smart_status.clone()));
     }
-    let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 26.0 - sp::M));
+    rows.push((None, "Trash".to_string(), s.trash_bytes.map(human_bytes).unwrap_or_else(|| "—".into())));
+    let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
     let lt = legend(p, bottom, &rows);
     let col = if s.disk_level() == Level::Good { tint::HEALTH() } else { level_color(s.disk_level()) };
-    ring_stat(p, Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M)), used, col, &human_bytes(s.disk_free), "free");
+    // SP2: the free space whole, "free of <total>" under it, as on the start ring
+    ring_stat_words(p, Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M)), used, col, &human_bytes(s.disk_free), &format!("free of {}", human_bytes(s.disk_total)));
     // footer: Trash and the way to free space
-    let fy = r.bottom() - 26.0;
+    let fy = r.bottom() - BTN_H_ROW;
     let mut out = None;
     let bw = button_width(p, "Free up space", BTN_SECONDARY);
-    let br = Rect::from_min_size(Pos2::new(r.right() - bw, fy), Vec2::new(bw, 26.0));
+    let br = Rect::from_min_size(Pos2::new(r.left(), fy), Vec2::new(bw, BTN_H_ROW));
     if pill_button(ui, br, "Free up space", BTN_SECONDARY, true).clicked() {
         out = Some(SheetAction::Open("cleanup"));
     }
-    let trash = s.trash_bytes.map(|b| format!("Trash {}", human_bytes(b))).unwrap_or_else(|| "Trash".into());
-    text_fit(p, Pos2::new(r.left(), fy + 13.0), Align2::LEFT_CENTER, &trash, ty::label(), white(166), br.left() - r.left() - sp::S);
     out
 }
 
@@ -304,14 +326,14 @@ fn memory_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
         Level::Fair => "Elevated",
         Level::Critical => "High",
     };
-    let pct = format!("{:.0}", s.mem_pressure);
-    let y = card_title(p, r, "Memory", Some((word, level_status(s.mem_level()))), Some((&pct, "%")));
+    let pct = format!("{:.0}%", s.mem_pressure);
+    let y = card_title(p, r, "Memory pressure", if s.mem_level() == Level::Good { None } else { Some((word, level_status(s.mem_level()))) }, Some(&pct));
     // one stacked bar of what holds the memory
     let tot = s.mem_total.max(1) as f32;
     let parts = [(s.mem_active, series::monitor(0)), (s.mem_wired, series::monitor(1)), (s.mem_compressed, series::monitor(2))];
     let segs: Vec<(f32, Color32)> = parts.iter().map(|(b, c)| (*b as f32 / tot, *c)).collect();
     let rows = vec![
-        (Some(series::monitor(0)), "App memory".to_string(), human_bytes(s.mem_active)),
+        (Some(series::monitor(0)), "Apps".to_string(), human_bytes(s.mem_active)),
         (Some(series::monitor(1)), "Wired".to_string(), human_bytes(s.mem_wired)),
         (Some(series::monitor(2)), "Compressed".to_string(), human_bytes(s.mem_compressed)),
         (None, "Swap used".to_string(), human_bytes(s.swap_used)),
@@ -333,16 +355,10 @@ fn battery_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
         card_title(p, r, "Power", Some(("No battery", TEXT_DIM())), None);
         return;
     }
-    let (status, scol) = if b.full || (b.plugged && b.percent >= 100) {
-        ("Charged", GREEN())
-    } else if b.charging {
-        ("Charging", GREEN())
-    } else if b.plugged {
-        ("Plugged in", TEXT_DIM())
-    } else {
-        ("On battery", if b.percent <= 20 { RED() } else { TEXT_DIM() })
-    };
-    let y = card_title(p, r, "Battery", Some((status, scol)), None);
+    // the same words as the battery sheet's header (C6)
+    let state = super::sheets::battery_state(s);
+    let scol = if b.charging { GREEN() } else if !b.plugged && b.percent <= 20 { RED() } else { TEXT_DIM() };
+    let y = card_title(p, r, "Battery", Some((&state, scol)), None);
     let col = if b.percent <= 20 { RED() } else { GREEN() };
     let mut rows = Vec::new();
     if !b.plugged {
@@ -381,7 +397,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let y = card_title(p, r, &title, status, None);
     // two numbers side by side
     let colw = r.width() / 2.0;
-    for (k, (v, label, col)) in [(human_rate(s.net_down), "download", TEXT()), (human_rate(s.net_up), "upload", tint::HEALTH())].into_iter().enumerate() {
+    for (k, (v, label, col)) in [(human_rate(s.net_down), "download", TEXT()), (human_rate(s.net_up), "upload", TEXT())].into_iter().enumerate() {
         let x = r.left() + k as f32 * colw;
         text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &v, ty::lead(), col, colw - sp::S);
         p.text(Pos2::new(x, y + 25.0), Align2::LEFT_TOP, label, ty::caption(), ty::caption_color());
@@ -399,7 +415,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
         "Not tested".to_string()
     };
     rows.push((None, "Speed".to_string(), speed));
-    let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 26.0 - sp::M));
+    let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
     let lt = legend(p, bottom, &rows);
     let gr = Rect::from_min_max(Pos2::new(r.left(), y + 40.0 + sp::M), Pos2::new(r.right(), lt - sp::M));
     if gr.height() > 20.0 {
@@ -411,7 +427,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     for mode in [super::monitor::SpeedMode::Quick, super::monitor::SpeedMode::Full] {
         let label = mode.label();
         let bw = button_width(p, label, BTN_SECONDARY);
-        let br = Rect::from_min_size(Pos2::new(x, r.bottom() - 26.0), Vec2::new(bw, 26.0));
+        let br = Rect::from_min_size(Pos2::new(x, r.bottom() - BTN_H_ROW), Vec2::new(bw, BTN_H_ROW));
         let tip = if mode == super::monitor::SpeedMode::Quick { "About 6 seconds" } else { "About 20 seconds, more streams" };
         if pill_button(ui, br, label, BTN_SECONDARY, !s.speed.running).on_hover_text(tip).clicked() {
             out = Some(SheetAction::SpeedTest(mode));

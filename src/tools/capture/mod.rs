@@ -14,6 +14,7 @@ mod grab;
 mod hotkeys;
 mod icons;
 mod mac;
+mod old;
 pub mod record;
 mod render;
 mod settings;
@@ -142,6 +143,9 @@ pub struct Capture {
     countdown: Option<windows::Countdown>,
     preview: Option<windows::Preview>,
     pins: Vec<windows::Pin>,
+    /// The app that had the keyboard before a click on one of our small
+    /// capture windows; closing a pin hands it back (see `windows::pins`).
+    pin_return: Option<i32>,
     editor: Option<windows::EditorWin>,
     overlay: Option<windows::Overlay>,
     hud: Option<(String, Instant)>,
@@ -155,6 +159,9 @@ pub struct Capture {
     files: Vec<folder::FileShot>,
     files_at: Option<Instant>,
     files_busy: bool,
+    /// The folder was read or saved to already (see `folder_known`).
+    folder_ok: bool,
+    folder_check: Option<(Instant, bool)>,
     tab: Tab,
     vtab: VTab,
     /// Which of the two tools are on: Screenshot (`shot_on`) and Video.
@@ -181,6 +188,9 @@ pub struct Capture {
     /// Whether a secret key is in the Keychain: read once, off the frame loop
     /// (and never in demo mode, where a Keychain prompt would block).
     pub(crate) has_secret: Option<bool>,
+    /// Storage files opened from Finder, waiting for the app to come to the
+    /// front (a cold launch) so their alert isn't hidden behind Finder.
+    storage_files: Vec<(PathBuf, Instant)>,
 }
 
 impl Capture {
@@ -199,13 +209,24 @@ impl Capture {
     }
 
     pub fn new(env: &ToolEnv) -> Self {
+        if !env.demo {
+            crate::kit::url_scheme::on_files(share::import::opened);
+        }
         let (tx, rx) = channel();
         let (settings, dir, store) = if env.demo {
             let mut s = Settings::default();
             s.folder = demo_folder();
+            // mouse buttons as shortcuts, the widest one included
+            if std::env::var_os("CMB_DEMO_MOUSE").is_some() {
+                use crate::kit::hotkeys::Shortcut;
+                s.set_shortcut(Command::Area, Shortcut::mouse(4, false, false, false, false));
+                s.set_shortcut(Command::Screen, Shortcut::mouse(5, false, false, true, false));
+                s.set_shortcut(Command::Text, Shortcut::mouse(3, true, true, true, true));
+            }
             (s, None, demo_store())
         } else {
             let dir = settings::data_dir();
+            old::register();
             (settings::load(&dir), Some(dir.clone()), Store::open(dir.join("history")))
         };
         let mut c = Capture {
@@ -222,6 +243,7 @@ impl Capture {
             countdown: None,
             preview: None,
             pins: Vec::new(),
+            pin_return: None,
             editor: None,
             overlay: None,
             hud: None,
@@ -232,6 +254,8 @@ impl Capture {
             files: Vec::new(),
             files_at: None,
             files_busy: false,
+            folder_ok: false,
+            folder_check: None,
             tab: Tab::History,
             vtab: VTab::Recordings,
             shot_on: true,
@@ -249,6 +273,7 @@ impl Capture {
             uploads: share::Uploads::default(),
             share_secret: String::new(),
             has_secret: if env.demo { Some(false) } else { None },
+            storage_files: Vec::new(),
         };
         c.apply_keys();
         c
@@ -309,6 +334,41 @@ impl Capture {
         if self.recording.is_none() {
             self.apply_keys();
         }
+    }
+
+    /// Take a storage file Claude saved (see [`share::import`]): fill the
+    /// Sharing page, put the secret key in the Keychain, trash the file.
+    fn import_storage(&mut self, path: &std::path::Path) {
+        let Some(st) = share::import::read(path) else {
+            self.hud("Not a Cmd+Meow sharing file");
+            return;
+        };
+        // a file from anywhere could point uploads at someone else's bucket:
+        // the person sees where they'd go and says yes
+        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, share::import::short_host(&st.endpoint)), "Use") {
+            return;
+        }
+        if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
+            self.hud(format!("Couldn't save to the Keychain: {e}"));
+            return;
+        }
+        let s = &mut self.settings.share;
+        s.endpoint = st.endpoint;
+        s.bucket = st.bucket;
+        s.access_key = st.access_key;
+        s.region.clear();
+        s.public_url = st.public_url;
+        s.link = if s.public_url.is_empty() { share::LinkKind::Week } else { share::LinkKind::Public };
+        s.secret_saved = true;
+        self.has_secret = Some(true);
+        self.save_settings();
+        // read it straight back: any Keychain approval happens now
+        share::secret::approve_now(share::VIDEO_ACCOUNT);
+        // the keys shouldn't stay in Downloads
+        if let Err(e) = crate::kit::fs::move_to_trash(path) {
+            eprintln!("[share] couldn't trash {}: {e}", path.display());
+        }
+        self.hud("Sharing set up");
     }
 
     fn hud(&mut self, msg: impl Into<String>) {
@@ -628,6 +688,8 @@ impl Capture {
             }
             Done::Folder(Some(p)) => {
                 self.settings.folder = p;
+                self.folder_ok = false;
+                self.folder_check = None;
                 self.save_settings();
                 self.files.clear();
                 self.files_at = None;
@@ -636,6 +698,7 @@ impl Capture {
             Done::Files(dir, files) => {
                 self.files_busy = false;
                 if dir == self.settings.folder {
+                    self.folder_ok = true;
                     self.files = files;
                     self.files_at = Some(Instant::now());
                     self.forget_dropped_thumbs();
@@ -875,7 +938,13 @@ impl Capture {
     }
 
     /// Re-read the screenshot folder when the list is a few seconds old.
-    fn refresh_files(&mut self) {
+    /// `quiet` (the widget): skip a folder macOS would ask about (Desktop by
+    /// default) until a capture was saved there, so the panel and setup
+    /// never bring up that question; the Folder tab reads it on request.
+    fn refresh_files(&mut self, quiet: bool) {
+        if quiet && !self.folder_known() {
+            return;
+        }
         if self.files_busy || self.files_at.is_some_and(|t| t.elapsed().as_secs_f32() < 3.0) {
             return;
         }
@@ -888,6 +957,25 @@ impl Capture {
             let _ = tx.send(Done::Files(dir, files));
             ctx.request_repaint();
         });
+    }
+
+    /// Can the folder be read without macOS asking? Yes outside the folders
+    /// it asks about, with Full Disk Access, or once a copy was saved there
+    /// (saving already asked) or the Folder tab listed it.
+    fn folder_known(&mut self) -> bool {
+        if !self.folder_ok {
+            let dir = &self.settings.folder;
+            self.folder_ok = self.store.shots.iter().any(|s| s.saved.as_deref().is_some_and(|p| p.starts_with(dir)));
+        }
+        if self.folder_ok {
+            return true;
+        }
+        // Full Disk Access may be switched on meanwhile; checking it opens a
+        // file, so at most every few seconds (the widget draws every frame)
+        if self.folder_check.is_none_or(|(t, _)| t.elapsed().as_secs_f32() >= 3.0) {
+            self.folder_check = Some((Instant::now(), !crate::kit::fs::behind_folder_prompt(&self.settings.folder)));
+        }
+        self.folder_check.is_some_and(|(_, ok)| ok)
     }
 
     fn open_file(&mut self, f: &folder::FileShot) {
@@ -1067,6 +1155,12 @@ impl Tool for Capture {
         self.rec.tray()
     }
     fn tick(&mut self, ctx: &egui::Context) -> bool {
+        // Cleanup removed old history copies
+        if crate::kit::old_captures::take_history_changed() {
+            if let Some(dir) = &self.dir {
+                self.store = Store::open(dir.join("history"));
+            }
+        }
         if let Some(k) = &self.keys {
             if self.recording.is_none() {
                 for c in k.poll() {
@@ -1077,6 +1171,24 @@ impl Tool for Capture {
         if let Some(l) = &self.links {
             for c in l.take() {
                 self.queue.push((c, 0));
+            }
+        }
+        // not in demo mode (screenshots), where a Keychain prompt would block
+        if self.links.is_some() {
+            let now = Instant::now();
+            self.storage_files.extend(share::import::take().into_iter().map(|f| (f, now)));
+            if !self.storage_files.is_empty() {
+                // up to 2.5 s for the launch to bring the app forward, and a
+                // few frames first so the window behind the alert isn't blank
+                let waited = self.storage_files.iter().map(|(_, at)| at.elapsed().as_secs_f32()).fold(0.0, f32::max);
+                let ready = (crate::kit::native::app_active() && waited > 0.4) || waited > 2.5;
+                if ready {
+                    for (f, _) in std::mem::take(&mut self.storage_files) {
+                        self.import_storage(&f);
+                    }
+                } else {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
             }
         }
         while let Ok(d) = self.rx.try_recv() {
@@ -1174,6 +1286,28 @@ mod tests {
 
     fn demo() -> Capture {
         Capture::new(&ToolEnv { ctx: egui::Context::default(), demo: true })
+    }
+
+    #[test]
+    fn widget_leaves_a_guarded_folder_alone_until_a_save() {
+        let mut c = demo();
+        // the demo folder is a temp folder: nothing to ask about
+        assert!(c.folder_known());
+        c.settings.folder = crate::kit::fs::home().join("Desktop");
+        if !crate::kit::fs::behind_folder_prompt(&c.settings.folder) {
+            // Full Disk Access on this machine: macOS never asks
+            return;
+        }
+        c.folder_ok = false;
+        c.folder_check = None;
+        c.files_at = None;
+        assert!(!c.folder_known());
+        c.refresh_files(true);
+        assert!(!c.files_busy, "the widget mustn't list Desktop");
+        // a copy saved there: macOS already asked
+        let id = c.store.shots[0].id;
+        c.store.set_saved(id, c.settings.folder.join("Capture.png"));
+        assert!(c.folder_known());
     }
 
     #[test]

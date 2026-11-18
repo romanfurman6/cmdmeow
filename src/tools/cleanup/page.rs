@@ -71,6 +71,11 @@ fn clean_status(g: &cleanup::State) -> crate::kit::loader::Status {
         return Status::Stopped { sub: what };
     }
     let n = g.failed.len();
+    // nothing went: no ✓, and why
+    if g.cleaned_count == 0 && n > 0 {
+        let problem = if n == 1 { g.failed[0].1.clone() } else { format!("{n} items couldn't be removed") };
+        return Status::Failed { title: "Nothing was removed".into(), problem };
+    }
     let problem = (n > 0).then(|| format!("{n} item{} couldn't be removed", if n == 1 { "" } else { "s" }));
     let items = format!("{} item{}", crate::kit::loader::grouped(g.cleaned_count), if g.cleaned_count == 1 { "" } else { "s" });
     Status::Finished { title: what, sub: items, problem, put_back: false }
@@ -113,8 +118,8 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     page_header(&p, r, "Cleanup", "", TEXT_DIM());
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
     let (total, free) = crate::kit::fs::volume_space("/");
-    let last = if app.demo && !app.demo_fresh { Some(super::engine::LastScan { when: chrono::Utc::now().timestamp() - 2 * 86400, groups: vec![14_200_000_000, 9_800_000_000, 21_600_000_000, 6_100_000_000, 2_200_000_000, 1_300_000_000, 3_400_000_000] }) } else { super::engine::last_scan() };
-    let sizes: Option<Vec<u64>> = last.as_ref().map(|l| Group::ALL.iter().enumerate().map(|(i, _)| l.groups.get(i).copied().unwrap_or(0)).collect());
+    let last = if app.demo && !app.demo_fresh { Some(super::engine::LastScan { when: chrono::Utc::now().timestamp() - 2 * 86400, groups: vec![14_200_000_000, 9_800_000_000, 21_600_000_000, 6_100_000_000, 2_200_000_000, 6_400_000_000, 1_300_000_000, 3_400_000_000] }) } else { super::engine::last_scan() };
+    let sizes: Option<Vec<u64>> = last.as_ref().filter(|l| l.groups.len() == Group::COUNT).map(|l| Group::ALL.iter().enumerate().map(|(i, _)| l.groups.get(i).copied().unwrap_or(0)).collect());
 
     // the block: ring column, a hairline, the rows; centred in the page
     const LEFT_W: f32 = 240.0;
@@ -192,6 +197,7 @@ fn group_icon(p: &egui::Painter, g: Group, r: Rect, col: Color32) {
         Group::Developer => Icon::Gear,
         Group::Projects => Icon::Folder,
         Group::Installers => Icon::Down,
+        Group::Captures => Icon::Camera,
         Group::Logs => Icon::Doc,
         Group::Trash => Icon::Trash,
     };
@@ -458,6 +464,7 @@ fn bundle_of(it: &Item) -> Option<&'static str> {
         Group::AiTools if it.title.starts_with("Uploaded files · ") => Some("Claude Code uploads"),
         Group::AiTools if it.kind == "Old Sessions" && it.title.starts_with("Project · ") => Some("Old Claude Code chats"),
         Group::Projects if it.rule_verdict == Verdict::Ask => Some("Recent build output"),
+        Group::Captures => super::captures::bundle(it.kind),
         _ => None,
     }
 }
@@ -550,12 +557,14 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
         let id = ui.scope_id().with(("group", *title));
         let resp = ui.interact(rr, id, Sense::click());
         let hv = ctx.animate_bool(id, resp.hovered());
+        // lit rows never touch: LIT_INSET top and bottom (H1)
+        let lit = rr.shrink2(Vec2::new(0.0, crate::kit::glass::LIT_INSET));
         if sel {
             // H3
-            p.rect_filled(rr, 8.0, with_alpha(ACTION(), 0.16));
+            crate::kit::glass::selected_fill(&p, lit, 8.0);
         } else if hv > 0.0 {
             // ROW_HOVER (ui-rules H1), inset radius 8 in the rail
-            p.rect_filled(rr, 8.0, white((ROW_HOVER as f32 * hv) as u8));
+            p.rect_filled(lit, 8.0, white((ROW_HOVER as f32 * hv) as u8));
         }
         let c = Pos2::new(rr.left() + sp::S + 12.0, rr.center().y);
         p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
@@ -573,7 +582,8 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
             badge(&p, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, &label);
         }
         let resp = match grp {
-            Some(g) => resp.on_hover_text(g.blurb()),
+            // P7: beside the rail, never over the next row
+            Some(g) => crate::kit::glass::tip_beside(resp, g.blurb(), card.right()),
             None => resp,
         };
         if resp.clicked() {
@@ -1016,7 +1026,8 @@ fn ask_member(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], i: usize, agent:
         Some(a) => format!("{}\n{agent}: {}. {}", short_path(&it.path), if a.action == "keep" { "keep" } else { "clean" }, a.why),
         None => short_path(&it.path),
     };
-    let resp = row_hover(ui, rr, &key).on_hover_text(tip);
+    // its own id: the bundle row above is keyed on the same (first) path
+    let resp = row_hover(ui, rr, ("member", &key)).on_hover_text(tip);
     if resp.double_clicked() {
         let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
     }
@@ -1103,7 +1114,8 @@ fn list_member(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, i: usize) -> Opt
     let p = ui.painter().clone();
     let it = &items[i];
     let key = it.path.display().to_string();
-    let resp = row_hover(ui, rr, &key).on_hover_text(format!("{}\n{}", it.reason, short_path(&it.path)));
+    // its own id: the bundle row above is keyed on the same (first) path
+    let resp = row_hover(ui, rr, ("member", &key)).on_hover_text(format!("{}\n{}", it.reason, short_path(&it.path)));
     if resp.double_clicked() {
         let _ = std::process::Command::new("open").arg("-R").arg(&it.path).spawn();
     }
@@ -1593,7 +1605,10 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
             text_fit(&p, Pos2::new(li.left(), y), Align2::LEFT_TOP, &format!("{name}: {err}"), mono(11.0), TEXT_SOFT(), li.width());
             y += 18.0;
         }
-        text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, "Quit the apps and scan again", ty::caption(), ty::caption_color(), li.width());
+        // only when an open app was in the way
+        if st.failed.iter().any(|(_, e)| e.contains("open") || e.contains("in use")) {
+            text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, "Quit the apps and scan again", ty::caption(), ty::caption_color(), li.width());
+        }
     }
     let db = Rect::from_min_size(Pos2::new(li.left(), li.bottom() - 34.0), Vec2::new(li.width(), 34.0));
     if pill_button(ui, db, "Done", BTN_PRIMARY, true).clicked() {
@@ -1688,6 +1703,22 @@ pub fn demo_results() -> cleanup::State {
     // dozens of alike questions show as one row
     for (name, bytes) in [("com.apple.Safari", 640_000_000), ("com.apple.Music", 410_000_000), ("com.apple.helpd", 120_000_000), ("com.apple.Maps", 96_000_000)] {
         items.push(mk(Group::AppCaches, &name.replace("com.apple.", ""), &format!("~/Library/Caches/{name}"), bytes, "Caches", Verdict::Ask, "macOS system cache, usually safe, rebuilt by macOS", Who::Rule));
+    }
+    // old captures: screenshots and recordings to the Trash, uploads deleted for good
+    for (k, b) in [2_400_000u64, 3_100_000, 1_900_000, 2_700_000].into_iter().enumerate() {
+        items.push(mk(Group::Captures, &format!("Capture 2026-09-0{} at 10.1{k}.04.png", k + 1), &format!("~/Desktop/Capture 2026-09-0{} at 10.1{k}.04.png", k + 1), b, super::captures::SCREENSHOTS, Verdict::Ask, "Taken 70 days ago", Who::Rule));
+    }
+    for (k, b) in [1_900_000_000u64, 2_900_000_000, 1_400_000_000].into_iter().enumerate() {
+        items.push(mk(Group::Captures, &format!("Recording 2026-09-1{k} at 15.02.40.mp4"), &format!("~/Desktop/Recording 2026-09-1{k} at 15.02.40.mp4"), b, super::captures::RECORDINGS, Verdict::Ask, "Recorded 60 days ago", Who::Rule));
+    }
+    for (k, b) in [1_200_000_000u64, 900_000_000, 600_000_000].into_iter().enumerate() {
+        let mut up = mk(Group::Captures, &format!("Link · Recording 2026-08-2{k} at 11.40.02.mp4"), &format!("https://share.example.com/v/{k}"), b, super::captures::UPLOADS, Verdict::Ask, "Shared 80 days ago; the link stops working", Who::Rule);
+        up.permanent = true;
+        up.selected = false;
+        items.push(up);
+    }
+    for (k, b) in [3_800_000u64, 4_200_000, 2_900_000].into_iter().enumerate() {
+        items.push(mk(Group::Captures, &format!("Capture 2026-09-2{k} at 09.30.12"), &format!("~/Library/Application Support/cmdmeow/capture/history/175900000000{k}.png"), b, super::captures::HISTORY, Verdict::Safe, "History copy from 50 days ago", Who::Rule));
     }
     cleanup::State { phase: Phase::Results, items, ai_used: true, ..Default::default() }
 }

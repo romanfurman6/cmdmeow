@@ -143,6 +143,8 @@ pub const AI_BATCH: usize = 120;
 pub const AI_MODEL: &str = "sonnet";
 /// Hide results smaller than this.
 pub const MIN_ITEM_BYTES: u64 = 64 * 1024;
+/// Cleanup offers screenshots, recordings and uploads older than this.
+pub const CAPTURE_MIN_AGE_DAYS: f64 = 30.0;
 /// Shell snapshots younger than this may belong to a running session.
 pub const SHELL_SNAPSHOT_MIN_AGE_DAYS: f64 = 2.0;
 

@@ -76,8 +76,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleURLName</key><string>$BUNDLE_ID</string>
     <key>CFBundleURLSchemes</key><array><string>$URL_SCHEME</string></array>
   </dict></array>
-  <key>NSAppleEventsUsageDescription</key><string>$DISPLAY_NAME asks Finder to pick a folder for saved captures and where your desktop files lie when the cat tidies them, and System Events for the apps that open at login.</string>
-  <key>NSDesktopFolderUsageDescription</key><string>$DISPLAY_NAME looks at your Desktop to clean it up, and its cat moves desktop files into a Tidy folder when you press its shortcut.</string>
+  <!-- The storage file Claude saves after setting up sharing (cmdmeow-sharing.cmdmeow). -->
+  <key>UTExportedTypeDeclarations</key>
+  <array><dict>
+    <key>UTTypeIdentifier</key><string>com.romanfurman6.cmdmeow.sharing</string>
+    <key>UTTypeDescription</key><string>Cmd+Meow Sharing Setup</string>
+    <key>UTTypeConformsTo</key><array><string>public.json</string></array>
+    <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>cmdmeow</string></array></dict>
+  </dict></array>
+  <key>CFBundleDocumentTypes</key>
+  <array><dict>
+    <key>CFBundleTypeName</key><string>Cmd+Meow Sharing Setup</string>
+    <key>CFBundleTypeRole</key><string>Viewer</string>
+    <key>LSHandlerRank</key><string>Owner</string>
+    <key>LSItemContentTypes</key><array><string>com.romanfurman6.cmdmeow.sharing</string></array>
+  </dict></array>
+  <key>NSAppleEventsUsageDescription</key><string>$DISPLAY_NAME asks Finder to pick a folder for saved captures and where your desktop icons lie when the cat tidies them, and System Events for the apps that open at login.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>$DISPLAY_NAME looks at your Desktop to clean it up, and its cat pushes the desktop icons into Finder's grid when you press its shortcut.</string>
   <key>NSMicrophoneUsageDescription</key><string>$DISPLAY_NAME hears your voice for dictation, and in screen recordings when you turn the microphone on.</string>
   <key>NSBluetoothAlwaysUsageDescription</key><string>$DISPLAY_NAME shows the battery of your AirPods, iPhone and other Bluetooth devices.</string>
   <key>NSCameraUsageDescription</key><string>$DISPLAY_NAME shows your camera in screen recordings when you turn the camera on.</string>

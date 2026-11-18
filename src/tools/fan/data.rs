@@ -191,6 +191,7 @@ impl Snapshot {
     /// Add the current reading to the history.
     pub fn push_history(&mut self) {
         let Some((_, hot)) = self.hottest() else { return };
+        crate::kit::smc::set_last_hot(hot);
         self.history.push_back((self.avg_rpm().unwrap_or(0.0), hot));
         while self.history.len() > HISTORY {
             self.history.pop_front();

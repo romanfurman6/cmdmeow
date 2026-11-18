@@ -54,6 +54,9 @@ pub struct Pin {
     frames: u32,
     /// A resize drag in progress: which handle, the scale and pointer at its start.
     resize: Option<(Grip, f32, Pos2)>,
+    /// Closed while it had the keyboard: drawn empty until the keyboard is
+    /// back with the app the user came from, then removed.
+    closing: Option<Instant>,
 }
 
 /// Where a pin is being resized from. The top-left corner stays put, so a
@@ -85,7 +88,7 @@ pub fn drag_scale(base: Vec2, start: f32, grip: Grip, delta: Vec2) -> f32 {
 impl Pin {
     pub fn new(n: u64, id: Option<u64>, img: RgbaImage, ppp: f32, offset: f32) -> Pin {
         let base = Vec2::new(img.width() as f32, img.height() as f32) / ppp.max(1.0);
-        Pin { n, id, img, tex: None, base, scale: 1.0, offset, start: None, frames: 0, resize: None }
+        Pin { n, id, img, tex: None, base, scale: 1.0, offset, start: None, frames: 0, resize: None, closing: None }
     }
 }
 
@@ -386,7 +389,38 @@ pub fn short_path(p: &std::path::Path) -> String {
 
 // ---------------------------------------------------------------- pins
 
+/// A small capture window (selection overlay, countdown, preview, pin, HUD,
+/// recorder bits) that doesn't count as the user picking our app: using it
+/// takes the keyboard, closing a pin should give it back. The editor and
+/// the video viewer are real windows.
+fn passing_window(title: &str) -> bool {
+    let Some(name) = title.strip_prefix(crate::kit::native::PLAIN_WINDOW) else { return false };
+    name.starts_with("capture-") && !["capture-editor", "capture-video"].contains(&name)
+}
+
+/// Who gets the keyboard when a pin closes, updated once per pass: the app
+/// in front while we're in the background; kept while one of our passing
+/// windows (or none) has the keyboard; dropped once a real window of ours
+/// (the app, the editor) has it, since closing a pin then returns there.
+pub fn track_return(prev: Option<i32>, active: bool, front_other: Option<i32>, key: Option<&str>) -> Option<i32> {
+    if !active {
+        return front_other.or(prev);
+    }
+    match key {
+        Some(t) if !passing_window(t) => None,
+        _ => prev,
+    }
+}
+
+/// How long a closed pin waits for the other app to take the keyboard.
+const PIN_HAND_BACK: std::time::Duration = std::time::Duration::from_millis(500);
+
 fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
+    use crate::kit::native;
+    let active = native::app_active();
+    // tracked on every pass: a fresh screenshot goes overlay → preview → pin
+    // without our app ever leaving the front
+    c.pin_return = track_return(c.pin_return, active, native::front_other_app(), native::key_window_title().as_deref());
     let mut close = Vec::new();
     let mut edit = Vec::new();
     for (k, pin) in c.pins.iter_mut().enumerate() {
@@ -399,6 +433,21 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         let title = plain(&format!("capture-pin-{}", pin.n));
         let lift = pin.frames < 5;
         let vid = ViewportId::from_hash_of(("capture-pin", pin.n));
+        if let Some(at) = pin.closing {
+            // closing the window that has the keyboard makes macOS hand it to
+            // our next window, the app window, and bring that up (from behind
+            // other apps or another Space). So the pin stays, empty and
+            // click-through, until the app the user came from has it
+            if !active || at.elapsed() > PIN_HAND_BACK {
+                close.push(k);
+                continue;
+            }
+            let builder = floating(&title, pos, size).with_has_shadow(false).with_mouse_passthrough(true);
+            crate::kit::viewport::show(ctx, vid, builder, |ui, _| {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+            });
+            continue;
+        }
         let builder = floating(&title, pos, size).with_has_shadow(true);
         let shown = crate::kit::viewport::show(ctx, vid, builder, |ui, _| {
             let vctx = ui.ctx().clone();
@@ -411,12 +460,14 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
             p.image(tex, r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
             let resp = ui.interact(r, ui.scope_id().with("pin"), Sense::click_and_drag());
             let hovered = ui.rect_contains_pointer(r);
-            // resize handles (added after the body, so they win where they overlap)
-            let band = 8.0;
+            // resize handles (added after the body, so they win where they
+            // overlap); the grab zone reaches 12 pt in from the edge (C16)
+            let band = crate::kit::glass::overlay::GRAB;
+            let corner = 2.0 * band;
             let handles = [
-                (Grip::Corner, Rect::from_min_max(r.max - Vec2::splat(18.0), r.max), egui::CursorIcon::ResizeNwSe),
-                (Grip::Right, Rect::from_min_max(Pos2::new(r.right() - band, r.top() + 36.0), Pos2::new(r.right(), r.bottom() - 18.0)), egui::CursorIcon::ResizeHorizontal),
-                (Grip::Bottom, Rect::from_min_max(Pos2::new(r.left(), r.bottom() - band), Pos2::new(r.right() - 18.0, r.bottom())), egui::CursorIcon::ResizeVertical),
+                (Grip::Corner, Rect::from_min_max(r.max - Vec2::splat(corner), r.max), egui::CursorIcon::ResizeNwSe),
+                (Grip::Right, Rect::from_min_max(Pos2::new(r.right() - band, r.top() + 36.0), Pos2::new(r.right(), r.bottom() - corner)), egui::CursorIcon::ResizeHorizontal),
+                (Grip::Bottom, Rect::from_min_max(Pos2::new(r.left(), r.bottom() - band), Pos2::new(r.right() - corner, r.bottom())), egui::CursorIcon::ResizeVertical),
             ];
             let mut resized = None;
             for (grip, hr, cursor) in handles {
@@ -440,7 +491,12 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                     pin.resize = None;
                 }
             }
-            p.rect_stroke(r, 0.0, Stroke::new(1.0, if hovered { with_alpha(ACCENT(), 0.8) } else { white(40) }), StrokeKind::Inside);
+            // the edge on hover is an on-picture overlay: lime over a dark band (C16)
+            if hovered || pin.resize.is_some() {
+                crate::kit::glass::overlay::frame(&p, r, 0.0, StrokeKind::Inside);
+            } else {
+                p.rect_stroke(r, 0.0, Stroke::new(1.0, white(40)), StrokeKind::Inside);
+            }
             if resp.drag_started() && pin.resize.is_none() {
                 vctx.send_viewport_cmd(ViewportCommand::StartDrag);
             }
@@ -462,11 +518,13 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                     pin.scale = scale;
                     vctx.send_viewport_cmd(ViewportCommand::InnerSize(pin.base * pin.scale));
                 }
-                // corner grip
+                // corner grip: lime over a dark band, like every on-picture line (C16)
                 let c = r.max - Vec2::splat(5.0);
                 for k in 1..=3 {
                     let d = 4.0 * k as f32;
-                    p.line_segment([c - Vec2::new(d, 0.0), c - Vec2::new(0.0, d)], Stroke::new(1.5, Color32::from_white_alpha(200)));
+                    let seg = [c - Vec2::new(d, 0.0), c - Vec2::new(0.0, d)];
+                    p.line_segment(seg, Stroke::new(3.0, with_alpha(crate::kit::glass::overlay::RING, 0.7)));
+                    p.line_segment(seg, Stroke::new(1.5, crate::kit::glass::overlay::LIME));
                 }
                 let cr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.top() + 16.0), Vec2::splat(22.0));
                 let b = ui.interact(cr, ui.scope_id().with("close"), Sense::click());
@@ -497,6 +555,28 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
     }
     close.sort();
     close.dedup();
+    // a pin closed while it has the keyboard, after a click from another app:
+    // that app gets the keyboard back first (see `closing`)
+    let key = native::key_window_title();
+    if let Some(pid) = c.pin_return.filter(|_| active) {
+        let mut handed = false;
+        close.retain(|&k| {
+            let pin = &mut c.pins[k];
+            if pin.closing.is_some() || key.as_deref().is_some_and(|t| t != plain(&format!("capture-pin-{}", pin.n))) {
+                return true;
+            }
+            handed = handed || native::give_focus_to(pid);
+            if !handed {
+                return true;
+            }
+            pin.closing = Some(Instant::now());
+            ctx.request_repaint();
+            false
+        });
+        if handed {
+            c.pin_return = None;
+        }
+    }
     for k in close.into_iter().rev() {
         let pin = c.pins.remove(k);
         if let Some(id) = pin.id {
@@ -535,6 +615,9 @@ fn editor_window(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         let vctx = ui.ctx().clone();
         if first {
             ew.opened = true;
+            // a new picture reuses the editor's window; if it was minimized
+            // it stayed in the Dock and the capture looked lost (2026-11-18)
+            vctx.send_viewport_cmd(ViewportCommand::Minimized(false));
             vctx.send_viewport_cmd(ViewportCommand::Focus);
             crate::kit::native::activate();
         }
@@ -756,6 +839,27 @@ fn hud(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closing_a_pin_returns_to_the_app_the_click_came_from() {
+        let pin = plain("capture-pin-3");
+        // in the background: remember who is in front
+        assert_eq!(track_return(None, false, Some(42), None), Some(42));
+        // a click on the pin makes us active: keep it
+        assert_eq!(track_return(Some(42), true, None, Some(&pin)), Some(42));
+        assert_eq!(track_return(Some(42), true, None, None), Some(42));
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-preview"))), Some(42));
+        // a fresh screenshot: selection overlay, then preview, then pin
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-overlay"))), Some(42));
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-rec-bar"))), Some(42));
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-video"))), None);
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("clipboard-hud"))), None);
+        // the user went to the app window or the editor: closing returns there
+        assert_eq!(track_return(Some(42), true, None, Some("CmdMeow")), None);
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-editor"))), None);
+        // in the background again, with another app in front
+        assert_eq!(track_return(None, false, Some(7), None), Some(7));
+    }
 
     #[test]
     fn pin_drag_keeps_aspect_and_clamps() {

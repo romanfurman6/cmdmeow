@@ -68,12 +68,10 @@
   }
 
   // Hero panel: a widget opens its tool in the demo
-  const go = { Clean: 'cleanup', Screenshot: 'capture', Claude: 'awake', Clipboard: 'clipboard', 'Macintosh HD': 'diskmap', Memory: 'health', CPU: 'health', Battery: 'health', 'Home Wi-Fi': 'health', 'AI Usage': 'claude', Fans: 'fans' };
-  $$('.app.pnl .wd').forEach(w => {
-    const k = (w.querySelector('.dm, .kh b, .cl3 > span:last-child') || {}).textContent;
-    const to = w.dataset.to || go[(k || '').trim()]; if (!to || !window.cmShow) return;
-    w.classList.add('link'); w.tabIndex = 0; w.setAttribute('role', 'button');
-    w.addEventListener('click', () => window.cmShow(to));
+  $$('.hero-pn .sw[data-to]').forEach(w => {
+    const to = w.dataset.to; if (!window.cmShow) return;
+    w.tabIndex = 0; w.setAttribute('role', 'button');
+    w.addEventListener('click', e => { if (!e.target.closest('.seg span, .lk, .pz')) window.cmShow(to); });
     w.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.cmShow(to); } });
   });
 
@@ -91,7 +89,7 @@
     const ORDER = [7, 0, 12, 5, 11, 2, 13, 8, 1, 10, 4, 9, 3, 6];
     let gen = 0, state = 'idle';
     const fly = (ic, w, i) => {
-      const a = ic.getBoundingClientRect(), b = w.querySelector('.wi').getBoundingClientRect();
+      const a = ic.getBoundingClientRect(), b = w.querySelector('.vis, .rg, .scw, svg.g').getBoundingClientRect();
       const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
       const f = ic.cloneNode(true); f.classList.remove('ap'); f.classList.add('fly'); f.style.left = a.left + 'px'; f.style.top = a.top + 'px'; f.style.width = a.width + 'px';
       document.body.append(f); ic.classList.add('out');

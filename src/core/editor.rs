@@ -820,9 +820,8 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     y + sp::HEADER_CONTROL_H + 24.0
 }
 
-/// Settings › Cat: what the cat reacts to (see [`crate::kit::cat`]), a
-/// switch each, and when the big cat shows on screen. All off, the cat is
-/// not there.
+/// Settings › Cat: three switches (see [`crate::kit::cat::Switches`]).
+/// Cat off, the cat is not there and the two under it are dimmed.
 fn cat_list(app: &App, ui: &mut Ui, body: Rect) -> f32 {
     let w = 600.0f32.min(body.width() - 48.0);
     let x = body.center().x - w / 2.0;
@@ -831,36 +830,35 @@ fn cat_list(app: &App, ui: &mut Ui, body: Rect) -> f32 {
 
 /// The cat's switches as one card. Returns the card's bottom.
 fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
-    use crate::kit::cat::{self, Show};
+    use crate::kit::cat;
     let p = ui.painter().clone();
-    let row_h = 44.0;
-    let before = if app.demo { cat::Prefs::all_on() } else { cat::prefs() };
-    let mut prefs = before.clone();
-    let switches: [(&str, &mut bool); 7] = [
-        ("Purr when petted", &mut prefs.purr),
-        ("Hiss when slapped", &mut prefs.hiss),
-        ("Meow on low battery", &mut prefs.meow),
-        ("Eat on the charger", &mut prefs.eat),
-        ("Greet when the lid opens", &mut prefs.greet),
-        ("Watch the pointer", &mut prefs.watch),
-        ("Tidy the desktop", &mut prefs.tidy),
-    ];
-    let card = Rect::from_min_size(at, Vec2::new(w, row_h * (switches.len() + 1) as f32));
+    let row_h = sp::SETTINGS_ROW_H;
+    let before = if app.demo { cat::Switches::all_on() } else { cat::switches() };
+    let mut s = before;
+    let card = Rect::from_min_size(at, Vec2::new(w, row_h * 3.0));
     glass_card(&p, card, R_CARD, 0.0, false);
     let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * row_h), Vec2::new(w, row_h));
-    let label = |r: Rect, text: &str| {
-        if r.top() > card.top() {
+    let sw_in = |r: Rect| Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
+    // the master switch dims what depends on it, and keeps its values (R14)
+    let dim = |c: Color32, live: bool| if live { c } else { with_alpha(c, crate::kit::key::disabled_alpha()) };
+    for k in 0..3 {
+        let r = row(k);
+        if k > 0 {
             hairline(&p, Pos2::new(r.left() + 16.0, r.top()), Pos2::new(r.right() - 16.0, r.top()));
         }
-        p.text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, text, font(13.0), TEXT());
-    };
-    let n = switches.len();
-    for (k, (text, on)) in switches.into_iter().enumerate() {
-        let r = row(k);
-        label(r, text);
-        let sw = Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
-        if k == n - 1 {
-            let keys = p.text(Pos2::new(sw.left() - 12.0, r.center().y), Align2::RIGHT_CENTER, cat::TIDY_KEYS, font(13.0), TEXT_DIM());
+        let live = k == 0 || s.cat;
+        let (label, on) = match k {
+            0 => ("Cat", &mut s.cat),
+            1 => ("Hardware reactions", &mut s.hardware),
+            _ => ("Tidy the desktop", &mut s.tidy),
+        };
+        let text = p.text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), dim(TEXT(), live));
+        if k == 1 {
+            ui.interact(text, ui.scope_id().with("cat-hardware"), Sense::hover()).on_hover_text("Charger, lid, trackpad, slaps, low battery");
+        }
+        let sw = sw_in(r);
+        if k == 2 {
+            let keys = p.text(Pos2::new(sw.left() - 12.0, r.center().y), Align2::RIGHT_CENTER, cat::TIDY_KEYS, font(13.0), dim(TEXT_DIM(), live));
             // right-aligned above the keys, so it never runs past the window's edge
             if ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).hovered() {
                 egui::Area::new(ui.scope_id().with("cat-put-back"))
@@ -873,22 +871,12 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
                     });
             }
         }
-        if switch(ui, sw, ui.scope_id().with(("cat", k)), *on, true).clicked() {
+        if switch(ui, sw, ui.scope_id().with(("cat", k)), *on, live).clicked() && live {
             *on = !*on;
         }
     }
-    let r = row(n);
-    label(r, "Show on screen");
-    let shows = [Show::Always, Show::FirstTime, Show::Off];
-    let seg = Rect::from_min_size(Pos2::new(r.right() - 12.0 - 216.0, r.center().y - 13.0), Vec2::new(216.0, 26.0));
-    let picked = shows.iter().position(|s| *s == prefs.show).unwrap_or(1);
-    if let Some(i) = segmented(ui, seg, ui.scope_id().with("cat-show"), &["Always", "First time", "Off"], picked) {
-        prefs.show = shows[i];
-        // "First time" starts over: every reaction shows once more
-        prefs.seen.clear();
-    }
-    if prefs != before && !app.demo {
-        cat::set_prefs(prefs);
+    if s != before && !app.demo {
+        cat::set_switches(s);
     }
     card.bottom()
 }

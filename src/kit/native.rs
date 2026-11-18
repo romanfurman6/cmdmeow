@@ -257,6 +257,37 @@ mod mac {
         }
     }
 
+    /// The title of our window that has the keyboard, if any.
+    pub fn key_window_title() -> Option<String> {
+        let mtm = MainThreadMarker::new()?;
+        NSApplication::sharedApplication(mtm).keyWindow().map(|w| w.title().to_string())
+    }
+
+    /// The process id of the app in front, when it isn't us.
+    pub fn front_other_app() -> Option<i32> {
+        let pid = NSWorkspace::sharedWorkspace().frontmostApplication()?.processIdentifier();
+        (pid != std::process::id() as i32 && pid > 0).then_some(pid)
+    }
+
+    /// Hand the keyboard to the app with `pid`. macOS allows it while we are
+    /// the active app; our windows stay where they are.
+    pub fn give_focus_to(pid: i32) -> bool {
+        use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+        let Some(mtm) = MainThreadMarker::new() else { return false };
+        let Some(other) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else { return false };
+        if other.isTerminated() {
+            return false;
+        }
+        let me = NSApplication::sharedApplication(mtm);
+        // macOS 14+: cooperative activation, the active app yields first
+        let modern: bool = unsafe { objc2::msg_send![&*me, respondsToSelector: objc2::sel!(yieldActivationToApplication:)] };
+        if modern {
+            let _: () = unsafe { objc2::msg_send![&*me, yieldActivationToApplication: &*other] };
+        }
+        #[allow(deprecated)]
+        other.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps)
+    }
+
     pub fn activate() {
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
@@ -383,6 +414,49 @@ mod mac {
         NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(|a| !a.isTerminated())
     }
 
+    /// A standard macOS alert with `ok` and Cancel, brought to the front
+    /// (the app may have no window up). True on `ok`. Main thread only;
+    /// blocks until answered.
+    pub fn confirm(title: &str, body: &str, ok: &str) -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        use objc2_foundation::NSString;
+        /// NSAlertFirstButtonReturn
+        const FIRST: isize = 1000;
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            let _: () = msg_send![&*app, activateIgnoringOtherApps: true];
+            let alert: Retained<AnyObject> = msg_send![class!(NSAlert), new];
+            let _: () = msg_send![&*alert, setMessageText: &*NSString::from_str(title)];
+            let _: () = msg_send![&*alert, setInformativeText: &*NSString::from_str(body)];
+            let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str(ok)];
+            let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+            // over Finder even when the app isn't frontmost yet (just
+            // launched by a double-click): floating, and kept on deactivate
+            let w: Retained<AnyObject> = msg_send![&*alert, window];
+            let _: () = msg_send![&*w, setHidesOnDeactivate: false];
+            /// NSModalPanelWindowLevel
+            const MODAL_LEVEL: isize = 8;
+            let _: () = msg_send![&*w, setLevel: MODAL_LEVEL];
+            // lay it out first, or it opens at the screen's corner
+            let _: () = msg_send![&*alert, layout];
+            let _: () = msg_send![&*w, center];
+            let _: () = msg_send![&*w, orderFrontRegardless];
+            let r: isize = msg_send![&*alert, runModal];
+            r == FIRST
+        }
+    }
+
+    /// The app is frontmost.
+    pub fn app_active() -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            msg_send![&*app, isActive]
+        }
+    }
+
     /// Move a file or folder to the Trash the way Finder does: it lands in the
     /// Trash of its own volume (so external drives work) and can be put back.
     pub fn trash_item(p: &std::path::Path) -> Result<(), String> {
@@ -452,6 +526,15 @@ mod other {
     pub fn install_window_menu() {}
     pub fn bring_app_window_front() {}
     pub fn activate() {}
+    pub fn key_window_title() -> Option<String> {
+        None
+    }
+    pub fn front_other_app() -> Option<i32> {
+        None
+    }
+    pub fn give_focus_to(_pid: i32) -> bool {
+        false
+    }
     pub fn thermal_state() -> u8 {
         0
     }
@@ -471,6 +554,13 @@ mod other {
         false
     }
     pub fn app_alive(_pid: i32) -> bool {
+        false
+    }
+    pub fn app_active() -> bool {
+        true
+    }
+    /// No alert off macOS: never confirmed.
+    pub fn confirm(_title: &str, _body: &str, _ok: &str) -> bool {
         false
     }
     /// Move into ~/.Trash. Refuses (instead of deleting) when the item is on

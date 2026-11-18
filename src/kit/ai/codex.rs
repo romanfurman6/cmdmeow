@@ -252,7 +252,6 @@ pub fn demo_info() -> UsageInfo {
         },
         billing: Billing::Subscription,
         source: "API",
-        data_bytes: 1_300_000_000,
         ..Default::default()
     }
 }

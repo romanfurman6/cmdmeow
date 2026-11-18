@@ -108,8 +108,9 @@ fn view(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         // for a click
         if shared.result.read_ok().is_none() {
             match intro(ui, r, &root_label(&app.lens_root)) {
-                Some(true) => begin(app, ui.ctx()),
-                Some(false) => choose_folder(app, ui.ctx()),
+                Some(Start::Disk) => begin(app, ui.ctx()),
+                Some(Start::Folder(p)) => begin_at(app, ui.ctx(), p),
+                Some(Start::Choose) => choose_folder(app, ui.ctx()),
                 None => {}
             }
         }
@@ -166,27 +167,79 @@ fn tilde(p: &Path) -> String {
 
 // ---------------------------------------------------------------- start
 
-/// Before the first map, centred and without a card (R13): the shared disk
-/// ring, a big Map disk and a quiet link to map a folder instead.
-/// Some(true): map the disk; Some(false): choose a folder.
-fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<bool> {
+/// What the start screen asks for.
+enum Start {
+    Disk,
+    Folder(PathBuf),
+    Choose,
+}
+
+/// Before the first map, no cards (SP1): the disk ring and Map disk on the
+/// left, a hairline, and on the right the places that can be mapped instead.
+fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<Start> {
     let p = ui.painter().clone();
     page_header(&p, r, "Disk Map", "", TEXT_DIM());
-    let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H), r.max);
+    let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
     let (total, free) = crate::kit::fs::volume_space("/");
-    let link_h = line_h(&p, &bold(13.0));
-    let block_h = DISK_RING_H + sp::XXL + 44.0 + sp::L + link_h;
-    let top = body.center().y - block_h / 2.0;
-    let cx = body.center().x;
-    disk_ring(&p, Pos2::new(cx, top), name, total, free, tint::DISK_MAP());
-    let y = top + DISK_RING_H + sp::XXL;
-    let br = Rect::from_min_size(Pos2::new(cx - 100.0, y), Vec2::new(200.0, 44.0));
+    const LEFT_W: f32 = 240.0;
+    const GAP: f32 = 48.0;
+    const BTN: Vec2 = Vec2::new(200.0, 44.0);
+    let h = home();
+    // a place that isn't there (a renamed Desktop) is left out
+    let rows: Vec<(&str, Icon, Option<PathBuf>)> = [
+        ("Home", Icon::Home, Some(h.clone())),
+        ("Downloads", Icon::Down, Some(h.join("Downloads"))),
+        ("Documents", Icon::Doc, Some(h.join("Documents"))),
+        ("Desktop", Icon::Monitor, Some(h.join("Desktop"))),
+        ("Applications", Icon::Window, Some(PathBuf::from("/Applications"))),
+        ("Choose a folder", Icon::Folder, None),
+    ]
+    .into_iter()
+    .filter(|(_, _, p)| p.as_ref().is_none_or(|p| p.is_dir()))
+    .collect();
+    let left_h = DISK_RING_H + sp::XXL + BTN.y;
+    let rows_h = sp::SECTION_H + rows.len() as f32 * sp::ROW_H;
+    let block_w = body.width().min(840.0);
+    let block_h = left_h.max(rows_h);
+    let top = (body.center().y - block_h / 2.0).max(body.top());
+    let block = Rect::from_min_size(Pos2::new(body.center().x - block_w / 2.0, top), Vec2::new(block_w, block_h));
+    let lc = block.left() + LEFT_W / 2.0;
+    let ly = block.top() + (block_h - left_h) / 2.0;
+    disk_ring(&p, Pos2::new(lc, ly), name, total, free, tint::DISK_MAP());
+    let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
     let id = ui.scope_id().with("map-disk");
-    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
-    if resp.clicked() {
-        return Some(true);
+    if crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width()).clicked() {
+        return Some(Start::Disk);
     }
-    link(ui, Pos2::new(cx, br.bottom() + sp::L), Align2::CENTER_TOP, "or choose a folder", 13.0).clicked().then_some(false)
+    let dx = block.left() + LEFT_W + GAP;
+    hairline(&p, Pos2::new(dx, block.top()), Pos2::new(dx, block.bottom()));
+    let x0 = dx + 1.0 + GAP;
+    let x1 = block.right();
+    let mut y = block.top() + (block_h - rows_h) / 2.0;
+    section_title(&p, x0, y, "Or map a folder");
+    y += sp::SECTION_H;
+    let mut out = None;
+    for (k, (label, ic, path)) in rows.into_iter().enumerate() {
+        let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
+        let resp = ui.interact(rr, ui.scope_id().with(("map-place", k)), Sense::click());
+        if resp.hovered() {
+            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+        }
+        if k > 0 {
+            hairline(&p, rr.left_top(), rr.right_top());
+        }
+        let cy = rr.center().y;
+        let icp = Pos2::new(x0 + 14.0, cy);
+        let col = tint::DISK_MAP();
+        p.circle_filled(icp, 14.0, with_alpha(col, 0.14));
+        icon(&p, ic, Rect::from_center_size(icp, Vec2::splat(16.0)), col);
+        p.text(Pos2::new(x0 + 28.0 + sp::M, cy), Align2::LEFT_CENTER, label, ty::body(), TEXT());
+        if resp.clicked() {
+            out = Some(path.map_or(Start::Choose, Start::Folder));
+        }
+        y += sp::ROW_H;
+    }
+    out
 }
 
 /// A folder dragged over the window: an outline says it can be dropped.
@@ -1163,7 +1216,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
             let (rr, rresp) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::click());
             let lp = ui.painter();
             if rresp.hovered() {
-                lp.rect_filled(rr, R_SMALL, white(12));
+                lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
                 out.hover = Some((f.path.clone(), f.bytes));
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &f.path);
@@ -1243,7 +1296,7 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
             let (rr, resp) = ui.allocate_exact_size(Vec2::new(w, 34.0), Sense::click());
             let lp = ui.painter().clone();
             if resp.hovered() {
-                lp.rect_filled(rr, R_SMALL, white(12));
+                lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
             let cb = Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(15.0));
@@ -1330,10 +1383,6 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let loc = Rect::from_min_size(Pos2::new(hr.left() + 20.0 + 64.0, hr.center().y - 14.0), Vec2::new((tg.size().x + 56.0).min(240.0), 28.0));
     let lr_resp = ui.interact(loc, ui.scope_id().with("map-where"), if peek.is_none() { Sense::click() } else { Sense::hover() });
     let at_top = node.path == base;
-    p.rect_filled(loc, R_SMALL, white(if peek.is_some() { 8 } else if lr_resp.hovered() { 32 } else if at_top { 20 } else { 14 }));
-    icon(&p, if volume { Icon::Disk } else { Icon::Folder }, Rect::from_center_size(Pos2::new(loc.left() + 16.0, loc.center().y), Vec2::splat(16.0)), if peek.is_none() { ACCENT() } else { TEXT_MUTED() });
-    text_fit(&p, Pos2::new(loc.left() + 30.0, loc.center().y), Align2::LEFT_CENTER, &root_label, bold(13.0), if at_top { TEXT() } else { TEXT_DIM() }, loc.width() - 50.0);
-    chevron_down(&p, Pos2::new(loc.right() - 12.0, loc.center().y), TEXT_DIM());
     if peek.is_none() && lr_resp.hovered() {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -1414,7 +1463,19 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let cw = if !busy && !partial { aicheck::ui::chip_width(&app.ai, ui, ai_data) } else { 0.0 };
     let chip_at = Pos2::new(seg_r.left() - 16.0 - cw, hr.center().y);
     let crumbs_end = if cw > 0.0 { chip_at.x - 12.0 } else { seg_r.left() - 16.0 };
+    // the switcher gives way to the chip at narrow widths: its name is cut
+    // (a name the user brings, R10), never drawn under the chip
+    let loc = loc.with_max_x(loc.right().min(crumbs_end + 4.0).max(loc.left() + 64.0));
+    p.rect_filled(loc, R_SMALL, white(if peek.is_some() { 8 } else if lr_resp.hovered() { 32 } else if at_top { 20 } else { 14 }));
+    icon(&p, if volume { Icon::Disk } else { Icon::Folder }, Rect::from_center_size(Pos2::new(loc.left() + 16.0, loc.center().y), Vec2::splat(16.0)), if peek.is_none() { ACCENT() } else { TEXT_MUTED() });
+    text_fit(&p, Pos2::new(loc.left() + 30.0, loc.center().y), Align2::LEFT_CENTER, &root_label, bold(13.0), if at_top { TEXT() } else { TEXT_DIM() }, loc.width() - 50.0);
+    chevron_down(&p, Pos2::new(loc.right() - 12.0, loc.center().y), TEXT_DIM());
     let mut x = loc.right() + 2.0;
+    // no room for "› … › name" before the AI chip: show no crumbs at all,
+    // never a separator or "…" under the chip
+    if x + 10.0 + 26.0 + 40.0 > crumbs_end {
+        crumbs.truncate(1);
+    }
     if crumbs.len() > 1 {
         p.text(Pos2::new(x + 4.0, hr.center().y), Align2::CENTER_CENTER, "›", font(13.0), TEXT_MUTED());
         x += 10.0;
@@ -1590,19 +1651,14 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let resp = ui.interact(rr, ui.scope_id().with(("lens-row", i)), Sense::click());
         let selectable = trashable(&k.path);
         let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
-        // its share of the folder, as a faint fill behind the whole row
-        let f = (k.bytes as f32 / shown_node.bytes.max(1) as f32).clamp(0.0, 1.0);
-        let fw = rr.width() * f;
-        if fw >= 3.0 {
-            let fr = Rect::from_min_size(rr.min + Vec2::new(0.0, 2.0), Vec2::new(fw, rr.height() - 4.0));
-            lp.rect_filled(fr, fw.min(R_SMALL * 2.0) / 2.0, with_alpha(ACCENT(), if is_light() { 0.14 } else { 0.10 }));
-        }
         let lit = !previewing && app.lens_hover.as_ref().is_some_and(|h| h.starts_with(&k.path));
+        // inset list: lit rows sit 1 pt in, so two never touch (H1)
+        let lit_r = rr.shrink2(Vec2::new(0.0, crate::kit::glass::LIT_INSET));
         if resp.hovered() || lit || cursor == Some(i) {
-            lp.rect_filled(rr, R_SMALL, white(12));
+            lp.rect_filled(lit_r, R_SMALL, white(ROW_HOVER));
         }
         if cursor == Some(i) {
-            lp.rect_stroke(rr, R_SMALL, Stroke::new(1.0, with_alpha(ACCENT(), 0.6)), StrokeKind::Inside);
+            lp.rect_stroke(lit_r, R_SMALL, Stroke::new(1.0, with_alpha(ACCENT(), 0.6)), StrokeKind::Inside);
         }
         if !previewing {
             reveal::rect(&lp, rr, R_SMALL, app.ai.ring(&ctx, &k.path.to_string_lossy()));
@@ -1643,7 +1699,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         // the hidden ones open in a sheet
         let resp = ui.interact(rr, ui.scope_id().with("lens-rest"), if n > 0 && !previewing { Sense::click() } else { Sense::hover() });
         if n > 0 && resp.hovered() {
-            lp.rect_filled(rr, R_SMALL, white(12));
+            lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if n > 0 && resp.clicked() {
@@ -1658,9 +1714,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         let used = disk_total.saturating_sub(disk_free);
         let dy = lr.bottom() - disk_h;
         hairline(&p, Pos2::new(lr.left(), dy), Pos2::new(lr.right(), dy));
-        p.text(Pos2::new(x0, dy + 16.0), Align2::LEFT_CENTER, volume_label(&root.path), font(12.0), TEXT_DIM());
-        p.text(Pos2::new(x1, dy + 16.0), Align2::RIGHT_CENTER, format!("{} of {} used", human_bytes(used), human_bytes(disk_total)), font(12.0), TEXT_DIM());
-        bar(&p, Rect::from_min_size(Pos2::new(x0, dy + 28.0), Vec2::new(x1 - x0, 4.0)), (used as f32 / disk_total as f32).clamp(0.01, 1.0), ACCENT());
+        // the same disk, words and tint as the start ring (C6), bar 8 under (R4)
+        let ty0 = dy + 16.0;
+        let total = p.text(Pos2::new(x1, ty0), Align2::RIGHT_CENTER, format!("free of {}", human_bytes(disk_total)), ty::label(), TEXT_DIM());
+        let free = p.text(Pos2::new(total.left() - 4.0, ty0), Align2::RIGHT_CENTER, human_bytes(disk_free), ty::label(), TEXT());
+        icon(&p, Icon::Disk, Rect::from_center_size(Pos2::new(x0 + 8.0, ty0), Vec2::splat(16.0)), TEXT_SOFT());
+        text_fit(&p, Pos2::new(x0 + 22.0, ty0), Align2::LEFT_CENTER, &volume_label(&root.path), ty::body(), TEXT_SOFT(), free.left() - x0 - 22.0 - sp::S);
+        bar(&p, Rect::from_min_size(Pos2::new(x0, ty0 + 8.0 + 8.0), Vec2::new(x1 - x0, 4.0)), (used as f32 / disk_total as f32).clamp(0.01, 1.0), tint::DISK_MAP());
     }
 
     // ---- the map: bubbles (one level) or rings (three levels around the

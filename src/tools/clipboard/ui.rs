@@ -156,27 +156,29 @@ pub fn widget(c: &mut Clipboard, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
         Some(e) => (e.title(), format!("{} · {}", if e.app.is_empty() { "Unknown app" } else { &e.app }, ago(e))),
         None => ("Nothing copied yet".to_string(), status.clone()),
     };
+    let n = c.store.entries.len();
+    let count = if c.pause_label().is_some() { "Paused".to_string() } else { format!("{n} item{}", if n == 1 { "" } else { "s" }) };
     let resp = match size {
-        Size::S11 => tile::small(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &status, false),
-        Size::S12 => tile::wide(ui, rect, id, Icon::Clipboard, TINT(), &status, &title, Err(&sub), false),
+        Size::S11 => tile::small(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &count, false),
+        // W3: the name, the latest clip (13, fading), where and when it came from
+        Size::S12 => match &latest {
+            Some(_) => tile::wide_clip(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &title, &sub, false),
+            None => tile::wide_full(ui, rect, id, Icon::Clipboard, TINT(), None, "Clipboard", &count, "Nothing copied yet", ty::caption_color(), false),
+        },
         _ => {
-            // left: the count and status; right: the two latest clips
-            let n = c.store.entries.len();
-            let count = format!("{n} item{}", if n == 1 { "" } else { "s" });
-            let (resp, right) = tile::row_split(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &count, &status, false);
+            // W5: left like 1:1 (glyph, name, count), right the two latest clips, one line each
+            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &count, false);
             let p = ui.painter().clone();
             let recent: Vec<Entry> = c.visible(Filter::All, "").into_iter().take(2).filter_map(|i| c.store.get(i).cloned()).collect();
             if recent.is_empty() {
-                text_fit(&p, right.center(), Align2::CENTER_CENTER, "Nothing copied yet", font(11.0), TEXT_FAINT(), right.width());
+                text_fit(&p, right.center(), Align2::CENTER_CENTER, "Nothing copied yet", font(12.0), TEXT_FAINT(), right.width());
             }
-            let lh = right.height() / 2.0;
+            let lh = (right.height() / 2.0).min(24.0);
+            let top = right.center().y - lh * recent.len() as f32 / 2.0;
             for (k, e) in recent.iter().enumerate() {
-                let lr = Rect::from_min_size(Pos2::new(right.left(), right.top() + k as f32 * lh), Vec2::new(right.width(), lh));
-                let th = Rect::from_min_size(Pos2::new(lr.left(), lr.center().y - 10.0), Vec2::splat(20.0));
-                entry_thumb(c, &p, th, e, 5.0);
+                let lr = Rect::from_min_size(Pos2::new(right.left(), top + k as f32 * lh), Vec2::new(right.width(), lh));
                 let ag = p.text(Pos2::new(lr.right(), lr.center().y), Align2::RIGHT_CENTER, ago(e), font(11.0), TEXT_FAINT());
-                // two lines when the clip is long: one line cut it to a few words
-                text_wrap(&p, Pos2::new(th.right() + 8.0, lr.center().y), Align2::LEFT_CENTER, &e.title(), font(12.0), TEXT_SOFT(), ag.left() - th.right() - 14.0, 2);
+                text_fade(&p, Pos2::new(lr.left(), lr.center().y), &e.title(), font(12.0), TEXT_SOFT(), ag.left() - lr.left() - 8.0);
             }
             resp
         }
@@ -192,7 +194,7 @@ pub fn widget(c: &mut Clipboard, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
 pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let id = ui.scope_id().with("clipboard-card");
-    tile::paint_card(&p, rect, 0.0, false);
+    let _ = tile::frame(ui, rect, id.with("frame"), false);
     let x0 = rect.left() + 12.0;
     let x1 = rect.right() - 12.0;
     let mut y = rect.top() + 10.0;
@@ -209,7 +211,7 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let g = p.layout_no_wrap(label.to_string(), font(11.0), TEXT());
     let pr = Rect::from_min_size(Pos2::new(hl.rect.left() - 10.0 - g.size().x - 26.0, y), Vec2::new(g.size().x + 26.0, 20.0));
     let presp = row_hover(ui, pr, id.with("pause"));
-    p.rect_filled(pr, 6.0, if paused { with_alpha(AMBER(), 0.22) } else { white(if presp.hovered() { 30 } else { 18 }) });
+    p.rect_filled(pr, 6.0, if paused { with_alpha(AMBER(), 0.22) } else { white(18) });
     let bar_c = if paused { AMBER() } else { TEXT_SOFT() };
     if paused {
         // play triangle
@@ -231,7 +233,7 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         // search row: opens the history
         let sr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 28.0));
         let sresp = row_hover(ui, sr, id.with("search"));
-        p.rect_filled(sr, 7.0, white(if sresp.hovered() { 24 } else { 15 }));
+        p.rect_filled(sr, 7.0, white(15));
         icon(&p, Icon::Search, Rect::from_center_size(Pos2::new(sr.left() + 16.0, sr.center().y), Vec2::splat(13.0)), TEXT_FAINT());
         let n = c.store.entries.len();
         let hint = match c.pause_label() {
@@ -253,7 +255,6 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let ids: Vec<u64> = c.visible(Filter::All, "").into_iter().take(fit.min(PANEL_ROWS)).collect();
     if ids.is_empty() {
         let r = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, rect.bottom() - 12.0));
-        dashed_rect(&p, r, 8.0, white(40));
         let msg = if paused { "Recording is paused" } else { "Copy something and it shows up here" };
         text_fit(&p, r.center(), Align2::CENTER_CENTER, msg, font(12.0), TEXT_FAINT(), r.width() - 16.0);
         return;
@@ -262,20 +263,21 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let Some(e) = c.store.get(*eid).cloned() else { continue };
         let r = Rect::from_min_size(Pos2::new(x0 - 6.0, y), Vec2::new(x1 - x0 + 12.0, rh));
         let resp = row_hover(ui, r, id.with(("row", e.id)));
-        if resp.hovered() {
-            p.rect_filled(r, 7.0, white(15));
-        }
+        // W12: no fill on hover; a held row dims and drops 1 pt
+        let held = resp.is_pointer_button_down_on();
+        let r = if held { r.translate(Vec2::new(0.0, 1.0)) } else { r };
+        let ink = |c: Color32| if held { press_dim(c, 1.0) } else { c };
         // one line per clip: thumb, text, then when (and a pin) on the right
         let th = Rect::from_min_size(Pos2::new(x0, r.center().y - 11.0), Vec2::splat(22.0));
         entry_thumb(c, &p, th, &e, 5.0);
-        let mut right = p.text(Pos2::new(x1, r.center().y), Align2::RIGHT_CENTER, ago(&e), font(11.0), TEXT_FAINT()).left() - 8.0;
+        let mut right = p.text(Pos2::new(x1, r.center().y), Align2::RIGHT_CENTER, ago(&e), font(11.0), ink(TEXT_FAINT())).left() - 8.0;
         if e.pinned {
             pin_glyph(&p, Pos2::new(right - 5.0, r.center().y + 2.0), TINT());
             right -= 16.0;
         }
         let tx = th.right() + 9.0;
         let title_font = if e.kind == Kind::Code { mono(11.0) } else { font(12.0) };
-        text_fit(&p, Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, &e.title(), title_font, TEXT(), right - tx - 4.0);
+        text_fade(&p, Pos2::new(tx, r.center().y), &e.title(), title_font, ink(TEXT()), right - tx - 4.0);
         if resp.on_hover_text("Click to copy").clicked() && c.copy(e.id, false) {
             cx.toast("Copied");
         }

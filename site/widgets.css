@@ -1,0 +1,146 @@
+/* The app's menu bar panel and its widgets, drawn as the app draws them
+   (docs/ui-rules.md SP13 W1–W12, src/kit/tile.rs, src/core/panel.rs).
+   Only depictions of the app use this; the site keeps its own design.
+   Sizes are the app's points: panel 380, padding 12, gap 8, square cells. */
+
+/* S1 glow: the app window's ellipse (rx = max(w, 1180)·0.75, ry = max(h, 740)·1.05) from the top centre */
+.swp {
+  --tx: #fff; --soft: rgba(255,255,255,.84); --dim: rgba(255,255,255,.68); --faint: rgba(255,255,255,.56); --cap: rgba(255,255,255,.5);
+  --card: rgba(255,255,255,.055); --raised: rgba(255,255,255,.11);
+  container-type: inline-size;
+  box-sizing: border-box; width: 380px; max-width: 100%; padding: 0 12px;
+  border-radius: 14px; color: var(--tx); text-align: left;
+  font: 400 12px/1.25 -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--sans, system-ui), sans-serif;
+  letter-spacing: 0; font-variant-numeric: tabular-nums;
+  background: radial-gradient(885px 777px at 50% 0%, #22401D 0%, #132610 35%, #0A150A 70%, #070D07 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), 0 24px 60px rgba(0,0,0,.55);
+}
+.swp *, .swp *::before, .swp *::after { box-sizing: border-box; }
+
+/* title line: name 15/600 at 16 from the edge, the window button 30 */
+.swh { display: flex; align-items: center; height: 60px; padding: 0 2px 0 4px; }
+.swh b { flex: 1; font-size: 15px; font-weight: 600; }
+.swh .wb { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--soft);
+  background: rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 1px 0 rgba(0,0,0,.35); }
+.swh .wb svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; }
+
+/* the grid: 4 square cells */
+.swg { --cell: calc((100cqw - 24px) / 4); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: var(--cell); gap: 8px; }
+.swf { height: 40px; display: grid; place-items: center; font-size: 12px; color: var(--faint); }
+
+/* W1 card: see-through, 1 pt CARD_EDGE inside, top highlight, 1 pt base */
+.sw { position: relative; min-width: 0; overflow: hidden; border-radius: 10px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.078), inset 0 1px 0 rgba(255,255,255,.09), 0 1px 0 rgba(0,0,0,.35);
+  transition: background-color .15s; }
+.sw:hover { background-color: rgba(255,255,255,.083); }
+.sw.press:active, .sw .press:active { transform: translateY(1px); }
+.sw.s12 { grid-column: span 2; }
+.sw.s14 { grid-column: span 4; }
+.sw.s24 { grid-column: span 4; grid-row: span 2; }
+
+.sw svg.g { flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sw svg.fan, .swp svg.fan { fill: currentColor; stroke: none; }
+
+/* W2/W3 wide (1:2) and the left of a row (1:4): ring 50 or glyph 26 in a 40 box, three lines */
+.sw.wide, .sw .left { display: flex; align-items: center; gap: 12px; padding: 0 12px; }
+.sw .vis { display: grid; place-items: center; width: 40px; height: 40px; flex: none; }
+.l3 { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.l3 .lb { font-size: 12px; color: var(--cap); white-space: nowrap; }
+.l3 .vl { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.l3 .cp { font-size: 11px; color: var(--cap); white-space: nowrap; }
+
+/* rings: track white 10%, arc from 12 o'clock with round caps, glyph in the middle */
+.rg { position: relative; display: grid; place-items: center; flex: none; }
+.rg > svg:first-child { position: absolute; inset: 0; }
+.rg .tk { fill: none; stroke: rgba(255,255,255,.1); }
+.rg .ar { fill: none; stroke-linecap: round; }
+.rg .in { position: relative; color: var(--soft); }
+
+/* W4 small (1:1) action: glyph 20 top left, name 12/600, 3 pt, caption 11 */
+.sw.act { display: flex; flex-direction: column; padding: 12px 10px; }
+.sw.act .nm { margin-top: auto; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.sw.act .cp { margin-top: 3px; font-size: 11px; color: var(--cap); white-space: nowrap; }
+.sw.act .rec { position: absolute; top: 11px; left: 27px; width: 6px; height: 6px; border-radius: 50%; background: #FF453A; }
+/* W4 small (1:1) metric: ring 44 centred, value 13/600 */
+.sw.met { display: flex; flex-direction: column; align-items: center; padding: 8px 5px 10px; }
+.sw.met .v13 { margin-top: auto; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.sw.met .scw { display: grid; place-items: center; height: 50px; margin-top: -1px; }
+
+/* Keep Awake 1:2 (SP9): scene 32, title, line, the Off · Auto · On control 28 */
+.sw.awk { display: flex; flex-direction: column; justify-content: space-between; padding: 10px 12px; }
+.awk .ah { display: flex; align-items: center; gap: 8px; }
+.awk .l2 { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.awk .l2 b { font-size: 13px; font-weight: 600; }
+.awk .l2 .cp { font-size: 11px; color: var(--dim); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; height: 28px; padding: 2px; border-radius: 8px; background: rgba(255,255,255,.06); }
+.seg span { display: grid; place-items: center; border-radius: 6px; font-size: 12px; color: var(--dim); cursor: pointer; }
+.seg span.on { color: var(--tx); background: rgba(255,255,255,.16); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 1px 0 rgba(0,0,0,.3); }
+
+/* W5 row (1:4): left as wide, hairline, right part of bar lines */
+.sw.row { display: flex; align-items: stretch; }
+.sw.row .left { flex: none; }
+.sw.row .right { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 12px; min-width: 0; }
+.sw.row .right::before { content: ""; position: absolute; left: 0; top: 6%; bottom: 6%; width: 1px; background: rgba(255,255,255,.1); }
+.bl { display: flex; align-items: center; gap: 10px; height: 24px; font-size: 12px; }
+.bl .bn { color: rgba(255,255,255,.65); white-space: nowrap; }
+.bl .bb { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; }
+.bl .bb.none { background: none; }
+.bl .bb i { display: block; height: 100%; border-radius: 2px; background: #6FD6E8; }
+.bl .bv { white-space: nowrap; min-width: 40px; text-align: right; }
+
+/* W6 medium (2:4) Clipboard: header, then rows that fill the height */
+.sw.clp { display: flex; flex-direction: column; padding: 10px 12px 6px; }
+.clp .mh { display: flex; align-items: center; gap: 8px; height: 20px; margin-bottom: 10px; }
+.clp .mh b { flex: 1; font-size: 13px; font-weight: 600; }
+.clp .chip { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--g); background: color-mix(in srgb, var(--g) 18%, transparent); }
+.clp .pz { display: inline-flex; align-items: center; gap: 2px; height: 20px; padding: 0 7px 0 8px; border-radius: 6px; background: rgba(255,255,255,.07); font-size: 11px; color: var(--soft); white-space: nowrap; }
+.clp .pz i { width: 1.6px; height: 8px; margin-right: 2px; background: currentColor; border-radius: 1px; }
+.clp .pz i + i { margin-right: 5px; }
+.clp .lk { font-size: 12px; color: #D9F78A; cursor: pointer; }
+.clp .crs { flex: 1; display: flex; flex-direction: column; }
+.clp .cr { flex: 1; display: flex; align-items: center; gap: 9px; min-height: 0; cursor: pointer; }
+.clp .cr:active { opacity: .5; }
+.clp .th { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: rgba(255,255,255,.07); color: var(--dim); }
+.clp .th svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.clp .th.img { background: url(desk-1376.jpg) 62% 40% / 260% auto; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.clp .ct { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+.clp .ag { flex: none; font-size: 11px; color: var(--faint); }
+
+/* hero placement: the panel hangs from the menu bar icon */
+.drop .swp.hero-pn { margin-top: 2px; }
+@media (max-width: 900px) { .drop .swp.hero-pn { width: 380px; } }
+
+/* the One place scene: the panel the 14 menu bar icons fly into (demo.js
+   drives .on per tile). Overrides the scene's older tile styles. */
+.mpn.swp { width: 380px; padding: 0 12px 12px; border-radius: 14px; backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: radial-gradient(885px 777px at 50% 0%, #22401D 0%, #132610 35%, #0A150A 70%, #070D07 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), 0 24px 60px rgba(0,0,0,.55); }
+.mpn.swp .swh { height: 52px; }
+.mpn.swp .wgrid { gap: 8px; }
+.mpn.swp .wg { min-height: 0; padding: 12px 10px; gap: 0; border-radius: 10px; justify-content: flex-start;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.078), inset 0 1px 0 rgba(255,255,255,.09), 0 1px 0 rgba(0,0,0,.35); }
+.mpn.swp .wg.s12 { flex-direction: row; align-items: center; gap: 12px; padding: 0 12px; }
+.mpn.swp .wg.met { align-items: center; padding: 8px 5px 10px; }
+.mpn.swp .wg.on { background-color: var(--card); }
+.mpn.swp .wg .rg .ar { stroke-dashoffset: var(--c); transition: stroke-dashoffset .9s cubic-bezier(.3,.7,.3,1) .15s; }
+.mpn.swp .wg.on .rg .ar { stroke-dashoffset: var(--o); }
+.mpn.swp .wg.on .rec { animation: blink 1.2s ease-in-out infinite; }
+.mbx .mi2 svg.fan { fill: currentColor; stroke: none; }
+@media (max-width: 640px) {
+  .mpn.swp { right: 10px; width: calc(100% - 20px); padding: 0 10px 10px; }
+  .mpn.swp .wgrid { gap: 6px; }
+  .mpn.swp .wg.act { padding: 10px 8px; }
+  .mpn.swp .wg .nm { font-size: 11px; }
+  .mpn.swp .wg .v13 { font-size: 12px; }
+  .mpn.swp .wg.s12 .vis, .mpn.swp .wg.s12 .rg { display: none; }
+}
+/* a long name steps down to 11 before it's cut (tile::small_text) */
+.sw.act .nm.s11f { font-size: 11px; }
+@media (max-width: 640px) { .sw.act .nm.s11f { font-size: 10px; } }
+/* hero widgets open their tool in the demo below (demo.js) */
+.hero-pn .sw[data-to] { cursor: pointer; }
+.hero-pn .sw:focus { outline: none; }
+.hero-pn .sw:focus-visible { outline: 2px solid #C8F05A; outline-offset: 2px; }

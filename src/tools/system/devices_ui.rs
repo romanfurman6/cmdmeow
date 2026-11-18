@@ -22,6 +22,20 @@ fn pct_text(b: Option<u8>) -> String {
     b.map(|b| format!("{b}%")).unwrap_or_else(|| "–".into())
 }
 
+/// A device's name without its owner ("Roman's AirPods Pro" → "AirPods
+/// Pro"), the way it reads in a small space.
+pub fn short_name(name: &str) -> String {
+    for sep in ["'s ", "’s ", "s' ", "s’ "] {
+        if let Some(i) = name.find(sep) {
+            let rest = name[i + sep.len()..].trim();
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
 fn frac(b: Option<u8>) -> f32 {
     b.map(|b| (b as f32 / 100.0).clamp(0.02, 1.0)).unwrap_or(0.0)
 }
@@ -112,62 +126,52 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
                 let p = ui.painter();
                 let c = Pos2::new(r.center().x, r.top() + 32.0);
                 ring_cell(p, c, 22.0, d, 17.0);
-                pct_with_bolt(p, Pos2::new(r.center().x, r.bottom() - 9.0), Align2::CENTER_BOTTOM, b, false, bold(11.0), Tone::of(d).text(b));
-                resp
+                // the colour is in the ring only; the value reads like every other 1:1
+                pct_with_bolt(p, Pos2::new(r.center().x, r.bottom() - 10.0), Align2::CENTER_BOTTOM, b, false, bold(13.0), Tone::of(d).c(TEXT()));
+                resp.on_hover_text(format!("{} · {}", d.name, note(&devs)))
             }
             Some(d) => tile::small(ui, r, wid, d.kind.icon(), tint::HEALTH(), &d.name, "Connected", sel),
             None => tile::small(ui, r, wid, Icon::Bluetooth, tint::HEALTH(), "Devices", "None", sel),
         };
     }
+    // 1:2 and 1:4 (W2, W5): the weakest device as the ring, the rest as bar lines
+    if matches!(size, Size::S12 | Size::S14) {
+        let first = devs.first().filter(|d| d.live());
+        let (glyph, ring_, label, value) = match first {
+            Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), short_name(&d.name), pct_text(d.battery())),
+            None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
+        };
+        let caption = if first.is_some() { note(&devs) } else { String::new() };
+        if size == Size::S12 {
+            return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
+        }
+        let (resp, right) = tile::row_split_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
+        let others: Vec<&Device> = devs.iter().filter(|d| d.live()).skip(1).collect();
+        let line = |name: &str, b: Option<u8>, v: String| (name.to_string(), b.map(|b| (frac(Some(b)), devices::color(b))), v);
+        let lines: Vec<(String, Option<(f32, Color32)>, String)> = match first {
+            // one device: its parts (AirPods: left, right and case), not "no other devices"
+            Some(d) if others.is_empty() => {
+                let mut v = Vec::new();
+                if d.left.is_some() {
+                    v.push(line("Left", d.left, pct_text(d.left)));
+                }
+                if d.right.is_some() {
+                    v.push(line("Right", d.right, pct_text(d.right)));
+                }
+                if d.case.is_some() {
+                    v.push(line("Case", d.case, pct_text(d.case)));
+                }
+                v
+            }
+            // the device's kind ("Mouse", "Trackpad"), not a name cut at the bar
+            _ => others.iter().map(|d| line(&d.short(), d.battery(), pct_text(d.battery()))).collect(),
+        };
+        tile::lines(ui.painter(), right, &lines, "");
+        return resp;
+    }
     let resp = tile::card(ui, r, wid, sel);
     let p = ui.painter();
     match size {
-        Size::S12 => {
-            let x0 = r.left() + tile::PAD;
-            let x1 = r.right() - tile::PAD;
-            let live = devs.iter().filter(|d| d.live()).count();
-            p.text(Pos2::new(x1, r.top() + 20.0), Align2::RIGHT_CENTER, live.to_string(), ty::label(), white(166));
-            text_fit(p, Pos2::new(x0, r.top() + 20.0), Align2::LEFT_CENTER, "Devices", ty::title(), TEXT(), x1 - x0 - 30.0);
-            if devs.is_empty() {
-                text_fit(p, Pos2::new(x0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, "None connected", font(12.0), TEXT_FAINT(), x1 - x0);
-                return resp;
-            }
-            let n = devs.len().min(3);
-            let cw = (x1 - x0) / n as f32;
-            for (k, d) in devs.iter().take(n).enumerate() {
-                let cx = x0 + cw * (k as f32 + 0.5);
-                let t = Tone::of(d);
-                device_glyph(p, d, Rect::from_center_size(Pos2::new(cx, r.bottom() - 34.0), Vec2::splat(16.0)), t.c(TEXT_SOFT()));
-                pct_with_bolt(p, Pos2::new(cx, r.bottom() - 10.0), Align2::CENTER_BOTTOM, d.battery(), d.charging && d.live(), bold(12.0), t.text(d.battery()));
-            }
-        }
-        Size::S14 => {
-            if devs.is_empty() {
-                tool_chip(p, Rect::from_min_size(Pos2::new(r.left() + 12.0, r.center().y - 17.0), Vec2::splat(34.0)), Icon::Bluetooth, tint::HEALTH());
-                let x0 = r.left() + 58.0;
-                text_fit(p, Pos2::new(x0, r.center().y), Align2::LEFT_CENTER, "No devices connected", bold(13.0), TEXT(), r.right() - 12.0 - x0);
-                return resp;
-            }
-            let n = devs.len().clamp(1, 5);
-            let cw = (r.width() - 2.0 * tile::PAD) / n.max(4) as f32;
-            let x0 = r.left() + tile::PAD + (r.width() - 2.0 * tile::PAD - cw * n as f32) / 2.0;
-            for (k, d) in devs.iter().take(n).enumerate() {
-                let cx = x0 + cw * (k as f32 + 0.5);
-                let t = Tone::of(d);
-                // the charge inside its ring, the whole name under it (two
-                // lines when it needs them: "Magic / Trackpad")
-                let c = Pos2::new(cx, r.top() + tile::PAD + 16.0);
-                let b = d.battery();
-                tile::ring(p, c, 16.0, 4.0, frac(b), t.ring(b));
-                if d.charging && d.live() {
-                    let at = c + Vec2::new(16.0 * 0.72, -16.0 * 0.72);
-                    p.circle_filled(at, 16.0 * 0.32, BG());
-                    bolt(p, at, 16.0 * 0.42, GREEN());
-                }
-                p.text(c, Align2::CENTER_CENTER, b.map(|b| b.to_string()).unwrap_or_else(|| "–".into()), bold(11.0), t.text(b));
-                text_wrap(p, Pos2::new(cx, c.y + 16.0 + sp::S), Align2::CENTER_TOP, &d.name, font(11.0), t.c(TEXT_DIM()), cw - sp::XS, 2);
-            }
-        }
         Size::S24 => {
             let body = tile::head(p, r, Icon::Bluetooth, tint::HEALTH(), "Devices", &note(&devs));
             if devs.is_empty() {
@@ -201,18 +205,23 @@ fn device_line_sub(p: &egui::Painter, lr: Rect, d: &Device, sub: &str) {
     let cy = lr.center().y;
     device_glyph(p, d, Rect::from_center_size(Pos2::new(lr.left() + 9.0, cy), Vec2::splat(17.0)), t.c(TEXT_SOFT()));
     let vr = pct_with_bolt(p, Pos2::new(lr.right(), cy), Align2::RIGHT_CENTER, b, d.charging && d.live(), bold(12.0), t.text(b));
-    // the bar only when the name still has room next to it
+    // the bar only when the name still has room next to it; it ends at the
+    // same x on every line ("100%" is the widest charge), so bars line up
     let bw = if lr.width() >= 300.0 { 64.0 } else { 0.0 };
-    let bx1 = vr.left() - 10.0;
+    let col = p.layout_no_wrap("100%".into(), bold(12.0), TEXT()).size().x.max(vr.width());
+    let bx1 = lr.right() - col - 10.0;
     if bw > 0.0 {
         bar(p, Rect::from_min_max(Pos2::new(bx1 - bw, cy - 2.0), Pos2::new(bx1, cy + 2.0)), frac(b).max(0.01), t.ring(b));
     }
     let tx = lr.left() + 26.0;
     let tw = bx1 - bw - tx - if bw > 0.0 { 10.0 } else { 0.0 };
+    // a device's name is someone's text: it fades, never "…"
     if sub.is_empty() {
-        text_fit(p, Pos2::new(tx, cy), Align2::LEFT_CENTER, &d.name, font(12.0), t.c(TEXT()), tw);
+        text_fade(p, Pos2::new(tx, cy), &d.name, font(12.0), t.c(TEXT()), tw);
     } else {
-        two_lines(p, tx, cy, &d.name, font(12.0), t.c(TEXT()), sub, font(11.0), TEXT_FAINT(), tw);
+        let (y1, y2) = two_lines_y(p, cy, &font(12.0), &font(11.0));
+        text_fade(p, Pos2::new(tx, y1), &d.name, font(12.0), t.c(TEXT()), tw);
+        text_fade(p, Pos2::new(tx, y2), sub, font(11.0), TEXT_FAINT(), tw);
     }
 }
 
@@ -371,7 +380,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
         icon(p, Icon::Bluetooth, Rect::from_center_size(Pos2::new(r.center().x, cy - 18.0), Vec2::splat(26.0)), TEXT_FAINT());
         p.text(Pos2::new(r.center().x, cy + 10.0), Align2::CENTER_CENTER, "No devices connected", font(13.0), TEXT_DIM());
         let bw = button_width(p, "Bluetooth Settings", BTN_SECONDARY);
-        let br = Rect::from_min_size(Pos2::new(r.left(), r.bottom() - 26.0), Vec2::new(bw, 26.0));
+        let br = Rect::from_min_size(Pos2::new(r.left(), r.bottom() - BTN_H_ROW), Vec2::new(bw, BTN_H_ROW));
         if pill_button(ui, br, "Bluetooth Settings", BTN_SECONDARY, true).clicked() {
             out = Some(PageAction::OpenBluetooth);
         }
@@ -382,15 +391,19 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
     let mut y = r.top();
     for d in devs.iter().take(shown) {
         let lr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), LINE_H));
-        p.rect_filled(lr, 10.0, white(10));
-        let mr = Rect::from_center_size(Pos2::new(lr.right() - 18.0, lr.center().y), Vec2::new(24.0, 22.0));
+        if y > r.top() {
+            hairline(p, Pos2::new(lr.left(), y - LINE_GAP / 2.0), Pos2::new(lr.right(), y - LINE_GAP / 2.0));
+        }
+        let mr = Rect::from_center_size(Pos2::new(lr.right() - 12.0, lr.center().y), Vec2::new(24.0, 22.0));
         let mut sub = d.detail();
         if let Some(e) = d.eta {
             sub.push_str(&format!(" · {} left", devices::duration_left(e)));
         }
-        device_line_sub(p, Rect::from_min_max(Pos2::new(lr.left() + 10.0, lr.top()), Pos2::new(mr.left() - 6.0, lr.bottom())), d, &sub);
         let key = d.key();
-        let resp = dots(ui, mr, ui.scope_id().with(("dev-card-more", &key)));
+        let (resp, shown) = dots(ui, mr, lr, ui.scope_id().with(("dev-card-more", &key)));
+        // the value sits on the right edge and slides left while "⋯" shows
+        let right = lr.right() - shown * (mr.width() + 6.0);
+        device_line_sub(p, Rect::from_min_max(lr.left_top(), Pos2::new(right, lr.bottom())), d, &sub);
         if let Some(a) = device_menu(&resp, d, &s.bt_prefs) {
             out = Some(a);
         }
@@ -400,7 +413,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
         let lr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), LINE_H));
         let names: Vec<&str> = devs.iter().skip(shown).map(|d| d.name.as_str()).collect();
         let t = format!("+{more} more");
-        p.text(Pos2::new(lr.left() + 10.0, lr.center().y), Align2::LEFT_CENTER, &t, font(12.0), TEXT_DIM());
+        p.text(Pos2::new(lr.left(), lr.center().y), Align2::LEFT_CENTER, &t, font(12.0), TEXT_DIM());
         ui.interact(lr, ui.scope_id().with("dev-card-rest"), Sense::hover()).on_hover_text(names.join("\n"));
     }
     out
@@ -430,16 +443,32 @@ fn device_menu(resp: &Response, d: &Device, prefs: &Prefs) -> Option<PageAction>
     out
 }
 
-/// A "⋯" button.
-fn dots(ui: &mut Ui, r: Rect, id: egui::Id) -> Response {
+/// A "⋯" button, shown while its row is hovered or its menu is open.
+/// Returns how far it is shown, 0 to 1.
+fn dots(ui: &mut Ui, r: Rect, row: Rect, id: egui::Id) -> (Response, f32) {
     let resp = ui.interact(r, id, Sense::click());
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let shown = ui.ctx().animate_bool_with_time(id.with("show"), open || ui.rect_contains_pointer(row), 0.12);
+    if shown <= 0.0 {
+        return (resp, 0.0);
+    }
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
     let p = ui.painter();
     if h > 0.0 {
         p.rect_filled(r, 6.0, white((18.0 * h) as u8));
     }
     for dx in [-5.0, 0.0, 5.0] {
-        p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT());
+        p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT().gamma_multiply(shown));
     }
-    resp.on_hover_text("More")
+    (resp.on_hover_text("More"), shown)
+}
+
+#[cfg(test)]
+mod short_name_tests {
+    #[test]
+    fn owner_is_dropped() {
+        assert_eq!(super::short_name("Roman's AirPods Pro"), "AirPods Pro");
+        assert_eq!(super::short_name("Roman’s AirPods Pro"), "AirPods Pro");
+        assert_eq!(super::short_name("Magic Mouse"), "Magic Mouse");
+    }
 }

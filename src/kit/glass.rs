@@ -20,6 +20,26 @@ use std::f32::consts::{PI, TAU};
 
 static LIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+thread_local! {
+    static IN_WIDGET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// True while a panel widget draws: nothing inside a widget lights up on
+/// hover, only the whole card does (SP13 W12).
+pub fn in_widget() -> bool {
+    IN_WIDGET.with(|c| c.get())
+}
+
+/// Mark the start (`true`) or end of a widget's drawing; returns the old mark.
+pub fn set_in_widget(on: bool) -> bool {
+    IN_WIDGET.with(|c| c.replace(on))
+}
+
+/// Text of a control inside a widget while it's held (W12): dimmed to half.
+pub fn press_dim(c: Color32, press: f32) -> Color32 {
+    with_alpha(c, c.a() as f32 / 255.0 * (1.0 - 0.5 * press.clamp(0.0, 1.0)))
+}
+
 /// True while the app is drawn in light mode.
 pub fn is_light() -> bool {
     LIGHT.load(std::sync::atomic::Ordering::Relaxed)
@@ -59,6 +79,14 @@ pub fn CARD_EDGE() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 2
 /// Hovered card, quick-action tiles and selected rows.
 #[allow(non_snake_case)]
 pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 28), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
+/// Widget card (S2w, docs/ui-rules.md SP13 W1): the 1 pt top highlight…
+#[allow(non_snake_case)]
+pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 23), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
+/// …and the 1 pt base under the card: black in dark, ink in light, so it
+/// stays darker than the panel glow wherever the card sits. The card's edge
+/// is the page cards' [`CARD_EDGE`].
+#[allow(non_snake_case)]
+pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
@@ -102,7 +130,7 @@ pub const REC: Color32 = hex(0xFF453A);
 pub const ON_ACTION: Color32 = hex(0x0E1405);
 /// Links and lime text on cards.
 #[allow(non_snake_case)]
-pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x3F6B0A)) }
+pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x2F5208)) }
 /// State: fine. Never a category or chart series (C4).
 #[allow(non_snake_case)]
 pub fn GREEN() -> Color32 { pick(hex(0x94D45A), hex(0x437A20)) }
@@ -167,6 +195,110 @@ pub fn junk_ramp(i: usize) -> Color32 {
     const LIGHT: [u32; 7] = [0x5B8A14, 0x507E14, 0x467318, 0x3E6A1A, 0x36601B, 0x2F571C, 0x284F1E];
     let i = i.min(6);
     pick(hex(DARK[i]), hex(LIGHT[i]))
+}
+
+/// What the app draws over the user's picture or video frame (C16):
+/// selection frames, handles, crop and drag-out outlines, a pinned
+/// screenshot's edge. Fixed colours, the same in both themes, because they
+/// sit on the user's content, not on the app.
+pub mod overlay {
+    use super::hex;
+    use egui::epaint::{PathShape, PathStroke};
+    use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
+
+    /// The lime of lines and handles.
+    pub const LIME: Color32 = hex(0xC8F05A);
+    /// The dark ring around handles and under lines.
+    pub const RING: Color32 = hex(0x0E1405);
+    /// A handle's side, at rest and while hovered or dragged.
+    pub const HANDLE: f32 = 10.0;
+    pub const HANDLE_HOT: f32 = 12.0;
+    /// How far from a handle's centre a press still grabs it.
+    pub const GRAB: f32 = 12.0;
+    /// A side shorter than this shows no middle handle.
+    pub const MID_MIN: f32 = 64.0;
+    /// How far a selected mark's frame and handles sit outside it, so they
+    /// never cover the mark itself.
+    pub const OUTSET: f32 = 5.0;
+    /// A corner bracket's arm, at rest and hot.
+    const ARM: f32 = 12.0;
+    const ARM_HOT: f32 = 14.0;
+
+    fn under() -> Stroke {
+        Stroke::new(3.0, ring(0.7))
+    }
+
+    fn ring(a: f32) -> Color32 {
+        Color32::from_rgba_unmultiplied(RING.r(), RING.g(), RING.b(), (a * 255.0) as u8)
+    }
+
+    fn lime(hot: bool) -> Color32 {
+        if hot {
+            super::lerp_color(LIME, Color32::WHITE, 0.3)
+        } else {
+            LIME
+        }
+    }
+
+    /// A selection frame: 1 pt lime over a 2 pt dark band; the corner
+    /// brackets and side grips carry the weight.
+    pub fn frame(p: &Painter, r: Rect, radius: f32, kind: StrokeKind) {
+        p.rect_stroke(r, radius, Stroke::new(2.0, ring(0.6)), kind);
+        p.rect_stroke(r, radius, Stroke::new(1.0, LIME), kind);
+    }
+
+    /// A dashed frame: the same lime dashes over a solid dark band.
+    pub fn dashed(p: &Painter, r: Rect, dash: f32, gap: f32) {
+        let pts = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+        p.add(Shape::line(pts.to_vec(), under()));
+        p.extend(Shape::dashed_line(&pts, Stroke::new(1.5, LIME), dash, gap));
+    }
+
+    /// One handle: a lime square with a dark ring and a faint white halo.
+    /// Arrow ends use it.
+    pub fn handle(p: &Painter, at: Pos2, hot: bool) {
+        let s = if hot { HANDLE_HOT } else { HANDLE };
+        let r = Rect::from_center_size(at, Vec2::splat(s));
+        p.rect_filled(r.expand(2.5), 5.0, Color32::from_white_alpha(153));
+        p.rect_filled(r.expand(1.5), 4.0, RING);
+        p.rect_filled(r, 2.5, lime(hot));
+    }
+
+    /// A box handle `k` (clockwise from the top left, corners even): an L
+    /// bracket on a corner, a pill along the edge on a side.
+    pub fn box_handle(p: &Painter, at: Pos2, k: usize, hot: bool) {
+        if k % 2 == 0 {
+            corner(p, at, k, hot);
+        } else {
+            side(p, at, k == 1 || k == 5, hot);
+        }
+    }
+
+    /// An L bracket on corner `k` (0 top left, 2 top right, 4 bottom right,
+    /// 6 bottom left), its arms along the two edges.
+    fn corner(p: &Painter, at: Pos2, k: usize, hot: bool) {
+        let a = if hot { ARM_HOT } else { ARM };
+        let sx = if k == 2 || k == 4 { -1.0 } else { 1.0 };
+        let sy = if k == 4 || k == 6 { -1.0 } else { 1.0 };
+        let pts = [at + Vec2::new(sx * a, 0.0), at, at + Vec2::new(0.0, sy * a)];
+        for (w, c) in [(8.0, Color32::from_white_alpha(153)), (6.0, RING), (3.0, lime(hot))] {
+            p.add(PathShape::line(pts.to_vec(), PathStroke::new(w, c)));
+            // round ends and corner
+            for q in pts {
+                p.circle_filled(q, w / 2.0, c);
+            }
+        }
+    }
+
+    /// A 16×6 pill along the edge.
+    fn side(p: &Painter, at: Pos2, horizontal: bool, hot: bool) {
+        let (l, t) = if hot { (20.0, 7.0) } else { (16.0, 6.0) };
+        let r = Rect::from_center_size(at, if horizontal { Vec2::new(l, t) } else { Vec2::new(t, l) });
+        for (e, c) in [(2.5, Color32::from_white_alpha(153)), (1.5, RING), (0.0, lime(hot))] {
+            let rr = r.expand(e);
+            p.rect_filled(rr, rr.width().min(rr.height()) / 2.0, c);
+        }
+    }
 }
 
 /// Tool tints by group: Clean (lime), Monitor (cyan), Create (apricot),
@@ -448,8 +580,10 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epai
         &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
     };
     let glow = Pos2::new(rect.center().x, rect.top());
-    // the glow is an ellipse: wide across, reaching the bottom edge
-    let (rx, ry) = (rect.width() * 0.75, rect.height() * 1.05);
+    // the glow is an ellipse: wide across, reaching the bottom edge,
+    // never smaller than the app window's: the narrow panel shows the
+    // centre of the same glow instead of a squeezed copy of it (S1)
+    let (rx, ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
     let color_at = |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
@@ -522,6 +656,8 @@ pub fn group_color(section: &str) -> Color32 {
 /// A flat card: `CARD()` fill with a hairline. `hover` 0..1 lifts it a little,
 /// `selected` adds the blue ring.
 pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
+    // H7: the picked card doesn't hover, a click on it does nothing
+    let hover = if selected { 0.0 } else { hover };
     painter.rect_filled(rect, r, lerp_color(CARD(), RAISED(), hover * 0.5));
     painter.rect_stroke(rect, r, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
     if selected {
@@ -634,9 +770,12 @@ pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Re
     let rect = align.anchor_size(pos, galley.size());
     let id = ui.scope_id().with(("link", label, pos.x as i32, pos.y as i32));
     let k = key::press(ui, rect.expand(4.0), id, true, Some(Click::Text));
-    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), k.hover);
+    // W12: a link in a widget doesn't light up or underline; it dims while held
+    let hover = if in_widget() { 0.0 } else { k.hover };
+    let col = lerp_color(ACCENT(), pick(lerp_color(ACCENT(), Color32::WHITE, 0.35), lerp_color(ACCENT(), hex(0x14181A), 0.35)), hover);
+    let col = if in_widget() { press_dim(col, k.press) } else { col };
     let at = rect.min + k.offset(1.0);
-    if k.hover > 0.5 {
+    if hover > 0.5 {
         let y = at.y + rect.height() - 1.0;
         ui.painter().hline(at.x..=at.x + rect.width(), y, Stroke::new(1.0, col));
     }
@@ -903,7 +1042,12 @@ pub fn radio(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) -> 
 /// dot on the face at a scale (it pops from 0.5 to 1 when turned on).
 #[allow(clippy::too_many_arguments)]
 fn choice_box(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool, radius: f32, click: Click, mark: impl FnOnce(&Painter, Rect, f32)) -> Response {
-    let k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
+    // H7: a picked radio doesn't hover, a click on it does nothing
+    let picked_radio = on && matches!(click, Click::Radio);
+    let mut k = key::press(ui, rect.expand(3.0), id, enabled, Some(click));
+    if picked_radio {
+        k.hover = 0.0;
+    }
     let p = ui.painter();
     if on && enabled {
         let t = ui.ctx().animate_bool_with_time(id.with("pop"), on, 0.2);
@@ -961,13 +1105,20 @@ pub fn segmented_font(ui: &mut Ui, rect: Rect, id: egui::Id, labels: &[&str], se
     p.rect_filled(rect, R_SMALL, white(15));
     let inner = rect.shrink(2.0);
     let n = labels.len().max(1) as f32;
-    let gap = 2.0;
+    // B3: 4 pt, so a hovered segment never touches the picked one
+    let gap = 4.0;
     let w = (inner.width() - gap * (n - 1.0)) / n;
     let mut out = None;
     for (i, l) in labels.iter().enumerate() {
         let r = Rect::from_min_size(Pos2::new(inner.left() + (w + gap) * i as f32, inner.top()), Vec2::new(w, inner.height()));
         let (k, face) = segment(ui, &p, r, id.with(i), i == selected, true);
-        let col = if i == selected { TEXT() } else { lerp_color(TEXT_DIM(), TEXT(), k.hover) };
+        let col = if i == selected {
+            TEXT()
+        } else if in_widget() {
+            press_dim(TEXT_DIM(), k.press)
+        } else {
+            lerp_color(TEXT_DIM(), TEXT(), k.hover)
+        };
         text_fit(&p, face.center(), Align2::CENTER_CENTER, l, label_font.clone(), col, r.width() - 8.0);
         if k.resp.clicked() && i != selected {
             out = Some(i);
@@ -1002,10 +1153,14 @@ pub fn segment(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, selected: bool, 
             fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
             base: key::ink(0.14),
             depth: 1.0,
+            // H7: no hover on the picked one, its edge stays put
+            edge: Some((key::ink(0.10), key::ink(0.10))),
             ..key::Look::quiet(0.0, 0.0)
         }
     } else {
-        key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, 0.07) }
+        // W12: inside a widget only the card hovers
+        let hover = if in_widget() { 0.0 } else { 0.07 };
+        key::Look { base: Color32::TRANSPARENT, depth: 0.0, edge: None, highlight: Color32::TRANSPARENT, ..key::Look::quiet(0.0, hover) }
     };
     let face = key::paint(p, r, &look.radius(6.0), &k);
     (k, face)
@@ -1105,6 +1260,9 @@ pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     cy
 }
 
+/// Height a [`card_title`] takes above its card: the title and 12 (R2).
+pub const CARD_TITLE_H: f32 = 28.0;
+
 /// The title over a settings card ("Providers", "After a capture"):
 /// section 12/600, dim, 12 above the card (R2, R11).
 pub fn card_title(p: &Painter, pos: Pos2, label: impl ToString) -> Rect {
@@ -1137,18 +1295,39 @@ pub fn sheet_header(ui: &mut Ui, rect: Rect, glyph: Icon, color: Color32, title:
 
 /// A sheet's big number: "1.44 TB free of 2 TB". Returns the height used.
 pub fn hero_number(p: &Painter, pos: Pos2, big: &str, unit: &str, caption: &str) -> f32 {
-    let g = p.layout_no_wrap(big.to_owned(), bold(34.0), TEXT());
+    // hero 28/600 (type scale), unit title 13/600 soft, caption label 12 dim
+    let g = p.layout_no_wrap(big.to_owned(), ty::hero(), TEXT());
     let (w, h) = (g.size().x, g.size().y);
     let base = pos.y + h * 0.80;
     p.galley(pos, g, TEXT());
-    let u = p.text(Pos2::new(pos.x + w + 6.0, base), Align2::LEFT_BOTTOM, unit, bold(15.0), TEXT_SOFT());
-    p.text(Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base), Align2::LEFT_BOTTOM, caption, font(13.0), TEXT_DIM());
+    let u = p.text(Pos2::new(pos.x + w + 4.0, base), Align2::LEFT_BOTTOM, unit, bold(13.0), TEXT_SOFT());
+    p.text(Pos2::new(u.right() + if unit.is_empty() { 0.0 } else { 8.0 }, base), Align2::LEFT_BOTTOM, caption, ty::label(), TEXT_DIM());
     h
 }
 
 /// The selected row's fill (H3): lime at 16%, no edge. Its text goes ACCENT.
 pub fn selected_fill(p: &Painter, r: Rect, radius: f32) {
     p.rect_filled(r, radius, with_alpha(ACTION(), 0.16));
+}
+
+/// Gap between two lit rows of an inset list (sidebar, group rail): hover
+/// and selected fills sit this far in from the row's top and bottom (H1).
+pub const LIT_INSET: f32 = 1.0;
+
+/// A hover tip for a row of a list or rail: it opens beside the list, on
+/// the side away from it (`right` = its right edge), 8 pt out and centred
+/// on the row, so it never covers another row (P7).
+pub fn tip_beside(resp: Response, text: &str, right: f32) -> Response {
+    if text.is_empty() {
+        return resp;
+    }
+    let gap = (right - resp.rect.right()).max(0.0) + sp::S;
+    let mut t = egui::Tooltip::for_enabled(&resp);
+    t.popup = t.popup.align(egui::RectAlign::RIGHT).align_alternatives(&[]).gap(gap);
+    t.show(|ui| {
+        ui.label(text);
+    });
+    resp
 }
 
 /// A window sidebar row: tint chip (or dashed chip when `planned`), label and
@@ -1162,7 +1341,7 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     let p = ui.painter();
     let active_text = ACCENT();
     if selected {
-        // H3: lime at 16%, radius 8, text ACCENT
+        // H3: lime at 16%, radius 8, text ACCENT (rows step 2 apart, H1)
         p.rect_filled(rect, 8.0, with_alpha(ACTION(), 0.16));
     } else if h > 0.0 {
         // H1: ROW_HOVER, inset radius 8 in the sidebar
@@ -1250,15 +1429,18 @@ pub fn page_footer(p: &Painter, r: Rect, window_radius: f32) -> Rect {
 
 /// Height of [`sheet_header`].
 pub const SHEET_HEADER_H: f32 = 58.0;
+/// One row height for every list in a panel sheet (legend, facts,
+/// processes, apps); switches use settings rows (R3).
+pub const SHEET_ROW_H: f32 = 32.0;
 
 /// A label/value row inside a group card, with an optional hint line under it.
 /// Returns the height used.
 pub fn fact_row(p: &Painter, r: Rect, label: &str, value: &str, value_col: Color32, hint: &str) -> f32 {
-    let top = r.top() + 8.0;
+    let top = r.top() + (SHEET_ROW_H - 16.0) / 2.0;
     let vr = p.text(Pos2::new(r.right() - 12.0, top), Align2::RIGHT_TOP, value, bold(13.0), value_col);
     text_fit(p, Pos2::new(r.left() + 12.0, top), Align2::LEFT_TOP, label, font(13.0), TEXT_DIM(), (vr.left() - r.left() - 24.0).max(40.0));
     if hint.is_empty() {
-        return 32.0;
+        return SHEET_ROW_H;
     }
     let h = paragraph(p, Pos2::new(r.left() + 12.0, top + 19.0), hint, font(12.0), TEXT_FAINT(), r.width() - 24.0);
     27.0 + h + 8.0
@@ -1273,7 +1455,9 @@ pub fn legend_row(p: &Painter, r: Rect, color: Color32, label: &str, value: &str
         p.rect_filled(Rect::from_center_size(c, Vec2::splat(9.0)), 3.0, color);
     }
     let vr = p.text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, value, font(13.0), value_col);
-    text_fit(p, Pos2::new(r.left() + 31.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), (vr.left() - r.left() - 40.0).max(40.0));
+    // no square: the label starts at the card's text column
+    let lx = if color == Color32::TRANSPARENT { 12.0 } else { 31.0 };
+    text_fit(p, Pos2::new(r.left() + lx, r.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), (vr.left() - r.left() - lx - 9.0).max(40.0));
 }
 
 /// The height of one line of `font`.
@@ -1352,6 +1536,33 @@ pub fn text_wrap(p: &Painter, pos: Pos2, align: Align2, text: &str, font: FontId
     let out = g.rect.translate(at.to_vec2());
     p.galley(at, g, color);
     out
+}
+
+/// Someone else's text (a clip, a dictation) on one line from `pos` (left,
+/// vertical centre): what doesn't fit fades out over its last 24 pt instead
+/// of ending in "…" (W8). Returns the rect it takes.
+pub fn text_fade(painter: &Painter, pos: Pos2, text: &str, font: FontId, color: Color32, max_w: f32) -> Rect {
+    let one_line: String = text.split('\n').next().unwrap_or("").chars().take(400).collect();
+    let g = painter.layout_no_wrap(one_line.clone(), font.clone(), color);
+    if g.size().x <= max_w || max_w <= 0.0 {
+        return painter.text(pos, Align2::LEFT_CENTER, one_line, font, color);
+    }
+    let fade = 24.0f32.min(max_w / 2.0);
+    let mut job = egui::text::LayoutJob::default();
+    let glyphs = g.rows.first().map(|r| r.row.glyphs.clone()).unwrap_or_default();
+    for gl in glyphs {
+        let right = gl.pos.x + gl.advance_width;
+        if right > max_w {
+            break;
+        }
+        let k = ((max_w - right) / fade).clamp(0.0, 1.0);
+        let c = with_alpha(color, color.a() as f32 / 255.0 * k);
+        job.append(&gl.chr.to_string(), 0.0, egui::TextFormat::simple(font.clone(), c));
+    }
+    let gal = painter.layout_job(job);
+    let r = Rect::from_min_size(Pos2::new(pos.x, pos.y - gal.size().y / 2.0), gal.size());
+    painter.galley(r.min, gal, color);
+    r
 }
 
 /// Text that is cut with an ellipsis to fit `max_w`.
@@ -1561,7 +1772,8 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Pulse => "waveform.path.ecg",
         Icon::Crop => "crop",
         Icon::Clipboard => "doc.on.clipboard",
-        Icon::Fan => "fanblades",
+        // our own fan glyph (SP11), the same one that turns on the Fan page
+        Icon::Fan => return None,
         Icon::Cup => "cup.and.saucer",
         Icon::Home => "house",
         Icon::Window => "macwindow",
@@ -1812,22 +2024,8 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             boxr(9.0, 3.5, 15.0, 6.5, 0.8);
             open(&[(7.0, 5.0), (5.0, 5.0), (5.0, 21.0), (19.0, 21.0), (19.0, 5.0), (17.0, 5.0)]);
         }
-        Icon::Fan => {
-            // six curved blades around a hub (four straight arms read wrong)
-            stroke_circle(&p, pt(12.0, 12.0), 1.8 * u, st);
-            for k in 0..6 {
-                let a0 = k as f32 * TAU / 6.0;
-                let pts: Vec<Pos2> = (0..=6)
-                    .map(|i| {
-                        let t = i as f32 / 6.0;
-                        let rr = (2.6 + 6.6 * t) * u;
-                        let a = a0 + t * 0.9;
-                        pt(12.0, 12.0) + Vec2::new(a.cos(), a.sin()) * rr
-                    })
-                    .collect();
-                p.add(PathShape::line(pts, PathStroke::new(w, color)));
-            }
-        }
+        // the fan glyph (SP11), filled like the turning one
+        Icon::Fan => crate::kit::spin::draw(p, c, s * 0.46, 0.0, color),
         Icon::Cup => {
             open(&[(4.0, 9.0), (16.0, 9.0), (16.0, 14.0)]);
             arc(11.0, 14.0, 5.0, 0.0, PI);
@@ -1968,7 +2166,7 @@ pub fn human_bytes(b: u64) -> String {
 }
 
 pub fn human_rate(bps: f64) -> String {
-    format!("{}/sec", human_bytes(bps.max(0.0) as u64))
+    format!("{}/s", human_bytes(bps.max(0.0) as u64))
 }
 
 pub fn human_duration(secs: u64) -> String {

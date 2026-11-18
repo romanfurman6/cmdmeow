@@ -5,6 +5,7 @@
 
 use crate::kit::sync::LockExt;
 pub use crate::kit::agent;
+mod captures;
 pub mod engine;
 mod inuse;
 mod journal;
@@ -131,25 +132,14 @@ impl Tool for Cleanup {
         };
         let id = ui.scope_id().with("w-clean");
         let col = tint::CLEANUP();
-        let bar = frac.map(|f| (f.clamp(0.01, 1.0), ACCENT())).ok_or(sub.as_str());
+        let ring_ = frac.map(|f| (f.clamp(0.01, 1.0), ACCENT()));
+        let never = intro && hist.is_empty();
+        // W7: no lime button in the panel; never cleaned, the card itself opens Clean
+        let (value, sub) = if never { ("Not cleaned".to_string(), String::new()) } else { (value, sub) };
         let resp = match size {
-            Size::S12 if intro && hist.is_empty() => {
-                // never cleaned: the label over a Scan button
-                let resp = tile::wide(ui, rect, id, Icon::Broom, col, "", "", Err(""), false);
-                let (c, rr) = tile::wide_ring(rect);
-                let x0 = c.x + rr + crate::kit::glass::sp::M;
-                let w = (rect.right() - 12.0 - x0).min(120.0);
-                let p = ui.painter();
-                p.text(egui::pos2(x0, c.y - 6.0), egui::Align2::LEFT_BOTTOM, "Clean", crate::kit::glass::ty::caption(), crate::kit::glass::ty::caption_color());
-                let br = Rect::from_min_size(egui::pos2(x0, c.y - 2.0), egui::vec2(w, 26.0));
-                if crate::kit::glass::pill_button(ui, br, "Scan", crate::kit::glass::BTN_PRIMARY, true).clicked() {
-                    cx.open_page(ID, "");
-                }
-                resp
-            }
-            Size::S12 => tile::wide(ui, rect, id, Icon::Broom, col, "Clean", &value, bar, false),
+            Size::S12 => tile::wide_full(ui, rect, id, Icon::Broom, col, ring_, "Clean", &value, &sub, crate::kit::glass::ty::caption_color(), false),
             _ => {
-                let (resp, right) = tile::row_split(ui, rect, id, Icon::Broom, col, "Clean", &value, &sub, false);
+                let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Broom, col, ring_, "Clean", &value, &sub, crate::kit::glass::ty::caption_color(), false);
                 let p = ui.painter();
                 let lines: Vec<(String, Option<(f32, egui::Color32)>, String)> = match g.phase {
                     engine::Phase::Results => {
@@ -160,22 +150,13 @@ impl Tool for Cleanup {
                     }
                     engine::Phase::Scanning | engine::Phase::Judging | engine::Phase::Cleaning => vec![("Progress".into(), frac.map(|f| (f.clamp(0.01, 1.0), ACCENT())), format!("{:.0}%", frac.unwrap_or(0.0) * 100.0))],
                     engine::Phase::Intro if !hist.is_empty() => vec![
-                        ("Last clean".into(), None, last.map(|l| engine::days_ago(l.0)).unwrap_or_default()),
-                        ("It freed".into(), None, last.map(|l| human_bytes(l.1)).unwrap_or_default()),
+                        ("Last".into(), None, last.map(|l| engine::days_ago(l.0)).unwrap_or_default()),
+                        ("Freed".into(), None, last.map(|l| human_bytes(l.1)).unwrap_or_default()),
                     ],
                     _ => Vec::new(),
                 };
-                if g.phase == engine::Phase::Intro && hist.is_empty() {
-                    // never cleaned: the right half is the way in
-                    let bw = crate::kit::glass::button_width(p, "Scan", crate::kit::glass::BTN_PRIMARY);
-                    let br = Rect::from_center_size(egui::pos2(right.right() - bw / 2.0, right.center().y), egui::vec2(bw, 28.0));
-                    if crate::kit::glass::pill_button(ui, br, "Scan", crate::kit::glass::BTN_PRIMARY, true).clicked() {
-                        cx.open_page(ID, "");
-                    }
-                } else {
-                    let empty = if g.phase == engine::Phase::Done { "All clean" } else { "" };
-                    tile::lines(p, right, &lines, empty);
-                }
+                let empty = if g.phase == engine::Phase::Done { "All clean" } else if never { "Never scanned" } else { "" };
+                tile::lines(p, right, &lines, empty);
                 resp
             }
         };
@@ -263,6 +244,11 @@ impl Tool for Cleanup {
                 self.ai.open = false;
                 Some(View::Page)
             }
+            "results-captures" => {
+                let v = self.demo_view("results");
+                self.clean_group = Some(engine::Group::Captures);
+                v
+            }
             "results-confirm" => {
                 let v = self.demo_view("results");
                 let items = self.clean.lock_ok().items.clone();
@@ -284,6 +270,7 @@ impl Tool for Cleanup {
                     engine::GroupLive { bytes: 2_600_000_000, items: 3, total: 8, done: 5 },
                     engine::GroupLive { bytes: 1_100_000_000, items: 4, total: 6, done: 2 },
                     engine::GroupLive { bytes: 0, items: 0, total: 2, done: 0 },
+                    engine::GroupLive { bytes: 0, items: 0, total: 4, done: 1 },
                     engine::GroupLive { bytes: 0, items: 0, total: 3, done: 3 },
                     engine::GroupLive { bytes: 0, items: 0, total: 1, done: 0 },
                 ];

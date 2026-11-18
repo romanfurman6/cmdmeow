@@ -2,7 +2,9 @@
 //! event handler and one manager per app, so they live here: each tool owns a
 //! [`Keys`] with its own commands, and a press goes to the tool that bound it.
 //! Each press wakes the app (`request_repaint`); tools pick their commands up
-//! in their `tick`.
+//! in their `tick`. Extra mouse buttons (middle, side) can be shortcuts too:
+//! the shortcut library only knows keys, so [`super::mouse_keys`] watches
+//! those buttons itself and [`Keys`] reads both.
 
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
@@ -12,7 +14,9 @@ use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::Mutex;
 
-/// A key combination. `key` is egui's key name ("2", "A", "F5").
+/// A key combination. `key` is egui's key name ("2", "A", "F5"), or
+/// "Mouse<n>" for mouse button n (3 middle, 4 and 5 the side buttons, as
+/// macOS numbers them).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Shortcut {
     pub cmd: bool,
@@ -38,8 +42,34 @@ impl Shortcut {
         if self.cmd {
             s.push('⌘');
         }
-        s.push_str(&self.key);
+        match self.mouse_button() {
+            Some(n) => s.push_str(&mouse_label(n)),
+            None => s.push_str(&self.key),
+        }
         s
+    }
+
+    /// The mouse button this shortcut is (3 and up), if it is one.
+    pub fn mouse_button(&self) -> Option<u8> {
+        self.key.strip_prefix("Mouse")?.parse::<u8>().ok().filter(|n| (3..=32).contains(n))
+    }
+
+    /// Mouse button `n` (3 and up) with these modifiers.
+    pub fn mouse(n: u8, cmd: bool, shift: bool, alt: bool, ctrl: bool) -> Option<Shortcut> {
+        (3..=32).contains(&n).then(|| Shortcut { cmd, shift, alt, ctrl, key: format!("Mouse{n}") })
+    }
+
+    /// From a mouse button pressed in our own window (the shortcut recorder).
+    /// Only the extra buttons: left and right clicks stay clicks. No modifier
+    /// needed, a side button alone is a fine shortcut.
+    pub fn from_pointer(button: egui::PointerButton, m: egui::Modifiers) -> Option<Shortcut> {
+        let n = match button {
+            egui::PointerButton::Middle => 3,
+            egui::PointerButton::Extra1 => 4,
+            egui::PointerButton::Extra2 => 5,
+            _ => return None,
+        };
+        Shortcut::mouse(n, m.mac_cmd || m.command, m.shift, m.alt, m.ctrl && !m.command)
     }
 
     pub fn has_modifier(&self) -> bool {
@@ -63,6 +93,12 @@ impl Shortcut {
     }
 }
 
+/// How a mouse button reads in a shortcut ("Mouse 4"): one word for every
+/// mouse, since which side button is Back differs between mice.
+fn mouse_label(n: u8) -> String {
+    format!("Mouse {n}")
+}
+
 /// What a shortcut recorder heard this frame.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Heard {
@@ -74,26 +110,48 @@ pub enum Heard {
     Set(Shortcut),
 }
 
-/// Read this frame's key presses for a shortcut recorder in our own window.
+/// Read this frame's key presses (and extra mouse buttons) for a shortcut
+/// recorder in our own window. Call it every frame while recording: it also
+/// tells the mouse watcher to hand presses to the recorder meanwhile.
 pub fn listen(ctx: &egui::Context) -> Heard {
-    ctx.input(|i| {
+    super::mouse_keys::recording();
+    let mut heard = ctx.input(|i| {
         let mut heard = Heard::Nothing;
         for e in &i.events {
-            if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
-                let plain = !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
-                heard = if *key == egui::Key::Escape && plain {
-                    Heard::Cancel
-                } else if (*key == egui::Key::Backspace || *key == egui::Key::Delete) && plain {
-                    Heard::Remove
-                } else if let Some(s) = Shortcut::from_press(*key, *modifiers) {
-                    Heard::Set(s)
-                } else {
-                    continue;
-                };
-            }
+            let next = match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } => {
+                    let plain = !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
+                    if *key == egui::Key::Escape && plain {
+                        Heard::Cancel
+                    } else if (*key == egui::Key::Backspace || *key == egui::Key::Delete) && plain {
+                        Heard::Remove
+                    } else if let Some(s) = Shortcut::from_press(*key, *modifiers) {
+                        Heard::Set(s)
+                    } else {
+                        continue;
+                    }
+                }
+                egui::Event::PointerButton { button, pressed: true, modifiers, .. } => match Shortcut::from_pointer(*button, *modifiers) {
+                    Some(s) => Heard::Set(s),
+                    None => continue,
+                },
+                _ => continue,
+            };
+            heard = next;
         }
         heard
-    })
+    });
+    // buttons egui doesn't name (6 and up), or pressed outside the window
+    if let Some(s) = super::mouse_keys::take_heard() {
+        if heard == Heard::Nothing {
+            heard = Heard::Set(s);
+        }
+    }
+    // the recorder closes: a press heard from now on is no longer for it
+    if heard != Heard::Nothing {
+        super::mouse_keys::recording_done();
+    }
+    heard
 }
 
 /// The `keyboard-types` code name for an egui key name, as the global
@@ -184,11 +242,7 @@ fn with_hub<T>(f: impl FnOnce(&mut Hub) -> T) -> Option<T> {
             let (tx, rx) = channel();
             GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
                 let _ = tx.send(e);
-                if let Ok(w) = WAKE.lock() {
-                    for c in w.iter() {
-                        c.request_repaint();
-                    }
-                }
+                wake();
             }));
             *h = Some(Hub { mgr, rx, pressed: Vec::new(), released: Vec::new() });
         }
@@ -207,9 +261,17 @@ fn with_hub<T>(f: impl FnOnce(&mut Hub) -> T) -> Option<T> {
     })
 }
 
+/// One registered shortcut: a key through the library, or a mouse button
+/// through [`super::mouse_keys`] (by its id there).
+#[derive(Clone, Copy)]
+enum Bind {
+    Key(HotKey),
+    Mouse(u32),
+}
+
 /// One tool's shortcuts. `C` is the tool's own command type.
 pub struct Keys<C: Copy> {
-    bound: Vec<(HotKey, C)>,
+    bound: Vec<(Bind, C)>,
 }
 
 impl<C: Copy> Keys<C> {
@@ -227,12 +289,19 @@ impl<C: Copy> Keys<C> {
         self.clear();
         let mut failed = Vec::new();
         for (cmd, s) in wanted {
+            if s.mouse_button().is_some() {
+                match super::mouse_keys::register(s) {
+                    Ok(id) => self.bound.push((Bind::Mouse(id), *cmd)),
+                    Err(e) => failed.push((*cmd, format!("{} {e}", s.display()))),
+                }
+                continue;
+            }
             let Some(hk) = to_hotkey(s) else {
                 failed.push((*cmd, format!("{} can't be used as a shortcut", s.display())));
                 continue;
             };
             match with_hub(|h| h.mgr.register(hk)) {
-                Some(Ok(())) => self.bound.push((hk, *cmd)),
+                Some(Ok(())) => self.bound.push((Bind::Key(hk), *cmd)),
                 Some(Err(e)) => failed.push((*cmd, format!("{} is taken: {e}", s.display()))),
                 None => failed.push((*cmd, "shortcuts are unavailable".into())),
             }
@@ -242,47 +311,74 @@ impl<C: Copy> Keys<C> {
 
     /// Stop listening (while the user records a new shortcut, or the tool is off).
     pub fn clear(&mut self) {
-        for (hk, _) in self.bound.drain(..) {
-            with_hub(|h| {
-                let _ = h.mgr.unregister(hk);
-                h.pressed.retain(|id| *id != hk.id());
-                h.released.retain(|id| *id != hk.id());
-            });
+        for (b, _) in self.bound.drain(..) {
+            match b {
+                Bind::Key(hk) => {
+                    with_hub(|h| {
+                        let _ = h.mgr.unregister(hk);
+                        h.pressed.retain(|id| *id != hk.id());
+                        h.released.retain(|id| *id != hk.id());
+                    });
+                }
+                Bind::Mouse(id) => super::mouse_keys::unregister(id),
+            }
         }
+    }
+
+    fn key_of(&self, id: u32) -> Option<C> {
+        self.bound.iter().find_map(|(b, c)| matches!(b, Bind::Key(hk) if hk.id() == id).then_some(*c))
+    }
+
+    fn mouse_of(&self, id: u32) -> Option<C> {
+        self.bound.iter().find_map(|(b, c)| matches!(b, Bind::Mouse(m) if *m == id).then_some(*c))
     }
 
     /// This tool's commands pressed since the last call. Presses of other
     /// tools' shortcuts stay for them.
     pub fn poll(&self) -> Vec<C> {
-        with_hub(|h| {
-            let mut out = Vec::new();
-            h.pressed.retain(|id| match self.bound.iter().find(|(hk, _)| hk.id() == *id) {
-                Some((_, c)) => {
-                    out.push(*c);
-                    false
-                }
-                None => true,
-            });
-            out
-        })
-        .unwrap_or_default()
+        let mut out = take(&self.bound, |h| &mut h.pressed, |id| self.key_of(id));
+        if self.bound.iter().any(|(b, _)| matches!(b, Bind::Mouse(_))) {
+            out.extend(super::mouse_keys::take_pressed(|id| self.mouse_of(id)));
+        }
+        out
     }
 
     /// This tool's commands whose keys were let go since the last call
     /// (push-to-talk).
     pub fn poll_released(&self) -> Vec<C> {
-        with_hub(|h| {
-            let mut out = Vec::new();
-            h.released.retain(|id| match self.bound.iter().find(|(hk, _)| hk.id() == *id) {
-                Some((_, c)) => {
-                    out.push(*c);
-                    false
-                }
-                None => true,
-            });
-            out
-        })
-        .unwrap_or_default()
+        let mut out = take(&self.bound, |h| &mut h.released, |id| self.key_of(id));
+        if self.bound.iter().any(|(b, _)| matches!(b, Bind::Mouse(_))) {
+            out.extend(super::mouse_keys::take_released(|id| self.mouse_of(id)));
+        }
+        out
+    }
+}
+
+/// Take the ids `mine` knows out of one of the hub's lists, oldest first.
+fn take<C: Copy>(bound: &[(Bind, C)], list: impl Fn(&mut Hub) -> &mut Vec<u32>, mine: impl Fn(u32) -> Option<C>) -> Vec<C> {
+    if !bound.iter().any(|(b, _)| matches!(b, Bind::Key(_))) {
+        return Vec::new();
+    }
+    with_hub(|h| {
+        let mut out = Vec::new();
+        list(h).retain(|id| match mine(*id) {
+            Some(c) => {
+                out.push(c);
+                false
+            }
+            None => true,
+        });
+        out
+    })
+    .unwrap_or_default()
+}
+
+/// Wake every tool that made a [`Keys`] (a shortcut was pressed).
+pub(super) fn wake() {
+    if let Ok(w) = WAKE.lock() {
+        for c in w.iter() {
+            c.request_repaint();
+        }
     }
 }
 
@@ -297,5 +393,25 @@ mod tests {
         let v = Shortcut { cmd: true, shift: false, alt: true, ctrl: false, key: "V".into() };
         assert_eq!(to_hotkey(&v), Some(HotKey::new(Some(Modifiers::SUPER | Modifiers::ALT), Code::KeyV)));
         assert_eq!(v.display(), "⌥⌘V");
+    }
+
+    #[test]
+    fn mouse_buttons_are_shortcuts_without_a_key() {
+        let none = egui::Modifiers::NONE;
+        assert_eq!(Shortcut::from_pointer(egui::PointerButton::Primary, none), None);
+        assert_eq!(Shortcut::from_pointer(egui::PointerButton::Secondary, none), None);
+        let back = Shortcut::from_pointer(egui::PointerButton::Extra1, none).expect("side button");
+        assert_eq!((back.mouse_button(), back.has_modifier()), (Some(4), false));
+        assert_eq!(back.display(), "Mouse 4");
+        assert_eq!(to_hotkey(&back), None);
+        let mid = Shortcut::from_pointer(egui::PointerButton::Middle, egui::Modifiers { alt: true, ..none }).expect("middle");
+        assert_eq!((mid.key.as_str(), mid.display()), ("Mouse3", "⌥Mouse 3".to_string()));
+        assert_eq!(Shortcut::from_pointer(egui::PointerButton::Extra2, none).and_then(|s| s.mouse_button()), Some(5));
+        // stored the same way as a key, so old settings files read fine
+        let json = serde_json::to_string(&back).unwrap();
+        assert_eq!(serde_json::from_str::<Shortcut>(&json).unwrap(), back);
+        assert_eq!(Shortcut::mouse(2, false, false, false, false), None);
+        let k = Shortcut { cmd: false, shift: false, alt: false, ctrl: false, key: "Mouse".into() };
+        assert_eq!(k.mouse_button(), None);
     }
 }
