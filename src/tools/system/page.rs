@@ -137,7 +137,7 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             };
             let p = ui.painter().clone();
             for rr in rects {
-                glass_card(&p, rr, R_CARD, 0.0, false);
+                data_card(&p, rr);
             }
             // one ring size on the page: the disk and the battery ring match
             let ring_d = disk_ring_area(rects[1].shrink(sp::L), &s).size().min_elem().min(battery_ring_area(rects[3].shrink(sp::L), &s).size().min_elem()).min(DISK_RING_D);
@@ -250,12 +250,17 @@ type Row = (Option<(f32, Color32)>, String, String);
 /// card), 22 pt each. Returns the top of the first line.
 fn lines(p: &egui::Painter, r: Rect, rows: &[Row]) -> f32 {
     let top = r.bottom() - rows.len() as f32 * sp::LEGEND_H;
+    lines_at(p, r.left(), r.width(), top, sp::LEGEND_H, rows);
+    top
+}
+
+/// The same lines from `top` down, `lh` apart.
+fn lines_at(p: &egui::Painter, left: f32, w: f32, top: f32, lh: f32, rows: &[Row]) {
     let cols = tile::bar_cols(p, &rows.iter().map(|l| (l.1.as_str(), l.2.as_str())).collect::<Vec<_>>());
     for (k, (frac, label, value)) in rows.iter().enumerate() {
-        let lr = Rect::from_min_size(Pos2::new(r.left(), top + k as f32 * sp::LEGEND_H), Vec2::new(r.width(), sp::LEGEND_H));
+        let lr = Rect::from_min_size(Pos2::new(left, top + k as f32 * lh), Vec2::new(w, lh));
         tile::bar_line(p, lr, label, *frac, value, cols);
     }
-    top
 }
 
 fn disk_rows(s: &Snapshot) -> Vec<Row> {
@@ -312,12 +317,10 @@ fn memory_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
         (None, "Swap used".to_string(), human_bytes(s.swap_used)),
         (None, "Installed".to_string(), human_bytes(s.mem_total)),
     ];
-    let lt = lines(p, r, &rows);
-    // pressure over the last minutes, with its time span
-    let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M));
-    if gr.height() > 40.0 {
-        tile::spark_span(p, gr, &s.mem_history, level_color(s.mem_level()), Some((s.mem_history.iter().copied().fold(0.0f32, f32::max) * 1.5).max(30.0)));
-    }
+    // no pressure graph: it barely moves, so it says nothing (as the
+    // Memory widget); the lines take the card from the top, sheet rows 32
+    let lh = ((r.bottom() - y) / rows.len() as f32).min(SHEET_ROW_H);
+    lines_at(p, r.left(), r.width(), y, lh, &rows);
 }
 
 fn battery_rows(s: &Snapshot) -> Vec<Row> {

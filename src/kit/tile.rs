@@ -76,16 +76,9 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
     p.rect_filled(rect.translate(Vec2::new(0.0, PRESS_DROP)), R_TILE, TILE_BASE());
 }
 
-/// The card itself: see-through CARD (the panel glow shows through), the
-/// top highlight and the page cards' 1 pt edge.
+/// The card itself: the one card face (glass::card_face), at R_TILE.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
-    p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
-    let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
-    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
-    p.rect_stroke(rect, R_TILE, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
-    if selected {
-        p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
-    }
+    card_face(p, rect, R_TILE, hover, selected);
 }
 
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,

@@ -665,6 +665,32 @@ pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: b
     }
 }
 
+/// A card that shows live data on a page (Mac Health, AI Usage, Fan
+/// Control, Keep Awake): the same surface as the panel widgets
+/// ([`card_surface`] at `tile::R_TILE`), so a page and its widgets read as one.
+pub fn data_card(p: &Painter, rect: Rect) {
+    card_surface(p, rect, crate::kit::tile::R_TILE, 0.0, false);
+}
+
+/// The one card surface (S2w), for widgets and pages alike: a 1 pt base
+/// under the card (`TILE_BASE`), the see-through `CARD` fill, a 1 pt top
+/// highlight (`TILE_HI`) and the 1 pt `CARD_EDGE` inside.
+pub fn card_surface(p: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
+    p.rect_filled(rect.translate(Vec2::new(0.0, 1.0)), r, TILE_BASE());
+    card_face(p, rect, r, hover, selected);
+}
+
+/// [`card_surface`] without the base (a pressed widget card sits on it).
+pub fn card_face(p: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
+    p.rect_filled(rect, r, lerp_color(CARD(), RAISED(), hover * 0.5));
+    let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
+    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, r, TILE_HI());
+    p.rect_stroke(rect, r, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
+    if selected {
+        p.rect_stroke(rect, r, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
+    }
+}
+
 /// Button kinds for [`pill_button`].
 pub const BTN_SECONDARY: u8 = 0;
 pub const BTN_PRIMARY: u8 = 1;
