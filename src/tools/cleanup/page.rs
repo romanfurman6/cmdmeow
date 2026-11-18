@@ -71,6 +71,11 @@ fn clean_status(g: &cleanup::State) -> crate::kit::loader::Status {
         return Status::Stopped { sub: what };
     }
     let n = g.failed.len();
+    // nothing went: no ✓, and why
+    if g.cleaned_count == 0 && n > 0 {
+        let problem = if n == 1 { g.failed[0].1.clone() } else { format!("{n} items couldn't be removed") };
+        return Status::Failed { title: "Nothing was removed".into(), problem };
+    }
     let problem = (n > 0).then(|| format!("{n} item{} couldn't be removed", if n == 1 { "" } else { "s" }));
     let items = format!("{} item{}", crate::kit::loader::grouped(g.cleaned_count), if g.cleaned_count == 1 { "" } else { "s" });
     Status::Finished { title: what, sub: items, problem, put_back: false }
@@ -1600,7 +1605,10 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
             text_fit(&p, Pos2::new(li.left(), y), Align2::LEFT_TOP, &format!("{name}: {err}"), mono(11.0), TEXT_SOFT(), li.width());
             y += 18.0;
         }
-        text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, "Quit the apps and scan again", ty::caption(), ty::caption_color(), li.width());
+        // only when an open app was in the way
+        if st.failed.iter().any(|(_, e)| e.contains("open") || e.contains("in use")) {
+            text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, "Quit the apps and scan again", ty::caption(), ty::caption_color(), li.width());
+        }
     }
     let db = Rect::from_min_size(Pos2::new(li.left(), li.bottom() - 34.0), Vec2::new(li.width(), 34.0));
     if pill_button(ui, db, "Done", BTN_PRIMARY, true).clicked() {
@@ -1704,7 +1712,7 @@ pub fn demo_results() -> cleanup::State {
         items.push(mk(Group::Captures, &format!("Recording 2026-09-1{k} at 15.02.40.mp4"), &format!("~/Desktop/Recording 2026-09-1{k} at 15.02.40.mp4"), b, super::captures::RECORDINGS, Verdict::Ask, "Recorded 60 days ago", Who::Rule));
     }
     for (k, b) in [1_200_000_000u64, 900_000_000, 600_000_000].into_iter().enumerate() {
-        let mut up = mk(Group::Captures, &format!("Recording 2026-08-2{k} at 11.40.02.mp4"), &format!("https://share.example.com/v/{k}"), b, super::captures::UPLOADS, Verdict::Ask, "Shared 80 days ago; the link stops working", Who::Rule);
+        let mut up = mk(Group::Captures, &format!("Link · Recording 2026-08-2{k} at 11.40.02.mp4"), &format!("https://share.example.com/v/{k}"), b, super::captures::UPLOADS, Verdict::Ask, "Shared 80 days ago; the link stops working", Who::Rule);
         up.permanent = true;
         up.selected = false;
         items.push(up);

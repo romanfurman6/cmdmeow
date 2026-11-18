@@ -30,7 +30,7 @@ pub(super) fn scan(c: &mut Ctx) {
         return;
     }
     for u in (src.uploads)(m::CAPTURE_MIN_AGE_DAYS) {
-        let title = super::engine::fname(&u.local);
+        let title = format!("Link · {}", super::engine::fname(&u.local));
         let reason = format!("Shared {} days ago; the link stops working", u.age_days as u64);
         c.add_action(Group::Captures, &title, upload_path(&u.link, &u.key), UPLOADS, Verdict::Ask, &reason, Action::Upload { key: u.key, local: u.local }, u.bytes);
     }
@@ -55,7 +55,10 @@ fn upload_path(link: &str, key: &str) -> PathBuf {
 
 /// Why `p` must not be removed as an old capture, if so.
 pub(super) fn guard(p: &Path) -> Option<&'static str> {
-    (!old::source().is_some_and(|s| (s.still_ours)(p))).then_some("Not a capture saved by Cmd+Meow")
+    match old::source() {
+        Some(s) => (s.keep_why)(p),
+        None => Some("Capture isn't running"),
+    }
 }
 
 pub(super) fn delete_upload(local: &Path, key: &str) -> Result<(), String> {

@@ -38,8 +38,9 @@ pub struct Source {
     pub uploads: fn(f64) -> Vec<Upload>,
     /// Delete an upload (local file, key) from the storage.
     pub delete_upload: fn(&Path, &str) -> Result<(), String>,
-    /// Is this a file the capturing tool made (and may be removed)?
-    pub still_ours: fn(&Path) -> bool,
+    /// Why this file may not be removed now (not one the capturing tool
+    /// made, pinned since), if so.
+    pub keep_why: fn(&Path) -> Option<&'static str>,
 }
 
 static SOURCE: OnceLock<Source> = OnceLock::new();

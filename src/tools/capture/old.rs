@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// Let Cleanup find and remove old captures.
 pub(super) fn register() {
-    crate::kit::old_captures::register(crate::kit::old_captures::Source { local, uploads, delete_upload, still_ours });
+    crate::kit::old_captures::register(crate::kit::old_captures::Source { local, uploads, delete_upload, keep_why });
 }
 
 fn history_dir() -> PathBuf {
@@ -99,20 +99,22 @@ fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Is `p` a file this app made that Cleanup may remove? A capture or
-/// recording in the save folder, or a history copy.
-fn still_ours(p: &Path) -> bool {
+/// Why Cleanup may not remove `p` now, if so: only a capture or recording
+/// in the save folder, or a history copy, and none pinned (since the scan too).
+fn keep_why(p: &Path) -> Option<&'static str> {
+    const NOT_OURS: &str = "Not a capture saved by Cmd+Meow";
+    const PINNED: &str = "Pinned in History";
     if !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
-        return false;
+        return Some(NOT_OURS);
     }
-    // pinned since the scan: stays
     let st = Store::open(history_dir());
     if p.parent() == Some(history_dir().as_path()) {
-        let id = p.file_stem().and_then(|s| s.to_string_lossy().parse::<u64>().ok());
-        return p.extension().is_some_and(|e| e == "png") && id.is_some_and(|id| !st.shots.iter().any(|x| x.id == id && x.pinned));
+        let Some(id) = p.file_stem().and_then(|s| s.to_string_lossy().parse::<u64>().ok()).filter(|_| p.extension().is_some_and(|e| e == "png")) else { return Some(NOT_OURS) };
+        return st.shots.iter().any(|x| x.id == id && x.pinned).then_some(PINNED);
     }
     let folder = settings::load(&settings::data_dir()).folder;
-    p.parent() == Some(folder.as_path()) && stamp(p).is_some_and(|t| !pinned_stamps(&st).contains(&t))
+    let Some(t) = stamp(p).filter(|_| p.parent() == Some(folder.as_path())) else { return Some(NOT_OURS) };
+    pinned_stamps(&st).contains(&t).then_some(PINNED)
 }
 
 /// The name a capture was saved under, without the " 2", " edited",
