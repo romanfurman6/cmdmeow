@@ -389,10 +389,13 @@ pub fn short_path(p: &std::path::Path) -> String {
 
 // ---------------------------------------------------------------- pins
 
-/// A small capture window that doesn't count as the user picking our app:
-/// clicking it takes the keyboard, closing it should give it back.
+/// A small capture window (selection overlay, countdown, preview, pin, HUD,
+/// recorder bits) that doesn't count as the user picking our app: using it
+/// takes the keyboard, closing a pin should give it back. The editor and
+/// the video viewer are real windows.
 fn passing_window(title: &str) -> bool {
-    ["capture-pin-", "capture-preview", "capture-hud"].iter().any(|n| title.contains(n))
+    let Some(name) = title.strip_prefix(crate::kit::native::PLAIN_WINDOW) else { return false };
+    name.starts_with("capture-") && !["capture-editor", "capture-video"].contains(&name)
 }
 
 /// Who gets the keyboard when a pin closes, updated once per pass: the app
@@ -415,11 +418,9 @@ const PIN_HAND_BACK: std::time::Duration = std::time::Duration::from_millis(500)
 fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
     use crate::kit::native;
     let active = native::app_active();
-    if !c.pins.is_empty() || c.preview.is_some() || c.hud.is_some() {
-        c.pin_return = track_return(c.pin_return, active, native::front_other_app(), native::key_window_title().as_deref());
-    } else {
-        c.pin_return = None;
-    }
+    // tracked on every pass: a fresh screenshot goes overlay → preview → pin
+    // without our app ever leaving the front
+    c.pin_return = track_return(c.pin_return, active, native::front_other_app(), native::key_window_title().as_deref());
     let mut close = Vec::new();
     let mut edit = Vec::new();
     for (k, pin) in c.pins.iter_mut().enumerate() {
@@ -848,6 +849,11 @@ mod tests {
         assert_eq!(track_return(Some(42), true, None, Some(&pin)), Some(42));
         assert_eq!(track_return(Some(42), true, None, None), Some(42));
         assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-preview"))), Some(42));
+        // a fresh screenshot: selection overlay, then preview, then pin
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-overlay"))), Some(42));
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-rec-bar"))), Some(42));
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-video"))), None);
+        assert_eq!(track_return(Some(42), true, None, Some(&plain("clipboard-hud"))), None);
         // the user went to the app window or the editor: closing returns there
         assert_eq!(track_return(Some(42), true, None, Some("CmdMeow")), None);
         assert_eq!(track_return(Some(42), true, None, Some(&plain("capture-editor"))), None);
