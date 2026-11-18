@@ -517,14 +517,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Note(t) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), 36.0));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    glass_card(&p, r, R_CARD, 0.0, false);
                     text_fit(&p, Pos2::new(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, t, font(12.0), TEXT_DIM(), r.width() - 28.0);
                     y += 40.0;
                 }
                 Row::Allow => {
                     use crate::kit::perms::{Perm, Status};
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), 58.0));
-                    glass_card(&p, r, 10.0, 0.0, false);
+                    glass_card(&p, r, R_CARD, 0.0, false);
                     icon(&p, Icon::Script, Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::splat(18.0)), TEXT_SOFT());
                     let denied = s.events.0 == Status::Denied;
                     let label = if denied { "Open Settings" } else { "Allow access" };
