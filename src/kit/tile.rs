@@ -270,24 +270,36 @@ pub fn visual(p: &egui::Painter, rect: Rect, glyph: Icon, color: Color32, ring_:
     }
 }
 
-/// Least width of a Row's right part (W5): it has priority over the left.
-pub const ROW_RIGHT_MIN: f32 = 186.0;
+/// Width kept for a Row's left text (W5): with ring 50 and PAD round it,
+/// every Row's divider sits on one line, [`ROW_SPLIT`] from the left edge.
+pub const ROW_TEXT: f32 = 86.0;
+/// Where every Row's divider stands, from the card's left edge (W5).
+pub const ROW_SPLIT: f32 = PAD + 50.0 + PAD + ROW_TEXT + PAD;
 
 /// Row (1:4) per W5: the Wide layout on the left (ring 50 or glyph 26, then
-/// label, value, caption) as wide as its text, a hairline, and the right
-/// part (at least [`ROW_RIGHT_MIN`]) returned for the breakdown.
+/// label, value, caption), a hairline at [`ROW_SPLIT`] in every Row (it
+/// moves right only when the value is wider, so the value is never cut),
+/// and the right part returned for [`lines`].
 #[allow(clippy::too_many_arguments)]
 pub fn row_split_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, ring_: Option<(f32, Color32)>, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool) -> (Response, Rect) {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let x0 = visual(p, rect, glyph, color, ring_);
-    let w = |t: &str, f: egui::FontId| p.layout_no_wrap(t.to_string(), f, TEXT()).size().x;
-    let tw = w(label, ty::label()).max(w(value, ty::lead())).max(w(caption, ty::caption()));
-    // the right part keeps ROW_RIGHT_MIN, but the value never gets cut:
-    // light mode sets weights a step up, and "679 MB" lost its unit there
-    let floor = x0 + w(value, ty::lead()) + PAD;
-    let split = (x0 + tw + PAD).min(rect.right() - PAD - ROW_RIGHT_MIN - PAD).max(floor).ceil();
-    stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], split - PAD - x0);
+    let vw = p.layout_no_wrap(value.to_string(), ty::lead(), TEXT()).size().x;
+    let split = (rect.left() + ROW_SPLIT).max(x0 + vw + PAD).ceil();
+    let tw = split - PAD - x0;
+    let y = stack_lines(p, x0, rect.center().y, &[(label, ty::label(), Color32::TRANSPARENT), (value, ty::lead(), TEXT()), (caption, ty::caption(), Color32::TRANSPARENT)], tw);
+    // label and caption can be a name (a device's): faded, never "…"
+    let mut k = 0;
+    for (t, f, c) in [(label, ty::label(), ty::caption_color()), (value, ty::lead(), Color32::TRANSPARENT), (caption, ty::caption(), caption_col)] {
+        if t.is_empty() {
+            continue;
+        }
+        if c != Color32::TRANSPARENT {
+            text_fade(p, Pos2::new(x0, y[k].center().y), t, f, c, tw);
+        }
+        k += 1;
+    }
     let inset = rect.height() * 0.06;
     p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
     (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
@@ -344,32 +356,45 @@ pub fn actions(ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect, acts: &[Ac
 /// on the right gets most of the width. Returns the right part.
 #[allow(clippy::too_many_arguments)]
 pub fn row_split_list(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, title: &str, sub: &str, selected: bool) -> (Response, Rect) {
-    let resp = card(ui, rect, id, selected);
-    let p = ui.painter();
-    let left = Rect::from_min_size(rect.min, Vec2::new(rect.height(), rect.height()));
-    icon(p, glyph, Rect::from_min_size(left.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), lift(color));
-    small_text(p, left, title, sub, TEXT_DIM());
-    let split = left.right();
-    let inset = rect.height() * 0.06;
-    p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
-    (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
+    // the same left part and divider as every Row (W5)
+    row_split_full(ui, rect, id, glyph, color, None, title, sub, "", ty::caption_color(), selected)
 }
 
-/// Up to three bar lines stacked in `r` (the right half of a split Row);
-/// `empty` is shown when there are none.
+/// The lines of a Row's right part (W5): name on the left and value on the
+/// right of each line, a line's bar under it across the whole part, so every
+/// Row's bars start and end on the same two lines. As many as fit (two with
+/// bars); `empty` is shown when there are none.
 pub fn lines(p: &egui::Painter, r: Rect, lines: &[(String, Option<(f32, Color32)>, String)], empty: &str) {
     if lines.is_empty() {
         text_fit(p, r.center(), Align2::CENTER_CENTER, empty, font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    // one line each: label, a short inline bar, the value. Bars sit between
-    // the words instead of under them, so lines never crowd each other
-    let n = lines.len().min(3).min(((r.height() / 20.0).floor() as usize).max(1));
-    let lh = (r.height() / n as f32).min(24.0);
-    let top = r.center().y - lh * n as f32 / 2.0;
-    for (k, (label, frac, value)) in lines.iter().take(n).enumerate() {
-        let lr = Rect::from_min_size(Pos2::new(r.left(), top + k as f32 * lh), Vec2::new(r.width(), lh));
-        bar_line(p, lr, label, *frac, value);
+    const TEXT_H: f32 = 15.0;
+    const BAR_GAP: f32 = 4.0;
+    const BAR_H: f32 = 4.0;
+    let h = |l: &(String, Option<(f32, Color32)>, String)| if l.1.is_some() { TEXT_H + BAR_GAP + BAR_H } else { TEXT_H };
+    let gap = if lines.iter().any(|l| l.1.is_some()) { 6.0 } else { 4.0 };
+    let mut n = 0;
+    let mut total = 0.0;
+    for l in lines {
+        let next = total + if n > 0 { gap } else { 0.0 } + h(l);
+        if next > r.height() + 0.5 {
+            break;
+        }
+        total = next;
+        n += 1;
+    }
+    let n = n.max(1);
+    let mut y = r.center().y - total / 2.0;
+    for (label, frac, value) in lines.iter().take(n) {
+        let cy = y + TEXT_H / 2.0;
+        let vr = p.text(Pos2::new(r.right(), cy), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
+        text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), vr.left() - r.left() - 8.0);
+        if let Some((f, c)) = frac {
+            let by = y + TEXT_H + BAR_GAP;
+            bar(p, Rect::from_min_max(Pos2::new(r.left(), by), Pos2::new(r.right(), by + BAR_H)), *f, *c);
+        }
+        y += h(&(label.clone(), *frac, value.clone())) + gap;
     }
 }
 

@@ -22,6 +22,20 @@ fn pct_text(b: Option<u8>) -> String {
     b.map(|b| format!("{b}%")).unwrap_or_else(|| "–".into())
 }
 
+/// A device's name without its owner ("Roman's AirPods Pro" → "AirPods
+/// Pro"), the way it reads in a small space.
+pub fn short_name(name: &str) -> String {
+    for sep in ["'s ", "’s ", "s' ", "s’ "] {
+        if let Some(i) = name.find(sep) {
+            let rest = name[i + sep.len()..].trim();
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
 fn frac(b: Option<u8>) -> f32 {
     b.map(|b| (b as f32 / 100.0).clamp(0.02, 1.0)).unwrap_or(0.0)
 }
@@ -124,7 +138,7 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
     if matches!(size, Size::S12 | Size::S14) {
         let first = devs.first().filter(|d| d.live());
         let (glyph, ring_, label, value) = match first {
-            Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), d.name.clone(), pct_text(d.battery())),
+            Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), short_name(&d.name), pct_text(d.battery())),
             None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
         };
         let caption = if first.is_some() { note(&devs) } else { String::new() };
@@ -132,8 +146,24 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
             return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
         }
         let (resp, right) = tile::row_split_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
-        let lines: Vec<(String, Option<(f32, Color32)>, String)> = devs.iter().filter(|d| d.live()).skip(1).take(3).map(|d| (d.name.clone(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), pct_text(d.battery()))).collect();
-        tile::lines(ui.painter(), right, &lines, "No other devices");
+        let others: Vec<&Device> = devs.iter().filter(|d| d.live()).skip(1).collect();
+        let line = |name: &str, b: Option<u8>, v: String| (name.to_string(), b.map(|b| (frac(Some(b)), devices::color(b))), v);
+        let lines: Vec<(String, Option<(f32, Color32)>, String)> = match first {
+            // one device: its parts (AirPods: buds and case), not "no other devices"
+            Some(d) if others.is_empty() => {
+                let mut v = Vec::new();
+                if d.left.is_some() || d.right.is_some() {
+                    let both = [d.left, d.right].iter().flatten().map(|b| format!("{b}%")).collect::<Vec<_>>().join(" · ");
+                    v.push(line("Buds", d.battery(), both));
+                }
+                if d.case.is_some() {
+                    v.push(line("Case", d.case, pct_text(d.case)));
+                }
+                v
+            }
+            _ => others.iter().map(|d| line(&short_name(&d.name), d.battery(), pct_text(d.battery()))).collect(),
+        };
+        tile::lines(ui.painter(), right, &lines, "");
         return resp;
     }
     let resp = tile::card(ui, r, wid, sel);
@@ -413,4 +443,14 @@ fn dots(ui: &mut Ui, r: Rect, id: egui::Id) -> Response {
         p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT());
     }
     resp.on_hover_text("More")
+}
+
+#[cfg(test)]
+mod short_name_tests {
+    #[test]
+    fn owner_is_dropped() {
+        assert_eq!(super::short_name("Roman's AirPods Pro"), "AirPods Pro");
+        assert_eq!(super::short_name("Roman’s AirPods Pro"), "AirPods Pro");
+        assert_eq!(super::short_name("Magic Mouse"), "Magic Mouse");
+    }
 }
