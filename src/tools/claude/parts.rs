@@ -197,7 +197,7 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
 /// name. The full path is never cut with "…" (R10).
 pub fn project_names(paths: &[&str], home: &str) -> Vec<String> {
     let tail = |p: &str, n: usize| -> String {
-        let p = p.replacen(home, "~", 1);
+        let p = if home.is_empty() { p.to_string() } else { p.replacen(home, "~", 1) };
         let parts: Vec<&str> = p.trim_end_matches('/').split('/').filter(|x| !x.is_empty()).collect();
         if parts.len() <= 1 {
             return p;
@@ -252,7 +252,23 @@ pub fn day_bars(p: &egui::Painter, r: Rect, daily: &[u64], gap: f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::project_names;
+    use super::{limit_lines, now, project_names};
+    use crate::kit::ai::Limit;
+
+    #[test]
+    fn limit_lines_say_not_started_runs_out_and_resets() {
+        // a session that hasn't started: 0% and nothing to reset
+        let idle = Limit { label: "Current session".into(), ..Default::default() };
+        assert_eq!(limit_lines(&idle).iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), ["Not started"]);
+        // a week at 90% two days in: runs out before it resets
+        let t = now();
+        let week = Limit { label: "Current week".into(), pct: 90.0, resets_at: Some(t + 5 * 86_400), window_secs: 7 * 86_400, ..Default::default() };
+        let lines: Vec<String> = limit_lines(&week).into_iter().map(|l| l.0).collect();
+        assert!(lines[0].starts_with("Runs out\n"), "{lines:?}");
+        assert!(lines.last().is_some_and(|l| l.starts_with("Resets\n")), "{lines:?}");
+        // no "…" and no pace words (T9)
+        assert!(lines.iter().all(|l| !l.contains('…') && !l.contains("pace")));
+    }
 
     #[test]
     fn project_names_are_folders_never_cut_paths() {

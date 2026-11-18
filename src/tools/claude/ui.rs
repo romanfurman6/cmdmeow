@@ -124,14 +124,6 @@ fn status(cl: &UsageInfo) -> String {
     }
 }
 
-pub fn short_reset(s: &str) -> String {
-    if s.is_empty() {
-        return String::new();
-    }
-    let s = s.split(" (").next().unwrap_or(s);
-    format!("resets {}", s)
-}
-
 /// The Claude sheet beside the panel: limits, local tokens, what uses the
 /// limits, and links to the page and to Cleanup.
 pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
