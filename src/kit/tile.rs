@@ -72,8 +72,8 @@ pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
 }
 
 /// Light theme (S2w/W1): the card is a white sheet (90%, 98% on hover)
-/// with a 1 pt ink 9% hairline and a soft two-step shadow, widest last
-/// (`0 4 14` black 5%, then `0 1 3` black 7%).
+/// with a 1 pt ink 9% hairline and a soft two-step shadow, widest first
+/// (`0 4 14` black 5% first, then `0 1 3` black 7%).
 const LIGHT_FILL: Color32 = Color32::from_rgba_premultiplied(230, 230, 230, 230);
 const LIGHT_FILL_HOVER: Color32 = Color32::from_rgba_premultiplied(250, 250, 250, 250);
 const LIGHT_EDGE: Color32 = Color32::from_rgba_premultiplied(2, 2, 2, 23);
