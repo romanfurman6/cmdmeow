@@ -4,7 +4,7 @@
 //! the header of a Medium or Large widget, rings and sparklines.
 
 use super::glass::*;
-use egui::{Align2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Align2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 
 /// Corner radius of a widget (R_TILE, SP13 W1).
 pub const R_TILE: f32 = 10.0;

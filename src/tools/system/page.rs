@@ -383,9 +383,9 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let title = if named { s.wifi.name.clone() } else if s.wifi.wired { "Ethernet".to_string() } else if s.wifi.name.is_empty() { "Network".to_string() } else { "Wi-Fi".to_string() };
     let status = if !s.online { Some(("Offline", RED())) } else { None };
     // the download as the big number, like the Wi-Fi widget; upload in the lines
-    let down = human_rate(s.net_down);
+    let down = format!("↓ {}", human_rate(s.net_down));
     let y = card_title(p, r, &title, status, Some(&down));
-    let mut rows: Vec<Row> = vec![(None, "Upload".to_string(), human_rate(s.net_up))];
+    let mut rows: Vec<Row> = vec![(None, "Upload".to_string(), format!("↑ {}", human_rate(s.net_up)))];
     rows.push((None, "Today".to_string(), format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total))));
     if !s.wifi.signal.is_empty() {
         rows.push((None, "Signal".to_string(), s.wifi.signal.clone()));
