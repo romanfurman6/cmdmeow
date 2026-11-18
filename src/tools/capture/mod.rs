@@ -14,6 +14,7 @@ mod grab;
 mod hotkeys;
 mod icons;
 mod mac;
+mod old;
 pub mod record;
 mod render;
 mod settings;
@@ -187,6 +188,9 @@ pub struct Capture {
     /// Whether a secret key is in the Keychain: read once, off the frame loop
     /// (and never in demo mode, where a Keychain prompt would block).
     pub(crate) has_secret: Option<bool>,
+    /// Storage files opened from Finder, waiting for the app to come to the
+    /// front (a cold launch) so their alert isn't hidden behind Finder.
+    storage_files: Vec<(PathBuf, Instant)>,
 }
 
 impl Capture {
@@ -205,6 +209,9 @@ impl Capture {
     }
 
     pub fn new(env: &ToolEnv) -> Self {
+        if !env.demo {
+            crate::kit::url_scheme::on_files(share::import::opened);
+        }
         let (tx, rx) = channel();
         let (settings, dir, store) = if env.demo {
             let mut s = Settings::default();
@@ -219,6 +226,7 @@ impl Capture {
             (s, None, demo_store())
         } else {
             let dir = settings::data_dir();
+            old::register();
             (settings::load(&dir), Some(dir.clone()), Store::open(dir.join("history")))
         };
         let mut c = Capture {
@@ -265,6 +273,7 @@ impl Capture {
             uploads: share::Uploads::default(),
             share_secret: String::new(),
             has_secret: if env.demo { Some(false) } else { None },
+            storage_files: Vec::new(),
         };
         c.apply_keys();
         c
@@ -325,6 +334,41 @@ impl Capture {
         if self.recording.is_none() {
             self.apply_keys();
         }
+    }
+
+    /// Take a storage file Claude saved (see [`share::import`]): fill the
+    /// Sharing page, put the secret key in the Keychain, trash the file.
+    fn import_storage(&mut self, path: &std::path::Path) {
+        let Some(st) = share::import::read(path) else {
+            self.hud("Not a Cmd+Meow sharing file");
+            return;
+        };
+        // a file from anywhere could point uploads at someone else's bucket:
+        // the person sees where they'd go and says yes
+        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, share::import::short_host(&st.endpoint)), "Use") {
+            return;
+        }
+        if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
+            self.hud(format!("Couldn't save to the Keychain: {e}"));
+            return;
+        }
+        let s = &mut self.settings.share;
+        s.endpoint = st.endpoint;
+        s.bucket = st.bucket;
+        s.access_key = st.access_key;
+        s.region.clear();
+        s.public_url = st.public_url;
+        s.link = if s.public_url.is_empty() { share::LinkKind::Week } else { share::LinkKind::Public };
+        s.secret_saved = true;
+        self.has_secret = Some(true);
+        self.save_settings();
+        // read it straight back: any Keychain approval happens now
+        share::secret::approve_now(share::VIDEO_ACCOUNT);
+        // the keys shouldn't stay in Downloads
+        if let Err(e) = crate::kit::fs::move_to_trash(path) {
+            eprintln!("[share] couldn't trash {}: {e}", path.display());
+        }
+        self.hud("Sharing set up");
     }
 
     fn hud(&mut self, msg: impl Into<String>) {
@@ -1111,6 +1155,12 @@ impl Tool for Capture {
         self.rec.tray()
     }
     fn tick(&mut self, ctx: &egui::Context) -> bool {
+        // Cleanup removed old history copies
+        if crate::kit::old_captures::take_history_changed() {
+            if let Some(dir) = &self.dir {
+                self.store = Store::open(dir.join("history"));
+            }
+        }
         if let Some(k) = &self.keys {
             if self.recording.is_none() {
                 for c in k.poll() {
@@ -1121,6 +1171,24 @@ impl Tool for Capture {
         if let Some(l) = &self.links {
             for c in l.take() {
                 self.queue.push((c, 0));
+            }
+        }
+        // not in demo mode (screenshots), where a Keychain prompt would block
+        if self.links.is_some() {
+            let now = Instant::now();
+            self.storage_files.extend(share::import::take().into_iter().map(|f| (f, now)));
+            if !self.storage_files.is_empty() {
+                // up to 2.5 s for the launch to bring the app forward, and a
+                // few frames first so the window behind the alert isn't blank
+                let waited = self.storage_files.iter().map(|(_, at)| at.elapsed().as_secs_f32()).fold(0.0, f32::max);
+                let ready = (crate::kit::native::app_active() && waited > 0.4) || waited > 2.5;
+                if ready {
+                    for (f, _) in std::mem::take(&mut self.storage_files) {
+                        self.import_storage(&f);
+                    }
+                } else {
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
             }
         }
         while let Ok(d) = self.rx.try_recv() {

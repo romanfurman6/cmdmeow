@@ -11,6 +11,7 @@ pub const VIDEO_ACCOUNT: &str = "secret-key";
 pub const VIDEO_FOLDER: &str = "cmdmeow/videos/";
 pub const SHOT_FOLDER: &str = "cmdmeow/screenshots/";
 
+pub mod import;
 pub mod s3;
 pub mod setup;
 
@@ -209,6 +210,9 @@ pub struct Shared {
     /// When it was uploaded (unix seconds); 0 for uploads from before.
     #[serde(default)]
     pub at: i64,
+    /// Size of the uploaded file; 0 for uploads from before.
+    #[serde(default)]
+    pub bytes: u64,
 }
 
 /// Everything shared, newest first: the local file and where it went.
@@ -379,7 +383,8 @@ impl Uploads {
                         LinkKind::Week => s3::presign_get(&b, &key, 7 * 24 * 3600, chrono::Utc::now()),
                     };
                     let url = page_link(&file, &title_of(&path2));
-                    remember(&path2, Shared { key, link: url.clone(), at: chrono::Utc::now().timestamp() });
+                    let bytes = std::fs::metadata(&path2).map(|m| m.len()).unwrap_or(0);
+                    remember(&path2, Shared { key, link: url.clone(), at: chrono::Utc::now().timestamp(), bytes });
                     url
                 });
                 let _ = tx.send(r);

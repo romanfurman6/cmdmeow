@@ -418,6 +418,49 @@ mod mac {
         NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(|a| !a.isTerminated())
     }
 
+    /// A standard macOS alert with `ok` and Cancel, brought to the front
+    /// (the app may have no window up). True on `ok`. Main thread only;
+    /// blocks until answered.
+    pub fn confirm(title: &str, body: &str, ok: &str) -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        use objc2_foundation::NSString;
+        /// NSAlertFirstButtonReturn
+        const FIRST: isize = 1000;
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            let _: () = msg_send![&*app, activateIgnoringOtherApps: true];
+            let alert: Retained<AnyObject> = msg_send![class!(NSAlert), new];
+            let _: () = msg_send![&*alert, setMessageText: &*NSString::from_str(title)];
+            let _: () = msg_send![&*alert, setInformativeText: &*NSString::from_str(body)];
+            let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str(ok)];
+            let _: Retained<AnyObject> = msg_send![&*alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+            // over Finder even when the app isn't frontmost yet (just
+            // launched by a double-click): floating, and kept on deactivate
+            let w: Retained<AnyObject> = msg_send![&*alert, window];
+            let _: () = msg_send![&*w, setHidesOnDeactivate: false];
+            /// NSModalPanelWindowLevel
+            const MODAL_LEVEL: isize = 8;
+            let _: () = msg_send![&*w, setLevel: MODAL_LEVEL];
+            // lay it out first, or it opens at the screen's corner
+            let _: () = msg_send![&*alert, layout];
+            let _: () = msg_send![&*w, center];
+            let _: () = msg_send![&*w, orderFrontRegardless];
+            let r: isize = msg_send![&*alert, runModal];
+            r == FIRST
+        }
+    }
+
+    /// The app is frontmost.
+    pub fn app_active() -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            msg_send![&*app, isActive]
+        }
+    }
+
     /// Move a file or folder to the Trash the way Finder does: it lands in the
     /// Trash of its own volume (so external drives work) and can be put back.
     pub fn trash_item(p: &std::path::Path) -> Result<(), String> {
@@ -518,6 +561,13 @@ mod other {
         false
     }
     pub fn app_alive(_pid: i32) -> bool {
+        false
+    }
+    pub fn app_active() -> bool {
+        true
+    }
+    /// No alert off macOS: never confirmed.
+    pub fn confirm(_title: &str, _body: &str, _ok: &str) -> bool {
         false
     }
     /// Move into ~/.Trash. Refuses (instead of deleting) when the item is on
