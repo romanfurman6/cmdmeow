@@ -16,6 +16,13 @@ use egui::{Align2, Pos2, Rect, Ui, Vec2};
 pub use parts::usage_color;
 
 const GAP: f32 = sp::L;
+/// R15: the grid fills the width but not the height. The limits row and
+/// the chart with models and projects stop growing here, as on Mac Health.
+const GRID_MAX_H: f32 = 2.0 * 340.0 + sp::L;
+/// The top row: title, 12, a limit's ring (SP2 at [`RING_D`]).
+const ROW1_H: f32 = 2.0 * sp::L + 16.0 + sp::M + RING_D;
+/// One ring size for the page (SP2 `stat_ring`, one size per page).
+const RING_D: f32 = 112.0;
 
 /// The provider switch, right-aligned in `area`: "All" and every provider
 /// that's on. Returns its left edge.
@@ -150,7 +157,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let x1 = r.right() - sp::PAGE_EDGE;
     let y = r.top() + PAGE_HEADER_H + 1.0 + sp::L;
     let cw = (x1 - x0 - 3.0 * GAP) / 4.0;
-    let ch = 158.0;
+    let ch = ROW1_H;
     let slot = |k: usize, span: usize| Rect::from_min_size(Pos2::new(x0 + k as f32 * (cw + GAP), y), Vec2::new(cw * span as f32 + GAP * (span as f32 - 1.0), ch));
 
     // row 1
@@ -188,7 +195,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 
     // row 2: the chart, then models over projects
     let y2 = y + ch + GAP;
-    let bottom = r.bottom() - sp::L;
+    let bottom = (r.bottom() - sp::L).min(y + GRID_MAX_H).max(y2 + 200.0);
     let chart = Rect::from_min_max(Pos2::new(x0, y2), Pos2::new(x0 + cw * 2.0 + GAP, bottom));
     chart_card(ui, chart, &cl, meta.id, show_usd, demo);
     let col = Rect::from_min_max(Pos2::new(chart.right() + GAP, y2), Pos2::new(x1, bottom));
@@ -204,7 +211,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         if rows.is_empty() {
             empty_note(&p, list, &format!("No {} in the last 30 days", title.to_lowercase()));
         }
-        parts::share_rows(&p, list, rows, show_usd, &home);
+        parts::share_lines(&p, list, rows, show_usd, &home);
     }
 }
 
@@ -279,24 +286,29 @@ fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
     text_fit(p, i.left_bottom(), Align2::LEFT_BOTTOM, line, ty::label(), TEXT_DIM(), i.width());
 }
 
-/// One plan limit: ring with the even-use arc, pace, forecast.
+/// One plan limit: the page's SP2 ring with the even-use arc under the
+/// used one, and beside it when it runs out (red) and when it resets.
 fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
     glass_card(p, cr, R_CARD, 0.0, false);
     let inner = cr.shrink(sp::L);
-    split_line(p, inner.left_top(), inner.right_top(), egui::Align::Min, &backend::short_label(&l.label), ty::title(), TEXT(), &parts::reset_when(l), ty::label(), TEXT_DIM());
-    let rr = 34.0;
-    let c = Pos2::new(inner.left() + rr + 5.0, inner.bottom() - rr - 5.0);
-    parts::pace_ring(p, c, rr, 6.0, l);
-    p.text(c, Align2::CENTER_CENTER, format!("{:.0}%", l.pct), ty::lead(), TEXT());
-    let tx = c.x + rr + sp::L;
+    p.text(inner.left_top(), Align2::LEFT_TOP, backend::short_label(&l.label), ty::title(), TEXT());
+    let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 16.0 + sp::M), inner.max);
+    let d = RING_D.min(body.height()).min(body.width() * 0.6);
+    let c = Pos2::new(body.left() + d / 2.0, body.center().y);
+    // no caption in the ring: the card title names the number (T14)
+    stat_ring_paced(p, c, d, l.pct / 100.0, parts::pace_arc(l), parts::limit_color(l), &format!("{:.0}%", l.pct), "");
+    // beside it, centred on the ring; each line wraps rather than being cut
+    // (R10). No pace words (T9): the faint arc shows the pace
+    let tx = c.x + d / 2.0 + sp::M;
     let w = inner.right() - tx;
-    // the forecast centred on the ring; it wraps ("Runs out tomorrow" /
-    // "23:40") rather than being cut. No pace words (T9): the ring's marker
-    // shows the pace
-    let fc = parts::forecast(l);
-    let fg = p.layout(fc.clone(), ty::label(), TEXT_DIM(), w);
-    let top = c.y - fg.size().y / 2.0;
-    text_wrap(p, Pos2::new(tx, top), Align2::LEFT_TOP, &fc, ty::label(), TEXT_DIM(), w, 3);
+    let lines = parts::limit_lines(l);
+    let hs: Vec<f32> = lines.iter().map(|(t, col)| p.layout(t.clone(), ty::label(), *col, w).size().y).collect();
+    let total: f32 = hs.iter().sum::<f32>() + sp::XS * (hs.len().max(1) - 1) as f32;
+    let mut y = c.y - total / 2.0;
+    for ((t, col), h) in lines.iter().zip(hs) {
+        text_wrap(p, Pos2::new(tx, y), Align2::LEFT_TOP, t, ty::label(), *col, w, 3);
+        y += h + sp::XS;
+    }
 }
 
 /// A subscription: the 30 days at API prices against the plan's price.

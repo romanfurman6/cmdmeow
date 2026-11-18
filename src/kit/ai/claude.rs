@@ -422,6 +422,12 @@ pub fn demo_info() -> UsageInfo {
             (l.pct, l.resets_at, l.resets) = (pct.min(99.0), Some(end), super::codex::reset_text(end));
         }
     }
+    // CMDMEOW_DEMO_IDLE=1: no session running yet (0%, nothing to reset)
+    if std::env::var_os("CMDMEOW_DEMO_IDLE").is_some() {
+        if let Some(s) = limits.first_mut() {
+            (s.pct, s.resets_at, s.resets) = (0.0, None, String::new());
+        }
+    }
     UsageInfo {
         provider: NAME,
         loading: false,
@@ -444,7 +450,7 @@ pub fn demo_info() -> UsageInfo {
 fn demo_local() -> LocalTokens {
     let home = dirs::home_dir().unwrap_or_default();
     let p = |rel: &str| home.join(rel).display().to_string();
-    super::demo_local(&[("claude-opus-4-6", 6), ("claude-sonnet-4-6", 3), ("claude-haiku-4-5", 1)], &[&p("Projects/cmdmeow"), &p("Projects/site"), &p("work/api-gateway"), &p("notes")], 3.0)
+    super::demo_local(&[("claude-opus-4-6", 6), ("claude-sonnet-4-6", 3), ("claude-haiku-4-5", 1)], &[&p("Projects/cmdmeow"), &p("Projects/site"), &p("work/api-gateway"), &p("notes"), &p("Library/Application Support/Claude/scratch-workspaces/1f3a9c2e")], 3.0)
 }
 
 #[cfg(test)]
