@@ -211,12 +211,12 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     let top = rect.top() + 31.0 - size / 2.0;
     let at = |k: f32| Rect::from_min_size(Pos2::new(rect.right() - 14.0 - size * (k + 1.0) - sp::S * k, top), Vec2::splat(size));
     let id = Id::new("panel-more");
-    let now = ctx.input(|i| i.time);
-    // the panel was away (hidden): it comes back folded, with no animation
-    let last = ctx.data_mut(|d| d.get_temp::<f64>(id.with("seen"))).unwrap_or(now);
-    ctx.data_mut(|d| d.insert_temp(id.with("seen"), now));
     let mut open = ctx.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
-    if now - last > 0.5 && open {
+    // the panel hid since the buttons came out: it comes back folded, with
+    // no animation (egui draws only on events, so a gap between frames
+    // says nothing)
+    let since = ctx.data(|d| d.get_temp::<std::time::Instant>(id.with("at")));
+    if open && since.is_some_and(|at| app.last_hide() > at) {
         open = false;
         ctx.data_mut(|d| d.insert_temp(id, false));
         ctx.animate_bool_with_time(id.with("t"), false, 0.0);
@@ -230,7 +230,10 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     title_line(app, &p, x0, rect.top(), left - x0 - 10.0);
     let tip = if open { "Less" } else { "More" };
     if round_button_with(ui, more, tip, |p, r, col| more_glyph(p, r, t, col)).clicked() {
-        ctx.data_mut(|d| d.insert_temp(id, !open));
+        ctx.data_mut(|d| {
+            d.insert_temp(id, !open);
+            d.insert_temp(id.with("at"), std::time::Instant::now());
+        });
     }
     let buttons = [(Icon::Window, "Open Cmd+Meow"), (Icon::Minus, "Hide"), (Icon::Close, "Quit Cmd+Meow")];
     for (i, ((ic, tip), slot)) in buttons.into_iter().zip(slots).enumerate() {
