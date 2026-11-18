@@ -838,7 +838,7 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
         cx.open_page(SHARING_ID, "");
     }
     let st = &c.settings.share;
-    let (where_, col_) = if st.set_up(VIDEO_ACCOUNT) { (format!("{}.{}/{}", st.bucket.trim(), st.endpoint.trim(), s.folder.trim_start_matches('/')), TEXT_DIM()) } else { ("Not set up".to_string(), AMBER()) };
+    let (where_, col_) = if st.set_up(VIDEO_ACCOUNT) { (st.place(&s.folder), TEXT_DIM()) } else { ("Not set up".to_string(), AMBER()) };
     text_fit(p, Pos2::new(lr.rect.left() - 10.0, y), Align2::RIGHT_CENTER, &where_, font(12.0), col_, card.width() * 0.55);
     if (shots && s != c.settings.shot_share) || (!shots && s != c.settings.share) {
         if shots {
@@ -858,7 +858,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let p = ui.painter().clone();
     let shared = super::share::all();
     let ready = c.settings.share.set_up(VIDEO_ACCOUNT);
-    let sub = if ready { format!("{} shared · {}.{}", shared.len(), c.settings.share.bucket.trim(), c.settings.share.endpoint.trim()) } else { String::new() };
+    let sub = if ready { format!("{} shared · {}", shared.len(), c.settings.share.bucket.trim()) } else { String::new() };
     // the main agent's chat walks them through a bucket and keys
     let agent = crate::kit::agent::main();
     let ask = super::share::setup::label(agent);

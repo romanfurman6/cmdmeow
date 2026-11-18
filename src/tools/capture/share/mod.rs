@@ -85,6 +85,16 @@ impl Settings {
     pub fn ready(&self, account: &str) -> bool {
         self.bucket(account).ready()
     }
+    /// Where uploads go, short enough for a settings row: the bucket and
+    /// the folder (the endpoint is a long host, often with https://).
+    pub fn place(&self, folder: &str) -> String {
+        let folder = folder.trim().trim_matches('/');
+        if folder.is_empty() {
+            self.bucket.trim().to_string()
+        } else {
+            format!("{}/{folder}", self.bucket.trim())
+        }
+    }
     /// Filled in, with a secret saved, from our own settings only: no
     /// Keychain call, so it's safe anywhere (the sidebar, every launch).
     pub fn set_up(&self, _account: &str) -> bool {
@@ -430,6 +440,8 @@ mod tests {
         s.link = LinkKind::Public;
         s.public_url = "pub-1.r2.dev".into();
         assert!(s.set_up(VIDEO_ACCOUNT));
+        assert_eq!(s.place("/cmdmeow/screenshots/"), "b/cmdmeow/screenshots");
+        assert_eq!(s.place(""), "b");
         // other storages make files public themselves
         let h = Settings { endpoint: "fsn1.your-objectstorage.com".into(), ..s.clone() };
         assert!(!h.is_r2() && Settings { public_url: String::new(), ..h }.links_ready());
