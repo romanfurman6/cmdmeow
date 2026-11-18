@@ -353,9 +353,9 @@ pub fn drop_unflushed() {
 /// The open cover (M5): a window's backdrop with the loader mark rising
 /// in it, under egui's surface. While the window's first frame isn't on
 /// screen yet the surface is empty and this shows instead of a grey
-/// window; the first frame, drawn on a solid backdrop, covers it. It fades
-/// in 150 ms after it's made, so a window that draws in time never shows
-/// it. Core Animation runs it, so it keeps moving while a paint holds the
+/// window; the first frame, drawn on a solid backdrop, covers it. The
+/// backdrop is there at once; the mark fades in 150 ms after, so a window
+/// that draws in time never shows it. Core Animation runs it, so it keeps moving while a paint holds the
 /// main thread. Returns false when the window has no view yet.
 pub fn cover(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
     use crate::kit::glass;
@@ -369,7 +369,10 @@ pub fn cover(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
         radius,
         mark: COVER_MARK,
     };
-    native_wanted() && native::cover(id, &look)
+    // CMDMEOW_OPEN_COVER=0: no cover (to compare against)
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let on = *ON.get_or_init(|| std::env::var_os("CMDMEOW_OPEN_COVER").is_none_or(|v| v != "0"));
+    on && native_wanted() && native::cover(id, &look)
 }
 
 /// The loader mark's side in the open cover.
@@ -1161,14 +1164,16 @@ mod native {
             let _: () = msg_send![&*rise, setRepeatCount: f32::INFINITY];
             let _: () = msg_send![&*level, addAnimation: &*rise, forKey: &*key("cmdmeow-rise")];
 
-            // unseen for 150 ms, then in over 120 ms
+            // the backdrop is there at once (what egui's first frame draws
+            // anyway, instead of the window's empty body); the mark only
+            // after 150 ms, in over 120 ms
             let fade: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key("opacity")];
             let _: () = msg_send![&*fade, setFromValue: &*num(0.0)];
             let _: () = msg_send![&*fade, setToValue: &*num(1.0)];
             let _: () = msg_send![&*fade, setBeginTime: CACurrentMediaTime() + 0.15];
             let _: () = msg_send![&*fade, setDuration: 0.12f64];
             let _: () = msg_send![&*fade, setFillMode: &*key("backwards")];
-            let _: () = msg_send![&*c, addAnimation: &*fade, forKey: &*key("cmdmeow-fade")];
+            let _: () = msg_send![&*mark, addAnimation: &*fade, forKey: &*key("cmdmeow-fade")];
 
             // under the Metal layer egui draws into
             let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: 0u32];
