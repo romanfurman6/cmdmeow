@@ -573,17 +573,33 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
     painter.rect_stroke(rect, radius, Stroke::new(1.0, white(HAIRLINE_STRONG)), StrokeKind::Inside);
 }
 
-fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epaint::Mesh {
-    let stops: &[(f32, Color32)] = if light {
+/// The backdrop's gradient (S1): colours from the glow's centre out to its
+/// edge, as fractions of the way.
+pub fn backdrop_stops(light: bool) -> &'static [(f32, Color32)] {
+    if light {
         &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
     } else {
         &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
-    };
+    }
+}
+
+/// The backdrop glow's radii for a window of `size`: an ellipse wide
+/// across, reaching the bottom edge, never smaller than the app window's:
+/// the narrow panel shows the centre of the same glow instead of a
+/// squeezed copy of it (S1). Its centre is the top middle.
+pub fn backdrop_glow(size: Vec2) -> (f32, f32) {
+    (size.x.max(super::mechanics::APP_WIDTH) * 0.75, size.y.max(super::mechanics::APP_HEIGHT) * 1.05)
+}
+
+/// The backdrop's 1 pt edge, drawn inside its outline.
+pub fn backdrop_edge() -> Color32 {
+    white(HAIRLINE_STRONG)
+}
+
+fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epaint::Mesh {
+    let stops = backdrop_stops(light);
     let glow = Pos2::new(rect.center().x, rect.top());
-    // the glow is an ellipse: wide across, reaching the bottom edge,
-    // never smaller than the app window's: the narrow panel shows the
-    // centre of the same glow instead of a squeezed copy of it (S1)
-    let (rx, ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
+    let (rx, ry) = backdrop_glow(rect.size());
     let color_at = |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);

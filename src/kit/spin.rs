@@ -350,6 +350,36 @@ pub fn drop_unflushed() {
     SUSPENDED.with(|s| s.borrow_mut().clear());
 }
 
+/// The open cover (M5): a window's backdrop with the loader mark rising
+/// in it, under egui's surface. While the window's first frame isn't on
+/// screen yet the surface is empty and this shows instead of a grey
+/// window; the first frame, drawn on a solid backdrop, covers it. It fades
+/// in 150 ms after it's made, so a window that draws in time never shows
+/// it. Core Animation runs it, so it keeps moving while a paint holds the
+/// main thread. Returns false when the window has no view yet.
+pub fn cover(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
+    use crate::kit::glass;
+    let light = glass::is_light();
+    let look = native::CoverLook {
+        stops: glass::backdrop_stops(light),
+        glow: glass::backdrop_glow(size),
+        edge: glass::backdrop_edge(),
+        track: glass::white(26),
+        lime: glass::ACTION(),
+        radius,
+        mark: COVER_MARK,
+    };
+    native_wanted() && native::cover(id, &look)
+}
+
+/// The loader mark's side in the open cover.
+const COVER_MARK: f32 = 56.0;
+
+/// Drop window `id`'s open cover, if it has one.
+pub fn uncover(id: egui::ViewportId) {
+    native::uncover(id);
+}
+
 /// Seconds on Core Animation's clock (so native and egui drawing agree).
 fn clock() -> f64 {
     native::media_time()
@@ -381,6 +411,8 @@ mod native {
         fn CGPathCloseSubpath(path: *mut c_void);
         fn CGPathAddEllipseInRect(path: *mut c_void, m: *const c_void, rect: NSRect);
         fn CGPathRelease(path: *mut c_void);
+        fn CGPathCreateCopyByStrokingPath(path: *const c_void, m: *const c_void, width: f64, cap: i32, join: i32, miter: f64) -> *mut c_void;
+        fn CGPathCreateCopyBySubtractingPath(path: *const c_void, cut: *const c_void, even_odd: bool) -> *mut c_void;
     }
 
     pub fn media_time() -> f64 {
@@ -989,6 +1021,184 @@ mod native {
         let _: () = msg_send![layer, addAnimation: &*anim, forKey: &*anim_key];
     }
 
+    /// What the open cover looks like (see `super::cover`).
+    pub struct CoverLook {
+        pub stops: &'static [(f32, Color32)],
+        pub glow: (f32, f32),
+        pub edge: Color32,
+        pub track: Color32,
+        pub lime: Color32,
+        pub radius: f32,
+        pub mark: f32,
+    }
+
+    thread_local! {
+        static COVERS: RefCell<Vec<(egui::ViewportId, Retained<AnyObject>)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// The keycap with the ⌘ cut out, in a `w` square: the mark's shape.
+    fn cut_mark_path(w: f32) -> *mut c_void {
+        let s = w as f64 / 1024.0;
+        unsafe {
+            let outline = outline_path(w);
+            let cmd = command_path(w);
+            // butt caps, miter joins: as the ⌘ is stroked everywhere else
+            let stroke = CGPathCreateCopyByStrokingPath(cmd, std::ptr::null(), crate::kit::brand::CMD_WIDTH as f64 * s, 0, 0, 10.0);
+            let cut = CGPathCreateCopyBySubtractingPath(outline, stroke, false);
+            CGPathRelease(outline);
+            CGPathRelease(cmd);
+            CGPathRelease(stroke);
+            cut
+        }
+    }
+
+    pub fn cover(id: egui::ViewportId, look: &CoverLook) -> bool {
+        let Some((root, scale, space)) = root_of(id) else { return false };
+        uncover(id);
+        let sp = space.as_deref();
+        // the NSColors own their CGColors: keep them until the commit
+        let mut keep: Vec<Retained<AnyObject>> = Vec::new();
+        let mut cg = |c: Color32| -> *const c_void {
+            let ns = ns_color(c, sp);
+            let p: *const c_void = unsafe { msg_send![&*ns, CGColor] };
+            keep.push(ns);
+            p
+        };
+        let num = |v: f64| NSNumber::new_f64(v);
+        let key = |k: &str| NSString::from_str(k);
+        unsafe {
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+            let flipped: bool = msg_send![&*root, contentsAreFlipped];
+            let bounds: NSRect = msg_send![&*root, bounds];
+            let (w, h) = (bounds.size.width.max(1.0), bounds.size.height.max(1.0));
+            const W_SIZABLE: u32 = 1 << 1;
+            const H_SIZABLE: u32 = 1 << 4;
+            const MARGINS: u32 = 1 | (1 << 2) | (1 << 3) | (1 << 5);
+
+            // the window: rounded, its 1 pt edge on top, y down like egui
+            let c = new_layer("plain", scale);
+            let _: () = msg_send![&*c, setName: &*key("cmdmeow-open-cover")];
+            let _: () = msg_send![&*c, setGeometryFlipped: !flipped];
+            let _: () = msg_send![&*c, setFrame: ns_rect(0.0, 0.0, w, h)];
+            let _: () = msg_send![&*c, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
+            let _: () = msg_send![&*c, setCornerRadius: look.radius as f64];
+            let _: () = msg_send![&*c, setMasksToBounds: true];
+            let _: () = msg_send![&*c, setBorderWidth: 1.0f64];
+            let _: () = msg_send![&*c, setBorderColor: cg(look.edge)];
+
+            // the backdrop (S1): a radial glow from the top middle
+            let g: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
+            let _: () = msg_send![&*g, setContentsScale: scale];
+            let _: () = msg_send![&*g, setType: &*key("radial")];
+            let colors: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+            let stops: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+            for (t, col) in look.stops {
+                let _: () = msg_send![&*colors, addObject: cg(*col) as *const AnyObject];
+                let _: () = msg_send![&*stops, addObject: &*num(*t as f64)];
+            }
+            let _: () = msg_send![&*g, setColors: &*colors];
+            let _: () = msg_send![&*g, setLocations: &*stops];
+            let _: () = msg_send![&*g, setStartPoint: NSPoint::new(0.5, 0.0)];
+            let _: () = msg_send![&*g, setEndPoint: NSPoint::new(0.5 + look.glow.0 as f64 / w, look.glow.1 as f64 / h)];
+            let _: () = msg_send![&*g, setFrame: ns_rect(0.0, 0.0, w, h)];
+            let _: () = msg_send![&*g, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
+            let _: () = msg_send![&*c, addSublayer: &*g];
+
+            // the mark (P6), centred: the keycap in the track colour, lime
+            // rising inside it, the ⌘ cut out of both
+            let m = look.mark;
+            let side = m as f64;
+            let s = side / 1024.0;
+            let box_ = ns_rect(0.0, 0.0, side, side);
+            let zero = NSPoint::new(0.0, 0.0);
+            let mark = new_layer("plain", scale);
+            let _: () = msg_send![&*mark, setBounds: box_];
+            let _: () = msg_send![&*mark, setPosition: NSPoint::new((w / 2.0).round(), (h / 2.0).round())];
+            let _: () = msg_send![&*mark, setAutoresizingMask: MARGINS];
+            let track = new_layer("plain", scale);
+            let _: () = msg_send![&*track, setFrame: box_];
+            let _: () = msg_send![&*track, setBackgroundColor: cg(look.track)];
+            let level = new_layer("plain", scale);
+            let wave = new_layer("shape", scale);
+            for l in [&level, &wave] {
+                let _: () = msg_send![&**l, setAnchorPoint: zero];
+                let _: () = msg_send![&**l, setBounds: box_];
+            }
+            let y = |v: f32| (v + crate::kit::brand::NUDGE.1) as f64 * s;
+            let (low, high) = (y(crate::kit::loader::level(0.0)), y(-20.0));
+            let _: () = msg_send![&*level, setPosition: NSPoint::new(0.0, low)];
+            let _: () = msg_send![&*wave, setPosition: zero];
+            set_path(&wave, wave_path(m));
+            set_color(&wave, false, Some(look.lime), sp);
+            let _: () = msg_send![&*level, addSublayer: &*wave];
+            let _: () = msg_send![&*mark, addSublayer: &*track];
+            let _: () = msg_send![&*mark, addSublayer: &*level];
+            let cut = new_layer("shape", scale);
+            let _: () = msg_send![&*cut, setFrame: box_];
+            set_path(&cut, cut_mark_path(m));
+            set_color(&cut, false, Some(Color32::BLACK), sp);
+            let _: () = msg_send![&*mark, setMask: &*cut];
+            let _: () = msg_send![&*c, addSublayer: &*mark];
+
+            // the wave runs; the lime rises over 80% of 1.6 s, holds, again
+            let anim: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key("position.x")];
+            let _: () = msg_send![&*anim, setFromValue: &*num(0.0)];
+            let _: () = msg_send![&*anim, setToValue: &*num(-(crate::kit::loader::WAVE_P as f64) * s)];
+            let _: () = msg_send![&*anim, setDuration: 1.6f64];
+            let _: () = msg_send![&*anim, setRepeatCount: f32::INFINITY];
+            let _: () = msg_send![&*wave, addAnimation: &*anim, forKey: &*key("cmdmeow-wave")];
+            let rise: Retained<AnyObject> = msg_send![class!(CAKeyframeAnimation), animationWithKeyPath: &*key("position.y")];
+            let vals = objc2_foundation::NSArray::from_retained_slice(&[num(low), num(high), num(high)]);
+            let times = objc2_foundation::NSArray::from_retained_slice(&[num(0.0), num(0.8), num(1.0)]);
+            let ease: Retained<AnyObject> = msg_send![class!(CAMediaTimingFunction), functionWithControlPoints: 0.37f32, 0.0f32, 0.63f32, 1.0f32];
+            let linear: Retained<AnyObject> = msg_send![class!(CAMediaTimingFunction), functionWithName: &*key("linear")];
+            let fns = objc2_foundation::NSArray::from_retained_slice(&[ease, linear]);
+            let _: () = msg_send![&*rise, setValues: &*vals];
+            let _: () = msg_send![&*rise, setKeyTimes: &*times];
+            let _: () = msg_send![&*rise, setTimingFunctions: &*fns];
+            let _: () = msg_send![&*rise, setDuration: 1.6f64];
+            let _: () = msg_send![&*rise, setRepeatCount: f32::INFINITY];
+            let _: () = msg_send![&*level, addAnimation: &*rise, forKey: &*key("cmdmeow-rise")];
+
+            // unseen for 150 ms, then in over 120 ms
+            let fade: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key("opacity")];
+            let _: () = msg_send![&*fade, setFromValue: &*num(0.0)];
+            let _: () = msg_send![&*fade, setToValue: &*num(1.0)];
+            let _: () = msg_send![&*fade, setBeginTime: CACurrentMediaTime() + 0.15];
+            let _: () = msg_send![&*fade, setDuration: 0.12f64];
+            let _: () = msg_send![&*fade, setFillMode: &*key("backwards")];
+            let _: () = msg_send![&*c, addAnimation: &*fade, forKey: &*key("cmdmeow-fade")];
+
+            // under the Metal layer egui draws into
+            let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: 0u32];
+            let _: () = msg_send![class!(CATransaction), commit];
+            // to the window server now: the paint that follows may hold the
+            // main thread for a second, and this has to be on screen by then
+            let _: () = msg_send![class!(CATransaction), flush];
+            COVERS.with(|all| all.borrow_mut().push((id, c)));
+        }
+        drop(keep);
+        true
+    }
+
+    pub fn uncover(id: egui::ViewportId) {
+        COVERS.with(|all| {
+            all.borrow_mut().retain(|(v, c)| {
+                if *v != id {
+                    return true;
+                }
+                unsafe {
+                    let _: () = msg_send![class!(CATransaction), begin];
+                    let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+                    let _: () = msg_send![&**c, removeFromSuperlayer];
+                    let _: () = msg_send![class!(CATransaction), commit];
+                }
+                false
+            })
+        });
+    }
+
     /// Drop viewport `id`'s layers whose key wasn't shown natively this pass.
     pub fn retain(id: egui::ViewportId, keep: &[String]) {
         LAYERS.with(|all| {
@@ -1022,6 +1232,21 @@ mod native {
         false
     }
     pub fn retain(_id: egui::ViewportId, _keep: &[String]) {}
+
+    #[allow(dead_code)]
+    pub struct CoverLook {
+        pub stops: &'static [(f32, Color32)],
+        pub glow: (f32, f32),
+        pub edge: Color32,
+        pub track: Color32,
+        pub lime: Color32,
+        pub radius: f32,
+        pub mark: f32,
+    }
+    pub fn cover(_id: egui::ViewportId, _look: &CoverLook) -> bool {
+        false
+    }
+    pub fn uncover(_id: egui::ViewportId) {}
 }
 
 #[cfg(test)]
