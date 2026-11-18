@@ -139,3 +139,7 @@
 /* a long name steps down to 11 before it's cut (tile::small_text) */
 .sw.act .nm.s11f { font-size: 11px; }
 @media (max-width: 640px) { .sw.act .nm.s11f { font-size: 10px; } }
+/* hero widgets open their tool in the demo below (demo.js) */
+.hero-pn .sw[data-to] { cursor: pointer; }
+.hero-pn .sw:focus { outline: none; }
+.hero-pn .sw:focus-visible { outline: 2px solid #C8F05A; outline-offset: 2px; }

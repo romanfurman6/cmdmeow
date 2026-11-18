@@ -68,12 +68,10 @@
   }
 
   // Hero panel: a widget opens its tool in the demo
-  const go = { Clean: 'cleanup', Screenshot: 'capture', Claude: 'awake', Clipboard: 'clipboard', 'Macintosh HD': 'diskmap', Memory: 'health', CPU: 'health', Battery: 'health', 'Home Wi-Fi': 'health', 'AI Usage': 'claude', Fans: 'fans' };
-  $$('.app.pnl .wd').forEach(w => {
-    const k = (w.querySelector('.dm, .kh b, .cl3 > span:last-child') || {}).textContent;
-    const to = w.dataset.to || go[(k || '').trim()]; if (!to || !window.cmShow) return;
-    w.classList.add('link'); w.tabIndex = 0; w.setAttribute('role', 'button');
-    w.addEventListener('click', () => window.cmShow(to));
+  $$('.hero-pn .sw[data-to]').forEach(w => {
+    const to = w.dataset.to; if (!window.cmShow) return;
+    w.tabIndex = 0; w.setAttribute('role', 'button');
+    w.addEventListener('click', e => { if (!e.target.closest('.seg span, .lk, .pz')) window.cmShow(to); });
     w.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.cmShow(to); } });
   });
 
