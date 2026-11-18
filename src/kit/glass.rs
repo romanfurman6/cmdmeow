@@ -545,7 +545,7 @@ pub fn float_shadow_egui() -> egui::epaint::Shadow {
 /// blur behind it shows through a little; `opaque` (screenshots)
 /// paints it solid.
 pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f64) {
-    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, false);
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, true);
 }
 
 /// The menu bar panel's surface (S1): the same glow, as a beam of light
