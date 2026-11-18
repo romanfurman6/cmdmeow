@@ -886,7 +886,10 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
+        // CMDMEOW_PIN_PANEL=1 (debugging): the panel stays open when focus leaves
+        static PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let pinned = *PIN.get_or_init(|| std::env::var("CMDMEOW_PIN_PANEL").is_ok_and(|v| v == "1"));
+        if !pinned && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
             self.hide(ctx);
         }
     }
