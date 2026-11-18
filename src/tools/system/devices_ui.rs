@@ -163,7 +163,8 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
                 }
                 v
             }
-            _ => others.iter().map(|d| line(&short_name(&d.name), d.battery(), pct_text(d.battery()))).collect(),
+            // the device's kind ("Mouse", "Trackpad"), not a name cut at the bar
+            _ => others.iter().map(|d| line(&d.short(), d.battery(), pct_text(d.battery()))).collect(),
         };
         tile::lines(ui.painter(), right, &lines, "");
         return resp;

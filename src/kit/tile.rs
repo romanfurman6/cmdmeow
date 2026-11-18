@@ -365,10 +365,12 @@ pub fn row_split_list(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color:
     row_split_full(ui, rect, id, glyph, color, None, title, sub, "", ty::caption_color(), selected)
 }
 
-/// Name column of a Row's right part (W5), the same in every Row.
-pub const ROW_NAME: f32 = 40.0;
-/// Value column of a Row's right part (W5), the same in every Row.
-pub const ROW_VALUE: f32 = 60.0;
+/// Name column of a Row's right part (W5), the same in every Row: fits
+/// "Compressed" and "Documents"; a longer name fades.
+pub const ROW_NAME: f32 = 62.0;
+/// Value column of a Row's right part (W5), the same in every Row: fits
+/// "65.6 GB", leaving the bar 28 pt in the 160 pt right part.
+pub const ROW_VALUE: f32 = 50.0;
 
 /// The lines of a Row's right part (W5): name, bar, value in three columns
 /// shared by every Row, so bars start and end on the same two lines across
