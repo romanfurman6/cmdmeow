@@ -399,7 +399,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
     }
 
     let card = Rect::from_min_max(Pos2::new(r.left(), r.top() + sp::SECTION_H), r.max);
-    glass_card(p, card, R_CARD, 0.0, false);
+    data_card(p, card);
     let inner = Rect::from_min_max(card.min + Vec2::splat(sp::L), Pos2::new(card.right() - sp::L, card.bottom() - sp::XS));
 
     // the hourly chart; the row hovered last frame lights its hours
