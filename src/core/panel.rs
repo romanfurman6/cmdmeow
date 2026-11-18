@@ -200,10 +200,14 @@ pub fn title_line(app: &App, p: &egui::Painter, x0: f32, top: f32, width: f32) {
     }
 }
 
+/// How long the header buttons take to slide out or fold, s.
+const FOLD: f32 = 0.24;
+
 /// Title and status from the first tool that offers one, then one round
 /// "…" button on the right; a click slides out Open, Hide and Quit to its
 /// left (▢ – ✕ …) as the dots turn into "›"; another click tucks them
-/// back. The panel opens folded.
+/// back. A button's action runs once they have folded, so the panel always
+/// opens folded.
 fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
@@ -221,7 +225,9 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         ctx.data_mut(|d| d.insert_temp(id, false));
         ctx.animate_bool_with_time(id.with("t"), false, 0.0);
     }
-    let t = ctx.animate_bool_with_time(id.with("t"), open, 0.24);
+    let t = ctx.animate_bool_with_time(id.with("t"), open, FOLD);
+    // an action waiting for the buttons to fold: which one, since when
+    let pending = ctx.data(|d| d.get_temp::<(usize, std::time::Instant)>(id.with("do")));
     let more = at(0.0);
     let slots = [at(3.0), at(2.0), at(1.0)];
     let x0 = rect.left() + 16.0;
@@ -248,14 +254,30 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         let mut c = ui.new_child(UiBuilder::new().max_rect(r.expand(2.0)).id_salt(("panel-more", i)));
         c.multiply_opacity(e);
         // only a button that has arrived takes a click
-        if round_button_in(&mut c, r, ic, tip).clicked() && e > 0.95 {
-            ctx.data_mut(|d| d.insert_temp(id, false));
+        // only a button that has arrived takes a click; the buttons fold
+        // first and the action runs when they're in, so the panel never
+        // shows them unfolded when it opens next
+        if round_button_in(&mut c, r, ic, tip).clicked() && e > 0.95 && pending.is_none() {
+            ctx.data_mut(|d| {
+                d.insert_temp(id, false);
+                d.insert_temp(id.with("do"), (i, std::time::Instant::now()));
+            });
+        }
+    }
+    if let Some((i, at)) = pending {
+        if app.last_hide() > at {
+            // the panel went away meanwhile: drop it rather than act on reopen
+            ctx.data_mut(|d| d.remove::<(usize, std::time::Instant)>(id.with("do")));
+        } else if at.elapsed().as_secs_f32() >= FOLD {
+            ctx.data_mut(|d| d.remove::<(usize, std::time::Instant)>(id.with("do")));
             match i {
                 0 => open_app(app, &ctx),
                 1 => app.hide(&ctx),
                 _ if !app.demo => app.quit(&ctx),
                 _ => {}
             }
+        } else {
+            ctx.request_repaint();
         }
     }
 }
