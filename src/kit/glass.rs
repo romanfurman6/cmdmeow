@@ -589,18 +589,19 @@ fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: b
     painter.rect_stroke(rect, radius, Stroke::new(1.0, white(HAIRLINE_STRONG)), StrokeKind::Inside);
 }
 
-fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
-    let stops: &[(f32, Color32)] = if light {
-        &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
+/// The backdrop's colour at a point of `rect`: a radial glow from the top
+/// centre (S1). `tall` is the panel's: a beam down the centre to the bottom.
+fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
+    let stops: Vec<(f32, Color32)> = if light {
+        vec![(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
     } else {
-        &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
+        vec![(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
     };
     let glow = Pos2::new(rect.center().x, rect.top());
     // the glow is an ellipse: wide across, reaching the bottom edge,
     // never smaller than the app window's: the narrow panel shows the
     // centre of the same glow instead of a squeezed copy of it (S1)
-    let (rx, mut ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
-    let mut rx = rx;
+    let (mut rx, mut ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
     if tall {
         // the panel: a beam of light down the centre to the bottom (its
         // bottom edge at the gradient's middle, not the near-black end),
@@ -608,13 +609,33 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -
         ry = ry.max(rect.height() * 1.9);
         rx = rect.width() * 0.85;
     }
-    let color_at = |q: Pos2| {
+    move |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
         with_alpha(lerp_color(c0, c1, (d - t0) / (t1 - t0).max(1e-3)), alpha)
-    };
+    }
+}
+
+/// The panel's glow as pixels (straight RGBA, rows from the top), for the
+/// native layer under Liquid Glass cards: partly clear, so the system blur
+/// behind the panel shows (`CMDMEOW_LIQUID_GLOW`, default 0.75).
+pub fn panel_glow_rgba(w: u32, h: u32, light: bool) -> Vec<u8> {
+    static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    let alpha = *A.get_or_init(|| std::env::var("CMDMEOW_LIQUID_GLOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0.75));
+    let color = glow_color(Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32)), light, alpha, true);
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            out.extend_from_slice(&color(Pos2::new(x as f32 + 0.5, y as f32 + 0.5)).to_srgba_unmultiplied());
+        }
+    }
+    out
+}
+
+fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
+    let color_at = glow_color(rect, light, alpha, tall);
     // a fan of rings from the centre out to the rounded outline
     let outline = densify(&rounded_points(rect, radius), 24.0);
     let c = rect.center();

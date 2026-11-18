@@ -502,6 +502,12 @@ impl App {
     }
 
     /// Whether a tool's detail sheet sits beside the panel.
+    /// The panel's cards sit on native Liquid Glass (macOS 26, live only:
+    /// screenshots and demo views draw egui alone).
+    pub fn liquid_glass(&self) -> bool {
+        self.screenshot.is_none() && !self.demo && crate::kit::native::liquid_glass()
+    }
+
     pub fn sheet_open(&self) -> bool {
         self.detail.is_some()
     }
@@ -977,7 +983,13 @@ impl eframe::App for App {
             Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
-                glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
+                if self.liquid_glass() {
+                    // the glow is a native layer under the glass cards
+                    ui.painter().rect_stroke(full, m::CARD_RADIUS + 2.0, egui::Stroke::new(1.0, white(HAIRLINE_STRONG)), egui::StrokeKind::Inside);
+                } else {
+                    crate::kit::native::hide_card_glass();
+                    glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
+                }
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 if self.sheet_open() {
                     let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));

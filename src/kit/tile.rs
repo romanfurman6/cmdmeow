@@ -65,6 +65,31 @@ pub fn finish_press(ctx: &egui::Context) {
     }
 }
 
+thread_local! {
+    /// The panel draws its cards on native Liquid Glass: cards paint only
+    /// their hover and selection, and note their rects here.
+    static NATIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static NATIVE_RECTS: std::cell::RefCell<Vec<Rect>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Start (true) or stop collecting card rects for native glass; returns
+/// the cards collected since the last start.
+pub fn native_cards(on: bool) -> Vec<Rect> {
+    NATIVE.with(|n| n.set(on));
+    NATIVE_RECTS.with(|r| std::mem::take(&mut *r.borrow_mut()))
+}
+
+fn native(p: &egui::Painter, rect: Rect) -> bool {
+    if !NATIVE.with(|n| n.get()) {
+        return false;
+    }
+    // only the part that shows in the scrolling area
+    if rect.intersects(p.clip_rect()) {
+        NATIVE_RECTS.with(|r| r.borrow_mut().push(rect));
+    }
+    true
+}
+
 /// A widget card that isn't interactive (the update banner, a preview).
 pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     paint_base(p, rect);
@@ -73,6 +98,9 @@ pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
 
 /// The 1 pt base under the card.
 fn paint_base(p: &egui::Painter, rect: Rect) {
+    if NATIVE.with(|n| n.get()) {
+        return;
+    }
     p.rect_filled(rect.translate(Vec2::new(0.0, PRESS_DROP)), R_TILE, TILE_BASE());
 }
 
@@ -80,6 +108,16 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
 /// through), a sheen at its top, a shade at its bottom, the top highlight
 /// and the page cards' 1 pt edge.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
+    if native(p, rect) {
+        // the glass is the card: hover lifts it a little, selection rings it
+        if hover > 0.0 {
+            p.rect_filled(rect, R_TILE, with_alpha(white(255), 0.06 * hover));
+        }
+        if selected {
+            p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
+        }
+        return;
+    }
     p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
     let (sheen, shade) = (TILE_SHEEN(), TILE_SHADE());
     if sheen.a() > 0 {
