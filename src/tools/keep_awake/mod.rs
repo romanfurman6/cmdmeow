@@ -95,14 +95,7 @@ impl KeyRec {
 impl KeepAwake {
     pub fn new(env: &ToolEnv) -> Self {
         if env.demo {
-            // PROTOTYPE: CMDMEOW_DEMO_AWAKE=on|off|auto|winddown for the 1:2 redesign canvas
-            let (engine, t) = match std::env::var("CMDMEOW_DEMO_AWAKE").as_deref() {
-                Ok("on") => demo_engine(State::On),
-                Ok("off") => demo_engine(State::Off),
-                Ok("auto") => demo_engine_auto(State::Off, true),
-                Ok("winddown") => demo_engine(State::WindDown { left: 0 }),
-                _ => demo_engine(State::Agent),
-            };
+            let (engine, t) = demo_engine(State::Agent);
             return KeepAwake { engine: Arc::new(Mutex::new(engine)), demo_now: Some(t), keys: KeyRec::default() };
         }
         let engine: Shared = Arc::new(Mutex::new(Engine::new(Some(engine::data_dir()))));
