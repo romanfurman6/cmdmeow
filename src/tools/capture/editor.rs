@@ -1346,7 +1346,7 @@ impl Editor {
         let sr = Rect::from_min_max(to_screen(r.min), to_screen(r.max));
         match self.tool {
             Tool::Blur | Tool::Eraser => {
-                p.rect_filled(sr, 3.0, with_alpha(overlay::LIME, 0.16));
+                p.rect_filled(sr, 3.0, with_alpha(overlay::LINE, 0.16));
                 overlay::dashed(p, sr, 5.0, 3.0);
             }
             _ => {
