@@ -124,6 +124,7 @@ impl App {
         let demo = opts.screenshot.is_some();
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
+        super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
         if !demo {
             crate::kit::sound::prewarm();
         }
@@ -271,6 +272,7 @@ impl App {
             eframe::set_value(storage, super::settings::STORAGE_KEY, &WidgetPrefs::from_entries(&self.widgets));
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
+            eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
     }
@@ -491,7 +493,7 @@ impl App {
                     self.reshape(ctx);
                 }
                 Action::HidePanel => {
-                    if self.mode == Mode::Panel && self.visible && self.screenshot.is_none() {
+                    if !super::panel::keep_open() && self.mode == Mode::Panel && self.visible && self.screenshot.is_none() {
                         self.hide(ctx);
                     }
                 }
@@ -880,7 +882,7 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
+        if !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
             self.hide(ctx);
         }
     }
@@ -977,7 +979,7 @@ impl eframe::App for App {
             Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
-                glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);
+                glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 if self.sheet_open() {
                     let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));
@@ -1034,7 +1036,7 @@ impl eframe::App for App {
                 self.toast = None;
             }
         }
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1043,7 +1045,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on()) != (&off_before.0, off_before.1) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open()) != (&off_before.0, off_before.1, off_before.2) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
