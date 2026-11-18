@@ -838,7 +838,7 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
         cx.open_page(SHARING_ID, "");
     }
     let st = &c.settings.share;
-    let (where_, col_) = if st.set_up(VIDEO_ACCOUNT) { (format!("{}.{}/{}", st.bucket.trim(), st.endpoint.trim(), s.folder.trim_start_matches('/')), TEXT_DIM()) } else { ("Not set up".to_string(), AMBER()) };
+    let (where_, col_) = if st.set_up(VIDEO_ACCOUNT) { (st.place(&s.folder), TEXT_DIM()) } else { ("Not set up".to_string(), AMBER()) };
     text_fit(p, Pos2::new(lr.rect.left() - 10.0, y), Align2::RIGHT_CENTER, &where_, font(12.0), col_, card.width() * 0.55);
     if (shots && s != c.settings.shot_share) || (!shots && s != c.settings.share) {
         if shots {
@@ -858,7 +858,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let p = ui.painter().clone();
     let shared = super::share::all();
     let ready = c.settings.share.set_up(VIDEO_ACCOUNT);
-    let sub = if ready { format!("{} shared · {}.{}", shared.len(), c.settings.share.bucket.trim(), c.settings.share.endpoint.trim()) } else { String::new() };
+    let sub = if ready { format!("{} shared · {}", shared.len(), c.settings.share.bucket.trim()) } else { String::new() };
     // the main agent's chat walks them through a bucket and keys
     let agent = crate::kit::agent::main();
     let ask = super::share::setup::label(agent);
@@ -913,20 +913,22 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         // ask macOS for access now, while they're looking at Sharing
         secret::approve_now(VIDEO_ACCOUNT);
     }
-    if has_secret != c.settings.share.secret_saved {
-        c.settings.share.secret_saved = has_secret;
-        c.save_settings();
-    }
+    // on the page's own copy: the end of the page writes `s` back, so a
+    // flag set on the settings themselves was undone the same frame and
+    // Screenshot settings said "Not set up" with a key in the Keychain
+    s.secret_saved = has_secret;
     let resp = field(ui, frect(card, 3), &mut c.share_secret, if has_secret { "Saved in the Keychain" } else { "Secret key" }, true);
     if resp.lost_focus() && !c.share_secret.is_empty() {
         let v = std::mem::take(&mut c.share_secret);
         let v = v.trim();
         match secret::set(VIDEO_ACCOUNT, v) {
-            Ok(()) if v.is_empty() => c.has_secret = Some(false),
+            Ok(()) if v.is_empty() => {
+                c.has_secret = Some(false);
+                s.secret_saved = false;
+            }
             Ok(()) => {
                 c.has_secret = Some(true);
-                c.settings.share.secret_saved = true;
-                c.save_settings();
+                s.secret_saved = true;
                 // read it straight back: any approval happens now, not on the first upload
                 secret::approve_now(VIDEO_ACCOUNT);
                 c.hud("Secret key saved in the Keychain")
