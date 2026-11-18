@@ -203,6 +203,56 @@ pub fn junk_ramp(i: usize) -> Color32 {
     pick(hex(DARK[i]), hex(LIGHT[i]))
 }
 
+/// What the app draws over the user's picture or video frame (C16):
+/// selection frames, handles, crop and drag-out outlines, a pinned
+/// screenshot's edge. Fixed colours, the same in both themes, because they
+/// sit on the user's content, not on the app.
+pub mod overlay {
+    use super::hex;
+    use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
+
+    /// The lime of lines and handles.
+    pub const LIME: Color32 = hex(0xC8F05A);
+    /// The dark ring around handles and under lines.
+    pub const RING: Color32 = hex(0x0E1405);
+    /// A handle's side, at rest and while hovered or dragged.
+    pub const HANDLE: f32 = 10.0;
+    pub const HANDLE_HOT: f32 = 12.0;
+    /// How far from a handle's centre a press still grabs it.
+    pub const GRAB: f32 = 12.0;
+    /// A side shorter than this shows no middle handle.
+    pub const MID_MIN: f32 = 64.0;
+    /// How far a selected mark's frame and handles sit outside it, so they
+    /// never cover the mark itself.
+    pub const OUTSET: f32 = 8.0;
+
+    fn under() -> Stroke {
+        Stroke::new(3.0, Color32::from_rgba_unmultiplied(RING.r(), RING.g(), RING.b(), 179))
+    }
+
+    /// A solid frame: 1.5 pt lime over a 3 pt dark under-stroke.
+    pub fn frame(p: &Painter, r: Rect, radius: f32, kind: StrokeKind) {
+        p.rect_stroke(r, radius, under(), kind);
+        p.rect_stroke(r, radius, Stroke::new(1.5, LIME), kind);
+    }
+
+    /// A dashed frame: the same lime dashes over a solid dark band.
+    pub fn dashed(p: &Painter, r: Rect, dash: f32, gap: f32) {
+        let pts = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+        p.add(Shape::line(pts.to_vec(), under()));
+        p.extend(Shape::dashed_line(&pts, Stroke::new(1.5, LIME), dash, gap));
+    }
+
+    /// One handle: a lime square with a dark ring and a faint white halo.
+    pub fn handle(p: &Painter, at: Pos2, hot: bool) {
+        let s = if hot { HANDLE_HOT } else { HANDLE };
+        let r = Rect::from_center_size(at, Vec2::splat(s));
+        p.rect_filled(r.expand(2.5), 5.0, Color32::from_white_alpha(153));
+        p.rect_filled(r.expand(1.5), 4.0, RING);
+        p.rect_filled(r, 2.5, if hot { super::lerp_color(LIME, Color32::WHITE, 0.3) } else { LIME });
+    }
+}
+
 /// Tool tints by group: Clean (lime), Monitor (cyan), Create (apricot),
 /// Utilities (lavender).
 pub mod tint {

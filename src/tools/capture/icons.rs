@@ -64,7 +64,7 @@ fn symbol(i: Ico) -> &'static str {
         Ico::Frame => "photo.artframe",
         Ico::Text => "textformat",
         Ico::Highlight => "highlighter",
-        Ico::Blur => "square.grid.3x3",
+        Ico::Blur => "eye.slash",
         Ico::Eraser => "eraser",
         Ico::Steps => "1.circle",
         Ico::Crop => "crop",
@@ -163,9 +163,16 @@ pub fn draw(p: &Painter, i: Ico, rect: Rect, color: Color32) {
             closed(&[(14.0, 4.0), (20.0, 10.0), (12.0, 18.0), (8.0, 18.0), (8.0, 14.0)]);
         }
         Ico::Blur => {
-            for (x, y) in [(4.0, 4.0), (14.0, 4.0), (4.0, 14.0), (14.0, 14.0)] {
-                boxr(x, y, x + 6.0, y + 6.0);
-            }
+            // an eye, struck through: hide what's under it
+            let eye: Vec<Pos2> = (0..=24)
+                .map(|k| {
+                    let t = k as f32 / 24.0 * std::f32::consts::TAU;
+                    pt(12.0 + 9.5 * t.cos(), 12.0 + 6.4 * t.sin() * (1.0 - 0.25 * t.cos().abs()))
+                })
+                .collect();
+            p.add(PathShape::closed_line(eye, PathStroke::new(w, color)));
+            circle(12.0, 12.0, 3.2);
+            line(&[(4.0, 4.0), (20.0, 20.0)]);
         }
         Ico::Eraser => {
             line(&[(7.0, 20.0), (20.0, 20.0)]);

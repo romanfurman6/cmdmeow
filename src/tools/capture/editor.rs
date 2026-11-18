@@ -295,6 +295,10 @@ pub struct Editor {
     area_resize: Option<(usize, Rect)>,
     /// This drag (in a drawing tool) moves or resizes the selected shape.
     grab: bool,
+    /// Where the press landed relative to the handle it grabbed (image px):
+    /// handles sit outside the mark (C16), so a drag moves the edge by the
+    /// pointer's travel, without a jump.
+    grab_off: Vec2,
     status: Option<(String, Instant)>,
     /// How far the Share upload is (0..1), while it runs.
     pub share_progress: Option<f32>,
@@ -337,6 +341,7 @@ impl Editor {
             ocr_busy: false,
             area: None,
             area_resize: None,
+            grab_off: Vec2::ZERO,
             grab: false,
             status: None,
             share_progress: None,
@@ -1083,15 +1088,21 @@ impl Editor {
         }
         // shapes; with a frame they stop at the picture's edge, as in the export
         let mp = if geom.is_some() { p.with_clip_rect(shown.intersect(area)) } else { p.clone() };
+        // the handle under the pointer or being dragged grows (C16)
+        let pointer = ctx.pointer_hover_pos().map(to_img);
+        let hot = self.resizing.as_ref().map(|r| (r.0, r.1)).or_else(|| pointer.and_then(|q| self.handle_at(q, scale)));
+        let hot_area = self.area_resize.map(|a| a.0).or_else(|| pointer.and_then(|q| self.area_handle_at(q, scale)));
         for (i, m) in self.doc.marks.iter().enumerate() {
             draw_mark(&mp, m, &to_screen, scale);
             if self.selected == Some(i) {
-                let b = m.bounds();
-                p.rect_stroke(Rect::from_min_max(to_screen(b.min), to_screen(b.max)).expand(3.0), 3.0, Stroke::new(1.0, with_alpha(ACCENT(), 0.6)), StrokeKind::Outside);
-                for h in m.handles() {
-                    let hr = Rect::from_center_size(to_screen(h), Vec2::splat(8.0));
-                    p.rect_filled(hr, 2.0, Color32::WHITE);
-                    p.rect_stroke(hr, 2.0, Stroke::new(1.5, ACCENT()), StrokeKind::Middle);
+                // frame and handles sit outside the mark so they never cover
+                // it; arrows show only their two ends (C16)
+                if !matches!(m, Mark::Arrow { .. }) {
+                    let b = m.bounds();
+                    overlay::frame(&p, Rect::from_min_max(to_screen(b.min), to_screen(b.max)).expand(overlay::OUTSET), 3.0, StrokeKind::Middle);
+                }
+                for (k, h) in handle_spots(m, scale) {
+                    overlay::handle(&p, to_screen(h), hot == Some((i, k)));
                 }
             }
         }
@@ -1108,13 +1119,10 @@ impl Editor {
         if let Some(c) = live {
             let cr = Rect::from_min_max(to_screen(c.min), to_screen(c.max));
             shade_outside(&p, shown, cr);
-            let corners = [cr.left_top(), cr.right_top(), cr.right_bottom(), cr.left_bottom(), cr.left_top()];
-            p.extend(egui::Shape::dashed_line(&corners, Stroke::new(1.5, Color32::WHITE), 6.0, 4.0));
+            overlay::dashed(&p, cr, 6.0, 4.0);
             if self.drag.is_none() {
-                for h in render::box_handles(c) {
-                    let hr = Rect::from_center_size(to_screen(h), Vec2::splat(8.0));
-                    p.rect_filled(hr, 2.0, Color32::WHITE);
-                    p.rect_stroke(hr, 2.0, Stroke::new(1.0, Color32::from_black_alpha(90)), StrokeKind::Outside);
+                for (k, h) in box_spots(c, scale) {
+                    overlay::handle(&p, to_screen(h), hot_area == Some(k));
                 }
             }
             tag(&p, cr.right_bottom() + Vec2::new(6.0, 6.0), &format!("{:.0} × {:.0}", c.width().round(), c.height().round()));
@@ -1131,7 +1139,7 @@ impl Editor {
         // resizes it, as in Select; anywhere else it draws a new one
         let draws = self.tool.drags() || self.tool == Tool::Pen;
         if draws && resp.drag_started() {
-            self.grab = resp.interact_pointer_pos().map(at_img).is_some_and(|q| self.on_selected(q, scale));
+            self.grab = resp.interact_pointer_pos().map(to_img).is_some_and(|q| self.on_selected(q, scale));
         }
         if draws && resp.clicked() {
             if let Some(q) = resp.interact_pointer_pos().map(at_img) {
@@ -1139,7 +1147,7 @@ impl Editor {
                 self.selected = self.doc.marks.iter().rposition(|m| m.hit(q, slack));
             }
         }
-        if draws && !self.grab && hover.is_some_and(|h| self.on_selected(at_img(h), scale)) {
+        if draws && !self.grab && resp.hover_pos().is_some_and(|h| self.on_selected(to_img(h), scale)) {
             ctx.set_cursor_icon(egui::CursorIcon::Move);
         }
         let grab = self.grab;
@@ -1165,14 +1173,14 @@ impl Editor {
                     self.finish_drag(a, b, ui.ctx());
                 }
             }
-            if hover.is_some_and(|h| !self.on_selected(at_img(h), scale)) {
+            if hover.is_some_and(|h| !self.on_selected(to_img(h), scale)) {
                 ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
             }
         }
         let alt = ctx.input(|i| i.modifiers.alt);
         match self.tool {
-            Tool::Select => self.select_tool(&resp, &at_img, ui.ctx(), scale, alt),
-            _ if grab => self.select_tool(&resp, &at_img, ui.ctx(), scale, false),
+            Tool::Select => self.select_tool(&resp, &at_img, &to_img, view, ui.ctx(), scale, alt),
+            _ if grab => self.select_tool(&resp, &at_img, &to_img, view, ui.ctx(), scale, false),
             Tool::Pen => {
                 if resp.drag_started() {
                     if let Some(s) = resp.interact_pointer_pos().filter(|s| shown.contains(*s)) {
@@ -1314,8 +1322,8 @@ impl Editor {
         let sr = Rect::from_min_max(to_screen(r.min), to_screen(r.max));
         match self.tool {
             Tool::Blur | Tool::Eraser => {
-                p.rect_filled(sr, 3.0, with_alpha(ACTION(), 0.16));
-                p.extend(egui::Shape::dashed_line(&[sr.left_top(), sr.right_top(), sr.right_bottom(), sr.left_bottom(), sr.left_top()], Stroke::new(1.5, ACCENT()), 5.0, 3.0));
+                p.rect_filled(sr, 3.0, with_alpha(overlay::LIME, 0.16));
+                overlay::dashed(p, sr, 5.0, 3.0);
             }
             _ => {
                 if let Some(m) = self.mark_from_drag(a, b) {
@@ -1410,10 +1418,11 @@ impl Editor {
         }
     }
 
-    /// The selected mark's handle under `q` (image px), if any.
+    /// The selected mark's handle under `q` (image px), if any: the nearest
+    /// one within the grab zone (C16).
     fn handle_at(&self, q: Pos2, scale: f32) -> Option<(usize, usize)> {
         let i = self.selected?;
-        let k = self.doc.marks.get(i)?.handles().iter().position(|h| (*h - q).length() * scale <= 7.0)?;
+        let k = nearest(&handle_spots(self.doc.marks.get(i)?, scale), q, scale)?;
         Some((i, k))
     }
 
@@ -1425,18 +1434,21 @@ impl Editor {
 
     /// The picked area's handle under `q` (image px), if any.
     fn area_handle_at(&self, q: Pos2, scale: f32) -> Option<usize> {
-        render::box_handles(self.area?).iter().position(|h| (*h - q).length() * scale <= 7.0)
+        nearest(&box_spots(self.area?, scale), q, scale)
     }
 
     /// Select: click a mark to select it, drag it to move, drag a handle to
     /// resize; drag an empty spot (or ⌥-drag anywhere) to pick an area.
-    fn select_tool(&mut self, resp: &egui::Response, at_img: &dyn Fn(Pos2) -> Pos2, ctx: &egui::Context, scale: f32, alt: bool) {
+    /// `raw` maps a screen point to image px without clamping to the
+    /// picture (`view`): handles can sit just outside it.
+    fn select_tool(&mut self, resp: &egui::Response, at_img: &dyn Fn(Pos2) -> Pos2, raw: &dyn Fn(Pos2) -> Pos2, view: Rect, ctx: &egui::Context, scale: f32, alt: bool) {
         let slack = 6.0 / scale;
         let picking = self.tool == Tool::Select;
-        // handles first: they sit on or outside the mark's edge
+        // handles first: they sit outside the mark's edge
         if let Some(h) = resp.hover_pos() {
             let q = at_img(h);
-            if let Some((i, k)) = self.resizing.as_ref().map(|r| (r.0, r.1)).or_else(|| self.handle_at(q, scale)) {
+            let r = raw(h);
+            if let Some((i, k)) = self.resizing.as_ref().map(|r| (r.0, r.1)).or_else(|| self.handle_at(r, scale)) {
                 let corner = self.doc.marks.get(i).is_some_and(|m| matches!(m, Mark::Arrow { .. }));
                 ctx.set_cursor_icon(match (corner, k) {
                     (true, _) => egui::CursorIcon::Crosshair,
@@ -1445,7 +1457,7 @@ impl Editor {
                     (_, 1 | 5) => egui::CursorIcon::ResizeVertical,
                     _ => egui::CursorIcon::ResizeHorizontal,
                 });
-            } else if let Some(k) = self.area_resize.map(|a| a.0).or_else(|| self.area_handle_at(q, scale).filter(|_| picking)) {
+            } else if let Some(k) = self.area_resize.map(|a| a.0).or_else(|| self.area_handle_at(r, scale).filter(|_| picking)) {
                 ctx.set_cursor_icon(match k {
                     0 | 4 => egui::CursorIcon::ResizeNwSe,
                     2 | 6 => egui::CursorIcon::ResizeNeSw,
@@ -1459,14 +1471,22 @@ impl Editor {
             }
         }
         if resp.drag_started() {
-            if let Some(q) = resp.interact_pointer_pos().map(at_img) {
+            if let Some(q) = resp.interact_pointer_pos().map(raw) {
                 if let Some((i, k)) = self.handle_at(q, scale) {
+                    self.grab_off = q - self.doc.marks[i].handles()[k];
                     self.resizing = Some((i, k, self.doc.marks[i].clone()));
                 } else if let (true, Some(k), Some(a)) = (picking, self.area_handle_at(q, scale), self.area) {
+                    self.grab_off = q - render::box_handles(a)[k];
                     self.area_resize = Some((k, a));
                 }
             }
         }
+        // the edge follows the pointer's travel since the press, kept on the picture
+        let off = self.grab_off;
+        let target = |s: Pos2| {
+            let t = raw(s) - off;
+            Pos2::new(t.x.clamp(view.min.x, view.max.x), t.y.clamp(view.min.y, view.max.y))
+        };
         if let Some((i, k, orig)) = self.resizing.clone() {
             if i >= self.doc.marks.len() {
                 self.resizing = None;
@@ -1474,7 +1494,7 @@ impl Editor {
             }
             if let (true, Some(s)) = (resp.dragged() || resp.drag_stopped(), resp.interact_pointer_pos()) {
                 let mut m = orig.clone();
-                m.drag_handle(k, at_img(s));
+                m.drag_handle(k, target(s));
                 self.doc.marks[i] = m;
             }
             if resp.drag_stopped() {
@@ -1489,7 +1509,7 @@ impl Editor {
         }
         if let Some((k, orig)) = self.area_resize {
             if let (true, Some(s)) = (resp.dragged() || resp.drag_stopped(), resp.interact_pointer_pos()) {
-                self.area = Some(render::resize_box(orig, k, at_img(s)));
+                self.area = Some(render::resize_box(orig, k, target(s)));
             }
             if resp.drag_stopped() {
                 self.area_resize = None;
@@ -1753,6 +1773,49 @@ fn chip(ui: &mut Ui, r: Rect, label: &str, on: bool) -> egui::Response {
     resp
 }
 
+/// The selected mark's handles to draw and grab (image px), with their
+/// index into [`Mark::handles`]. They sit [`overlay::OUTSET`] outside the
+/// mark so they never cover it; an arrow's beyond its two ends (C16).
+fn handle_spots(m: &Mark, scale: f32) -> Vec<(usize, Pos2)> {
+    let out = overlay::OUTSET / scale;
+    match m {
+        Mark::Arrow { a, b, .. } => {
+            let d = (*b - *a).normalized();
+            let d = if d.x.is_finite() && d.y.is_finite() { d } else { Vec2::ZERO };
+            let o = (overlay::OUTSET + 2.0) / scale;
+            vec![(0, *a - d * o), (1, *b + d * o)]
+        }
+        _ if m.handles().len() == 8 => box_spots(m.bounds().expand(out), scale),
+        _ => Vec::new(),
+    }
+}
+
+/// A box's corner and edge-middle handles (image px), clockwise from the top
+/// left as in [`render::box_handles`]; a side shorter than
+/// [`overlay::MID_MIN`] on screen keeps only its corners.
+fn box_spots(r: Rect, scale: f32) -> Vec<(usize, Pos2)> {
+    let (w, h) = (r.width() * scale, r.height() * scale);
+    render::box_handles(r)
+        .into_iter()
+        .enumerate()
+        .filter(|(k, _)| match k {
+            1 | 5 => w >= overlay::MID_MIN,
+            3 | 7 => h >= overlay::MID_MIN,
+            _ => true,
+        })
+        .collect()
+}
+
+/// The spot nearest `q` within the grab zone, if any.
+fn nearest(spots: &[(usize, Pos2)], q: Pos2, scale: f32) -> Option<usize> {
+    spots
+        .iter()
+        .map(|(k, h)| (*k, (*h - q).length() * scale))
+        .filter(|(_, d)| *d <= overlay::GRAB)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(k, _)| k)
+}
+
 fn shade_outside(p: &egui::Painter, shown: Rect, keep: Rect) {
     let keep = keep.intersect(shown);
     let shade = Color32::from_black_alpha(140);
@@ -1848,6 +1911,46 @@ mod tests {
 
     fn ed() -> Editor {
         Editor::new(None, "t".into(), RgbaImage::from_pixel(200, 100, image::Rgba([255, 255, 255, 255])), 2.0, BlurStyle::Pixelate, Cover::Box, true, Frame::default())
+    }
+
+    #[test]
+    fn handles_sit_outside_the_mark_and_grab_the_nearest() {
+        // scale 0.5: 1 screen pt = 2 image px
+        let scale = 0.5;
+        let r = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(300.0, 200.0));
+        let m = Mark::Blur { r, style: BlurStyle::Pixelate, boxes: vec![] };
+        let spots = handle_spots(&m, scale);
+        assert_eq!(spots.len(), 8, "a 100×50 pt box keeps all eight");
+        // OUTSET pt outside the box, so they never cover it
+        assert_eq!(spots[0], (0, r.min - Vec2::splat(overlay::OUTSET / scale)));
+        // 11 pt from the top-left handle still grabs it; 13 pt does not
+        let tl = spots[0].1;
+        assert_eq!(nearest(&spots, tl + Vec2::new(22.0, 0.0), scale), Some(0));
+        assert_eq!(nearest(&spots, tl + Vec2::new(-26.0, 0.0), scale), None);
+        // between two handles the nearer one wins
+        let top_mid = spots[1].1;
+        assert_eq!(nearest(&spots, top_mid - Vec2::new(4.0, 0.0), scale), Some(1));
+    }
+
+    #[test]
+    fn short_sides_drop_their_middle_handle() {
+        // 200×40 px at scale 1: wide enough for top/bottom middles, too short for left/right
+        let r = Rect::from_min_max(Pos2::ZERO, Pos2::new(200.0, 40.0));
+        let ks: Vec<usize> = box_spots(r, 1.0).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(ks, vec![0, 1, 2, 4, 5, 6]);
+        let tiny: Vec<usize> = box_spots(Rect::from_min_max(Pos2::ZERO, Pos2::new(30.0, 30.0)), 1.0).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(tiny, vec![0, 2, 4, 6]);
+    }
+
+    #[test]
+    fn arrow_handles_sit_beyond_its_ends() {
+        let m = Mark::Arrow { a: Pos2::new(0.0, 0.0), b: Pos2::new(100.0, 0.0), color: [0; 4], width: 4.0, heads: Heads::default() };
+        let spots = handle_spots(&m, 1.0);
+        assert_eq!(spots.len(), 2);
+        assert!(spots[0].1.x < 0.0 && spots[1].1.x > 100.0);
+        // a zero-length arrow keeps its handles on the point instead of NaN
+        let dot = Mark::Arrow { a: Pos2::new(5.0, 5.0), b: Pos2::new(5.0, 5.0), color: [0; 4], width: 4.0, heads: Heads::default() };
+        assert!(handle_spots(&dot, 1.0).iter().all(|(_, p)| p.x.is_finite()));
     }
 
     #[test]
