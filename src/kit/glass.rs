@@ -974,26 +974,43 @@ pub fn stat_ring(p: &Painter, c: Pos2, d: f32, frac: f32, tint: Color32, value: 
     if value.is_empty() {
         return;
     }
-    // the value and caption sit inside the ring with air on every side: the
-    // width they get is the chord at the block's top and bottom, not the
-    // diameter, so a long value ("1.34 TB") is set smaller, never on the arc
-    let ri = r - STROKE / 2.0 - 6.0;
-    let small = line_h(p, &ty::label());
-    let chord = |big: f32| {
-        let h = ((big + 2.0 + small) / 2.0).min(ri);
-        2.0 * (ri * ri - h * h).max(0.0).sqrt()
+    // the value and caption sit inside the ring with air on every side and
+    // never cut ("244…"): the width they get is the chord at the block's top
+    // and bottom, not the diameter. A long value or a small ring sets the
+    // value smaller; when even that doesn't fit, the caption goes and the
+    // value takes the middle alone.
+    let ri = r - STROKE / 2.0 - 4.0;
+    let chord = |h: f32| 2.0 * (ri * ri - (h / 2.0).min(ri).powi(2)).max(0.0).sqrt();
+    let width = |f: &FontId, t: &str| p.layout_no_wrap(t.to_owned(), f.clone(), TEXT()).size().x;
+    let label = ty::label();
+    let small = line_h(p, &label);
+    let cap_w = if caption.is_empty() { 0.0 } else { width(&label, caption) };
+    let hero = ty::hero();
+    let fit = |with_caption: bool| -> Option<FontId> {
+        let mut size = hero.size;
+        while size >= 12.0 {
+            let f = FontId::new(size, hero.family.clone());
+            let big = line_h(p, &f);
+            let h = if with_caption { big + 2.0 + small } else { big };
+            let c = chord(h);
+            if width(&f, value) <= c && (!with_caption || cap_w <= c) {
+                return Some(f);
+            }
+            size -= 1.0;
+        }
+        None
     };
-    let mut big_f = ty::hero();
-    let tw = p.layout_no_wrap(value.to_owned(), big_f.clone(), TEXT()).size().x;
-    let inner = chord(line_h(p, &big_f));
-    if tw > inner {
-        big_f.size = (big_f.size * inner / tw).max(11.0);
-    }
+    let (big_f, with_caption) = match fit(!caption.is_empty()) {
+        Some(f) => (f, !caption.is_empty()),
+        None => (fit(false).unwrap_or(FontId::new(12.0, hero.family.clone())), false),
+    };
     let big = line_h(p, &big_f);
-    let inner = chord(big).max(inner);
-    let y0 = c.y - (big + 2.0 + small) / 2.0;
-    text_fit(p, Pos2::new(c.x, y0), Align2::CENTER_TOP, value, big_f, TEXT(), inner);
-    text_fit(p, Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, caption, ty::label(), TEXT_DIM(), inner);
+    let h = if with_caption { big + 2.0 + small } else { big };
+    let y0 = c.y - h / 2.0;
+    p.text(Pos2::new(c.x, y0), Align2::CENTER_TOP, value, big_f, TEXT());
+    if with_caption {
+        p.text(Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, caption, label, TEXT_DIM());
+    }
 }
 
 /// How full a disk is, 0..1 (0 when its size is unknown).
