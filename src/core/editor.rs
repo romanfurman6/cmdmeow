@@ -201,13 +201,14 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
                 } else if resp.hovered() {
                     p.rect_filled(rr, 7.0, white(ROW_HOVER));
                 }
-                icon(&p, it.glyph, Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(14.0)), if sel { ACCENT() } else { lift(it.color) });
-                let mut right = rr.right() - 8.0;
+                // H9: 12 in from the lit edge, both sides
+                icon(&p, it.glyph, Rect::from_center_size(Pos2::new(rr.left() + sp::M + 7.0, rr.center().y), Vec2::splat(14.0)), if sel { ACCENT() } else { lift(it.color) });
+                let mut right = rr.right() - sp::M;
                 if it.added {
                     p.circle_filled(Pos2::new(right - 3.0, rr.center().y), 3.0, GREEN());
                     right -= 12.0;
                 }
-                text_fit(&p, Pos2::new(rr.left() + 32.0, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), if sel { ACCENT() } else { TEXT() }, right - rr.left() - 36.0);
+                text_fit(&p, Pos2::new(rr.left() + sp::M + 14.0 + sp::S, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), if sel { ACCENT() } else { TEXT() }, right - rr.left() - sp::M - 14.0 - sp::S - 4.0);
                 if resp.clicked() {
                     app.gallery_pick = it.key.clone();
                 }
