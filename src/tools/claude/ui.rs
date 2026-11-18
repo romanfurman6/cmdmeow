@@ -24,7 +24,7 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
     match size {
         // W4: the ring and the number; Session and its reset in the tip
         Size::S11 => {
-            let tip = session.as_ref().map(|l| format!("Session · {}", short_reset(&l.resets))).unwrap_or_else(|| status(cl));
+            let tip = session.as_ref().map(|l| format!("Session · resets {}", super::parts::reset_when(l))).unwrap_or_else(|| status(cl));
             tile::small_ring(ui, r, id, Icon::Gauge, pct / 100.0, col, &value, sel).on_hover_text(tip)
         }
         // W3, W8: "AI Usage", the session %, when it resets
@@ -32,12 +32,15 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
             let ring_ = session.as_ref().map(|_| ((pct / 100.0).max(0.01), col));
             let caption = match &session {
                 Some(l) => {
-                    // another day reads "Resets Nov 19 at 11pm": where that doesn't
-                    // fit beside the ring, the day alone (the hour is in the sheet)
-                    let full = cap_reset(&l.resets);
+                    // the same time as the page and the sheet ("Resets 20:29",
+                    // C6); another day reads "Resets Sun 08:52": where that
+                    // doesn't fit beside the ring, the day alone (the hour
+                    // is in the sheet)
+                    let when = super::parts::reset_when(l);
+                    let full = format!("Resets {when}");
                     let room = if size == Size::S12 { r.width() } else { tile::ROW_SPLIT } - (tile::PAD + 50.0 + tile::PAD) - tile::PAD;
                     let fits = ui.painter().layout_no_wrap(full.clone(), ty::caption(), TEXT()).size().x <= room;
-                    if fits { full } else { full.split(" at ").next().unwrap_or(&full).to_string() }
+                    if when.is_empty() { "Not started".to_string() } else if fits { full } else { format!("Resets {}", when.split(' ').next().unwrap_or(&when)) }
                 }
                 None => status(cl),
             };
@@ -68,7 +71,7 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
             let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), "AI Usage", &status(cl));
             let rows: Vec<(&str, _, String)> = [("Session", cl.session()), ("Week", cl.weekly())]
                 .into_iter()
-                .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, short_reset(&l.resets).trim_start_matches("resets "))).unwrap_or_default()))
+                .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, super::parts::reset_when(l))).unwrap_or_default()))
                 .collect();
             let cols = tile::bar_cols(p, &rows.iter().map(|r| (r.0, r.2.as_str())).collect::<Vec<_>>());
             for (k, (label, l, v)) in rows.iter().enumerate() {
@@ -118,16 +121,6 @@ fn status(cl: &UsageInfo) -> String {
         cl.error.clone().unwrap_or_else(|| "No data yet".into())
     } else {
         format!("{} tokens today", backend::human_tokens(cl.local.tokens_today))
-    }
-}
-
-/// "Resets 18:45": a caption line.
-fn cap_reset(s: &str) -> String {
-    let r = short_reset(s);
-    let mut c = r.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
     }
 }
 
