@@ -335,17 +335,17 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
 }
 
 /// "WPA3 PERSONAL" -> "WPA3 Personal".
-fn title_case(s: &str) -> String {
+pub(super) fn title_case(s: &str) -> String {
     s.split(' ').map(|w| if w.chars().any(|c| c.is_ascii_digit()) || w.len() <= 3 { w.to_string() } else { let l = w.to_lowercase(); let mut c = l.chars(); c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default() }).collect::<Vec<_>>().join(" ")
 }
 
 /// "149 (5GHz, 80MHz)" -> "149 · 5 GHz · 80 MHz".
-fn channel_text(s: &str) -> String {
+pub(super) fn channel_text(s: &str) -> String {
     s.replace(" (", " · ").replace(", ", " · ").replace(')', "").replace("GHz", " GHz").replace("MHz", " MHz").replace("  ", " ")
 }
 
 /// "31% · 1.4 GHz" (no clock while idle).
-fn usage_text(u: crate::kit::ioreport::Usage) -> String {
+pub(super) fn usage_text(u: crate::kit::ioreport::Usage) -> String {
     let pct = format!("{:.0}%", u.busy * 100.0);
     if u.mhz <= 0.0 || u.busy < 0.005 {
         pct
@@ -357,7 +357,7 @@ fn usage_text(u: crate::kit::ioreport::Usage) -> String {
 }
 
 /// "3.4 W", "0.12 W".
-fn watts(w: f32) -> String {
+pub(super) fn watts(w: f32) -> String {
     if w < 1.0 {
         format!("{w:.2} W")
     } else {
