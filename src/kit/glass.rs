@@ -753,14 +753,44 @@ pub fn icon_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
 
 /// The round 28 pt close / refresh button used in sheet headers (B1).
 pub fn round_button(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
-    let rect = Rect::from_center_size(rect.center(), Vec2::splat(BTN_H_ROW));
+    round_button_in(ui, Rect::from_center_size(rect.center(), Vec2::splat(BTN_H_ROW)), ic, tip)
+}
+
+/// [`round_button`] filling `rect` exactly (a button that grows in as it
+/// slides out).
+pub fn round_button_in(ui: &mut Ui, rect: Rect, ic: Icon, tip: &str) -> Response {
+    round_button_with(ui, rect, tip, |p, r, col| icon(p, ic, r, col))
+}
+
+/// A round button filling `rect` whose glyph `draw` paints in the given
+/// rect and colour.
+pub fn round_button_with(ui: &mut Ui, rect: Rect, tip: &str, draw: impl FnOnce(&Painter, Rect, Color32)) -> Response {
     let id = ui.scope_id().with(("round-btn", tip, rect.min.x as i32, rect.min.y as i32));
     let k = key::press(ui, rect, id, true, Some(Click::Round));
     let p = ui.painter();
     let look = key::Look::quiet(0.08, 0.20).radius(rect.height() / 2.0);
     let face = key::paint(p, rect, &look, &k);
-    icon(p, ic, Rect::from_center_size(face.center(), Vec2::splat(rect.height() * 0.46)), lerp_color(TEXT_SOFT(), TEXT(), k.hover));
+    draw(p, Rect::from_center_size(face.center(), Vec2::splat(rect.height() * 0.46)), lerp_color(TEXT_SOFT(), TEXT(), k.hover));
     k.resp.on_hover_text(tip)
+}
+
+/// "…" at `t` 0, "›" at `t` 1: the three dots slide onto the chevron's
+/// three corners and the strokes between them draw in.
+pub fn more_glyph(p: &Painter, rect: Rect, t: f32, color: Color32) {
+    let c = rect.center();
+    let u = rect.width().min(rect.height()) / 24.0;
+    let pt = |x: f32, y: f32| c + Vec2::new((x - 12.0) * u, (y - 12.0) * u);
+    let w = (1.8 * u).max(1.1);
+    let from = [(5.5, 12.0), (12.0, 12.0), (18.5, 12.0)];
+    let to = [(9.0, 5.5), (15.5, 12.0), (9.0, 18.5)];
+    let at: Vec<Pos2> = from.iter().zip(to).map(|(a, b)| pt(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)).collect();
+    if t > 0.01 {
+        p.add(PathShape::line(at.clone(), PathStroke::new(w, color.gamma_multiply(t))));
+    }
+    // the dots thin down to the stroke's width as they arrive
+    for d in &at {
+        p.circle_filled(*d, (1.9 + (w / u / 2.0 - 1.9) * t) * u, color);
+    }
 }
 
 /// Text link in bold [`ACCENT`]: lighter and underlined on hover, the text
@@ -1722,6 +1752,8 @@ pub enum Icon {
     SpeakerOff,
     /// A plus: add something.
     Plus,
+    /// A dash: hides the menu bar panel.
+    Minus,
 }
 
 /// The SF Symbol behind each icon (outline variants: icons are monochrome strokes).
@@ -1779,6 +1811,7 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Window => "macwindow",
         Icon::Close => "xmark",
         Icon::Plus => "plus",
+        Icon::Minus => "minus",
         Icon::Refresh => "arrow.clockwise",
         Icon::Search => "magnifyingglass",
         Icon::Grip => "circle.grid.2x3.fill",
@@ -2043,6 +2076,7 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(12.0, 5.0), (12.0, 19.0)]);
             open(&[(5.0, 12.0), (19.0, 12.0)]);
         }
+        Icon::Minus => open(&[(5.0, 12.0), (19.0, 12.0)]),
         Icon::Refresh => {
             arc(12.0, 12.0, 8.0, -PI * 0.25, PI * 1.6);
             open(&[(20.0, 4.0), (20.0, 9.0), (15.0, 9.0)]);
