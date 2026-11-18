@@ -49,40 +49,35 @@ fn reset_short(s: &str) -> String {
     if s.is_empty() { String::new() } else { format!("Resets {s}") }
 }
 
-/// A thin ring: a faint arc up to where even use would be by now, the
-/// used share on top in the limit's colour. Running ahead of pace shows as
-/// colour past the faint arc; no extra marks.
-pub fn pace_ring(p: &egui::Painter, c: Pos2, r: f32, w: f32, l: &Limit) {
-    use std::f32::consts::{FRAC_PI_2, TAU};
-    // solid colours mixed over the card, so overlapping caps don't
-    // double up the way translucent strokes would
+/// The faint arc of a limit's ring (SP2 `stat_ring_paced`): where even use
+/// would be by now, as a solid colour mixed over the card so its caps don't
+/// double up. None when the window's start isn't known.
+pub fn pace_arc(l: &Limit) -> Option<(f32, Color32)> {
+    let pc = pace::of_limit(l, now())?;
     let base = {
         let [r_, g, b, a] = CARD().to_srgba_unmultiplied();
         lerp_color(BG(), Color32::from_rgb(r_, g, b), a as f32 / 255.0)
     };
-    let ink = |k: f32| lerp_color(base, TEXT(), k);
-    stroke_circle(p, c, r, Stroke::new(w, ink(if is_light() { 0.06 } else { 0.08 })));
-    let arc = |f: f32, col: Color32| {
-        let f = f.clamp(0.0, 1.0);
-        if f <= 0.005 {
-            return;
-        }
-        let a0 = -FRAC_PI_2;
-        if f >= 0.999 {
-            stroke_circle(p, c, r, Stroke::new(w, col));
-            return;
-        }
-        let n = ((f * 96.0) as usize).max(4);
-        p.add(Shape::line(arc_points(c, r, a0, a0 + f * TAU, n), Stroke::new(w, col)));
-        for q in [c + Vec2::angled(a0) * r, c + Vec2::angled(a0 + f * TAU) * r] {
-            p.circle_filled(q, w / 2.0, col);
-        }
-    };
-    if let Some(pc) = pace::of_limit(l, now()) {
-        // lighter in light mode, where the same mix reads almost solid
-        arc(pc.expected / 100.0, ink(if is_light() { 0.18 } else { 0.22 }));
+    Some((pc.expected / 100.0, lerp_color(base, TEXT(), if is_light() { 0.18 } else { 0.22 })))
+}
+
+/// What a limit's card says beside its ring, each as a word over its time:
+/// when it runs out at this rate ("Runs out" / "Fri 19:10", red), then
+/// when it resets ("Resets" / "Sun 08:52"). A session that hasn't started
+/// (0% and no reset yet) says so.
+pub fn limit_lines(l: &Limit) -> Vec<(String, Color32)> {
+    let reset = reset_when(l);
+    if l.pct <= 0.0 && reset.is_empty() {
+        return vec![("Not started".into(), TEXT_DIM())];
     }
-    arc(l.pct / 100.0, limit_color(l));
+    let mut out = Vec::new();
+    if let Some(at) = pace::of_limit(l, now()).and_then(|p| p.out_at) {
+        out.push((format!("Runs out\n{}", alerts::when(at, now())), RED()));
+    }
+    if !reset.is_empty() {
+        out.push((format!("Resets\n{reset}"), TEXT_DIM()));
+    }
+    out
 }
 
 /// A thin bar with the even-use tick.
@@ -197,33 +192,47 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
 }
 
 
-/// Rows of name, a bar of its share, tokens and dollars.
-pub fn share_rows(p: &egui::Painter, r: Rect, rows: &[crate::kit::ai::Share], show_usd: bool, home: &str) {
-    // R4: name and value on one line, a 4 pt bar 8 pt under them
-    let rh = sp::BAR_ROW_H;
-    // one measure for every bar: dollars when shown (a model without a price
-    // is 0), else tokens; mixing them made the priced bars look empty
+/// A project's name for a list: its folder ("pdf-editor" for
+/// ~/Projects/pdf-editor), with the parent too when two folders share a
+/// name. The full path is never cut with "…" (R10).
+pub fn project_names(paths: &[&str], home: &str) -> Vec<String> {
+    let tail = |p: &str, n: usize| -> String {
+        let p = if home.is_empty() { p.to_string() } else { p.replacen(home, "~", 1) };
+        let parts: Vec<&str> = p.trim_end_matches('/').split('/').filter(|x| !x.is_empty()).collect();
+        if parts.len() <= 1 {
+            return p;
+        }
+        parts[parts.len().saturating_sub(n)..].join("/")
+    };
+    // a folder named like an id ("1f3a9c2e") says nothing alone: its parent too
+    let id_like = |p: &str| {
+        let last = p.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+        last.len() >= 8 && last.chars().any(|c| c.is_ascii_digit()) && last.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    };
+    let short: Vec<String> = paths.iter().map(|p| tail(p, if id_like(p) { 2 } else { 1 })).collect();
+    paths.iter().zip(&short).map(|(p, s)| if short.iter().filter(|x| *x == s).count() > 1 { tail(p, 2) } else { s.clone() }).collect()
+}
+
+/// Models or projects as name · bar · value lines (W5 columns shared in the
+/// card, the same lines as the widgets and Mac Health), 22 pt each, as many
+/// as fit. The bar is the share of dollars when shown (a model without a
+/// price is 0), else of tokens. A long name fades rather than pushing the
+/// bars out.
+pub fn share_lines(p: &egui::Painter, r: Rect, rows: &[crate::kit::ai::Share], show_usd: bool, home: &str) {
+    use crate::kit::ai::human_tokens;
     let usd_bars = show_usd && rows.iter().any(|s| s.usd > 0.0);
-    let value = |s: &crate::kit::ai::Share| if usd_bars { s.usd } else { s.tokens as f64 };
-    let top = rows.iter().map(value).fold(0.0, f64::max).max(1e-9);
-    for (k, s) in rows.iter().enumerate() {
-        let y = r.top() + k as f32 * rh;
-        if y + rh > r.bottom() + 1.0 {
-            break;
-        }
-        let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), rh));
-        let right = if show_usd { usd(s.usd) } else { crate::kit::ai::human_tokens(s.tokens) };
-        let ty_ = row.top() + 8.0;
-        let vr = p.text(Pos2::new(row.right(), ty_), Align2::RIGHT_CENTER, right, ty::label(), TEXT());
-        let mut x1 = vr.left() - sp::S;
-        if show_usd {
-            let tr = p.text(Pos2::new(x1, ty_), Align2::RIGHT_CENTER, crate::kit::ai::human_tokens(s.tokens), ty::label(), TEXT_FAINT());
-            x1 = tr.left() - sp::S;
-        }
-        let name = s.name.replacen(home, "~", 1);
-        text_fit(p, Pos2::new(row.left(), ty_), Align2::LEFT_CENTER, &name, ty::body(), TEXT_SOFT(), x1 - row.left());
-        let v = value(s);
-        bar(p, Rect::from_min_size(Pos2::new(row.left(), ty_ + 8.0 + 8.0), Vec2::new(row.width(), 4.0)), (v / top) as f32, with_alpha(tint::CLAUDE(), 0.7));
+    let measure = |s: &crate::kit::ai::Share| if usd_bars { s.usd } else { s.tokens as f64 };
+    let top = rows.iter().map(measure).fold(0.0, f64::max).max(1e-9);
+    let n = rows.len().min((r.height() / sp::LEGEND_H).floor().max(0.0) as usize);
+    let paths: Vec<&str> = rows.iter().take(n).map(|s| s.name.as_str()).collect();
+    let names = if paths.iter().any(|p| p.starts_with('/')) { project_names(&paths, home) } else { paths.iter().map(|p| p.to_string()).collect() };
+    let values: Vec<String> = rows.iter().take(n).map(|s| if show_usd { format!("{} tok · {}", human_tokens(s.tokens), usd(s.usd)) } else { format!("{} tok", human_tokens(s.tokens)) }).collect();
+    let (lw, vw) = crate::kit::tile::bar_cols(p, &names.iter().zip(&values).map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
+    let cols = (lw.min(r.width() * 0.4), vw);
+    for (k, s) in rows.iter().take(n).enumerate() {
+        let lr = Rect::from_min_size(Pos2::new(r.left(), r.top() + k as f32 * sp::LEGEND_H), Vec2::new(r.width(), sp::LEGEND_H));
+        let frac = ((measure(s) / top) as f32).max(0.01);
+        crate::kit::tile::bar_line(p, lr, &names[k], Some((frac, tint::CLAUDE())), &values[k], cols);
     }
 }
 
@@ -238,5 +247,33 @@ pub fn day_bars(p: &egui::Painter, r: Rect, daily: &[u64], gap: f32) {
         let br = Rect::from_min_max(Pos2::new(x, r.bottom() - h), Pos2::new(x + bw, r.bottom()));
         let last = i + 1 == daily.len();
         p.rect_filled(br, 2.0, if last { tint::CLAUDE() } else { white(46) });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{limit_lines, now, project_names};
+    use crate::kit::ai::Limit;
+
+    #[test]
+    fn limit_lines_say_not_started_runs_out_and_resets() {
+        // a session that hasn't started: 0% and nothing to reset
+        let idle = Limit { label: "Current session".into(), ..Default::default() };
+        assert_eq!(limit_lines(&idle).iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), ["Not started"]);
+        // a week at 90% two days in: runs out before it resets
+        let t = now();
+        let week = Limit { label: "Current week".into(), pct: 90.0, resets_at: Some(t + 5 * 86_400), window_secs: 7 * 86_400, ..Default::default() };
+        let lines: Vec<String> = limit_lines(&week).into_iter().map(|l| l.0).collect();
+        assert!(lines[0].starts_with("Runs out\n"), "{lines:?}");
+        assert!(lines.last().is_some_and(|l| l.starts_with("Resets\n")), "{lines:?}");
+        // no "…" and no pace words (T9)
+        assert!(lines.iter().all(|l| !l.contains('…') && !l.contains("pace")));
+    }
+
+    #[test]
+    fn project_names_are_folders_never_cut_paths() {
+        let home = "/Users/a";
+        let paths = ["/Users/a/Projects/pdf-editor", "/Users/a/Library/Application Support/Claude/scratch-workspaces/1f3a9c2e", "/Users/a/work/site", "/Users/a/Projects/site", "Home"];
+        assert_eq!(project_names(&paths, home), ["pdf-editor", "scratch-workspaces/1f3a9c2e", "work/site", "Projects/site", "Home"]);
     }
 }
