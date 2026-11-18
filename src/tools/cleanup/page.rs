@@ -152,7 +152,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let mut y = block.top() + (block_h - rows_h) / 2.0;
     if let (Some(l), Some(s)) = (&last, &sizes) {
         let cy = section_title(&p, x0, y, &format!("Last scan {}", super::engine::days_ago(l.when)));
-        p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, human_bytes(s.iter().sum()), ty::title(), TEXT());
+        crate::kit::glass::section_value(&p, x1, cy, &human_bytes(s.iter().sum()));
         y += head_h;
     }
     let max = sizes.as_ref().and_then(|s| s.iter().copied().max()).unwrap_or(0).max(1) as f32;

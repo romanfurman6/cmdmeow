@@ -1309,6 +1309,12 @@ pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     cy
 }
 
+/// A section title's value on the right (a total): same style as the title,
+/// so it reads as part of the header, not as one more row value.
+pub fn section_value(p: &Painter, x: f32, cy: f32, text: &str) {
+    p.text(Pos2::new(x, cy), Align2::RIGHT_CENTER, text, ty::section(), white(150));
+}
+
 /// Height a [`card_title`] takes above its card: the title and 12 (R2).
 pub const CARD_TITLE_H: f32 = 28.0;
 

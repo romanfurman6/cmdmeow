@@ -287,7 +287,7 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
     let listed = n_all > 0;
     let cy = section_title(&p, x0, y, "Apps");
     if listed {
-        p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n_all}"), ty::title(), TEXT());
+        crate::kit::glass::section_value(&p, x1, cy, &format!("{n_all}"));
     }
     y += head_h;
     {
@@ -310,9 +310,11 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
             p.circle_filled(icp, 14.0, with_alpha(TINT(), 0.14));
             icon(&p, ic, Rect::from_center_size(icp, Vec2::splat(16.0)), TINT());
             p.text(Pos2::new(x0 + 28.0 + sp::M, cy), Align2::LEFT_CENTER, name, ty::body(), TEXT());
-            if let Some(n) = n.filter(|_| listed) {
-                p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n}"), ty::title(), TEXT());
-            }
+            // every row has a value: the count, or a faint dash until the scan knows it
+            match n.filter(|_| listed) {
+                Some(n) => p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n}"), ty::title(), TEXT()),
+                None => p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, "—", ty::title(), TEXT_FAINT()),
+            };
             y += ROW_H;
         }
     }
