@@ -1090,7 +1090,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
             dashed_rect(p, br, 6.0, white(60));
         }
         p.text(br.center(), Align2::CENTER_CENTER, label, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-        if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it.").clicked() {
+        if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
             if rec {
                 stop_recording(c);
             } else {

@@ -93,19 +93,10 @@ impl Shortcut {
     }
 }
 
-/// How a mouse button reads in a shortcut ("Mouse 4").
+/// How a mouse button reads in a shortcut ("Mouse 4"): one word for every
+/// mouse, since which side button is Back differs between mice.
 fn mouse_label(n: u8) -> String {
-    // canvas variants, picked before this ships
-    match std::env::var("CMDMEOW_MOUSE_LABEL").as_deref() {
-        Ok("b") => format!("Button {n}"),
-        Ok("c") => match n {
-            3 => "Middle".into(),
-            4 => "Back".into(),
-            5 => "Forward".into(),
-            _ => format!("Button {n}"),
-        },
-        _ => format!("Mouse {n}"),
-    }
+    format!("Mouse {n}")
 }
 
 /// What a shortcut recorder heard this frame.
@@ -407,9 +398,10 @@ mod tests {
         assert_eq!(Shortcut::from_pointer(egui::PointerButton::Secondary, none), None);
         let back = Shortcut::from_pointer(egui::PointerButton::Extra1, none).expect("side button");
         assert_eq!((back.mouse_button(), back.has_modifier()), (Some(4), false));
+        assert_eq!(back.display(), "Mouse 4");
         assert_eq!(to_hotkey(&back), None);
         let mid = Shortcut::from_pointer(egui::PointerButton::Middle, egui::Modifiers { alt: true, ..none }).expect("middle");
-        assert_eq!((mid.key.as_str(), mid.alt), ("Mouse3", true));
+        assert_eq!((mid.key.as_str(), mid.display()), ("Mouse3", "⌥Mouse 3".to_string()));
         assert_eq!(Shortcut::from_pointer(egui::PointerButton::Extra2, none).and_then(|s| s.mouse_button()), Some(5));
         // stored the same way as a key, so old settings files read fine
         let json = serde_json::to_string(&back).unwrap();

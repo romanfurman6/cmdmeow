@@ -729,7 +729,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
         dashed_rect(p, br, 6.0, white(60));
     }
     p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it.").clicked() {
+    if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
         d.recording_key = !rec;
         // counts as drawn now, so the next tick doesn't take it for abandoned
         d.recording_seen = std::time::Instant::now();
