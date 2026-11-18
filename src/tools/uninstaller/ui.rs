@@ -259,6 +259,7 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
     const BTN: Vec2 = Vec2::new(200.0, 44.0);
     const CHIP: f32 = 96.0;
     let now = u.demo_now.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    // counts only once the background listing has found apps (never "0")
     let (n_all, n_unused, n_store) = {
         let g = u.st.lock_ok();
         let unused = |a: &super::AppRow| a.locked.is_none() && a.last_used.is_some_and(|t| now - t > UNUSED_DAYS * 86400);
@@ -283,8 +284,11 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
     let x0 = dx + 1.0 + GAP;
     let x1 = block.right();
     let mut y = block.top() + (block_h - rows_h) / 2.0;
+    let listed = n_all > 0;
     let cy = section_title(&p, x0, y, "Apps");
-    p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n_all}"), ty::title(), TEXT());
+    if listed {
+        p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n_all}"), ty::title(), TEXT());
+    }
     y += head_h;
     {
         let rows: [(&str, Icon, Option<usize>); 5] = [
@@ -304,7 +308,7 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
             p.circle_filled(icp, 14.0, with_alpha(TINT(), 0.14));
             icon(&p, ic, Rect::from_center_size(icp, Vec2::splat(16.0)), TINT());
             p.text(Pos2::new(x0 + 28.0 + sp::M, cy), Align2::LEFT_CENTER, name, ty::body(), TEXT());
-            if let Some(n) = n {
+            if let Some(n) = n.filter(|_| listed) {
                 p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n}"), ty::title(), TEXT());
             }
             y += ROW_H;

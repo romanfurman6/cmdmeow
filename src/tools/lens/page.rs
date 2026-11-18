@@ -185,14 +185,18 @@ fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<Start> {
     const GAP: f32 = 48.0;
     const BTN: Vec2 = Vec2::new(200.0, 44.0);
     let h = home();
-    let rows: [(&str, Icon, Option<PathBuf>); 6] = [
+    // a place that isn't there (a renamed Desktop) is left out
+    let rows: Vec<(&str, Icon, Option<PathBuf>)> = [
         ("Home", Icon::Home, Some(h.clone())),
         ("Downloads", Icon::Down, Some(h.join("Downloads"))),
         ("Documents", Icon::Doc, Some(h.join("Documents"))),
         ("Desktop", Icon::Monitor, Some(h.join("Desktop"))),
         ("Applications", Icon::Window, Some(PathBuf::from("/Applications"))),
         ("Choose a folder", Icon::Folder, None),
-    ];
+    ]
+    .into_iter()
+    .filter(|(_, _, p)| p.as_ref().is_none_or(|p| p.is_dir()))
+    .collect();
     let left_h = DISK_RING_H + sp::XXL + BTN.y;
     let rows_h = sp::SECTION_H + rows.len() as f32 * sp::ROW_H;
     let block_w = body.width().min(840.0);
