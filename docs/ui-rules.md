@@ -38,7 +38,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ✅ |
 | C2 | Lime is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). A selected row's text may be `ACCENT`, its number included (H3). | ✅ |
 | C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ✅ |
-| C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. | ✅ |
+| C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. A spark or bar chart is one series colour; a tall bar is never `AMBER`. | ✅ |
 | C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ✅ |
 | C6 | The same thing has the same colour and words on every screen. The disk line under the Disk Map list says what the start ring says ("1.35 TB free of 2.00 TB", disk glyph, `tint::DISK_MAP`). | ✅ |
 | C7 | A legend square only when its colour is on a chart on the same screen. | ✅ |
@@ -50,7 +50,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C13 | Exceptions only: capture/record HUD, the recording dot, traffic lights, third-party brand marks, user content. What the app draws over user content follows C16. | ✅ |
 | C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ✅ |
 | C15 | AI (AI Check chip, reveal ring, agent marks) has its own token `AI()`, cyan (today the same value as `tint::HEALTH`). | ✅ |
-| C16 | **On-picture overlays.** Anything the app draws over the user's picture or video frame (selection frame, handles, crop and drag-out outlines, blur/eraser previews, the edge of a pinned screenshot) uses fixed colours, never theme tokens: lime #C8F05A with a dark ring #0E1405 (`overlay::LIME`, `overlay::RING`), the same in both themes. Lines are 1.5 pt lime over a 3 pt ring-colour 70% under-stroke, dashed where the line is dashed. Handles are 10 pt lime squares, radius 2.5, with a 1.5 pt dark ring and a 1 pt white 60% halo; 12 pt on hover or drag. Grab zone 24 pt, nearest handle wins. A side's middle handle hides when that side is under 64 pt. Two-point marks (arrows, lines) show only their two end handles, no frame. | ⏳ code |
+| C16 | **On-picture overlays.** Anything the app draws over the user's picture or video frame (selection frame, handles, crop and drag-out outlines, blur/eraser previews, the edge of a pinned screenshot) uses fixed colours, never theme tokens: lime #C8F05A with a dark ring #0E1405 (`overlay::LIME`, `overlay::RING`), the same in both themes. A selected mark's frame and handles sit 5 pt outside it, never over it (`overlay::OUTSET`). Frame: 1 pt lime over a 2 pt ring-colour 60% band. Corners are 12 pt L brackets (3 pt lime, 6 pt ring, 8 pt white 60% halo), sides are 16×6 pt pills with the same ring and halo; 14 pt arms / 20×7 pills on hover or drag. Arrows: two 10 pt lime squares just beyond the tips, no frame. Dashed lines (crop area, drag-out) stay 1.5 pt lime over 3 pt ring 70%. Grab zone 24 pt, nearest handle wins (`overlay::GRAB`). A side's middle handle hides when that side is under 64 pt (`overlay::MID_MIN`). | ⏳ code |
 
 **Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ✅
 
@@ -83,7 +83,7 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R4 | Rows with a bar: 36 tall, name and value on one line, a 4 pt bar 8 pt under them. A value with no limit (AI Usage Today) shows as a number with no bar. | `sp::BAR_ROW_H` |
 | R5 | Controls are 28 inside cards and 32 in page headers. | `sp::CONTROL_H`, `sp::HEADER_CONTROL_H` |
 | R6 | One empty state: centred, 56 icon chip, lead title, body up to 400 wide in dim, one secondary button. Inside a card: one caption-size line in the middle. | `sp::XXL` around it |
-| R7 | Chips say a state (Normal, Charging, In menu bar), never an action: 11/600 on a 16% tint. | `chip()` |
+| R7 | Chips say a state (Elevated, Charging, In menu bar), never an action: 11/600 on a 16% tint. A chip shows only when the state needs a look or changes what the number means (Elevated, Charging, Held at 80% limit, 1 low); the everyday state (Normal, Nominal, Good) gets no chip. | `chip()` |
 | R8 | Numbers in lists and tables are right-aligned. | |
 | R9 | A title with a detail line under it keeps 6 between the lines; such rows are 52 tall. Columns in a row sit 16 apart. | `sp::LINE_GAP`, `two_lines_y()`, `sp::ROW2_H`, `sp::COL_GAP` |
 | R10 | Text the app writes is never cut with "…": it wraps or the layout changes. Only names and paths people bring may be cut. Find cut text with `CMDMEOW_FIT_LOG=1`. | `text_wrap()` |
@@ -97,9 +97,9 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 
 | # | Rule | Status |
 |---|------|---|
-| S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. | ✅ |
+| S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. The glow ellipse starts at the top centre and is never smaller than the default window's: rx = max(w, `APP_WIDTH` 1180) × 0.75, ry = max(h, `APP_HEIGHT` 740) × 1.05, so the 380 pt panel reads as the middle slice of the window's glow. | ✅ |
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. | ✅ |
-| S2w | **Widget card** (`kit::tile` only: panel widgets, the widget editor and gallery; the panel update banner and the Uninstaller inline confirm also use it): `CARD` fill, no border, see-through so the S1 panel glow shows. 1 pt top highlight `TILE_HI` (white 9% dark / 95% light), 1 pt base under the card `TILE_BASE` (black 35% dark / ink 14% light); light adds an inner 1 pt edge ink 8%, dark a bottom shade 10%. Radius `R_TILE` 10 (selected ring and Dictation live ring follow it). Hover CARD→RAISED 50%. A single-action card presses like `kit::key` (34 ms, down 1 pt, base to 0, spring back); a card with buttons or rows inside doesn't move, its inner items press. Page cards keep S2. | ⏳ code |
+| S2w | **Widget card** (`kit::tile` only: panel widgets, the widget editor and gallery; the panel update banner and the Uninstaller inline confirm also use it): `CARD` fill, see-through so the S1 panel glow shows. 1 pt top highlight `TILE_HI` (white 9% dark / 95% light), 1 pt base under the card `TILE_BASE` (black 35% dark / ink 14% light); 1 pt `CARD_EDGE` inside, the same as page cards (white 8% dark / ink 12% light); no bottom shade. Radius `R_TILE` 10 (selected ring and Dictation live ring follow it). Hover CARD→RAISED 50%. A single-action card presses like `kit::key` (34 ms, down 1 pt, base to 0, spring back); a card with buttons or rows inside doesn't move, its inner items press. Page cards keep S2. | ⏳ code |
 | S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
 | S4 | A list is one card with full-bleed rows and hairlines between them. No card per item. | ✅ |
 | S5 | Cards and page content have no shadow. Floating surfaces get only the "Whisper" shadow (P2). | ✅ |
@@ -143,7 +143,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | MN3 | Menu rows hover with `ROW_HOVER` edge to edge (H2); no press, no sound (B10). | ✅ |
 | MN4 | A picked choice is lime 16% with `ACCENT` text and a check (H3). Never the system blue. | ✅ |
 | MN5 | A submenu row shows a dim chevron; the submenu opens 4 to the right of its menu, never over its rows. | ✅ |
-| MN6 | A "⋯" menu opens 4 under its button, right edges lined up (above when there's no room), so it never covers the row it came from. Destructive rows use `DANGER` text (B6). | ✅ |
+| MN6 | A "⋯" menu opens 4 under its button, right edges lined up (above when there's no room), so it never covers the row it came from. Destructive rows use `DANGER` text (B6). In a list, a row's "⋯" shows while the row is hovered or its menu is open. | ✅ |
 
 ## 8. Hover, selection, focus
 
@@ -204,11 +204,11 @@ Approved by Roman 2026-11-17 (widget review canvas https://claude.ai/artifact/Gd
 
 | # | Rule |
 |---|------|
-| W1 | Card. Widget card (S2w): CARD fill, no border, see-through; one S1 panel glow, top centre, shows through all cards. Radius R_TILE 10, padding 12. TILE_HI 1 pt top highlight (white 9% dark / 95% light), TILE_BASE 1 pt base (black 35% dark / ink 14% light); dark adds TILE_SHADE (black 10%) at the bottom, light adds an 8% ink inner edge. Hover CARD → RAISED 50%. A single-action card presses: down 1 pt, base to 0, spring back (key::PRESS_IN/OUT). Cards with inner buttons or rows don't move. Nothing inside has its own fill or border except buttons. |
+| W1 | Card. Widget card (S2w): CARD fill, 1 pt CARD_EDGE inside, see-through; one S1 panel glow, top centre, shows through all cards. Radius R_TILE 10, padding 12. TILE_HI 1 pt top highlight (white 9% dark / 95% light), TILE_BASE 1 pt base (black 35% dark / ink 14% light); 1 pt CARD_EDGE inside (white 8% dark / ink 12% light), no TILE_SHADE. Hover CARD → RAISED 50%. A single-action card presses: down 1 pt, base to 0, spring back (key::PRESS_IN/OUT). Cards with inner buttons or rows don't move. Nothing inside has its own fill or border except buttons. |
 | W2 | One visual. Metric = ring: 44 in 1:1, 50 in 1:2 and 1:4; track 10%, arc in group or state colour. Other widgets = group-coloured icon without a plate: 26 in a 40 box in 1:2 and 1:4 (text starts at 64 px), 20 in 1:1. |
 | W3 | Text. Label 12 TEXT_DIM / value 15·600 / caption 11; always three lines in 1:2 and 1:4. Foreign text in the value slot (clip) 13·400 with fade. 2:4 main number hero 28·600, unit attached: "17%", "2 225 rpm". |
 | W4 | Small 1:1. Metric: centred ring 44 + value 13·600. The value may drop its word when ring + hover tooltip explain it (Storage "1.44 TB", tooltip "free of 2 TB"; T14 exception). Action: group-coloured icon 20 top-left, bottom name 12·600, 3 pt, shortcut 11. Padding 12 top/bottom, 8–10 sides. |
-| W5 | Row 1:4. Right part has priority, min 186 px. Left part takes its text width (ring 50 or icon 26 + three lines); list widgets (Clipboard, Dictation) use the 1:1 layout on the left. Then a HAIRLINE_STRONG divider; right side up to 3 lines (12, height 20): label and value at their own width, bar takes the rest, or a graph with a labelled time. A line whose data has no limit shows a number without a bar (R4 exception). Actions: no border or fill, equal shares with 4 inset, centred content, one HAIRLINE_STRONG divider at 88% height between them. |
+| W5 | Row 1:4. The divider (HAIRLINE_STRONG) sits on one shared line in every Row, `ROW_SPLIT` = 12 + 50 + 12 + 86 + 12 = 172 pt from the left edge, and moves right only when the value is wider (the value is never cut). The left part is the same in every Row, Clipboard and Dictation included (ring 50 or glyph 26, label, value, caption). Right part: each line has its name on the left and its value on the right, 12/400, and the line's bar goes under it across the whole right part (4 pt, 4 pt below the text, 6 pt between lines); at most two lines with bars, or a graph with a labelled time. A line whose data has no limit shows a number without a bar (R4 exception). A name that doesn't fit fades and is never cut with "…". Device names drop the owner ("Roman's AirPods Pro" → "AirPods Pro"). Actions: no border or fill, equal shares with 4 inset, centred content, one HAIRLINE_STRONG divider at 88% height between them. |
 | W6 | Medium 2:4, Large 4:4. Header 13·600, right side caption 11 or ACCENT link 12, no chips. Rows fill the height, hairlines between. A size with nothing to fill it is removed from the size list. |
 | W7 | Buttons. 28 pt, quiet, from kit (glass::segmented, switch). Selected segment = raised thumb. No lime glowing buttons in the panel. |
 | W8 | Words. A value says what it is: free, items, connected. One unit form: KB/s, 17%. Names as in the tool: AI Usage. App text never truncates with "…"; foreign text (clips, dictation) fades. Demo data follows R-examples (everyday, no code or personal URLs). |
@@ -257,6 +257,7 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 | T18 | A setting's name says what it does, not a nickname or an internal step. | "Put the clipboard back", "Step 1 of 2 · Looking for junk" | "Restore clipboard after typing", "Scanning…" |
 | T19 | No rows of small unlabeled icons. Use words, or drop them. | tool icons next to each permission | "Used by Cleanup, Disk Map" on hover |
 | T20 | A control with no label gets one, or goes. | a radio button next to a switch | a column head ("Main") |
+| T21 | Shortcuts are written the macOS way: ⌃⌥⇧⌘, then the key, with no spaces (⇧⌘2, ⌥Space). A mouse button reads Mouse N (3 middle, 4 and 5 the side buttons), with modifiers before it (⌥Mouse 4). Never Back, Forward or Middle: mice map their buttons differently. On keycaps there is one cap per modifier, and Mouse N is one cap. | ⌥ Back, Mouse4, M4 | ⌥Mouse 4 |
 
 ---
 
@@ -283,3 +284,11 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-17, Roman: widget sheets SP12 (canvas https://claude.ai/artifact/WN6VdfbDibWn1ZcZ9tA35t) with R3, B1 and T14 additions; R14 master switch (Settings › Cat); widget card S2w, R_TILE 10, B3 segment gap 4, no hover inside widgets (H1), R4 and T14 widget concessions (widget review canvas https://claude.ai/artifact/Gdvrk5REUpSfDMyhK9awnK). Green text in light checked against L8: sheets have no ACCENT text, state GREEN sits on cards at 4.9:1 (C9).
 
 2026-11-18, Roman: C16 on-picture overlays (canvas https://claude.ai/artifact/GE56ikCenBuyEPhXSo2YTE, option B), for the photo editor and pinned screenshots.
+
+2026-11-18, Roman: C16 handles are variant B4 (corner brackets, side pills), 5 pt outside the mark.
+
+2026-11-18, Roman: Mac Health page review (canvas https://claude.ai/artifact/Gue4tzFYVgffpsduUJMkHu): R7 no chip for the everyday state, C4 sparks one colour, MN6 row "⋯" on hover.
+
+2026-11-18, Roman: T21 shortcuts and mouse buttons (canvas https://claude.ai/artifact/Y1KGGgepf5m15MYkmCv6CX).
+
+2026-11-18, Roman: S1 glow never smaller than the default window's, widget cards get CARD_EDGE, no TILE_SHADE (panel variant C, canvas https://claude.ai/artifact/XJi3CqUKt9j86WLFN1AHE7); W5 Row 1:4 on one shared divider line, ROW_SPLIT 172 (variant B, canvas https://claude.ai/artifact/Gdvrk5REUpSfDMyhK9awnK).

@@ -2,7 +2,7 @@
 //! History and Settings page in the full window.
 
 use super::icons::{self, Ico};
-use super::settings::{After, Command, Format, Shortcut, KEEP_MAX, KEEP_MIN};
+use super::settings::{After, Command, Format, KEEP_MAX, KEEP_MIN};
 use super::folder::{self, FileShot};
 use super::store::{Kind, Shot};
 use super::{mac, record, Capture, Tab, VTab, ID, SHARING_ID, VIDEO_ID};
@@ -1038,30 +1038,21 @@ fn settings_page(c: &mut Capture, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     });
 }
 
-/// While recording: the next key press with a modifier becomes the shortcut.
+/// While recording: the next key press with a modifier, or extra mouse
+/// button, becomes the shortcut.
 fn record_keys(c: &mut Capture, ui: &mut Ui, cx: &mut Cx) {
+    use crate::kit::hotkeys::{listen, Heard};
     let Some(cmd) = c.recording else { return };
-    let mut result: Option<Option<Shortcut>> = None;
-    let mut cancel = false;
-    ui.input(|i| {
-        for e in &i.events {
-            if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
-                let plain = !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
-                if *key == egui::Key::Escape && plain {
-                    cancel = true;
-                } else if (*key == egui::Key::Backspace || *key == egui::Key::Delete) && plain {
-                    result = Some(None);
-                } else if let Some(s) = Shortcut::from_press(*key, *modifiers) {
-                    result = Some(Some(s));
-                }
-            }
+    let s = match listen(ui.ctx()) {
+        Heard::Nothing => None,
+        Heard::Cancel => {
+            stop_recording(c);
+            return;
         }
-    });
-    if cancel {
-        stop_recording(c);
-        return;
-    }
-    if let Some(s) = result {
+        Heard::Remove => Some(None),
+        Heard::Set(s) => Some(Some(s)),
+    };
+    if let Some(s) = s {
         if let Some(w) = s.as_ref().and_then(|s| s.conflict()) {
             cx.toast(format!("{}: {w}", s.as_ref().map(|s| s.display()).unwrap_or_default()));
         }
@@ -1099,7 +1090,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
             dashed_rect(p, br, 6.0, white(60));
         }
         p.text(br.center(), Align2::CENTER_CENTER, label, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-        if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it.").clicked() {
+        if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
             if rec {
                 stop_recording(c);
             } else {
