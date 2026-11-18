@@ -435,8 +435,9 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
     for (k, v) in values[values.len() - n..].iter().enumerate() {
         let h = ((v / hi) * r.height()).max(2.0);
         let x = r.left() + k as f32 * (bw + gap);
-        let hot = *v > median * 1.6 && *v >= hi * 0.6 && *v > 1.0;
-        let c = if hot { AMBER() } else { with_alpha(color, 0.8) };
+        // one series, one colour: a burst is not a warning (C4)
+        let _ = median;
+        let c = with_alpha(color, 0.8);
         p.rect_filled(Rect::from_min_max(Pos2::new(x, r.bottom() - h), Pos2::new(x + bw, r.bottom())), egui::CornerRadius { nw: 2, ne: 2, sw: 0, se: 0 }, c);
     }
 }

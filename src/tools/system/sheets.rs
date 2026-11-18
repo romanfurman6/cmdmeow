@@ -121,6 +121,29 @@ fn split_num(s: &str) -> (String, String) {
     }
 }
 
+/// The battery's state in words, as the sheet's header and the page's chip
+/// say it.
+pub fn battery_state(s: &Snapshot) -> String {
+    let b = &s.battery;
+    let c = &s.charge;
+    let ours = b.plugged && !b.charging && c.policy.active() && c.helper_ok == Some(true);
+    if !b.present {
+        "Power adapter".to_string()
+    } else if ours && c.status.state.hot {
+        "Paused · battery warm".to_string()
+    } else if ours && c.status.state.held {
+        format!("Held at {}% limit", c.policy.limit)
+    } else if b.full || (b.plugged && b.percent >= 100) {
+        "Fully charged".into()
+    } else if b.charging {
+        "Charging".into()
+    } else if b.plugged {
+        "Not charging · on adapter".into()
+    } else {
+        "On battery".into()
+    }
+}
+
 fn spec(kind: Sheet, s: &Snapshot) -> Spec {
     match kind {
         Sheet::Storage => {
@@ -186,23 +209,8 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
         Sheet::Battery => {
             let b = &s.battery;
             let c = &s.charge;
-            // the helper stopped charging (limit or heat)
+            let state = battery_state(s);
             let ours = b.plugged && !b.charging && c.policy.active() && c.helper_ok == Some(true);
-            let state = if !b.present {
-                "Power adapter".to_string()
-            } else if ours && c.status.state.hot {
-                "Paused · battery warm".to_string()
-            } else if ours && c.status.state.held {
-                format!("Held at {}% limit", c.policy.limit)
-            } else if b.full || (b.plugged && b.percent >= 100) {
-                "Fully charged".into()
-            } else if b.charging {
-                "Charging".into()
-            } else if b.plugged {
-                "Not charging · on adapter".into()
-            } else {
-                "On battery".into()
-            };
             let mut sp = Spec::new(Icon::Battery(b.percent), tint::HEALTH(), "Battery", state);
             if !b.present {
                 sp.facts.push(fact("Power", "Adapter", TEXT(), ""));
