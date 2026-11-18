@@ -1162,7 +1162,7 @@ impl Editor {
         // resizes it, as in Select; anywhere else it draws a new one
         let draws = self.tool.drags() || self.tool == Tool::Pen;
         if draws && resp.drag_started() {
-            self.grab = resp.interact_pointer_pos().map(to_img).is_some_and(|q| self.on_selected(q, scale));
+            self.grab = press_at(&resp).map(to_img).is_some_and(|q| self.on_selected(q, scale));
         }
         if draws && resp.clicked() {
             if let Some(q) = resp.interact_pointer_pos().map(at_img) {
@@ -1502,7 +1502,7 @@ impl Editor {
             }
         }
         if resp.drag_started() {
-            if let Some(q) = resp.interact_pointer_pos().map(raw) {
+            if let Some(q) = press_at(resp).map(raw) {
                 if let Some((i, k)) = self.handle_at(q, scale) {
                     self.grab_off = q - self.doc.marks[i].handles()[k];
                     self.resizing = Some((i, k, self.doc.marks[i].clone()));
@@ -1545,7 +1545,7 @@ impl Editor {
             return;
         }
         if resp.drag_started() || resp.clicked() {
-            if let Some(s) = resp.interact_pointer_pos() {
+            if let Some(s) = press_at(resp) {
                 let q = at_img(s);
                 let hit = if alt && picking { None } else { self.doc.marks.iter().rposition(|m| m.hit(q, slack)) };
                 self.selected = hit;
@@ -1849,11 +1849,18 @@ fn side_at(f: Rect, q: Pos2, scale: f32) -> Option<usize> {
         .map(|(k, _, _)| k)
 }
 
+/// Where the press that started this drag went down (screen), not where the
+/// pointer was once it had moved far enough to count as a drag.
+fn press_at(resp: &egui::Response) -> Option<Pos2> {
+    resp.ctx.input(|i| i.pointer.press_origin()).or_else(|| resp.interact_pointer_pos())
+}
+
 /// The spot nearest `q` within the grab zone, if any.
 fn nearest(spots: &[(usize, Pos2)], q: Pos2, scale: f32) -> Option<usize> {
     spots
         .iter()
-        .map(|(k, h)| (*k, (*h - q).length() * scale))
+        // a square zone: a diagonal press just off a corner still grabs it
+        .map(|(k, h)| (*k, (*h - q).abs().max_elem() * scale))
         .filter(|(_, d)| *d <= overlay::GRAB)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(k, _)| k)
@@ -2029,6 +2036,9 @@ mod tests {
         assert_eq!(side_at(f, Pos2::new(30.0, -20.0), 1.0), None);
         // zoomed in 2×: the band is 8 pt on screen, 4 px on the picture
         assert_eq!(side_at(f, Pos2::new(30.0, -6.0), 2.0), None);
+        // a corner grabs in a square: 9 pt off on both axes still counts
+        assert_eq!(nearest(&[(0, Pos2::ZERO)], Pos2::new(-9.0, -9.0), 1.0), Some(0));
+        assert_eq!(nearest(&[(0, Pos2::ZERO)], Pos2::new(-13.0, 0.0), 1.0), None);
     }
 
     #[test]
