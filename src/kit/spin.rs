@@ -1151,7 +1151,7 @@ mod native {
             let rise: Retained<AnyObject> = msg_send![class!(CAKeyframeAnimation), animationWithKeyPath: &*key("position.y")];
             let vals = objc2_foundation::NSArray::from_retained_slice(&[num(low), num(high), num(high)]);
             let times = objc2_foundation::NSArray::from_retained_slice(&[num(0.0), num(0.8), num(1.0)]);
-            let ease: Retained<AnyObject> = msg_send![class!(CAMediaTimingFunction), functionWithControlPoints: 0.37f32, 0.0f32, 0.63f32, 1.0f32];
+            let ease: Retained<AnyObject> = msg_send![class!(CAMediaTimingFunction), functionWithName: &*key("easeInEaseOut")];
             let linear: Retained<AnyObject> = msg_send![class!(CAMediaTimingFunction), functionWithName: &*key("linear")];
             let fns = objc2_foundation::NSArray::from_retained_slice(&[ease, linear]);
             let _: () = msg_send![&*rise, setValues: &*vals];
