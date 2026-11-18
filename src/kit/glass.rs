@@ -419,6 +419,50 @@ pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
 /// as `white(ROW_HOVER)`. In a popover the whole row, edge to edge.
 pub const ROW_HOVER: u8 = 10;
 
+/// SP1 start lists: the row's content (icon, name, value) sits this far in
+/// from the row's edges, so it never touches the hover fill's edge (H9).
+pub const START_PAD: f32 = sp::M;
+
+/// The hover fill of an SP1 start row `rr`: edge to edge, no corners (H2).
+pub fn start_row_fill(p: &egui::Painter, rr: Rect) {
+    p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+}
+
+/// A lit row in a card list (hover, selected, AI Check ring): 4 in from the
+/// card's sides and 1 from the row's top and bottom, radius 8, so it never
+/// meets the card's rounded corners (H2). Popovers and menus stay edge to edge.
+pub fn lit_rect(row: Rect) -> Rect {
+    row.shrink2(Vec2::new(sp::XS, LIT_INSET))
+}
+/// Corner radius of [`lit_rect`].
+pub const LIT_R: f32 = 8.0;
+
+/// Hover fill of a row in a card list (H1, H2).
+pub fn row_hover_fill(p: &Painter, row: Rect) {
+    p.rect_filled(lit_rect(row), LIT_R, white(ROW_HOVER));
+}
+
+/// A row's top divider in a list with hairlines between rows (H2): left
+/// out above and below a lit row, so the fill stands alone. Rows call it
+/// top to bottom in one pass, after deciding `lit`; `bottom` is the row's
+/// bottom edge.
+pub fn row_divider(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32) {
+    row_divider_stroke(ui, p, a, b, lit, bottom, Stroke::new(1.0, white(HAIRLINE)));
+}
+
+/// [`row_divider`] in a given stroke (card dividers use `CARD_EDGE`).
+pub fn row_divider_stroke(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32, stroke: Stroke) {
+    let id = egui::Id::unique("row-divider-lit");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let above_lit = ui.ctx().data(|d| d.get_temp::<(u64, f32)>(id)).is_some_and(|(n, y)| n == pass && (y - a.y).abs() < 1.5);
+    if !lit && !above_lit {
+        p.line_segment([a, b], stroke);
+    }
+    if lit {
+        ui.ctx().data_mut(|d| d.insert_temp(id, (pass, bottom)));
+    }
+}
+
 /// "Show where": the ring on the item an AI Check suggestion points at.
 /// It holds, then fades out; nothing repaints once it's gone.
 pub mod reveal {
@@ -451,6 +495,11 @@ pub mod reveal {
         let ai = AI();
         p.rect_filled(r, radius, with_alpha(ai, FILL * k));
         p.rect_stroke(r, radius, Stroke::new(RING_W, with_alpha(ai, k)), egui::StrokeKind::Inside);
+    }
+
+    /// The ring on a row of a card list, inside the card like hover (H2).
+    pub fn row(p: &Painter, r: Rect, k: f32) {
+        rect(p, super::lit_rect(r), super::LIT_R, k);
     }
 
     /// The ring around a circle (a Disk Map bubble).
@@ -545,13 +594,22 @@ pub fn float_shadow_egui() -> egui::epaint::Shadow {
 /// blur behind it shows through a little; `opaque` (screenshots)
 /// paints it solid.
 pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f64) {
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, true);
+}
+
+/// The menu bar panel's surface (S1): the same glow, as a beam of light
+/// down the centre of the tall panel to its bottom, darker at the sides.
+pub fn backdrop_panel(painter: &Painter, rect: Rect, radius: f32, opaque: bool) {
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, true);
+}
+
+fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: bool) {
     let light = is_light();
-    let alpha = if opaque { 1.0 } else { backdrop_alpha() };
     // the mesh only changes with the window's size and the theme: build it
     // once, not every frame (it's ~1.4k vertices of gradient math)
-    type Key = ([u32; 5], bool, u32);
+    type Key = ([u32; 5], bool, u32, bool);
     static CACHE: std::sync::Mutex<Vec<(Key, std::sync::Arc<egui::epaint::Mesh>)>> = std::sync::Mutex::new(Vec::new());
-    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits());
+    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits(), tall);
     let mesh = {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(i) = cache.iter().position(|(k, _)| *k == key) {
@@ -560,7 +618,7 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
             cache.push(hit);
             mesh
         } else {
-            let mesh = std::sync::Arc::new(backdrop_mesh(rect, radius, light, alpha));
+            let mesh = std::sync::Arc::new(backdrop_mesh(rect, radius, light, alpha, tall));
             // a few windows (panel, app window, setup), newest last
             if cache.len() >= 4 {
                 cache.remove(0);
@@ -573,24 +631,37 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
     painter.rect_stroke(rect, radius, Stroke::new(1.0, white(HAIRLINE_STRONG)), StrokeKind::Inside);
 }
 
-fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epaint::Mesh {
-    let stops: &[(f32, Color32)] = if light {
-        &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
+/// The backdrop's colour at a point of `rect`: a radial glow from the top
+/// centre (S1). `tall` is the panel's: a beam down the centre to the bottom.
+fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
+    let stops: Vec<(f32, Color32)> = if light {
+        vec![(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
     } else {
-        &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
+        vec![(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
     };
     let glow = Pos2::new(rect.center().x, rect.top());
     // the glow is an ellipse: wide across, reaching the bottom edge,
     // never smaller than the app window's: the narrow panel shows the
     // centre of the same glow instead of a squeezed copy of it (S1)
-    let (rx, ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
-    let color_at = |q: Pos2| {
+    let (mut rx, mut ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
+    if tall {
+        // the panel: a beam of light down the centre to the bottom (its
+        // bottom edge at the gradient's middle, not the near-black end),
+        // darker towards the sides
+        ry = ry.max(rect.height() * 1.9);
+        rx = rect.width() * 0.85;
+    }
+    move |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
         with_alpha(lerp_color(c0, c1, (d - t0) / (t1 - t0).max(1e-3)), alpha)
-    };
+    }
+}
+
+fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
+    let color_at = glow_color(rect, light, alpha, tall);
     // a fan of rings from the centre out to the rounded outline
     let outline = densify(&rounded_points(rect, radius), 24.0);
     let c = rect.center();
@@ -1258,6 +1329,12 @@ pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     let cy = section_title_y(p, top);
     p.text(Pos2::new(x, cy), Align2::LEFT_CENTER, label, ty::section(), white(150));
     cy
+}
+
+/// A section title's value on the right (a total): same style as the title,
+/// so it reads as part of the header, not as one more row value.
+pub fn section_value(p: &Painter, x: f32, cy: f32, text: &str) {
+    p.text(Pos2::new(x, cy), Align2::RIGHT_CENTER, text, ty::section(), white(150));
 }
 
 /// Height a [`card_title`] takes above its card: the title and 12 (R2).

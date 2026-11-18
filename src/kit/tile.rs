@@ -71,18 +71,27 @@ pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     paint_face(p, rect, hover, selected);
 }
 
-/// The 1 pt base under the card.
+/// The base under the card (2 pt, 1 pt while pressed, like a quiet key).
 fn paint_base(p: &egui::Painter, rect: Rect) {
-    p.rect_filled(rect.translate(Vec2::new(0.0, PRESS_DROP)), R_TILE, TILE_BASE());
+    // the panel header's icon buttons' base (B1 quiet key), so cards and
+    // buttons read as one surface
+    let look = super::key::Look::quiet(0.06, 0.15);
+    p.rect_filled(rect.translate(Vec2::new(0.0, look.depth)), R_TILE, look.base);
 }
 
-/// The card itself: see-through CARD (the panel glow shows through), the
-/// top highlight and the page cards' 1 pt edge.
+/// The card itself (W1): see-through, so the panel glow shows through.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
-    p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
+    // the same face as the panel header's icon buttons (key::Look::quiet):
+    // fill, 1 pt top highlight and hairline, a little lighter on hover
+    let look = super::key::Look::quiet(0.06, 0.15);
+    // hover is a light touch on a card: 40% of the button's step
+    let hover = hover * 0.4;
+    p.rect_filled(rect, R_TILE, lerp_color(look.fill, look.fill_hover, hover));
     let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
-    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
-    p.rect_stroke(rect, R_TILE, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
+    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, look.highlight);
+    if let Some((rest, hov)) = look.edge {
+        p.rect_stroke(rect, R_TILE, Stroke::new(look.edge_w, lerp_color(rest, hov, hover)), StrokeKind::Inside);
+    }
     if selected {
         p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
