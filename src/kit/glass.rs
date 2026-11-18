@@ -214,6 +214,8 @@ pub mod overlay {
     pub const HANDLE_HOT: f32 = 8.0;
     /// How far from a handle's centre a press still grabs it.
     pub const GRAB: f32 = 12.0;
+    /// How far from a side's line a press still grabs that side.
+    pub const EDGE: f32 = 8.0;
     /// A side shorter than this offers no middle grab spot.
     pub const MID_MIN: f32 = 64.0;
     /// How far a selected mark's frame and handles sit outside it, so they

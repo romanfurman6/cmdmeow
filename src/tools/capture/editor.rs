@@ -1446,7 +1446,11 @@ impl Editor {
     /// one within the grab zone (C16).
     fn handle_at(&self, q: Pos2, scale: f32) -> Option<(usize, usize)> {
         let i = self.selected?;
-        let k = nearest(&handle_spots(self.doc.marks.get(i)?, scale), q, scale)?;
+        let m = self.doc.marks.get(i)?;
+        let k = nearest(&handle_spots(m, scale), q, scale).or_else(|| {
+            // sides draw no handle; their whole line grabs (C16)
+            (m.handles().len() == 8).then(|| side_at(m.bounds().expand(overlay::OUTSET / scale), q, scale)).flatten()
+        })?;
         Some((i, k))
     }
 
@@ -1458,7 +1462,8 @@ impl Editor {
 
     /// The picked area's handle under `q` (image px), if any.
     fn area_handle_at(&self, q: Pos2, scale: f32) -> Option<usize> {
-        nearest(&box_spots(self.area?, scale), q, scale)
+        let a = self.area?;
+        nearest(&box_spots(a, scale), q, scale).or_else(|| side_at(a, q, scale))
     }
 
     /// Select: click a mark to select it, drag it to move, drag a handle to
@@ -1829,6 +1834,21 @@ fn box_spots(r: Rect, scale: f32) -> Vec<(usize, Pos2)> {
         .collect()
 }
 
+/// The side of frame `f` (image px) whose line `q` is near, nearest first,
+/// as a [`render::box_handles`] index: up to [`overlay::EDGE`] outside the
+/// line, only 2 pt inside it, so a press on the mark itself still moves it.
+fn side_at(f: Rect, q: Pos2, scale: f32) -> Option<usize> {
+    let (out, inn) = (overlay::EDGE / scale, 2.0 / scale);
+    let along_x = q.x >= f.min.x - out && q.x <= f.max.x + out;
+    let along_y = q.y >= f.min.y - out && q.y <= f.max.y + out;
+    // how far `q` lies outside each line (negative: inside)
+    [(1, along_x, f.min.y - q.y), (3, along_y, q.x - f.max.x), (5, along_x, q.y - f.max.y), (7, along_y, f.min.x - q.x)]
+        .into_iter()
+        .filter(|(_, on, d)| *on && *d <= out && *d >= -inn)
+        .min_by(|a, b| a.2.abs().total_cmp(&b.2.abs()))
+        .map(|(k, _, _)| k)
+}
+
 /// The spot nearest `q` within the grab zone, if any.
 fn nearest(spots: &[(usize, Pos2)], q: Pos2, scale: f32) -> Option<usize> {
     spots
@@ -1992,6 +2012,23 @@ mod tests {
         // a zero-length arrow keeps its handles on the point instead of NaN
         let dot = Mark::Arrow { a: Pos2::new(5.0, 5.0), b: Pos2::new(5.0, 5.0), color: [0; 4], width: 4.0, heads: Heads::default() };
         assert!(handle_spots(&dot, 1.0).iter().all(|(_, p)| p.x.is_finite()));
+    }
+
+    #[test]
+    fn sides_grab_along_their_whole_line() {
+        let f = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(200.0, 100.0));
+        // near the top line, far from its middle
+        assert_eq!(side_at(f, Pos2::new(30.0, -7.0), 1.0), Some(1));
+        assert_eq!(side_at(f, Pos2::new(30.0, 1.5), 1.0), Some(1));
+        assert_eq!(side_at(f, Pos2::new(207.0, 80.0), 1.0), Some(3));
+        assert_eq!(side_at(f, Pos2::new(150.0, 106.0), 1.0), Some(5));
+        assert_eq!(side_at(f, Pos2::new(-6.0, 20.0), 1.0), Some(7));
+        // inside past 2 pt (the mark itself), the middle and far outside: none
+        assert_eq!(side_at(f, Pos2::new(30.0, 5.0), 1.0), None);
+        assert_eq!(side_at(f, Pos2::new(100.0, 50.0), 1.0), None);
+        assert_eq!(side_at(f, Pos2::new(30.0, -20.0), 1.0), None);
+        // zoomed in 2×: the band is 8 pt on screen, 4 px on the picture
+        assert_eq!(side_at(f, Pos2::new(30.0, -6.0), 2.0), None);
     }
 
     #[test]
