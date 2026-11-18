@@ -368,6 +368,8 @@ fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     // them as the known pair before anything is matched or remembered
     st.seen.identify(&mut list);
     devices::merge_extra(&mut list, &profile.paired_pods, &adverts, &extra);
+    // one row per device, whatever listed it twice
+    devices::collapse(&mut list);
     let now = devices::now();
     let mut history_changed = false;
     for d in &list {

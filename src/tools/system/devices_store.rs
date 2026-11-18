@@ -330,6 +330,74 @@ mod tests {
         assert_eq!(s.devices.len(), 2, "both have a product id: matched by address");
     }
 
+    /// Roman's Mac on 2026-11-18: the Bluetooth report lists his AirPods
+    /// Pro twice, connected with their address and product id, and again
+    /// over LE under a passing address with only the case level.
+    const ROMANS_PROFILER: &str = r#"{"SPBluetoothDataType":[{"controller_properties":{},"device_connected":[
+        {"AirPods Pro":{"device_address":"38:C4:3A:6B:D7:A0","device_vendorID":"0x004C","device_productID":"0x2024","device_batteryLevelCase":"100%","device_batteryLevelLeft":"90%","device_batteryLevelRight":"90%","device_firmwareVersion":"9B47","device_minorType":"Headphones","device_rssi":"-66"}},
+        {"AirPods Pro":{"device_address":"EA:31:5C:50:D7:4C","device_batteryLevelCase":"100%","device_firmwareVersion":"0A37k","device_rssi":"-58","device_services":"0x400000 < BLE >"}},
+        {"Roman Furman’s iPhone (2)":{"device_address":"98:E8:59:7E:DA:3A","device_rssi":"-43","device_services":"0x400000 < BLE >"}}
+    ],"device_not_connected":[
+        {"Roman’s AirPods Max":{"device_address":"70:F9:4A:B5:0D:68","device_vendorID":"0x004C","device_productID":"0x202D","device_firmwareVersion":"9B47","device_minorType":"Headphones"}}
+    ]}]}"#;
+
+    /// Roman's devices-seen.json on 2026-11-18.
+    fn romans_seen_1118() -> Seen {
+        Seen {
+            devices: vec![
+                Device { name: "AirPods Pro".into(), kind: Kind::Earbuds, address: "38-c4-3a-6b-d7-a0".into(), product: 8228, left: Some(91), right: Some(92), case: Some(100), seen: Some(1795021635), ..Default::default() },
+                Device { name: "Roman\u{2019}s AirPods Max".into(), kind: Kind::Headphones, address: "70-f9-4a-b5-0d-68".into(), product: 8237, main: Some(26), seen: Some(1795018167), ..Default::default() },
+                Device { name: "Roman Furman\u{2019}s iPhone (2)".into(), kind: Kind::Phone, main: Some(70), seen: Some(1795021635), ..Default::default() },
+            ],
+        }
+    }
+
+    /// What the app lists from one reading, as `read_devices` builds it.
+    fn reading(s: &mut Seen, profiler: &str, now: u64) -> Vec<Device> {
+        let p = super::super::devices::parse_profiler(profiler);
+        let mut list = p.connected.clone();
+        s.identify(&mut list);
+        super::super::devices::merge_extra(&mut list, &p.paired_pods, &[], &[]);
+        super::super::devices::collapse(&mut list);
+        s.update(&list, now);
+        let away = s.away(&list);
+        list.extend(away);
+        list
+    }
+
+    #[test]
+    fn a_pair_listed_twice_by_macos_is_one_row() {
+        for mut s in [romans_seen_1118(), Seen::default()] {
+            for t in 0..3 {
+                let list = reading(&mut s, ROMANS_PROFILER, 1795022000 + t * 60);
+                let pods: Vec<_> = list.iter().filter(|d| d.name.contains("AirPods Pro")).collect();
+                assert_eq!(pods.len(), 1, "one row, not \"L – · R – · Case 100\" next to it: {pods:?}");
+                let p = pods[0];
+                assert_eq!((p.address.as_str(), p.product, p.left, p.right, p.case, p.live()), ("38-c4-3a-6b-d7-a0", 0x2024, Some(90), Some(90), Some(100), true));
+                assert_eq!(p.detail(), "Buds 90 · Case 100");
+            }
+            assert_eq!(s.devices.iter().filter(|d| d.kind == Kind::Earbuds).count(), 1);
+        }
+    }
+
+    #[test]
+    fn collapse_keeps_different_devices_apart() {
+        let mut v = vec![
+            pods("aa-00-00-00-00-01", 8228, Some(80), Some(80), None),
+            pods("aa-00-00-00-00-02", 8228, Some(40), Some(40), None),
+            dev("Mouse", 50),
+            Device { name: "Keyboard".into(), kind: Kind::Keyboard, main: Some(60), ..Default::default() },
+        ];
+        super::super::devices::collapse(&mut v);
+        assert_eq!(v.len(), 4, "two real pairs with one name stay two");
+        // a passing-address copy with only the case joins the pair it is, wherever it comes
+        let mut v = vec![Device { case: Some(100), left: None, right: None, ..pods("ea-31-5c-50-d7-4c", 0, None, None, None) }, pods("38-c4-3a-6b-d7-a0", 8228, Some(90), Some(90), None)];
+        v[1].case = None;
+        super::super::devices::collapse(&mut v);
+        assert_eq!(v.len(), 1);
+        assert_eq!((v[0].address.as_str(), v[0].left, v[0].case), ("38-c4-3a-6b-d7-a0", Some(90), Some(100)));
+    }
+
     #[test]
     fn history_of_passing_addresses_is_dropped() {
         let mut h = History::default();
