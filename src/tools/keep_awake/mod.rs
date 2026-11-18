@@ -163,6 +163,7 @@ fn watch(engine: Shared, ctx: egui::Context) {
     let mut rescan = crate::kit::activity::Every::default();
     let mut was_watching = None;
     loop {
+        let _pool = crate::kit::macos::pool();
         let t = now();
         // with Off picked nothing is read
         let watching = engine.lock_ok().watching();

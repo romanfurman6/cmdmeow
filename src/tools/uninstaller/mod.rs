@@ -882,6 +882,7 @@ fn watch_drag(st: Shared, app_roots: Vec<PathBuf>, ctx: egui::Context) -> Option
         .spawn(move || {
             let mut last = mac::drag_change_count();
             loop {
+                let _pool = crate::kit::macos::pool();
                 let on = {
                     let g = st.lock_ok();
                     g.settings.drop_zone && !g.off

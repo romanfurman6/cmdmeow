@@ -118,6 +118,7 @@ fn work<B: Bus>(bus: B, levels: HashMap<String, Levels>, view: Arc<Mutex<View>>,
     let mut clock = (SystemTime::now(), Instant::now());
     let mut next = Instant::now();
     loop {
+        let _pool = crate::kit::macos::pool();
         let mut rescan = false;
         match rx.recv_timeout(next.saturating_duration_since(Instant::now())) {
             Ok(first) => {
