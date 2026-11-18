@@ -472,10 +472,12 @@ impl Store {
             return;
         }
         // off the UI thread: the index (every clip's text) is rewritten on
-        // every copy, and it can be megabytes
-        let kept: Vec<&Entry> = self.entries.iter().filter(|e| !e.secret).collect();
-        if let (Some(v), Ok(json)) = (&self.vault, serde_json::to_vec(&kept)) {
-            crate::kit::fs::save_private_later(&self.dir.join(INDEX), v.seal(&json));
+        // every copy, and it can be megabytes. Only the copy of the entries
+        // is made here; turning them into text and sealing it, the slow
+        // part, waits for the writer
+        if let Some(v) = self.vault.clone() {
+            let kept: Vec<Entry> = self.entries.iter().filter(|e| !e.secret).cloned().collect();
+            crate::kit::fs::save_private_made_later(&self.dir.join(INDEX), move || serde_json::to_vec(&kept).ok().map(|json| v.seal(&json)));
         }
     }
 
