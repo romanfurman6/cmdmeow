@@ -160,6 +160,9 @@ mod mac {
                     old.clip.removeFromSuperview();
                 }
                 let glow = NSView::initWithFrame(mtm.alloc::<NSView>(), cf);
+                // layer-hosting (our own layer set before wantsLayer), so
+                // AppKit leaves the image we put in its contents alone
+                glow.setLayer(Some(&objc2_quartz_core::CALayer::new()));
                 glow.setWantsLayer(true);
                 glow.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable);
                 superview.addSubview_positioned_relativeTo(&glow, NSWindowOrderingMode::Below, Some(content));
