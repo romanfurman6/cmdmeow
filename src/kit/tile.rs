@@ -382,13 +382,13 @@ pub fn lines(p: &egui::Painter, r: Rect, lines: &[(String, Option<(f32, Color32)
     let n = lines.len().min(3).min(((r.height() / 18.0).floor() as usize).max(1));
     let lh = (r.height() / n as f32).min(22.0);
     let top = r.center().y - lh * n as f32 / 2.0;
+    // W5: one grid for every Row, name ROW_NAME · bar · value ROW_VALUE; a
+    // longer name (a device's) fades, a wider value moves the bar's end
+    let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x.ceil();
+    let vcol = lines.iter().take(n).map(|l| w(&l.2)).fold(ROW_VALUE, f32::max);
     for (k, (label, frac, value)) in lines.iter().take(n).enumerate() {
         let lr = Rect::from_min_size(Pos2::new(r.left(), top + k as f32 * lh), Vec2::new(r.width(), lh));
-        let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x.ceil();
-        let vcol = w(value).max(ROW_VALUE);
-        // a long name (a device's) fades where the bar must start
-        let most = (r.width() - vcol - 10.0 - if frac.is_some() { 24.0 + 10.0 } else { 0.0 }).max(ROW_NAME);
-        bar_line(p, lr, label, *frac, value, (w(label).clamp(ROW_NAME, most), vcol));
+        bar_line(p, lr, label, *frac, value, (ROW_NAME, vcol));
     }
 }
 
