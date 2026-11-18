@@ -257,6 +257,7 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 | T18 | A setting's name says what it does, not a nickname or an internal step. | "Put the clipboard back", "Step 1 of 2 · Looking for junk" | "Restore clipboard after typing", "Scanning…" |
 | T19 | No rows of small unlabeled icons. Use words, or drop them. | tool icons next to each permission | "Used by Cleanup, Disk Map" on hover |
 | T20 | A control with no label gets one, or goes. | a radio button next to a switch | a column head ("Main") |
+| T21 | Shortcuts are written the macOS way: ⌃⌥⇧⌘, then the key, with no spaces (⇧⌘2, ⌥Space). A mouse button reads Mouse N (3 middle, 4 and 5 the side buttons), with modifiers before it (⌥Mouse 4). Never Back, Forward or Middle: mice map their buttons differently. On keycaps there is one cap per modifier, and Mouse N is one cap. | ⌥ Back, Mouse4, M4 | ⌥Mouse 4 |
 
 ---
 
@@ -287,3 +288,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman: C16 handles are variant B4 (corner brackets, side pills), 5 pt outside the mark.
 
 2026-11-18, Roman: Mac Health page review (canvas https://claude.ai/artifact/Gue4tzFYVgffpsduUJMkHu): R7 no chip for the everyday state, C4 sparks one colour, MN6 row "⋯" on hover.
+
+2026-11-18, Roman: T21 shortcuts and mouse buttons (canvas https://claude.ai/artifact/Y1KGGgepf5m15MYkmCv6CX).
