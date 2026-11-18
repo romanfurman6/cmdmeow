@@ -147,6 +147,10 @@ pub fn listen(ctx: &egui::Context) -> Heard {
             heard = Heard::Set(s);
         }
     }
+    // the recorder closes: a press heard from now on is no longer for it
+    if heard != Heard::Nothing {
+        super::mouse_keys::recording_done();
+    }
     heard
 }
 

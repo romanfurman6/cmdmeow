@@ -98,6 +98,14 @@ pub fn recording() {
     imp::start();
 }
 
+/// The recorder took what it heard (or was cancelled): forget the press and
+/// stop handing presses to it, so reopening one starts clean.
+pub fn recording_done() {
+    let mut st = state();
+    st.recording_until = None;
+    st.heard = None;
+}
+
 /// The button the open recorder heard, if any.
 pub fn take_heard() -> Option<Shortcut> {
     state().heard.take()
@@ -336,6 +344,14 @@ mod tests {
         assert!(!down(4, 0));
         assert_eq!(take_heard(), Some(back.clone()));
         assert!(take_pressed(|id| Some(id)).is_empty());
+        // done: nothing left over, and presses fire again
+        state().heard = Some(alt_mid.clone());
+        recording_done();
+        assert_eq!(take_heard(), None);
+        assert!(down(4, 0));
+        assert!(up(4));
+        assert_eq!(take_pressed(|id| (id == ids[0]).then_some(())).len(), 1);
+        let _ = take_released(|id| (id == ids[0]).then_some(()));
         // a stale press doesn't leak into the next recording
         state().heard = Some(alt_mid);
         state().recording_until = Some(Instant::now() - Duration::from_secs(1));
