@@ -81,6 +81,35 @@ fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     card_face(p, rect, R_TILE, hover, selected);
 }
 
+/// A wash of `col` from the card's top (or bottom) edge, fading out over
+/// `reach` of its height. The ramp stops where the rounded corners start; a
+/// rounded band there carries the colour it reached.
+pub(crate) fn wash(p: &egui::Painter, rect: Rect, corner: f32, top: bool, reach: f32, col: Color32) {
+    use egui::epaint::{Mesh, Vertex, WHITE_UV};
+    let r = corner.min(rect.height() / 2.0);
+    let len = rect.height() * reach;
+    // the colour at `r` from the edge
+    let at_r = with_alpha(col, col.a() as f32 / 255.0 * (1.0 - r / len.max(1.0)).max(0.0));
+    let (edge_y, far_y) = if top { (rect.top() + r, rect.top() + len) } else { (rect.bottom() - r, rect.bottom() - len) };
+    if (far_y - edge_y).abs() > 0.5 && (top == (far_y > edge_y)) {
+        let mut m = Mesh::default();
+        for (y, c) in [(edge_y, at_r), (far_y, Color32::TRANSPARENT)] {
+            m.vertices.push(Vertex { pos: Pos2::new(rect.left(), y), uv: WHITE_UV, color: c });
+            m.vertices.push(Vertex { pos: Pos2::new(rect.right(), y), uv: WHITE_UV, color: c });
+        }
+        m.add_triangle(0, 1, 2);
+        m.add_triangle(1, 3, 2);
+        p.add(Shape::mesh(m));
+    }
+    let k = r as u8;
+    let (band, corners) = if top {
+        (Rect::from_min_max(rect.min, Pos2::new(rect.right(), edge_y)), egui::CornerRadius { nw: k, ne: k, sw: 0, se: 0 })
+    } else {
+        (Rect::from_min_max(Pos2::new(rect.left(), edge_y), rect.max), egui::CornerRadius { nw: 0, ne: 0, sw: k, se: k })
+    };
+    p.rect_filled(band, corners, at_r);
+}
+
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,
 /// and "Stopped". A click restarts the app (the caller does it).
 pub fn stopped(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str) -> Response {
