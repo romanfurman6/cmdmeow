@@ -1,6 +1,6 @@
-//! The menu-bar panel (design A, "Control Center"): a title line with the
-//! open, hide and quit buttons, the user's widgets on a 4-column grid of
-//! square cells (scrolling when they don't fit), an "Edit widgets…" link
+//! The menu-bar panel (design A, "Control Center"): a title line with a
+//! "…" button that slides out open, hide and quit, the user's widgets on a
+//! 4-column grid of square cells (scrolling when they don't fit), an "Edit widgets…" link
 //! that opens the widget editor in the full window (see `editor.rs`), and
 //! the sheet that opens beside the panel.
 
@@ -200,26 +200,60 @@ pub fn title_line(app: &App, p: &egui::Painter, x0: f32, top: f32, width: f32) {
     }
 }
 
-/// Title and status from the first tool that offers one, then three icon
-/// buttons on the right: open the full app, hide the panel, quit.
+/// Title and status from the first tool that offers one, then one round
+/// "…" button on the right; a click slides out Open, Hide and Quit to its
+/// left (▢ – ✕ …) as the dots turn into "›"; another click tucks them
+/// back. The panel opens folded.
 fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    // B1: square icon buttons, 32 in a header, centred on the title line
-    let size = sp::HEADER_CONTROL_H;
+    let size = BTN_H_ROW;
     let top = rect.top() + 31.0 - size / 2.0;
-    let at = |k: f32| Rect::from_min_size(Pos2::new(rect.right() - 14.0 - size * (k + 1.0) - sp::XS * k, top), Vec2::splat(size));
-    let (open, hide, quit) = (at(2.0), at(1.0), at(0.0));
+    let at = |k: f32| Rect::from_min_size(Pos2::new(rect.right() - 14.0 - size * (k + 1.0) - sp::S * k, top), Vec2::splat(size));
+    let id = Id::new("panel-more");
+    let now = ctx.input(|i| i.time);
+    // the panel was away (hidden): it comes back folded, with no animation
+    let last = ctx.data_mut(|d| d.get_temp::<f64>(id.with("seen"))).unwrap_or(now);
+    ctx.data_mut(|d| d.insert_temp(id.with("seen"), now));
+    let mut open = ctx.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
+    if now - last > 0.5 && open {
+        open = false;
+        ctx.data_mut(|d| d.insert_temp(id, false));
+        ctx.animate_bool_with_time(id.with("t"), false, 0.0);
+    }
+    let t = ctx.animate_bool_with_time(id.with("t"), open, 0.24);
+    let more = at(0.0);
+    let slots = [at(3.0), at(2.0), at(1.0)];
     let x0 = rect.left() + 16.0;
-    title_line(app, &p, x0, rect.top(), open.left() - x0 - 10.0);
-    if icon_button(ui, open, Icon::Window, "Open Cmd+Meow").clicked() {
-        open_app(app, &ctx);
+    // the title gives way as the buttons come out
+    let left = more.left() + (slots[0].left() - more.left()) * t;
+    title_line(app, &p, x0, rect.top(), left - x0 - 10.0);
+    let tip = if open { "Less" } else { "More" };
+    if round_button_with(ui, more, tip, |p, r, col| more_glyph(p, r, t, col)).clicked() {
+        ctx.data_mut(|d| d.insert_temp(id, !open));
     }
-    if icon_button(ui, hide, Icon::Minus, "Hide").clicked() {
-        app.hide(&ctx);
-    }
-    if icon_button(ui, quit, Icon::Close, "Quit Cmd+Meow").clicked() && !app.demo {
-        app.quit(&ctx);
+    let buttons = [(Icon::Window, "Open Cmd+Meow"), (Icon::Minus, "Hide"), (Icon::Close, "Quit Cmd+Meow")];
+    for (i, ((ic, tip), slot)) in buttons.into_iter().zip(slots).enumerate() {
+        // the nearest one leads, the far one trails; each eases out and grows in
+        let lag = (2 - i) as f32 * 0.15;
+        let k = ((t - lag) / 0.7).clamp(0.0, 1.0);
+        let e = 1.0 - (1.0 - k).powi(3);
+        if e <= 0.01 {
+            continue;
+        }
+        let r = Rect::from_center_size(more.center().lerp(slot.center(), e), Vec2::splat(size * (0.6 + 0.4 * e)));
+        let mut c = ui.new_child(UiBuilder::new().max_rect(r.expand(2.0)).id_salt(("panel-more", i)));
+        c.multiply_opacity(e);
+        // only a button that has arrived takes a click
+        if round_button_in(&mut c, r, ic, tip).clicked() && e > 0.95 {
+            ctx.data_mut(|d| d.insert_temp(id, false));
+            match i {
+                0 => open_app(app, &ctx),
+                1 => app.hide(&ctx),
+                _ if !app.demo => app.quit(&ctx),
+                _ => {}
+            }
+        }
     }
 }
 
