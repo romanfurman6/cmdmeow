@@ -168,7 +168,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | M2 | Every animation is finite or tied to visible work, and stops repainting when done. | ✅ |
 | M3 | Press: down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)` (B7). Hover fades via `animate_bool`. | ✅ |
 | M4 | Loader: fill eases 0.6 s, wave loops 1.6 s linear, ⌘→✓ crossfade 0.25 s plus one 0.46 s hop. | ✅ |
-| M5 | **Window open:** if the window's first frame isn't drawn 150 ms after it appears, show the S1 backdrop and the P6 loader mark (56 pt, centred, lime fill rising on a loop). Fade in 120 ms; fade out over 120 ms and stop when the first frame is drawn (M2). No text, card or frame. Core Animation under egui's frame (M1). | ⏳ code |
+| M5 | **Window open:** if the window's first frame isn't drawn 150 ms after it appears, show the S1 backdrop and the P6 loader mark (56 pt, centred, lime fill rising on a loop). Fades in over 120 ms; the first frame covers it and it stops (M2). No text, card or frame. Core Animation under egui's frame (M1). | ⏳ code |
 
 ## 10. Sound ✅
 
