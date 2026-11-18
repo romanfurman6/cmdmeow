@@ -33,6 +33,11 @@ pub fn disabled_alpha() -> f32 {
     if super::glass::is_light() { 0.62 } else { 0.45 }
 }
 
+/// B5 glow colour: the key's tint lifted 20% toward white (no olive on dark), at `a`.
+fn glow_of(c: Color32, a: f32) -> Color32 {
+    with_alpha(lerp_color(c, Color32::WHITE, 0.2), a)
+}
+
 /// A pressable control this frame.
 pub struct Key {
     pub resp: Response,
@@ -188,7 +193,7 @@ impl Look {
             highlight: Color32::from_white_alpha(64),
             edge: None,
             edge_w: 1.0,
-            glow: Some(with_alpha(c, 0.50)),
+            glow: Some(glow_of(c, 0.55)),
             ring: c,
             radius: R_BUTTON,
         }
@@ -202,7 +207,7 @@ impl Look {
     /// Destructive confirm: [`DANGER`] (the state red stays `RED()`).
     pub fn danger() -> Look {
         let mut l = Look::tint(DANGER(), 0.40, 0.22);
-        l.glow = Some(with_alpha(DANGER(), 0.45));
+        l.glow = Some(glow_of(DANGER(), 0.50));
         l
     }
 
@@ -263,15 +268,15 @@ pub fn paint_at(p: &Painter, rect: Rect, look: &Look, hover: f32, press: f32, al
     let fade = |c: Color32| with_alpha(c, c.a() as f32 / 255.0 * alpha);
     // B5: only main buttons 32 pt and taller glow
     if let Some(g) = look.glow.filter(|_| alpha >= 1.0 && rect.height() >= GLOW_MIN_H) {
-        // 0 6 18 -6 at rest, 0 3 10 -6 held
+        // 0 10 26 -14 at rest (deep under the key, narrower than it), 0 5 14 -14 held
         let k = press.clamp(0.0, 1.0);
         let glow = egui::epaint::Shadow {
-            offset: [0, (6.0 - 3.0 * k).round() as i8],
-            blur: (18.0 - 8.0 * k).round() as u8,
+            offset: [0, (10.0 - 5.0 * k).round() as i8],
+            blur: (26.0 - 12.0 * k).round() as u8,
             spread: 0,
             color: with_alpha(g, g.a() as f32 / 255.0 * (1.0 - 0.2 * k)),
         };
-        p.add(glow.as_shape(rect.shrink(6.0), r));
+        p.add(glow.as_shape(rect.shrink(14.0), r));
     }
     // the base shows below the face: what's left of it after the face sank
     base(p, face, r, look.depth - look.drop * press.max(0.0), fade(look.base));

@@ -446,15 +446,23 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
 /// for widgets and the Mac Health page alike. `top` is the top of the scale
 /// (None: the highest value). The captions take the bottom 13 pt of `r`.
 pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top: Option<f32>) {
+    // no history yet, or no room for a graph above the captions
+    if values.is_empty() || r.height() < 13.0 + 8.0 {
+        return;
+    }
     let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 13.0));
     match top {
         Some(t) => spark_to(p, gr, values, color, t),
         None => spark(p, gr, values, color, None),
     }
-    let span = values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000;
-    let start = if span >= 60 { format!("{} min ago", span / 60) } else { format!("{span} s ago") };
+    let start = span_label(values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000);
     p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
     p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
+}
+
+/// How far back a graph of `secs` reaches: "45 s ago", "2 min ago".
+fn span_label(secs: u64) -> String {
+    if secs >= 60 { format!("{} min ago", secs / 60) } else { format!("{secs} s ago") }
 }
 
 /// The shared columns of a Medium or Large widget's list (W5): the widest
@@ -528,6 +536,13 @@ pub fn loading(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color3
 #[cfg(test)]
 mod row_grid_tests {
     use super::*;
+
+    #[test]
+    fn span_label_switches_to_minutes_at_60_s() {
+        assert_eq!(span_label(59), "59 s ago");
+        assert_eq!(span_label(60), "1 min ago");
+        assert_eq!(span_label(150), "2 min ago");
+    }
 
     #[test]
     fn row_grid_leaves_room_for_a_bar() {
