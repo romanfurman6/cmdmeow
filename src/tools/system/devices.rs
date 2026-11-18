@@ -575,6 +575,39 @@ pub fn merge_extra(list: &mut Vec<Device>, paired_pods: &[Device], adverts: &[Po
     }
 }
 
+/// One row per physical device. The sources (the Bluetooth report, the
+/// input registry, adverts, LE and controllers) each add what they see, and
+/// macOS itself can list one pair twice: connected over classic Bluetooth
+/// with its address and product id, and again over Bluetooth LE under a
+/// passing address with only the case level. Entries that are [`Device::same`]
+/// become one: the one with a real identity (not rotating) and a battery
+/// wins, the others only fill what it lacks.
+pub fn collapse(list: &mut Vec<Device>) {
+    let mut out: Vec<Device> = Vec::with_capacity(list.len());
+    for d in list.drain(..) {
+        match out.iter().position(|o| o.live() == d.live() && o.same(&d)) {
+            Some(i) => {
+                let o = &mut out[i];
+                let better = |x: &Device| (!x.rotating(), x.battery().is_some(), x.product != 0);
+                let (mut keep, other) = if better(&d) > better(o) { (d, o.clone()) } else { (o.clone(), d) };
+                if keep.main.is_none() && keep.left.is_none() && keep.right.is_none() {
+                    keep.main = other.main;
+                }
+                if keep.main.is_none() {
+                    keep.left = keep.left.or(other.left);
+                    keep.right = keep.right.or(other.right);
+                    keep.case = keep.case.or(other.case);
+                }
+                keep.charging |= other.charging;
+                keep.case_charging |= other.case_charging;
+                *o = keep;
+            }
+            None => out.push(d),
+        }
+    }
+    *list = out;
+}
+
 // ------------------------------------------------------------------ alerts
 
 /// Remembers which alerts went out so each device alerts once per step:
