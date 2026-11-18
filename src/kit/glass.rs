@@ -249,7 +249,7 @@ pub mod overlay {
     /// square with a dark ring on a corner. Sides draw nothing; they still
     /// grab.
     pub fn box_handle(p: &Painter, at: Pos2, k: usize, hot: bool) {
-        if k % 2 != 0 {
+        if !k.is_multiple_of(2) {
             return;
         }
         let r = Rect::from_center_size(at, Vec2::splat(if hot { HANDLE_HOT } else { HANDLE }));
