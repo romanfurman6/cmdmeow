@@ -600,10 +600,13 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -
     // never smaller than the app window's: the narrow panel shows the
     // centre of the same glow instead of a squeezed copy of it (S1)
     let (rx, mut ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
+    let mut rx = rx;
     if tall {
-        // the panel: green from top to bottom, the bottom edge at the
-        // gradient's middle (#0F1F0D dark) instead of its near-black end
+        // the panel: a beam of light down the centre to the bottom (its
+        // bottom edge at the gradient's middle, not the near-black end),
+        // darker towards the sides
         ry = ry.max(rect.height() * 1.9);
+        rx = rect.width() * 0.85;
     }
     let color_at = |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
