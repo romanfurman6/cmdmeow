@@ -300,9 +300,8 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
         ];
         for (k, (name, ic, n)) in rows.into_iter().enumerate() {
             let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + ROW_H));
-            if k > 0 {
-                hairline(&p, rr.left_top(), rr.right_top());
-            }
+            // a line under the header too, like Cleanup's start list
+            hairline(&p, rr.left_top(), rr.right_top());
             let cy = rr.center().y;
             // H9: content 12 in from the row's edges, like the other start lists
             let (x0, x1) = (x0 + crate::kit::glass::START_PAD, x1 - crate::kit::glass::START_PAD);
