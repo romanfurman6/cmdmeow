@@ -253,7 +253,7 @@ impl Resampler {
     /// longer (1) or shorter (-1) than its rate gives.
     pub fn process(&mut self, pcm: &Pcm, stretch: i64) -> Vec<f32> {
         let n = pcm.frames();
-        if n == 0 || pcm.channels == 0 || !(pcm.rate > 0.0) {
+        if n == 0 || pcm.channels == 0 || pcm.rate.is_nan() || pcm.rate <= 0.0 {
             return Vec::new();
         }
         if pcm.rate != self.rate {
