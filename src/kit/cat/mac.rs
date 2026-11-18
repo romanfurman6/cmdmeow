@@ -122,6 +122,8 @@ struct Main {
     finder: Option<Sender<Job>>,
     /// Pushes so far: a settle asked for before a later push is dropped.
     lifts: u32,
+    /// Tidies begun so far: a stopped one's late pictures are dropped.
+    tidy_gen: u32,
     /// Rests so far, by icon: a picture goes only once Finder has placed
     /// its icon's last rest.
     rests: HashMap<usize, u32>,
@@ -691,27 +693,40 @@ impl Main {
             return;
         }
         self.tidying = true;
-        let _ = std::thread::Builder::new().name("cat tidy".into()).spawn(|| {
+        self.tidy_gen = self.tidy_gen.wrapping_add(1);
+        let gen = self.tidy_gen;
+        let started = std::thread::Builder::new().name("cat tidy".into()).spawn(move || {
             let (spots, view) = stage::read_desktop();
             if log() {
                 eprintln!("[cat] tidy: {} icon(s), {view:?}", spots.len());
             }
             if spots.is_empty() || view.arranged {
-                return on_main(|m| m.tidying = false);
+                return on_main(move |m| if m.tidy_gen == gen { m.tidying = false });
             }
             save_spots(&spots);
             stage::shoot(move |icons, paper| {
                 // read off the main thread: the screen's worth of pixels
                 let mask = stage::mask(icons.as_ref());
-                on_main(move |m| m.tidy_go(spots, view, icons, paper, mask))
+                on_main(move |m| m.tidy_go(gen, spots, view, icons, paper, mask))
             });
         });
+        if started.is_err() {
+            self.tidying = false;
+        }
     }
 
-    fn tidy_go(&mut self, spots: Vec<grid::Spot>, view: grid::View, icons: Option<stage::Shot>, paper: Option<stage::Shot>, mask: Option<grid::Mask>) {
-        // switched off while Finder was asked
-        if !super::tidy_on() {
-            self.tidying = false;
+    /// Tidy `gen` is still the one under way (not stopped, or stopped and
+    /// another begun, while its pictures were taken or cut out).
+    fn tidy_current(&self, gen: u32) -> bool {
+        self.tidying && gen == self.tidy_gen && super::tidy_on()
+    }
+
+    fn tidy_go(&mut self, gen: u32, spots: Vec<grid::Spot>, view: grid::View, icons: Option<stage::Shot>, paper: Option<stage::Shot>, mask: Option<grid::Mask>) {
+        // stopped or switched off while Finder was asked
+        if !self.tidy_current(gen) {
+            if gen == self.tidy_gen {
+                self.tidying = false;
+            }
             return;
         }
         let Some((_, ground)) = MainThreadMarker::new().and_then(stage::first_screen) else {
@@ -731,21 +746,27 @@ impl Main {
         let mut desktop = Desktop { spots, view, pitch, off, icons, paper, boxes: Vec::new(), mask: None, mids: middles };
         // off the main thread: what each icon and its name really cover, and
         // its picture and patch cut out (a heap lifts several in one frame)
-        let _ = std::thread::Builder::new().name("cat cut out".into()).spawn(move || {
+        let started = std::thread::Builder::new().name("cat cut out".into()).spawn(move || {
             if let Some(m) = &mask {
                 let mids = &desktop.mids;
                 desktop.boxes = (0..mids.len()).map(|i| grid::ink_box(m, mids, i, view.icon, desktop.cell(mids[i]))).collect();
             }
             desktop.mask = mask;
             let kept = Stage::cut_all(&desktop);
-            on_main(move |m| m.tidy_start(desktop, kept, at, slots, pitch));
+            on_main(move |m| m.tidy_start(gen, desktop, kept, at, slots, pitch));
         });
+        if started.is_err() {
+            self.tidying = false;
+        }
     }
 
     /// The pictures are cut out: the cat sets off.
-    fn tidy_start(&mut self, desktop: Desktop, kept: HashMap<usize, stage::Kept>, at: Vec<(usize, f64, f64)>, slots: Vec<(f64, f64)>, pitch: (f64, f64)) {
-        if !super::tidy_on() {
-            self.tidying = false;
+    #[allow(clippy::too_many_arguments)]
+    fn tidy_start(&mut self, gen: u32, desktop: Desktop, kept: HashMap<usize, stage::Kept>, at: Vec<(usize, f64, f64)>, slots: Vec<(f64, f64)>, pitch: (f64, f64)) {
+        if !self.tidy_current(gen) {
+            if gen == self.tidy_gen {
+                self.tidying = false;
+            }
             return;
         }
         self.with_stage(move |st, now| {
@@ -1574,6 +1595,7 @@ pub fn start(prefs: Prefs, status_item: *mut c_void) {
         tidying: false,
         finder: None,
         lifts: 0,
+        tidy_gen: 0,
         rests: HashMap::new(),
         seed: seed | 1,
         voice: None,
