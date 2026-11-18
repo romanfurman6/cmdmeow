@@ -678,7 +678,7 @@ fn backdrop_alpha() -> f32 {
 /// (`CMDMEOW_PANEL_ALPHA`, 1 = solid).
 fn panel_alpha() -> f32 {
     static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *A.get_or_init(|| std::env::var("CMDMEOW_PANEL_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(0.86))
+    *A.get_or_init(|| std::env::var("CMDMEOW_PANEL_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
 }
 
 /// `pts` (a closed outline) with extra points so no edge is longer than `step`.

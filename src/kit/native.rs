@@ -125,10 +125,11 @@ mod mac {
     }
 
     /// True when this macOS has Liquid Glass (NSGlassEffectView, macOS 26).
-    /// `CMDMEOW_LIQUID=0` turns it off.
+    /// Off unless `CMDMEOW_LIQUID=1` (Roman 2026-11-18: cards look like the
+    /// header buttons instead).
     pub fn liquid_glass() -> bool {
         static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *S.get_or_init(|| std::env::var("CMDMEOW_LIQUID").as_deref() != Ok("0") && objc2::runtime::AnyClass::get(c"NSGlassEffectView").is_some())
+        *S.get_or_init(|| std::env::var("CMDMEOW_LIQUID").as_deref() == Ok("1") && objc2::runtime::AnyClass::get(c"NSGlassEffectView").is_some())
     }
 
     fn ns_rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
