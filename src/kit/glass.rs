@@ -419,6 +419,17 @@ pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
 /// as `white(ROW_HOVER)`. In a popover the whole row, edge to edge.
 pub const ROW_HOVER: u8 = 10;
 
+/// SP1 start lists sit on the backdrop with no card: the lit fill reaches
+/// this far past the row's content on each side, so the icon and the value
+/// sit `sp::M` inside it, never on its edge (H9).
+pub const START_BLEED: f32 = sp::M;
+
+/// The hover fill of an SP1 start row; `rr` spans the row's content.
+pub fn start_row_fill(p: &egui::Painter, rr: Rect) {
+    let lit = Rect::from_min_max(Pos2::new(rr.left() - START_BLEED, rr.top() + 1.0), Pos2::new(rr.right() + START_BLEED, rr.bottom()));
+    p.rect_filled(lit, 8.0, white(ROW_HOVER));
+}
+
 /// "Show where": the ring on the item an AI Check suggestion points at.
 /// It holds, then fades out; nothing repaints once it's gone.
 pub mod reveal {

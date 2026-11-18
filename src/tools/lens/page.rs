@@ -223,7 +223,7 @@ fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<Start> {
         let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("map-place", k)), Sense::click());
         if resp.hovered() {
-            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+            crate::kit::glass::start_row_fill(&p, rr);
         }
         if k > 0 {
             hairline(&p, rr.left_top(), rr.right_top());
@@ -1192,6 +1192,11 @@ pub(super) fn biggest_files(node: &Node, max: usize) -> Vec<&Node> {
     out
 }
 
+/// Folder and file rows: icon and name x from the content edge (12 in
+/// from the lit edge, H9), after the 15 pt checkbox.
+const ROW_ICON_X: f32 = 34.0;
+const ROW_TEXT_X: f32 = 50.0;
+
 /// The biggest files under the folder as a flat list: name, where it is,
 /// size and a bar; pick, open the menu, or Quick Look like anywhere else.
 fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
@@ -1207,7 +1212,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
     }
     let top = list[0].bytes.max(1);
     let row_h = 40.0;
-    let inner = pa.shrink2(Vec2::new(6.0, 8.0));
+    let inner = pa.shrink2(Vec2::new(sp::XS, 8.0));
     let mut toggle: Option<(PathBuf, u64)> = None;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
     egui::ScrollArea::vertical().id_salt("map-files").auto_shrink([false, false]).show(&mut child, |ui| {
@@ -1220,18 +1225,22 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
                 out.hover = Some((f.path.clone(), f.bytes));
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &f.path);
-            let cb = Rect::from_center_size(Pos2::new(rr.left() + 14.0, rr.center().y), Vec2::splat(15.0));
+            // H9: content 12 in from the lit edge, both sides
+            let x = rr.left() + sp::M;
+            let xr = rr.right() - sp::M;
+            let cb = Rect::from_center_size(Pos2::new(x + 7.5, rr.center().y), Vec2::splat(15.0));
             if trashable(&f.path) && checkbox(ui, cb, ui.scope_id().with(("file-cb", i)), on, true).clicked() {
                 toggle = Some((f.path.clone(), f.bytes));
             }
             let lp = ui.painter();
-            icon(lp, Icon::Doc, Rect::from_center_size(Pos2::new(rr.left() + 40.0, rr.center().y), Vec2::splat(16.0)), TEXT_DIM());
-            let sr = lp.text(Pos2::new(rr.right() - 10.0, rr.top() + 13.0), Align2::RIGHT_CENTER, human_bytes(f.bytes), font(12.0), TEXT_SOFT());
-            text_fit(lp, Pos2::new(rr.left() + 56.0, rr.top() + 13.0), Align2::LEFT_CENTER, &f.name, font(13.0), TEXT(), sr.left() - rr.left() - 66.0);
+            icon(lp, Icon::Doc, Rect::from_center_size(Pos2::new(x + ROW_ICON_X, rr.center().y), Vec2::splat(16.0)), TEXT_DIM());
+            let sr = lp.text(Pos2::new(xr, rr.top() + 13.0), Align2::RIGHT_CENTER, human_bytes(f.bytes), font(12.0), TEXT_SOFT());
+            let tx = x + ROW_TEXT_X;
+            text_fit(lp, Pos2::new(tx, rr.top() + 13.0), Align2::LEFT_CENTER, &f.name, font(13.0), TEXT(), sr.left() - 10.0 - tx);
             let at = f.path.parent().map(tilde).unwrap_or_default();
-            text_fit(lp, Pos2::new(rr.left() + 56.0, rr.top() + 28.0), Align2::LEFT_CENTER, &at, mono(11.0), TEXT_FAINT(), (rr.width() - 66.0) * 0.6);
+            text_fit(lp, Pos2::new(tx, rr.top() + 28.0), Align2::LEFT_CENTER, &at, mono(11.0), TEXT_FAINT(), (xr - tx) * 0.6);
             let bw = (rr.width() * 0.3) * (f.bytes as f32 / top as f32);
-            lp.rect_filled(Rect::from_min_size(Pos2::new(rr.right() - 10.0 - bw, rr.top() + 26.0), Vec2::new(bw, 3.0)), 1.5, with_alpha(ACCENT(), 0.6));
+            lp.rect_filled(Rect::from_min_size(Pos2::new(xr - bw, rr.top() + 26.0), Vec2::new(bw, 3.0)), 1.5, with_alpha(ACCENT(), 0.6));
             menu::context(&rresp).show(|ui| {
                 if let Some(a) = item_menu(ui, &f.path, false) {
                     app.lens_menu_act = Some((a, f.path.clone(), f.bytes));
@@ -1299,14 +1308,16 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
                 lp.rect_filled(rr, R_SMALL, white(ROW_HOVER));
             }
             let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
-            let cb = Rect::from_center_size(Pos2::new(rr.left() + 16.0, rr.center().y), Vec2::splat(15.0));
+            // H9: content 12 in from the lit edge
+            let x = rr.left() + sp::M;
+            let cb = Rect::from_center_size(Pos2::new(x + 7.5, rr.center().y), Vec2::splat(15.0));
             if trashable(&k.path) && checkbox(ui, cb, ui.scope_id().with(("other-cb", i)), on, true).clicked() {
                 toggle = Some((k.path.clone(), k.bytes));
             }
             let folder = is_folder(k);
-            icon(&lp, if folder { Icon::Folder } else { Icon::Doc }, Rect::from_center_size(Pos2::new(rr.left() + 42.0, rr.center().y), Vec2::splat(16.0)), if folder { ACCENT() } else { TEXT_DIM() });
-            let sr = lp.text(Pos2::new(rr.right() - 10.0, rr.center().y), Align2::RIGHT_CENTER, human_bytes(k.bytes), font(12.0), TEXT_SOFT());
-            text_fit(&lp, Pos2::new(rr.left() + 58.0, rr.center().y), Align2::LEFT_CENTER, &k.name, font(13.0), TEXT(), sr.left() - rr.left() - 68.0);
+            icon(&lp, if folder { Icon::Folder } else { Icon::Doc }, Rect::from_center_size(Pos2::new(x + ROW_ICON_X, rr.center().y), Vec2::splat(16.0)), if folder { ACCENT() } else { TEXT_DIM() });
+            let sr = lp.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(k.bytes), font(12.0), TEXT_SOFT());
+            text_fit(&lp, Pos2::new(x + ROW_TEXT_X, rr.center().y), Align2::LEFT_CENTER, &k.name, font(13.0), TEXT(), sr.left() - 10.0 - (x + ROW_TEXT_X));
             if !k.children.is_empty() {
                 if resp.hovered() {
                     ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1600,8 +1611,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let shown_node = preview.unwrap_or(node);
     let previewing = preview.is_some();
     glass_card(&p, lr, R_CARD, 0.0, false);
-    let x0 = lr.left() + 14.0;
-    let x1 = lr.right() - 14.0;
+    // the header lines up with the rows' checkboxes and sizes (H9)
+    let x0 = lr.left() + sp::L;
+    let x1 = lr.right() - sp::L;
     let mut y = lr.top() + 14.0;
     let title = if previewing { shown_node.name.clone() } else { here.clone() };
     icon(&p, Icon::Folder, Rect::from_min_size(Pos2::new(x0, y + 2.0), Vec2::splat(28.0)), ACCENT());
@@ -1647,7 +1659,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let cursor = if previewing { None } else { app.lens_cursor.filter(|c| *c < shown) };
     let lp = p.with_clip_rect(Rect::from_min_max(Pos2::new(lr.left(), y), Pos2::new(lr.right(), list_bottom)));
     for (i, k) in kids.iter().take(shown).enumerate() {
-        let rr = Rect::from_min_size(Pos2::new(lr.left() + 6.0, y), Vec2::new(lr.width() - 12.0, ROW_H));
+        let rr = Rect::from_min_size(Pos2::new(lr.left() + sp::XS, y), Vec2::new(lr.width() - 2.0 * sp::XS, ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("lens-row", i)), Sense::click());
         let selectable = trashable(&k.path);
         let on = app.lens_selected.iter().any(|(q, _)| q == &k.path);
@@ -1672,14 +1684,16 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
                 menu_act = Some((a, k.path.clone(), k.bytes));
             }
         });
-        let cb = Rect::from_center_size(Pos2::new(rr.left() + 14.0, rr.center().y), Vec2::splat(15.0));
+        // H9: content 12 in from the lit edge
+        let x = rr.left() + sp::M;
+        let cb = Rect::from_center_size(Pos2::new(x + 7.5, rr.center().y), Vec2::splat(15.0));
         if selectable && checkbox(ui, cb, ui.scope_id().with(("lens-cb", i)), on, true).clicked() {
             toggle = Some((k.path.clone(), k.bytes));
         }
         let folder = is_folder(k);
-        icon(&lp, if folder { Icon::Folder } else { Icon::Doc }, Rect::from_center_size(Pos2::new(rr.left() + 40.0, rr.center().y), Vec2::splat(16.0)), if folder { ACCENT() } else { TEXT_DIM() });
-        let sr = lp.text(Pos2::new(rr.right() - 8.0, rr.center().y), Align2::RIGHT_CENTER, human_bytes(k.bytes), font(12.0), TEXT_SOFT());
-        text_fit(&lp, Pos2::new(rr.left() + 56.0, rr.center().y), Align2::LEFT_CENTER, &k.name, font(13.0), TEXT(), sr.left() - rr.left() - 66.0);
+        icon(&lp, if folder { Icon::Folder } else { Icon::Doc }, Rect::from_center_size(Pos2::new(x + ROW_ICON_X, rr.center().y), Vec2::splat(16.0)), if folder { ACCENT() } else { TEXT_DIM() });
+        let sr = lp.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(k.bytes), font(12.0), TEXT_SOFT());
+        text_fit(&lp, Pos2::new(x + ROW_TEXT_X, rr.center().y), Align2::LEFT_CENTER, &k.name, font(13.0), TEXT(), sr.left() - 10.0 - (x + ROW_TEXT_X));
         if resp.clicked() {
             app.lens_cursor = Some(i);
             if !k.children.is_empty() {
@@ -1693,7 +1707,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     }
     let rest: u64 = kids.iter().skip(shown).map(|k| k.bytes).sum::<u64>() + shown_node.other;
     if rest > 0 && y + ROW_H <= list_bottom + 1.0 {
-        let rr = Rect::from_min_size(Pos2::new(lr.left() + 6.0, y), Vec2::new(lr.width() - 12.0, ROW_H));
+        let rr = Rect::from_min_size(Pos2::new(lr.left() + sp::XS, y), Vec2::new(lr.width() - 2.0 * sp::XS, ROW_H));
         let n = kids.len() - shown;
         let label = if n > 0 { format!("{n} more and small files") } else { "Small files".to_string() };
         // the hidden ones open in a sheet
@@ -1705,8 +1719,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         if n > 0 && resp.clicked() {
             app.lens_other = true;
         }
-        let sr = lp.text(Pos2::new(rr.right() - 8.0, rr.center().y), Align2::RIGHT_CENTER, human_bytes(rest), font(12.0), TEXT_FAINT());
-        text_fit(&lp, Pos2::new(rr.left() + 56.0, rr.center().y), Align2::LEFT_CENTER, &label, font(13.0), TEXT_DIM(), sr.left() - rr.left() - 66.0);
+        let sr = lp.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(rest), font(12.0), TEXT_FAINT());
+        let tx = rr.left() + sp::M + ROW_TEXT_X;
+        text_fit(&lp, Pos2::new(tx, rr.center().y), Align2::LEFT_CENTER, &label, font(13.0), TEXT_DIM(), sr.left() - 10.0 - tx);
     }
     // the disk this map is on
     let (disk_total, disk_free) = crate::kit::fs::volume_space(&root.path.to_string_lossy());
