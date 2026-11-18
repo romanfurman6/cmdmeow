@@ -5,6 +5,7 @@
 
 use crate::kit::sync::LockExt;
 pub use crate::kit::agent;
+mod captures;
 pub mod engine;
 mod inuse;
 mod journal;
@@ -243,6 +244,11 @@ impl Tool for Cleanup {
                 self.ai.open = false;
                 Some(View::Page)
             }
+            "results-captures" => {
+                let v = self.demo_view("results");
+                self.clean_group = Some(engine::Group::Captures);
+                v
+            }
             "results-confirm" => {
                 let v = self.demo_view("results");
                 let items = self.clean.lock_ok().items.clone();
@@ -264,6 +270,7 @@ impl Tool for Cleanup {
                     engine::GroupLive { bytes: 2_600_000_000, items: 3, total: 8, done: 5 },
                     engine::GroupLive { bytes: 1_100_000_000, items: 4, total: 6, done: 2 },
                     engine::GroupLive { bytes: 0, items: 0, total: 2, done: 0 },
+                    engine::GroupLive { bytes: 0, items: 0, total: 4, done: 1 },
                     engine::GroupLive { bytes: 0, items: 0, total: 3, done: 3 },
                     engine::GroupLive { bytes: 0, items: 0, total: 1, done: 0 },
                 ];

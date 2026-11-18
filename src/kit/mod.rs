@@ -29,6 +29,7 @@ pub mod modal;
 pub mod native;
 pub mod parakeet;
 pub mod notify;
+pub mod old_captures;
 pub mod perms;
 pub mod plist;
 pub mod remove;
