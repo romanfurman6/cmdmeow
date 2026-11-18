@@ -366,11 +366,12 @@ pub fn row_split_list(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color:
 }
 
 /// Name column of a Row's right part (W5), the same in every Row: fits
-/// "Compressed" and "Documents"; a longer name fades.
-pub const ROW_NAME: f32 = 62.0;
+/// "Applications" and "Compressed" in SF at 12 (about 66 pt, light weight
+/// a little wider); a longer name fades.
+pub const ROW_NAME: f32 = 70.0;
 /// Value column of a Row's right part (W5), the same in every Row: fits
-/// "65.6 GB", leaving the bar 28 pt in the 160 pt right part.
-pub const ROW_VALUE: f32 = 50.0;
+/// "65.6 GB" (about 40 pt), leaving the bar 26 pt in the 160 pt right part.
+pub const ROW_VALUE: f32 = 44.0;
 
 /// The lines of a Row's right part (W5): name, bar, value in three columns
 /// shared by every Row, so bars start and end on the same two lines across
@@ -525,4 +526,18 @@ pub fn loading(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color3
         }
     }
     resp
+}
+
+#[cfg(test)]
+mod row_grid_tests {
+    use super::*;
+
+    #[test]
+    fn row_grid_leaves_room_for_a_bar() {
+        // the 1:4 right part: 380 panel, 12 margins, divider at ROW_SPLIT, PAD each side
+        let right = crate::kit::mechanics::PANEL_WIDTH - 2.0 * 12.0 - ROW_SPLIT - 2.0 * PAD;
+        assert_eq!(right, 160.0);
+        assert_eq!(ROW_SPLIT, 172.0);
+        assert!(right - ROW_NAME - ROW_VALUE - 2.0 * 10.0 >= 24.0, "bar under 24 pt");
+    }
 }
