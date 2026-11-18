@@ -1722,6 +1722,8 @@ pub enum Icon {
     SpeakerOff,
     /// A plus: add something.
     Plus,
+    /// A dash: hides the menu bar panel.
+    Minus,
 }
 
 /// The SF Symbol behind each icon (outline variants: icons are monochrome strokes).
@@ -1779,6 +1781,7 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Window => "macwindow",
         Icon::Close => "xmark",
         Icon::Plus => "plus",
+        Icon::Minus => "minus",
         Icon::Refresh => "arrow.clockwise",
         Icon::Search => "magnifyingglass",
         Icon::Grip => "circle.grid.2x3.fill",
@@ -2043,6 +2046,7 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(12.0, 5.0), (12.0, 19.0)]);
             open(&[(5.0, 12.0), (19.0, 12.0)]);
         }
+        Icon::Minus => open(&[(5.0, 12.0), (19.0, 12.0)]),
         Icon::Refresh => {
             arc(12.0, 12.0, 8.0, -PI * 0.25, PI * 1.6);
             open(&[(20.0, 4.0), (20.0, 9.0), (15.0, 9.0)]);

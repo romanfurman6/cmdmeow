@@ -1,5 +1,5 @@
 //! The menu-bar panel (design A, "Control Center"): a title line with the
-//! window and settings buttons, the user's widgets on a 4-column grid of
+//! open, hide and quit buttons, the user's widgets on a 4-column grid of
 //! square cells (scrolling when they don't fit), an "Edit widgets…" link
 //! that opens the widget editor in the full window (see `editor.rs`), and
 //! the sheet that opens beside the panel.
@@ -200,16 +200,26 @@ pub fn title_line(app: &App, p: &egui::Painter, x0: f32, top: f32, width: f32) {
     }
 }
 
-/// Title and status from the first tool that offers one, then the one
-/// button that opens the full app (tools, Settings, Quit).
+/// Title and status from the first tool that offers one, then three icon
+/// buttons on the right: open the full app, hide the panel, quit.
 fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    let win = Rect::from_min_size(Pos2::new(rect.right() - 14.0 - 30.0, rect.top() + 16.0), Vec2::splat(30.0));
+    // B1: square icon buttons, 32 in a header, centred on the title line
+    let size = sp::HEADER_CONTROL_H;
+    let top = rect.top() + 31.0 - size / 2.0;
+    let at = |k: f32| Rect::from_min_size(Pos2::new(rect.right() - 14.0 - size * (k + 1.0) - sp::XS * k, top), Vec2::splat(size));
+    let (open, hide, quit) = (at(2.0), at(1.0), at(0.0));
     let x0 = rect.left() + 16.0;
-    title_line(app, &p, x0, rect.top(), win.left() - x0 - 10.0);
-    if icon_button(ui, win, Icon::Window, "Open Cmd+Meow").clicked() {
+    title_line(app, &p, x0, rect.top(), open.left() - x0 - 10.0);
+    if icon_button(ui, open, Icon::Window, "Open Cmd+Meow").clicked() {
         open_app(app, &ctx);
+    }
+    if icon_button(ui, hide, Icon::Minus, "Hide").clicked() {
+        app.hide(&ctx);
+    }
+    if icon_button(ui, quit, Icon::Close, "Quit Cmd+Meow").clicked() && !app.demo {
+        app.quit(&ctx);
     }
 }
 
