@@ -3,7 +3,7 @@
 Static site for https://cmdmeow.com, deployed by `.github/workflows/pages.yml`
 on every push to `main` that touches `site/`.
 
-- `index.html`, `style.css`: the landing page. `app.css` styles the app mock-ups, `desk.jpg` / `desk-1376.jpg` are the desktop wallpaper behind them.
+- `index.html`, `style.css`: the landing page. `app.css` styles the app mock-ups, `widgets.css` draws the menu bar panel as the app's widgets (`docs/ui-rules.md` SP13; redo it when the widgets change), `desk.jpg` / `desk-1376.jpg` are the desktop wallpaper behind them.
 - `view/`: share page for shots and recordings. `view/?u=<file url>` (optional `&t=<title>`, `&mode=edit`).
   View shows the picture or plays the video. Edit changes a copy in the browser: marks, text and crop on
   pictures (saved as PNG), split / remove / trim on videos (saved as MP4 through WebCodecs and
