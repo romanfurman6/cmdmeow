@@ -162,13 +162,15 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("cleanup-group", k)), Sense::hover());
         if resp.hovered() {
-            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+            crate::kit::glass::start_row_fill(&p, rr);
         }
         if k > 0 || sizes.is_some() {
-            hairline(&p, rr.left_top(), rr.right_top());
+            crate::kit::glass::row_divider(ui, &p, rr.left_top(), rr.right_top(), resp.hovered(), rr.bottom());
         }
         let col = junk_ramp(k);
         let cy = rr.center().y;
+        // H9: content 12 in from the row's edges
+        let (x0, x1) = (x0 + crate::kit::glass::START_PAD, x1 - crate::kit::glass::START_PAD);
         let ic = Pos2::new(x0 + 14.0, cy);
         p.circle_filled(ic, 14.0, with_alpha(col, 0.14));
         group_icon(&p, g, Rect::from_center_size(ic, Vec2::splat(16.0)), col);
@@ -181,7 +183,8 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
                 bar(&p, bar_r, s[k] as f32 / max, col);
             }
         }
-        resp.on_hover_text(g.blurb());
+        // P7: beside the list, never over the next row
+        crate::kit::glass::tip_beside(resp, g.blurb(), rr.right());
         y += sp::ROW_H;
     }
 }
@@ -566,7 +569,8 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
             // ROW_HOVER (ui-rules H1), inset radius 8 in the rail
             p.rect_filled(lit, 8.0, white((ROW_HOVER as f32 * hv) as u8));
         }
-        let c = Pos2::new(rr.left() + sp::S + 12.0, rr.center().y);
+        // H9: 12 from the lit edge, like the size on the right
+        let c = Pos2::new(rr.left() + sp::M + 12.0, rr.center().y);
         p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
         let ir = Rect::from_center_size(c, Vec2::splat(14.0));
         match grp {

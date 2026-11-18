@@ -419,6 +419,31 @@ pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
 /// as `white(ROW_HOVER)`. In a popover the whole row, edge to edge.
 pub const ROW_HOVER: u8 = 10;
 
+/// SP1 start lists: the row's content (icon, name, value) sits this far in
+/// from the row's edges, so it never touches the hover fill's edge (H9).
+pub const START_PAD: f32 = sp::M;
+
+/// The hover fill of an SP1 start row `rr`: edge to edge, no corners (H2).
+pub fn start_row_fill(p: &egui::Painter, rr: Rect) {
+    p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+}
+
+/// A row's top divider in a list with hairlines between rows (H2): left
+/// out above and below a lit row, so the fill stands alone. Rows call it
+/// top to bottom in one pass, after deciding `lit`; `bottom` is the row's
+/// bottom edge.
+pub fn row_divider(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32) {
+    let id = egui::Id::unique("row-divider-lit");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let above_lit = ui.ctx().data(|d| d.get_temp::<(u64, f32)>(id)).is_some_and(|(n, y)| n == pass && (y - a.y).abs() < 1.5);
+    if !lit && !above_lit {
+        hairline(p, a, b);
+    }
+    if lit {
+        ui.ctx().data_mut(|d| d.insert_temp(id, (pass, bottom)));
+    }
+}
+
 /// "Show where": the ring on the item an AI Check suggestion points at.
 /// It holds, then fades out; nothing repaints once it's gone.
 pub mod reveal {

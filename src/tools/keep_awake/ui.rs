@@ -473,14 +473,17 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
         for (k, &i) in order.iter().enumerate() {
             let s = &spans[i];
             let row = Rect::from_min_size(Pos2::new(area.left(), area.top() + k as f32 * LOG_ROW_H), Vec2::new(area.width(), LOG_ROW_H));
-            if k > 0 {
-                hairline(&p, Pos2::new(inner.left(), row.top()), Pos2::new(inner.right(), row.top()));
-            }
             let resp = ui.interact(row, id.with(("row", i)), Sense::hover());
             let hour_lit = hour_hover.is_some_and(|h| {
                 let (a, b) = (day + h as i64 * 3600, day + (h as i64 + 1) * 3600);
                 s.start < b && s.end > a
             });
+            if k > 0 {
+                // H2: no hairline touches a lit row
+                crate::kit::glass::row_divider(ui, &p, Pos2::new(inner.left(), row.top()), Pos2::new(inner.right(), row.top()), resp.hovered() || hour_lit, row.bottom());
+            } else if resp.hovered() || hour_lit {
+                crate::kit::glass::row_divider(ui, &p, row.left_top(), row.left_top(), true, row.bottom());
+            }
             if resp.hovered() {
                 new_hover = Some(i);
             }
