@@ -342,7 +342,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
         icon(p, Icon::Bluetooth, Rect::from_center_size(Pos2::new(r.center().x, cy - 18.0), Vec2::splat(26.0)), TEXT_FAINT());
         p.text(Pos2::new(r.center().x, cy + 10.0), Align2::CENTER_CENTER, "No devices connected", font(13.0), TEXT_DIM());
         let bw = button_width(p, "Bluetooth Settings", BTN_SECONDARY);
-        let br = Rect::from_min_size(Pos2::new(r.left(), r.bottom() - 26.0), Vec2::new(bw, 26.0));
+        let br = Rect::from_min_size(Pos2::new(r.left(), r.bottom() - BTN_H_ROW), Vec2::new(bw, BTN_H_ROW));
         if pill_button(ui, br, "Bluetooth Settings", BTN_SECONDARY, true).clicked() {
             out = Some(PageAction::OpenBluetooth);
         }
@@ -353,15 +353,19 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
     let mut y = r.top();
     for d in devs.iter().take(shown) {
         let lr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), LINE_H));
-        p.rect_filled(lr, 10.0, white(10));
-        let mr = Rect::from_center_size(Pos2::new(lr.right() - 18.0, lr.center().y), Vec2::new(24.0, 22.0));
+        if y > r.top() {
+            hairline(p, Pos2::new(lr.left(), y - LINE_GAP / 2.0), Pos2::new(lr.right(), y - LINE_GAP / 2.0));
+        }
+        let mr = Rect::from_center_size(Pos2::new(lr.right() - 12.0, lr.center().y), Vec2::new(24.0, 22.0));
         let mut sub = d.detail();
         if let Some(e) = d.eta {
             sub.push_str(&format!(" · {} left", devices::duration_left(e)));
         }
-        device_line_sub(p, Rect::from_min_max(Pos2::new(lr.left() + 10.0, lr.top()), Pos2::new(mr.left() - 6.0, lr.bottom())), d, &sub);
         let key = d.key();
-        let resp = dots(ui, mr, ui.scope_id().with(("dev-card-more", &key)));
+        let (resp, shown) = dots(ui, mr, lr, ui.scope_id().with(("dev-card-more", &key)));
+        // the value sits on the right edge and slides left while "⋯" shows
+        let right = lr.right() - shown * (mr.width() + 6.0);
+        device_line_sub(p, Rect::from_min_max(lr.left_top(), Pos2::new(right, lr.bottom())), d, &sub);
         if let Some(a) = device_menu(&resp, d, &s.bt_prefs) {
             out = Some(a);
         }
@@ -371,7 +375,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
         let lr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), LINE_H));
         let names: Vec<&str> = devs.iter().skip(shown).map(|d| d.name.as_str()).collect();
         let t = format!("+{more} more");
-        p.text(Pos2::new(lr.left() + 10.0, lr.center().y), Align2::LEFT_CENTER, &t, font(12.0), TEXT_DIM());
+        p.text(Pos2::new(lr.left(), lr.center().y), Align2::LEFT_CENTER, &t, font(12.0), TEXT_DIM());
         ui.interact(lr, ui.scope_id().with("dev-card-rest"), Sense::hover()).on_hover_text(names.join("\n"));
     }
     out
@@ -401,16 +405,22 @@ fn device_menu(resp: &Response, d: &Device, prefs: &Prefs) -> Option<PageAction>
     out
 }
 
-/// A "⋯" button.
-fn dots(ui: &mut Ui, r: Rect, id: egui::Id) -> Response {
+/// A "⋯" button, shown while its row is hovered or its menu is open.
+/// Returns how far it is shown, 0 to 1.
+fn dots(ui: &mut Ui, r: Rect, row: Rect, id: egui::Id) -> (Response, f32) {
     let resp = ui.interact(r, id, Sense::click());
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let shown = ui.ctx().animate_bool_with_time(id.with("show"), open || ui.rect_contains_pointer(row), 0.12);
+    if shown <= 0.0 {
+        return (resp, 0.0);
+    }
     let h = ui.ctx().animate_bool(id.with("h"), resp.hovered());
     let p = ui.painter();
     if h > 0.0 {
         p.rect_filled(r, 6.0, white((18.0 * h) as u8));
     }
     for dx in [-5.0, 0.0, 5.0] {
-        p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT());
+        p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT().gamma_multiply(shown));
     }
-    resp.on_hover_text("More")
+    (resp.on_hover_text("More"), shown)
 }
