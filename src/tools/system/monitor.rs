@@ -1151,9 +1151,11 @@ pub fn demo_snapshot() -> Snapshot {
         procs: vec![
             super::procs::Proc { pid: 812, name: "Safari".into(), cpu: 24.0, mine: true },
             super::procs::Proc { pid: 406, name: "WindowServer".into(), cpu: 11.5, mine: false },
-            super::procs::Proc { pid: 1290, name: "Xcode".into(), cpu: 6.2, mine: true },
+            super::procs::Proc { pid: 1290, name: "Photos".into(), cpu: 6.2, mine: true },
+            super::procs::Proc { pid: 1544, name: "Spotify".into(), cpu: 3.1, mine: true },
+            super::procs::Proc { pid: 977, name: "Mail".into(), cpu: 1.4, mine: true },
         ],
-        apps: [("Safari", 2_400_000.0, 61_000.0), ("Slack", 180_000.0, 24_000.0), ("Music", 96_000.0, 2_000.0)]
+        apps: [("Safari", 2_400_000.0, 61_000.0), ("Mail", 180_000.0, 24_000.0), ("Music", 96_000.0, 2_000.0)]
             .iter()
             .map(|(n, d, u)| super::traffic::AppRate { name: n.to_string(), down: *d, up: *u })
             .collect(),
