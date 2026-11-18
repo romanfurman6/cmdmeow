@@ -258,6 +258,8 @@ pub struct Uninstaller {
     pub roots: Roots,
     pub app_roots: Vec<PathBuf>,
     pub demo: bool,
+    /// Demo: show the start screen (before the first scan).
+    pub demo_fresh: bool,
     ctx: egui::Context,
     pub tab: Tab,
     pub search: String,
@@ -303,6 +305,7 @@ impl Uninstaller {
             roots: Roots::real(),
             app_roots: apps::app_roots(),
             demo: env.demo,
+            demo_fresh: false,
             ctx: env.ctx.clone(),
             tab: Tab::Apps,
             search: String::new(),

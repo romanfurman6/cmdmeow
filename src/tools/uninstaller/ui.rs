@@ -131,7 +131,7 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let (idle, seen) = {
         let g = u.st.lock_ok();
-        (g.phase == Phase::Idle, g.page_seen || u.demo)
+        (g.phase == Phase::Idle, g.page_seen || (u.demo && !u.demo_fresh))
     };
     // the scan reads other apps' data: never before Full Disk Access
     // (the page shows its lock till then, and macOS would ask on its own)
@@ -142,7 +142,7 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         if files_in(&ctx, true).is_empty() {
             page_header(&p, r, "Uninstaller", "", TEXT_DIM());
             let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H + 1.0), r.max);
-            if fresh_start(ui, body) && fda() {
+            if fresh_start(u, ui, body) && fda() {
                 u.st.lock_ok().page_seen = true;
                 u.rescan();
             }
@@ -247,17 +247,74 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
 }
 
-/// The start screen before the first scan: what the tool does, and Scan for
-/// apps. Returns true when it was clicked.
-fn fresh_start(ui: &mut Ui, area: Rect) -> bool {
+/// The start screen before the first scan, no cards (SP1): the tool icon and
+/// Scan for apps on the left, a hairline, and on the right what the scan
+/// looks through, with counts the app listing already knows. True when Scan
+/// for apps was clicked.
+fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
     let p = ui.painter().clone();
-    let c = area.center() - Vec2::new(0.0, 40.0);
-    tool_chip(&p, Rect::from_center_size(c - Vec2::new(0.0, 70.0), Vec2::splat(64.0)), Icon::AppRemove, TINT());
-    let btn = Vec2::new(200.0, 44.0);
-    let br = Rect::from_center_size(Pos2::new(c.x, c.y + sp::L), btn);
+    let body = Rect::from_min_max(Pos2::new(area.left() + sp::PAGE_EDGE, area.top() + sp::L), Pos2::new(area.right() - sp::PAGE_EDGE, area.bottom() - sp::L));
+    const LEFT_W: f32 = 240.0;
+    const GAP: f32 = 48.0;
+    const BTN: Vec2 = Vec2::new(200.0, 44.0);
+    const CHIP: f32 = 96.0;
+    let now = u.demo_now.unwrap_or_else(|| chrono::Utc::now().timestamp());
+    // counts only once the background listing has found apps (never "0")
+    let (n_all, n_unused, n_store) = {
+        let g = u.st.lock_ok();
+        let unused = |a: &super::AppRow| a.locked.is_none() && a.last_used.is_some_and(|t| now - t > UNUSED_DAYS * 86400);
+        (g.apps.len(), g.apps.iter().filter(|a| unused(a)).count(), g.apps.iter().filter(|a| a.source == Source::AppStore).count())
+    };
+    let n_rows = 5;
+    let left_h = CHIP + sp::XXL + BTN.y;
+    let head_h = sp::SECTION_H;
+    let rows_h = head_h + n_rows as f32 * ROW_H;
+    let block_w = body.width().min(840.0);
+    let block_h = left_h.max(rows_h);
+    let top = (body.center().y - block_h / 2.0).max(body.top());
+    let block = Rect::from_min_size(Pos2::new(body.center().x - block_w / 2.0, top), Vec2::new(block_w, block_h));
+    let lc = block.left() + LEFT_W / 2.0;
+    let ly = block.top() + (block_h - left_h) / 2.0;
+    tool_chip(&p, Rect::from_min_size(Pos2::new(lc - CHIP / 2.0, ly), Vec2::splat(CHIP)), Icon::AppRemove, TINT());
+    let br = Rect::from_center_size(Pos2::new(lc, ly + CHIP + sp::XXL + BTN.y / 2.0), BTN);
     let id = ui.scope_id().with("un-fresh-scan");
-    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan for apps", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
-    resp.clicked()
+    let clicked = crate::kit::empty::hero_button(ui, br.center(), id, "Scan for apps", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width()).clicked();
+    let dx = block.left() + LEFT_W + GAP;
+    hairline(&p, Pos2::new(dx, block.top()), Pos2::new(dx, block.bottom()));
+    let x0 = dx + 1.0 + GAP;
+    let x1 = block.right();
+    let mut y = block.top() + (block_h - rows_h) / 2.0;
+    let listed = n_all > 0;
+    let cy = section_title(&p, x0, y, "Apps");
+    if listed {
+        p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n_all}"), ty::title(), TEXT());
+    }
+    y += head_h;
+    {
+        let rows: [(&str, Icon, Option<usize>); 5] = [
+            ("Unused 90+ days", Icon::Clock, Some(n_unused)),
+            ("Large", Icon::Disk, None),
+            ("App Store", Icon::Down, Some(n_store)),
+            ("Other apps", Icon::Window, Some(n_all.saturating_sub(n_store))),
+            ("Leftovers", Icon::Folder, None),
+        ];
+        for (k, (name, ic, n)) in rows.into_iter().enumerate() {
+            let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + ROW_H));
+            if k > 0 {
+                hairline(&p, rr.left_top(), rr.right_top());
+            }
+            let cy = rr.center().y;
+            let icp = Pos2::new(x0 + 14.0, cy);
+            p.circle_filled(icp, 14.0, with_alpha(TINT(), 0.14));
+            icon(&p, ic, Rect::from_center_size(icp, Vec2::splat(16.0)), TINT());
+            p.text(Pos2::new(x0 + 28.0 + sp::M, cy), Align2::LEFT_CENTER, name, ty::body(), TEXT());
+            if let Some(n) = n.filter(|_| listed) {
+                p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, format!("{n}"), ty::title(), TEXT());
+            }
+            y += ROW_H;
+        }
+    }
+    clicked
 }
 
 // ---------------------------------------------------------------- Apps
@@ -1405,9 +1462,11 @@ pub mod demo {
         u.filter = Filter::All;
         u.review = None;
         u.checked.clear();
+        u.demo_fresh = false;
         u.selected = Some(PathBuf::from("/Applications/Docker.app"));
         match view {
             "uninstaller" | "uninstaller-apps" => {}
+            "uninstaller-fresh" => u.demo_fresh = true,
             "uninstaller-leftovers" | "uninstaller-leftovers-shown" => {
                 u.tab = Tab::Leftovers;
                 use crate::kit::aicheck::Check;
