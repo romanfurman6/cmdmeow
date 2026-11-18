@@ -383,7 +383,10 @@ impl App {
                     e.on = false;
                 }
                 let keys: Vec<String> = self.tools.iter().flat_map(|t| t.widgets().into_iter().filter(|w| w.sizes.contains(&z)).map(|w| super::settings::widget_key(t.id(), w.id)).collect::<Vec<_>>()).collect();
-                for k in keys {
+                // CMDMEOW_DEMO_SKIP=n: the widgets after the first n, for a size
+                // whose widgets don't all fit one panel
+                let skip = std::env::var("CMDMEOW_DEMO_SKIP").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+                for k in keys.into_iter().skip(skip) {
                     super::settings::add_entry(&mut self.widgets, &k, z, None);
                 }
                 return;

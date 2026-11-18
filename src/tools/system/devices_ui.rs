@@ -204,18 +204,23 @@ fn device_line_sub(p: &egui::Painter, lr: Rect, d: &Device, sub: &str) {
     let cy = lr.center().y;
     device_glyph(p, d, Rect::from_center_size(Pos2::new(lr.left() + 9.0, cy), Vec2::splat(17.0)), t.c(TEXT_SOFT()));
     let vr = pct_with_bolt(p, Pos2::new(lr.right(), cy), Align2::RIGHT_CENTER, b, d.charging && d.live(), bold(12.0), t.text(b));
-    // the bar only when the name still has room next to it
+    // the bar only when the name still has room next to it; it ends at the
+    // same x on every line ("100%" is the widest charge), so bars line up
     let bw = if lr.width() >= 300.0 { 64.0 } else { 0.0 };
-    let bx1 = vr.left() - 10.0;
+    let col = p.layout_no_wrap("100%".into(), bold(12.0), TEXT()).size().x.max(vr.width());
+    let bx1 = lr.right() - col - 10.0;
     if bw > 0.0 {
         bar(p, Rect::from_min_max(Pos2::new(bx1 - bw, cy - 2.0), Pos2::new(bx1, cy + 2.0)), frac(b).max(0.01), t.ring(b));
     }
     let tx = lr.left() + 26.0;
     let tw = bx1 - bw - tx - if bw > 0.0 { 10.0 } else { 0.0 };
+    // a device's name is someone's text: it fades, never "…"
     if sub.is_empty() {
-        text_fit(p, Pos2::new(tx, cy), Align2::LEFT_CENTER, &d.name, font(12.0), t.c(TEXT()), tw);
+        text_fade(p, Pos2::new(tx, cy), &d.name, font(12.0), t.c(TEXT()), tw);
     } else {
-        two_lines(p, tx, cy, &d.name, font(12.0), t.c(TEXT()), sub, font(11.0), TEXT_FAINT(), tw);
+        let (y1, y2) = two_lines_y(p, cy, &font(12.0), &font(11.0));
+        text_fade(p, Pos2::new(tx, y1), &d.name, font(12.0), t.c(TEXT()), tw);
+        text_fade(p, Pos2::new(tx, y2), sub, font(11.0), TEXT_FAINT(), tw);
     }
 }
 

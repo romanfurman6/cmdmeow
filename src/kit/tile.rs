@@ -218,9 +218,26 @@ pub fn wide_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Colo
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let x0 = visual(p, rect, glyph, color, ring_);
-    let w = rect.right() - PAD - x0;
-    stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], w);
+    left_text(p, x0, rect.center().y, label, value, caption, caption_col, rect.right() - PAD - x0);
     resp
+}
+
+/// Label, value and caption stacked at `x0` (W3, W5). The value is the
+/// app's number and keeps its width; label and caption can be a name (a
+/// device's), so they fade at `tw` rather than end in "…".
+#[allow(clippy::too_many_arguments)]
+fn left_text(p: &egui::Painter, x0: f32, cy: f32, label: &str, value: &str, caption: &str, caption_col: Color32, tw: f32) {
+    let y = stack_lines(p, x0, cy, &[(label, ty::label(), Color32::TRANSPARENT), (value, ty::lead(), TEXT()), (caption, ty::caption(), Color32::TRANSPARENT)], tw);
+    let mut k = 0;
+    for (t, f, c) in [(label, ty::label(), ty::caption_color()), (value, ty::lead(), Color32::TRANSPARENT), (caption, ty::caption(), caption_col)] {
+        if t.is_empty() {
+            continue;
+        }
+        if c != Color32::TRANSPARENT {
+            text_fade(p, Pos2::new(x0, y[k].center().y), t, f, c, tw);
+        }
+        k += 1;
+    }
 }
 
 /// Wide (1:2) for a widget whose value is someone else's text (W3): the
@@ -287,19 +304,7 @@ pub fn row_split_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color:
     let x0 = visual(p, rect, glyph, color, ring_);
     let vw = p.layout_no_wrap(value.to_string(), ty::lead(), TEXT()).size().x;
     let split = (rect.left() + ROW_SPLIT).max(x0 + vw + PAD).ceil();
-    let tw = split - PAD - x0;
-    let y = stack_lines(p, x0, rect.center().y, &[(label, ty::label(), Color32::TRANSPARENT), (value, ty::lead(), TEXT()), (caption, ty::caption(), Color32::TRANSPARENT)], tw);
-    // label and caption can be a name (a device's): faded, never "…"
-    let mut k = 0;
-    for (t, f, c) in [(label, ty::label(), ty::caption_color()), (value, ty::lead(), Color32::TRANSPARENT), (caption, ty::caption(), caption_col)] {
-        if t.is_empty() {
-            continue;
-        }
-        if c != Color32::TRANSPARENT {
-            text_fade(p, Pos2::new(x0, y[k].center().y), t, f, c, tw);
-        }
-        k += 1;
-    }
+    left_text(p, x0, rect.center().y, label, value, caption, caption_col, split - PAD - x0);
     let inset = rect.height() * 0.06;
     p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
     (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
@@ -380,7 +385,10 @@ pub fn lines(p: &egui::Painter, r: Rect, lines: &[(String, Option<(f32, Color32)
     for (k, (label, frac, value)) in lines.iter().take(n).enumerate() {
         let lr = Rect::from_min_size(Pos2::new(r.left(), top + k as f32 * lh), Vec2::new(r.width(), lh));
         let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x.ceil();
-        bar_line(p, lr, label, *frac, value, (w(label).max(ROW_NAME), w(value).max(ROW_VALUE)));
+        let vcol = w(value).max(ROW_VALUE);
+        // a long name (a device's) fades where the bar must start
+        let most = (r.width() - vcol - 10.0 - if frac.is_some() { 24.0 + 10.0 } else { 0.0 }).max(ROW_NAME);
+        bar_line(p, lr, label, *frac, value, (w(label).clamp(ROW_NAME, most), vcol));
     }
 }
 
@@ -472,7 +480,7 @@ pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Colo
         bar(p, Rect::from_min_max(Pos2::new(x0, cy - 2.0), Pos2::new(x1, cy + 2.0)), f, c);
     }
     // the name column is the widest name, so a name fits; without a bar it may run on
-    let room = if frac.is_some() { lw } else { vr.left() - r.left() - 8.0 };
+    let room = if frac.is_some() { lw.min(vr.left() - r.left() - 8.0) } else { vr.left() - r.left() - 8.0 };
     text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), room);
 }
 

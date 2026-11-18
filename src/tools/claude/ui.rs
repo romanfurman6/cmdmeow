@@ -31,7 +31,14 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
         Size::S12 | Size::S14 => {
             let ring_ = session.as_ref().map(|_| ((pct / 100.0).max(0.01), col));
             let caption = match &session {
-                Some(l) => cap_reset(&l.resets),
+                Some(l) => {
+                    // another day reads "Resets Nov 19 at 11pm": where that doesn't
+                    // fit beside the ring, the day alone (the hour is in the sheet)
+                    let full = cap_reset(&l.resets);
+                    let room = if size == Size::S12 { r.width() } else { tile::ROW_SPLIT } - (tile::PAD + 50.0 + tile::PAD) - tile::PAD;
+                    let fits = ui.painter().layout_no_wrap(full.clone(), ty::caption(), TEXT()).size().x <= room;
+                    if fits { full } else { full.split(" at ").next().unwrap_or(&full).to_string() }
+                }
                 None => status(cl),
             };
             let value = if session.is_some() { value } else { "–".to_string() };
