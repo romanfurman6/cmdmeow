@@ -686,7 +686,7 @@ pub fn pill_button_at(ui: &mut Ui, rect: Rect, label: &str, kind: u8, enabled: b
         BTN_PRIMARY => (key::Look::lime(), Click::Primary),
         BTN_DANGER => (key::Look::danger(), Click::Danger),
         // secondary: its hairline goes a little stronger on hover (24%)
-        _ => (key::Look { edge: Some((key::ink(0.10), key::ink(0.24))), ..key::Look::quiet(0.04, 0.11) }, Click::Secondary),
+        _ => (key::Look { edge: Some((CARD_EDGE(), key::ink(0.24))), ..key::Look::quiet(0.04, 0.11) }, Click::Secondary),
     };
     let k = key::press(ui, rect, id, enabled, Some(click));
     let p = ui.painter();
@@ -1151,10 +1151,10 @@ pub fn segment(ui: &mut Ui, p: &Painter, r: Rect, id: egui::Id, selected: bool, 
         key::Look {
             fill: pick(Color32::from_white_alpha(36), Color32::WHITE),
             fill_hover: pick(Color32::from_white_alpha(36), Color32::WHITE),
-            base: key::ink(0.14),
+            base: TILE_BASE(),
             depth: 1.0,
             // H7: no hover on the picked one, its edge stays put
-            edge: Some((key::ink(0.10), key::ink(0.10))),
+            edge: Some((CARD_EDGE(), CARD_EDGE())),
             ..key::Look::quiet(0.0, 0.0)
         }
     } else {
