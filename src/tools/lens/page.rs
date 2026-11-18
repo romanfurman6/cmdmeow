@@ -226,9 +226,11 @@ fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<Start> {
             crate::kit::glass::start_row_fill(&p, rr);
         }
         if k > 0 {
-            hairline(&p, rr.left_top(), rr.right_top());
+            crate::kit::glass::row_divider(ui, &p, rr.left_top(), rr.right_top(), resp.hovered(), rr.bottom());
         }
         let cy = rr.center().y;
+        // H9: content 12 in from the row's edges
+        let x0 = x0 + crate::kit::glass::START_PAD;
         let icp = Pos2::new(x0 + 14.0, cy);
         let col = tint::DISK_MAP();
         p.circle_filled(icp, 14.0, with_alpha(col, 0.14));

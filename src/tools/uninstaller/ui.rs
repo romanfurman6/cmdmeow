@@ -304,6 +304,8 @@ fn fresh_start(u: &mut Uninstaller, ui: &mut Ui, area: Rect) -> bool {
                 hairline(&p, rr.left_top(), rr.right_top());
             }
             let cy = rr.center().y;
+            // H9: content 12 in from the row's edges, like the other start lists
+            let (x0, x1) = (x0 + crate::kit::glass::START_PAD, x1 - crate::kit::glass::START_PAD);
             let icp = Pos2::new(x0 + 14.0, cy);
             p.circle_filled(icp, 14.0, with_alpha(TINT(), 0.14));
             icon(&p, ic, Rect::from_center_size(icp, Vec2::splat(16.0)), TINT());
