@@ -1101,8 +1101,13 @@ impl Editor {
                     let b = m.bounds();
                     overlay::frame(&p, Rect::from_min_max(to_screen(b.min), to_screen(b.max)).expand(overlay::OUTSET), 3.0, StrokeKind::Middle);
                 }
+                let arrow = matches!(m, Mark::Arrow { .. });
                 for (k, h) in handle_spots(m, scale) {
-                    overlay::handle(&p, to_screen(h), hot == Some((i, k)));
+                    if arrow {
+                        overlay::handle(&p, to_screen(h), hot == Some((i, k)));
+                    } else {
+                        overlay::box_handle(&p, to_screen(h), k, hot == Some((i, k)));
+                    }
                 }
             }
         }
@@ -1122,7 +1127,7 @@ impl Editor {
             overlay::dashed(&p, cr, 6.0, 4.0);
             if self.drag.is_none() {
                 for (k, h) in box_spots(c, scale) {
-                    overlay::handle(&p, to_screen(h), hot_area == Some(k));
+                    overlay::box_handle(&p, to_screen(h), k, hot_area == Some(k));
                 }
             }
             tag(&p, cr.right_bottom() + Vec2::new(6.0, 6.0), &format!("{:.0} × {:.0}", c.width().round(), c.height().round()));
@@ -1782,7 +1787,7 @@ fn handle_spots(m: &Mark, scale: f32) -> Vec<(usize, Pos2)> {
         Mark::Arrow { a, b, .. } => {
             let d = (*b - *a).normalized();
             let d = if d.x.is_finite() && d.y.is_finite() { d } else { Vec2::ZERO };
-            let o = (overlay::OUTSET + 2.0) / scale;
+            let o = (overlay::OUTSET + 3.0) / scale;
             vec![(0, *a - d * o), (1, *b + d * o)]
         }
         _ if m.handles().len() == 8 => box_spots(m.bounds().expand(out), scale),
@@ -1917,10 +1922,10 @@ mod tests {
     fn handles_sit_outside_the_mark_and_grab_the_nearest() {
         // scale 0.5: 1 screen pt = 2 image px
         let scale = 0.5;
-        let r = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(300.0, 200.0));
+        let r = Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(300.0, 300.0));
         let m = Mark::Blur { r, style: BlurStyle::Pixelate, boxes: vec![] };
         let spots = handle_spots(&m, scale);
-        assert_eq!(spots.len(), 8, "a 100×50 pt box keeps all eight");
+        assert_eq!(spots.len(), 8, "a 100×100 pt box keeps all eight");
         // OUTSET pt outside the box, so they never cover it
         assert_eq!(spots[0], (0, r.min - Vec2::splat(overlay::OUTSET / scale)));
         // 11 pt from the top-left handle still grabs it; 13 pt does not

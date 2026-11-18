@@ -209,6 +209,7 @@ pub fn junk_ramp(i: usize) -> Color32 {
 /// sit on the user's content, not on the app.
 pub mod overlay {
     use super::hex;
+    use egui::epaint::{PathShape, PathStroke};
     use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
 
     /// The lime of lines and handles.
@@ -224,16 +225,32 @@ pub mod overlay {
     pub const MID_MIN: f32 = 64.0;
     /// How far a selected mark's frame and handles sit outside it, so they
     /// never cover the mark itself.
-    pub const OUTSET: f32 = 8.0;
+    pub const OUTSET: f32 = 5.0;
+    /// A corner bracket's arm, at rest and hot.
+    const ARM: f32 = 12.0;
+    const ARM_HOT: f32 = 14.0;
 
     fn under() -> Stroke {
-        Stroke::new(3.0, Color32::from_rgba_unmultiplied(RING.r(), RING.g(), RING.b(), 179))
+        Stroke::new(3.0, ring(0.7))
     }
 
-    /// A solid frame: 1.5 pt lime over a 3 pt dark under-stroke.
+    fn ring(a: f32) -> Color32 {
+        Color32::from_rgba_unmultiplied(RING.r(), RING.g(), RING.b(), (a * 255.0) as u8)
+    }
+
+    fn lime(hot: bool) -> Color32 {
+        if hot {
+            super::lerp_color(LIME, Color32::WHITE, 0.3)
+        } else {
+            LIME
+        }
+    }
+
+    /// A selection frame: 1 pt lime over a 2 pt dark band; the corner
+    /// brackets and side grips carry the weight.
     pub fn frame(p: &Painter, r: Rect, radius: f32, kind: StrokeKind) {
-        p.rect_stroke(r, radius, under(), kind);
-        p.rect_stroke(r, radius, Stroke::new(1.5, LIME), kind);
+        p.rect_stroke(r, radius, Stroke::new(2.0, ring(0.6)), kind);
+        p.rect_stroke(r, radius, Stroke::new(1.0, LIME), kind);
     }
 
     /// A dashed frame: the same lime dashes over a solid dark band.
@@ -244,12 +261,49 @@ pub mod overlay {
     }
 
     /// One handle: a lime square with a dark ring and a faint white halo.
+    /// Arrow ends use it.
     pub fn handle(p: &Painter, at: Pos2, hot: bool) {
         let s = if hot { HANDLE_HOT } else { HANDLE };
         let r = Rect::from_center_size(at, Vec2::splat(s));
         p.rect_filled(r.expand(2.5), 5.0, Color32::from_white_alpha(153));
         p.rect_filled(r.expand(1.5), 4.0, RING);
-        p.rect_filled(r, 2.5, if hot { super::lerp_color(LIME, Color32::WHITE, 0.3) } else { LIME });
+        p.rect_filled(r, 2.5, lime(hot));
+    }
+
+    /// A box handle `k` (clockwise from the top left, corners even): an L
+    /// bracket on a corner, a pill along the edge on a side.
+    pub fn box_handle(p: &Painter, at: Pos2, k: usize, hot: bool) {
+        if k % 2 == 0 {
+            corner(p, at, k, hot);
+        } else {
+            side(p, at, k == 1 || k == 5, hot);
+        }
+    }
+
+    /// An L bracket on corner `k` (0 top left, 2 top right, 4 bottom right,
+    /// 6 bottom left), its arms along the two edges.
+    fn corner(p: &Painter, at: Pos2, k: usize, hot: bool) {
+        let a = if hot { ARM_HOT } else { ARM };
+        let sx = if k == 2 || k == 4 { -1.0 } else { 1.0 };
+        let sy = if k == 4 || k == 6 { -1.0 } else { 1.0 };
+        let pts = [at + Vec2::new(sx * a, 0.0), at, at + Vec2::new(0.0, sy * a)];
+        for (w, c) in [(8.0, Color32::from_white_alpha(153)), (6.0, RING), (3.0, lime(hot))] {
+            p.add(PathShape::line(pts.to_vec(), PathStroke::new(w, c)));
+            // round ends and corner
+            for q in pts {
+                p.circle_filled(q, w / 2.0, c);
+            }
+        }
+    }
+
+    /// A 16×6 pill along the edge.
+    fn side(p: &Painter, at: Pos2, horizontal: bool, hot: bool) {
+        let (l, t) = if hot { (20.0, 7.0) } else { (16.0, 6.0) };
+        let r = Rect::from_center_size(at, if horizontal { Vec2::new(l, t) } else { Vec2::new(t, l) });
+        for (e, c) in [(2.5, Color32::from_white_alpha(153)), (1.5, RING), (0.0, lime(hot))] {
+            let rr = r.expand(e);
+            p.rect_filled(rr, rr.width().min(rr.height()) / 2.0, c);
+        }
     }
 }
 
