@@ -82,17 +82,11 @@ pub fn RAISED() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255,
 /// Widget card (S2w, docs/ui-rules.md SP13 W1): the 1 pt top highlight…
 #[allow(non_snake_case)]
 pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 23), Color32::from_rgba_unmultiplied(255, 255, 255, 242)) }
-/// …the 1 pt base under the card: black in dark, ink in light, so it stays
-/// darker than the panel glow wherever the card sits…
+/// …and the 1 pt base under the card: black in dark, ink in light, so it
+/// stays darker than the panel glow wherever the card sits. The card's edge
+/// is the page cards' [`CARD_EDGE`].
 #[allow(non_snake_case)]
 pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
-/// …the shade at the card's bottom (dark only)…
-#[allow(non_snake_case)]
-pub fn TILE_SHADE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 26), Color32::TRANSPARENT) }
-/// …and the inner edge that keeps a white card visible on the white glow
-/// (light only).
-#[allow(non_snake_case)]
-pub fn TILE_EDGE() -> Color32 { pick(Color32::TRANSPARENT, Color32::from_rgba_unmultiplied(20, 24, 26, 20)) }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
@@ -586,8 +580,10 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epai
         &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
     };
     let glow = Pos2::new(rect.center().x, rect.top());
-    // the glow is an ellipse: wide across, reaching the bottom edge
-    let (rx, ry) = (rect.width() * 0.75, rect.height() * 1.05);
+    // the glow is an ellipse: wide across, reaching the bottom edge,
+    // never smaller than the app window's: the narrow panel shows the
+    // centre of the same glow instead of a squeezed copy of it (S1)
+    let (rx, ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
     let color_at = |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);

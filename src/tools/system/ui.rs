@@ -267,9 +267,10 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
     }
     let list = Rect::from_min_max(Pos2::new(body.left(), y), body.max);
     let lh = (list.height() / lines.len() as f32).min(24.0);
+    let cols = tile::bar_cols(p, &lines.iter().map(|l| (l.0.as_str(), l.2.as_str())).collect::<Vec<_>>());
     for (k, (label, frac, value)) in lines.iter().enumerate() {
         let lr = Rect::from_min_size(Pos2::new(list.left(), list.top() + k as f32 * lh), egui::Vec2::new(list.width(), lh));
-        tile::bar_line(p, lr, label, *frac, value);
+        tile::bar_line(p, lr, label, *frac, value, cols);
     }
 }
 

@@ -544,6 +544,9 @@ fn editor_window(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         let vctx = ui.ctx().clone();
         if first {
             ew.opened = true;
+            // a new picture reuses the editor's window; if it was minimized
+            // it stayed in the Dock and the capture looked lost (2026-11-18)
+            vctx.send_viewport_cmd(ViewportCommand::Minimized(false));
             vctx.send_viewport_cmd(ViewportCommand::Focus);
             crate::kit::native::activate();
         }

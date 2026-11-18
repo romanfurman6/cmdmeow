@@ -77,42 +77,15 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
 }
 
 /// The card itself: see-through CARD (the panel glow shows through), the
-/// shade at its bottom, the top highlight, the light-mode edge.
+/// top highlight and the page cards' 1 pt edge.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
-    let shade = TILE_SHADE();
-    if shade.a() > 0 {
-        shade_bottom(p, rect, shade);
-    }
     let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
     p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
-    let edge = TILE_EDGE();
-    if edge.a() > 0 {
-        p.rect_stroke(rect, R_TILE, Stroke::new(1.0, edge), StrokeKind::Inside);
-    }
+    p.rect_stroke(rect, R_TILE, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
     if selected {
         p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
-}
-
-/// A dark wash from 55% of the card's height to `col` at its bottom edge.
-fn shade_bottom(p: &egui::Painter, rect: Rect, col: Color32) {
-    use egui::epaint::{Mesh, Vertex, WHITE_UV};
-    let y0 = rect.top() + rect.height() * 0.55;
-    // the ramp stops where the bottom corners start; a rounded band below
-    // carries the colour it reached there
-    let y1 = (rect.bottom() - R_TILE).max(y0);
-    let at_y1 = with_alpha(col, col.a() as f32 / 255.0 * ((y1 - y0) / (rect.bottom() - y0).max(1.0)));
-    let mut m = Mesh::default();
-    for (y, c) in [(y0, Color32::TRANSPARENT), (y1, at_y1)] {
-        m.vertices.push(Vertex { pos: Pos2::new(rect.left(), y), uv: WHITE_UV, color: c });
-        m.vertices.push(Vertex { pos: Pos2::new(rect.right(), y), uv: WHITE_UV, color: c });
-    }
-    m.add_triangle(0, 1, 2);
-    m.add_triangle(1, 3, 2);
-    p.add(Shape::mesh(m));
-    let band = Rect::from_min_max(Pos2::new(rect.left(), y1), rect.max);
-    p.rect_filled(band, egui::CornerRadius { nw: 0, ne: 0, sw: R_TILE as u8, se: R_TILE as u8 }, at_y1);
 }
 
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,
@@ -218,9 +191,26 @@ pub fn wide_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Colo
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let x0 = visual(p, rect, glyph, color, ring_);
-    let w = rect.right() - PAD - x0;
-    stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], w);
+    left_text(p, x0, rect.center().y, label, value, caption, caption_col, rect.right() - PAD - x0);
     resp
+}
+
+/// Label, value and caption stacked at `x0` (W3, W5). The value is the
+/// app's number and keeps its width; label and caption can be a name (a
+/// device's), so they fade at `tw` rather than end in "…".
+#[allow(clippy::too_many_arguments)]
+fn left_text(p: &egui::Painter, x0: f32, cy: f32, label: &str, value: &str, caption: &str, caption_col: Color32, tw: f32) {
+    let y = stack_lines(p, x0, cy, &[(label, ty::label(), Color32::TRANSPARENT), (value, ty::lead(), TEXT()), (caption, ty::caption(), Color32::TRANSPARENT)], tw);
+    let mut k = 0;
+    for (t, f, c) in [(label, ty::label(), ty::caption_color()), (value, ty::lead(), Color32::TRANSPARENT), (caption, ty::caption(), caption_col)] {
+        if t.is_empty() {
+            continue;
+        }
+        if c != Color32::TRANSPARENT {
+            text_fade(p, Pos2::new(x0, y[k].center().y), t, f, c, tw);
+        }
+        k += 1;
+    }
 }
 
 /// Wide (1:2) for a widget whose value is someone else's text (W3): the
@@ -270,24 +260,24 @@ pub fn visual(p: &egui::Painter, rect: Rect, glyph: Icon, color: Color32, ring_:
     }
 }
 
-/// Least width of a Row's right part (W5): it has priority over the left.
-pub const ROW_RIGHT_MIN: f32 = 186.0;
+/// Width kept for a Row's left text (W5): with ring 50 and PAD round it,
+/// every Row's divider sits on one line, [`ROW_SPLIT`] from the left edge.
+pub const ROW_TEXT: f32 = 86.0;
+/// Where every Row's divider stands, from the card's left edge (W5).
+pub const ROW_SPLIT: f32 = PAD + 50.0 + PAD + ROW_TEXT + PAD;
 
 /// Row (1:4) per W5: the Wide layout on the left (ring 50 or glyph 26, then
-/// label, value, caption) as wide as its text, a hairline, and the right
-/// part (at least [`ROW_RIGHT_MIN`]) returned for the breakdown.
+/// label, value, caption), a hairline at [`ROW_SPLIT`] in every Row (it
+/// moves right only when the value is wider, so the value is never cut),
+/// and the right part returned for [`lines`].
 #[allow(clippy::too_many_arguments)]
 pub fn row_split_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, ring_: Option<(f32, Color32)>, label: &str, value: &str, caption: &str, caption_col: Color32, selected: bool) -> (Response, Rect) {
     let resp = card(ui, rect, id, selected);
     let p = ui.painter();
     let x0 = visual(p, rect, glyph, color, ring_);
-    let w = |t: &str, f: egui::FontId| p.layout_no_wrap(t.to_string(), f, TEXT()).size().x;
-    let tw = w(label, ty::label()).max(w(value, ty::lead())).max(w(caption, ty::caption()));
-    // the right part keeps ROW_RIGHT_MIN, but the value never gets cut:
-    // light mode sets weights a step up, and "679 MB" lost its unit there
-    let floor = x0 + w(value, ty::lead()) + PAD;
-    let split = (x0 + tw + PAD).min(rect.right() - PAD - ROW_RIGHT_MIN - PAD).max(floor).ceil();
-    stack_lines(p, x0, rect.center().y, &[(label, ty::label(), ty::caption_color()), (value, ty::lead(), TEXT()), (caption, ty::caption(), caption_col)], split - PAD - x0);
+    let vw = p.layout_no_wrap(value.to_string(), ty::lead(), TEXT()).size().x;
+    let split = (rect.left() + ROW_SPLIT).max(x0 + vw + PAD).ceil();
+    left_text(p, x0, rect.center().y, label, value, caption, caption_col, split - PAD - x0);
     let inset = rect.height() * 0.06;
     p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
     (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
@@ -344,32 +334,37 @@ pub fn actions(ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect, acts: &[Ac
 /// on the right gets most of the width. Returns the right part.
 #[allow(clippy::too_many_arguments)]
 pub fn row_split_list(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, title: &str, sub: &str, selected: bool) -> (Response, Rect) {
-    let resp = card(ui, rect, id, selected);
-    let p = ui.painter();
-    let left = Rect::from_min_size(rect.min, Vec2::new(rect.height(), rect.height()));
-    icon(p, glyph, Rect::from_min_size(left.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), lift(color));
-    small_text(p, left, title, sub, TEXT_DIM());
-    let split = left.right();
-    let inset = rect.height() * 0.06;
-    p.line_segment([Pos2::new(split, rect.top() + inset), Pos2::new(split, rect.bottom() - inset)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
-    (resp, Rect::from_min_max(Pos2::new(split + PAD, rect.top() + PAD), Pos2::new(rect.right() - PAD, rect.bottom() - PAD)))
+    // the same left part and divider as every Row (W5)
+    row_split_full(ui, rect, id, glyph, color, None, title, sub, "", ty::caption_color(), selected)
 }
 
-/// Up to three bar lines stacked in `r` (the right half of a split Row);
-/// `empty` is shown when there are none.
+/// Name column of a Row's right part (W5), the same in every Row: fits
+/// "Applications" and "Compressed" in SF at 12 (about 66 pt, light weight
+/// a little wider); a longer name fades.
+pub const ROW_NAME: f32 = 70.0;
+/// Value column of a Row's right part (W5), the same in every Row: fits
+/// "65.6 GB" (about 40 pt), leaving the bar 26 pt in the 160 pt right part.
+pub const ROW_VALUE: f32 = 44.0;
+
+/// The lines of a Row's right part (W5): name, bar, value in three columns
+/// shared by every Row, so bars start and end on the same two lines across
+/// Rows. A longer name or value pushes its own bar in rather than being cut.
+/// Up to three lines; `empty` is shown when there are none.
 pub fn lines(p: &egui::Painter, r: Rect, lines: &[(String, Option<(f32, Color32)>, String)], empty: &str) {
     if lines.is_empty() {
         text_fit(p, r.center(), Align2::CENTER_CENTER, empty, font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    // one line each: label, a short inline bar, the value. Bars sit between
-    // the words instead of under them, so lines never crowd each other
-    let n = lines.len().min(3).min(((r.height() / 20.0).floor() as usize).max(1));
-    let lh = (r.height() / n as f32).min(24.0);
+    let n = lines.len().min(3).min(((r.height() / 18.0).floor() as usize).max(1));
+    let lh = (r.height() / n as f32).min(22.0);
     let top = r.center().y - lh * n as f32 / 2.0;
+    // W5: one grid for every Row, name ROW_NAME · bar · value ROW_VALUE; a
+    // longer name (a device's) fades, a wider value moves the bar's end
+    let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x.ceil();
+    let vcol = lines.iter().take(n).map(|l| w(&l.2)).fold(ROW_VALUE, f32::max);
     for (k, (label, frac, value)) in lines.iter().take(n).enumerate() {
         let lr = Rect::from_min_size(Pos2::new(r.left(), top + k as f32 * lh), Vec2::new(r.width(), lh));
-        bar_line(p, lr, label, *frac, value);
+        bar_line(p, lr, label, *frac, value, (ROW_NAME, vcol));
     }
 }
 
@@ -438,20 +433,31 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
     }
 }
 
-/// A list line inside a Medium or Large widget: label, bar, value.
-pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Color32)>, value: &str) {
-    // the value keeps its full width ("62% · tomorrow 23:40"): app text, never cut
-    let lw = p.layout_no_wrap(label.to_string(), font(12.0), TEXT()).size().x;
-    let vw = p.layout_no_wrap(value.to_string(), font(12.0), TEXT()).size().x.max(40.0);
-    // the label keeps its full width when it can; the bar takes what's left
-    let room = r.width() - vw - lw - 22.0;
-    // W5: label and value at their own width, the bar takes the rest
-    let bw = if frac.is_some() && room >= 24.0 { room } else { 0.0 };
-    p.text(Pos2::new(r.right(), r.center().y), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
-    if let (Some((f, c)), true) = (frac, bw > 0.0) {
-        bar(p, Rect::from_min_max(Pos2::new(r.right() - vw - 10.0 - bw, r.center().y - 2.0), Pos2::new(r.right() - vw - 10.0, r.center().y + 2.0)), f, c);
+/// The shared columns of a Medium or Large widget's list (W5): the widest
+/// name and the widest value of its lines, so every bar in the card starts
+/// and ends on the same two lines.
+pub fn bar_cols(p: &egui::Painter, lines: &[(&str, &str)]) -> (f32, f32) {
+    let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x;
+    let lw = lines.iter().map(|l| w(l.0)).fold(0.0f32, f32::max);
+    let vw = lines.iter().map(|l| w(l.1)).fold(0.0f32, f32::max);
+    (lw.ceil(), vw.ceil())
+}
+
+/// A list line inside a Medium or Large widget: name, bar, value, on the
+/// card's shared columns from [`bar_cols`]. The value is never cut; the bar
+/// takes what's between the columns.
+pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Color32)>, value: &str, cols: (f32, f32)) {
+    let (lw, vw) = cols;
+    let cy = r.center().y;
+    let vr = p.text(Pos2::new(r.right(), cy), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
+    let x0 = r.left() + lw + 10.0;
+    let x1 = r.right() - vw - 10.0;
+    if let (Some((f, c)), true) = (frac, x1 - x0 >= 24.0) {
+        bar(p, Rect::from_min_max(Pos2::new(x0, cy - 2.0), Pos2::new(x1, cy + 2.0)), f, c);
     }
-    text_fit(p, Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, label, font(12.0), white(166), r.width() - vw - bw - 22.0);
+    // the name column is the widest name, so a name fits; without a bar it may run on
+    let room = if frac.is_some() { lw.min(vr.left() - r.left() - 8.0) } else { vr.left() - r.left() - 8.0 };
+    text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), room);
 }
 
 /// A quiet line where the data would be (W11): no frame round it.
@@ -493,4 +499,18 @@ pub fn loading(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color3
         }
     }
     resp
+}
+
+#[cfg(test)]
+mod row_grid_tests {
+    use super::*;
+
+    #[test]
+    fn row_grid_leaves_room_for_a_bar() {
+        // the 1:4 right part: 380 panel, 12 margins, divider at ROW_SPLIT, PAD each side
+        let right = crate::kit::mechanics::PANEL_WIDTH - 2.0 * 12.0 - ROW_SPLIT - 2.0 * PAD;
+        assert_eq!(right, 160.0);
+        assert_eq!(ROW_SPLIT, 172.0);
+        assert!(right - ROW_NAME - ROW_VALUE - 2.0 * 10.0 >= 24.0, "bar under 24 pt");
+    }
 }

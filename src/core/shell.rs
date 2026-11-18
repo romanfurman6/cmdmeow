@@ -367,17 +367,27 @@ impl App {
                 }
                 return;
             }
-            // every widget that offers Row (1:4), at that size
-            "rows" => {
+            // every widget that offers a size, at that size ("rows" is 1:4)
+            "rows" | "all-s11" | "all-s12" | "all-s14" | "all-s24" | "all-s44" => {
+                let z = match view {
+                    "all-s11" => Size::S11,
+                    "all-s12" => Size::S12,
+                    "all-s24" => Size::S24,
+                    "all-s44" => Size::S44,
+                    _ => Size::S14,
+                };
                 for t in &mut self.tools {
                     t.demo_view("sizes");
                 }
                 for e in &mut self.widgets {
                     e.on = false;
                 }
-                let keys: Vec<String> = self.tools.iter().flat_map(|t| t.widgets().into_iter().filter(|w| w.sizes.contains(&Size::S14)).map(|w| super::settings::widget_key(t.id(), w.id)).collect::<Vec<_>>()).collect();
-                for k in keys {
-                    super::settings::add_entry(&mut self.widgets, &k, Size::S14, None);
+                let keys: Vec<String> = self.tools.iter().flat_map(|t| t.widgets().into_iter().filter(|w| w.sizes.contains(&z)).map(|w| super::settings::widget_key(t.id(), w.id)).collect::<Vec<_>>()).collect();
+                // CMDMEOW_DEMO_SKIP=n: the widgets after the first n, for a size
+                // whose widgets don't all fit one panel
+                let skip = std::env::var("CMDMEOW_DEMO_SKIP").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+                for k in keys.into_iter().skip(skip) {
+                    super::settings::add_entry(&mut self.widgets, &k, z, None);
                 }
                 return;
             }
@@ -519,10 +529,14 @@ impl App {
                 Vec2::new(w, self.panel_height().min(self.max_panel_height(ctx)))
             }
             // screenshots: CMDMEOW_SHOT_W=<pt> (or "min") checks narrow windows
-            Mode::Window => match std::env::var("CMDMEOW_SHOT_W").ok().filter(|_| self.screenshot.is_some()) {
-                Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, m::APP_HEIGHT),
-                None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
-            },
+            // (CMDMEOW_SHOT_H=<pt> checks tall windows)
+            Mode::Window => {
+                let h = std::env::var("CMDMEOW_SHOT_H").ok().filter(|_| self.screenshot.is_some()).and_then(|v| v.parse::<f32>().ok()).unwrap_or(m::APP_HEIGHT);
+                match std::env::var("CMDMEOW_SHOT_W").ok().filter(|_| self.screenshot.is_some()) {
+                    Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, h),
+                    None => Vec2::new(m::APP_WIDTH, h),
+                }
+            }
             // setup shows in the app window: screenshots at its size
             // (CMDMEOW_SHOT_W / CMDMEOW_SHOT_H=<pt> check other window sizes)
             Mode::Setup => {
