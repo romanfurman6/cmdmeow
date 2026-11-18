@@ -399,7 +399,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
     }
 
     let card = Rect::from_min_max(Pos2::new(r.left(), r.top() + sp::SECTION_H), r.max);
-    glass_card(p, card, R_CARD, 0.0, false);
+    data_card(p, card);
     let inner = Rect::from_min_max(card.min + Vec2::splat(sp::L), Pos2::new(card.right() - sp::L, card.bottom() - sp::XS));
 
     // the hourly chart; the row hovered last frame lights its hours
@@ -473,19 +473,22 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
         for (k, &i) in order.iter().enumerate() {
             let s = &spans[i];
             let row = Rect::from_min_size(Pos2::new(area.left(), area.top() + k as f32 * LOG_ROW_H), Vec2::new(area.width(), LOG_ROW_H));
-            if k > 0 {
-                hairline(&p, Pos2::new(inner.left(), row.top()), Pos2::new(inner.right(), row.top()));
-            }
             let resp = ui.interact(row, id.with(("row", i)), Sense::hover());
             let hour_lit = hour_hover.is_some_and(|h| {
                 let (a, b) = (day + h as i64 * 3600, day + (h as i64 + 1) * 3600);
                 s.start < b && s.end > a
             });
+            if k > 0 {
+                // H2: no hairline touches a lit row
+                crate::kit::glass::row_divider(ui, &p, Pos2::new(inner.left(), row.top()), Pos2::new(inner.right(), row.top()), resp.hovered() || hour_lit, row.bottom());
+            } else if resp.hovered() || hour_lit {
+                crate::kit::glass::row_divider(ui, &p, row.left_top(), row.left_top(), true, row.bottom());
+            }
             if resp.hovered() {
                 new_hover = Some(i);
             }
             if resp.hovered() || hour_lit {
-                p.rect_filled(row.shrink2(Vec2::new(0.0, 0.5)), 0.0, white(ROW_HOVER));
+                crate::kit::glass::row_hover_fill(&p, row);
             }
             let c = Pos2::new(inner.left(), row.center().y);
             p.rect_filled(Rect::from_min_size(Pos2::new(c.x, c.y - 5.0), Vec2::splat(10.0)), 3.0, if s.agent { AUTO() } else { ON() });

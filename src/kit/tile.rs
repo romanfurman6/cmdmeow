@@ -71,18 +71,27 @@ pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     paint_face(p, rect, hover, selected);
 }
 
-/// The 1 pt base under the card.
+/// The base under the card (2 pt, 1 pt while pressed, like a quiet key).
 fn paint_base(p: &egui::Painter, rect: Rect) {
-    p.rect_filled(rect.translate(Vec2::new(0.0, PRESS_DROP)), R_TILE, TILE_BASE());
+    // the panel header's icon buttons' base (B1 quiet key), so cards and
+    // buttons read as one surface
+    let look = super::key::Look::quiet(0.06, 0.15);
+    p.rect_filled(rect.translate(Vec2::new(0.0, look.depth)), R_TILE, look.base);
 }
 
-/// The card itself: see-through CARD (the panel glow shows through), the
-/// top highlight and the page cards' 1 pt edge.
+/// The card itself (W1): see-through, so the panel glow shows through.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
-    p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
+    // the same face as the panel header's icon buttons (key::Look::quiet):
+    // fill, 1 pt top highlight and hairline, a little lighter on hover
+    let look = super::key::Look::quiet(0.06, 0.15);
+    // hover is a light touch on a card: 40% of the button's step
+    let hover = hover * 0.4;
+    p.rect_filled(rect, R_TILE, lerp_color(look.fill, look.fill_hover, hover));
     let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
-    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
-    p.rect_stroke(rect, R_TILE, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
+    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, look.highlight);
+    if let Some((rest, hov)) = look.edge {
+        p.rect_stroke(rect, R_TILE, Stroke::new(look.edge_w, lerp_color(rest, hov, hover)), StrokeKind::Inside);
+    }
     if selected {
         p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
@@ -433,6 +442,29 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
     }
 }
 
+/// A history graph with its time span under it ("2 min ago" … "now", W5),
+/// for widgets and the Mac Health page alike. `top` is the top of the scale
+/// (None: the highest value). The captions take the bottom 13 pt of `r`.
+pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top: Option<f32>) {
+    // no history yet, or no room for a graph above the captions
+    if values.is_empty() || r.height() < 13.0 + 8.0 {
+        return;
+    }
+    let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 13.0));
+    match top {
+        Some(t) => spark_to(p, gr, values, color, t),
+        None => spark(p, gr, values, color, None),
+    }
+    let start = span_label(values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000);
+    p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
+    p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
+}
+
+/// How far back a graph of `secs` reaches: "45 s ago", "2 min ago".
+fn span_label(secs: u64) -> String {
+    if secs >= 60 { format!("{} min ago", secs / 60) } else { format!("{secs} s ago") }
+}
+
 /// The shared columns of a Medium or Large widget's list (W5): the widest
 /// name and the widest value of its lines, so every bar in the card starts
 /// and ends on the same two lines.
@@ -504,6 +536,13 @@ pub fn loading(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color3
 #[cfg(test)]
 mod row_grid_tests {
     use super::*;
+
+    #[test]
+    fn span_label_switches_to_minutes_at_60_s() {
+        assert_eq!(span_label(59), "59 s ago");
+        assert_eq!(span_label(60), "1 min ago");
+        assert_eq!(span_label(150), "2 min ago");
+    }
 
     #[test]
     fn row_grid_leaves_room_for_a_bar() {
