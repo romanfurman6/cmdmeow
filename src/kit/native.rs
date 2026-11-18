@@ -405,6 +405,9 @@ mod mac {
             /// NSModalPanelWindowLevel
             const MODAL_LEVEL: isize = 8;
             let _: () = msg_send![&*w, setLevel: MODAL_LEVEL];
+            // lay it out first, or it opens at the screen's corner
+            let _: () = msg_send![&*alert, layout];
+            let _: () = msg_send![&*w, center];
             let _: () = msg_send![&*w, orderFrontRegardless];
             let r: isize = msg_send![&*alert, runModal];
             r == FIRST

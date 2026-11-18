@@ -70,6 +70,23 @@ pub fn read(path: &Path) -> Option<Storage> {
     parse(&std::fs::read_to_string(path).ok()?)
 }
 
+/// The endpoint short enough for an alert line (it can't wrap mid-word):
+/// R2's 32-character account id keeps its ends, other hosts their ends.
+pub fn short_host(host: &str) -> String {
+    const R2: &str = ".r2.cloudflarestorage.com";
+    let cut = |s: &str, n: usize| -> String {
+        let c: Vec<char> = s.chars().collect();
+        if c.len() <= n * 2 + 1 {
+            return s.to_string();
+        }
+        format!("{}…{}", c[..n].iter().collect::<String>(), c[c.len() - n..].iter().collect::<String>())
+    };
+    match host.strip_suffix(R2) {
+        Some(account) => format!("Cloudflare R2, account {}", cut(account, 4)),
+        None => cut(host, 14),
+    }
+}
+
 /// A storage file by its name.
 pub fn is_storage_file(path: &Path) -> bool {
     path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXT))
@@ -119,6 +136,13 @@ mod tests {
         assert!(parse(&GOOD.replace("abc123.r2", "abc 123.r2")).is_none());
         // the public URL may be missing (a private bucket)
         assert!(parse(r#"{"cmdmeow":"sharing","endpoint":"h","bucket":"b","access_key":"a","secret_key":"s"}"#).is_some());
+    }
+
+    #[test]
+    fn alert_hosts_fit_one_line() {
+        assert_eq!(short_host("0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com"), "Cloudflare R2, account 0123…cdef");
+        assert_eq!(short_host("fsn1.your-objectstorage.com"), "fsn1.your-objectstorage.com");
+        assert_eq!(short_host("s3.eu-central-1.amazonaws.com.example.internal"), "s3.eu-central-…ample.internal");
     }
 
     #[test]

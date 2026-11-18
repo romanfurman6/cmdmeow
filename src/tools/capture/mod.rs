@@ -339,7 +339,7 @@ impl Capture {
         };
         // a file from anywhere could point uploads at someone else's bucket:
         // the person sees where they'd go and says yes
-        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, st.endpoint), "Use") {
+        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, share::import::short_host(&st.endpoint)), "Use") {
             return;
         }
         if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
@@ -1166,8 +1166,10 @@ impl Tool for Capture {
             let now = Instant::now();
             self.storage_files.extend(share::import::take().into_iter().map(|f| (f, now)));
             if !self.storage_files.is_empty() {
-                // up to 2 s for the launch to bring the app forward
-                let ready = crate::kit::native::app_active() || self.storage_files.iter().any(|(_, at)| at.elapsed().as_secs_f32() > 2.0);
+                // up to 2.5 s for the launch to bring the app forward, and a
+                // few frames first so the window behind the alert isn't blank
+                let waited = self.storage_files.iter().map(|(_, at)| at.elapsed().as_secs_f32()).fold(0.0, f32::max);
+                let ready = (crate::kit::native::app_active() && waited > 0.4) || waited > 2.5;
                 if ready {
                     for (f, _) in std::mem::take(&mut self.storage_files) {
                         self.import_storage(&f);
