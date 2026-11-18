@@ -289,16 +289,40 @@ impl Scanner {
     }
 }
 
-/// Is a program called `name` running: as a command ("claude", "node
-/// /opt/homebrew/bin/claude …"), as a package ("…/claude-code/cli.js") or
-/// as the agent's desktop app, which runs it inside? Letter case doesn't
-/// matter, and "couldn't tell" counts as running: staying awake a while too
-/// long is the smaller mistake.
+/// Is a program called `name` running that could have a session: as a
+/// command ("claude", "node /opt/homebrew/bin/claude …"), as a package
+/// ("…/claude-code/cli.js") or started by the agent's desktop app? Letter
+/// case doesn't matter, and "couldn't tell" counts as running: staying
+/// awake a while too long is the smaller mistake.
 fn process_running(name: &str) -> bool {
     let pattern = format!("(^|[/ ]){name}([ -]|$)|{name}[-_]code");
-    let found = std::process::Command::new("/usr/bin/pgrep").args(["-i", "-f", "--", &pattern]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output();
+    // each match with its whole command line
+    let long = if cfg!(target_os = "macos") { "-l" } else { "-a" };
+    let found = std::process::Command::new("/usr/bin/pgrep").args(["-i", "-f", long, "--", &pattern]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output();
     // pgrep: 0 found, 1 none, anything else is an error
-    !matches!(found, Ok(o) if o.status.code() == Some(1))
+    match found {
+        Ok(o) if o.status.code() == Some(1) => false,
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).lines().any(runs_sessions),
+        _ => true,
+    }
+}
+
+/// Could the program with this command line be running a session? Not the
+/// desktop app's own windows, nor the Remote Control service waiting for
+/// work: both are open all day and start each session as a program of its
+/// own, which is the one to look for.
+fn runs_sessions(cmd: &str) -> bool {
+    let low = cmd.to_lowercase();
+    // "/Claude.app/Contents/MacOS/Claude": the app itself, not a tool
+    // shipped next to it ("…/MacOS/opencode-cli")
+    let app_itself = low.match_indices(".app/contents/macos/").any(|(i, m)| {
+        let bundle = low[..i].rsplit('/').next().unwrap_or("");
+        let exe = &low[i + m.len()..];
+        !bundle.is_empty() && exe.strip_prefix(bundle).is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+    });
+    let app_helper = low.contains(".app/contents/frameworks/");
+    let service = low.contains(" remote-control");
+    !(app_itself || app_helper || service)
 }
 
 /// The end of a log, where an open tool call would be.
@@ -520,6 +544,30 @@ mod tests {
         assert!(!process_running(&name), "and not once it has quit");
         // a longer name is another program
         assert!(!process_running(&name[..name.len() - 1]));
+    }
+
+    #[test]
+    fn an_open_app_or_waiting_service_is_not_a_session() {
+        for cmd in [
+            "412 /Applications/Claude.app/Contents/MacOS/Claude",
+            "413 /Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/Claude Helper (Renderer) --type=renderer",
+            "414 /Applications/Codex.app/Contents/MacOS/Codex --no-sandbox",
+            "500 claude remote-control",
+            "501 node /opt/homebrew/bin/claude remote-control --spawn same-dir",
+        ] {
+            assert!(!runs_sessions(cmd), "{cmd}");
+        }
+        for cmd in [
+            "600 claude",
+            "601 claude --remote-control",
+            "602 claude --print --sdk-url wss://example.com/session",
+            "603 node /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js",
+            "604 /Users/me/Library/Application Support/Claude/claude-code/2.1.0/claude --output-format stream-json",
+            "605 /Applications/Codex.app/Contents/Resources/codex app-server",
+            "606 /Applications/OpenCode.app/Contents/MacOS/opencode-cli serve",
+        ] {
+            assert!(runs_sessions(cmd), "{cmd}");
+        }
     }
 
     fn tmp(name: &str) -> PathBuf {
