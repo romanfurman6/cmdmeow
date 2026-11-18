@@ -72,7 +72,7 @@ fn not_set_up(a: Availability, cl: &UsageInfo, demo: bool, ui: &mut Ui, r: Rect,
     y += 32.0 + 12.0;
     let steps: &[&str] = if a == Availability::SignedOut { m.sign_in_steps } else { m.install_steps };
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(colw, 12.0 + steps.len() as f32 * 34.0));
-    glass_card(&p, card, R_CARD, 0.0, false);
+    data_card(&p, card);
     for (i, s) in steps.iter().enumerate() {
         let cy = card.top() + 6.0 + 17.0 + i as f32 * 34.0;
         let c = Pos2::new(card.left() + 24.0, cy);
@@ -178,7 +178,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
     } else if meta.limits && (cl.loading || cl.error.is_some()) {
         let lr = slot(0, 3);
-        glass_card(&p, lr, R_CARD, 0.0, false);
+        data_card(&p, lr);
         let msg = cl.error.clone().unwrap_or_else(|| format!("Asking {} for your limits…", cl.provider));
         p.text(lr.min + Vec2::splat(sp::L), Align2::LEFT_TOP, "Plan limits", ty::title(), TEXT());
         paragraph(&p, lr.min + Vec2::new(sp::L, sp::L + 16.0 + sp::M), &msg, ty::body(), TEXT_SOFT(), lr.width() - 2.0 * sp::L);
@@ -203,7 +203,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let home = dirs::home_dir().unwrap_or_default().display().to_string();
     for (k, (title, rows)) in [("Models", &cl.local.models), ("Projects", &cl.local.projects)].into_iter().enumerate() {
         let cr = Rect::from_min_size(Pos2::new(col.left(), col.top() + k as f32 * (half + GAP)), Vec2::new(col.width(), half));
-        glass_card(&p, cr, R_CARD, 0.0, false);
+        data_card(&p, cr);
         let inner = cr.shrink(sp::L);
         p.text(inner.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
         p.text(inner.right_top(), Align2::RIGHT_TOP, "30 days", ty::caption(), ty::caption_color());
@@ -279,7 +279,7 @@ fn money_line(show_usd: bool, usd: f64, req: u64) -> String {
 
 /// A plain number card: title, big value, one line under it.
 fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
-    glass_card(p, r, R_CARD, 0.0, false);
+    data_card(p, r);
     let i = r.shrink(sp::L);
     p.text(i.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
     text_fit(p, Pos2::new(i.left(), i.top() + 16.0 + sp::M), Align2::LEFT_TOP, value, ty::hero(), TEXT(), i.width());
@@ -289,7 +289,7 @@ fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
 /// One plan limit: the page's SP2 ring with the even-use arc under the
 /// used one, and beside it when it runs out (red) and when it resets.
 fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
-    glass_card(p, cr, R_CARD, 0.0, false);
+    data_card(p, cr);
     let inner = cr.shrink(sp::L);
     p.text(inner.left_top(), Align2::LEFT_TOP, backend::short_label(&l.label), ty::title(), TEXT());
     let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 16.0 + sp::M), inner.max);
@@ -313,7 +313,7 @@ fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
 
 /// A subscription: the 30 days at API prices against the plan's price.
 fn saved_card(p: &egui::Painter, r: Rect, cl: &UsageInfo) {
-    glass_card(p, r, R_CARD, 0.0, false);
+    data_card(p, r);
     let i = r.shrink(sp::L);
     let plan = cl.plan_usd().unwrap_or(0.0);
     let api = cl.local.usd_30d;
@@ -367,7 +367,7 @@ fn days_in_month() -> u32 {
 /// it runs out. The budget is typed right on the card.
 fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     let p = ui.painter().clone();
-    glass_card(&p, r, R_CARD, 0.0, false);
+    data_card(&p, r);
     let i = r.shrink(sp::L);
     let today = chrono::Local::now().date_naive();
     let spent = cl.local.usd_month;
@@ -427,7 +427,7 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
 /// History: the limit window as a line, or tokens / dollars per day.
 fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, demo: bool) {
     let p = ui.painter().clone();
-    glass_card(&p, r, R_CARD, 0.0, false);
+    data_card(&p, r);
     let i = r.shrink(sp::L);
     // one question per card: limits live in the top row; this card is always
     // daily usage, and Tokens | $ only changes the unit of the same bars
@@ -503,7 +503,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         return;
     }
     let cr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, bottom));
-    glass_card(&p, cr, R_CARD, 0.0, false);
+    data_card(&p, cr);
     let i = cr.shrink(sp::L);
     p.text(i.left_top(), Align2::LEFT_TOP, "At API prices · 30 days", ty::title(), TEXT());
     let mut days: Vec<Day> = Vec::new();
@@ -527,7 +527,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: bool) {
     let p = ui.painter().clone();
     let resp = ui.interact(cr, ui.scope_id().with(("ai-all", info.provider)), egui::Sense::click());
-    glass_card(&p, cr, R_CARD, if resp.hovered() { 1.0 } else { 0.0 }, false);
+    crate::kit::tile::paint_card(&p, cr, if resp.hovered() { 1.0 } else { 0.0 }, false);
     if resp.clicked() {
         backend::select(ai::index_of(ai::meta(info.provider).id), false);
     }

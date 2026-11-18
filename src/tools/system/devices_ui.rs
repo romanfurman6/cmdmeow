@@ -141,7 +141,8 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
             Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), short_name(&d.name), pct_text(d.battery())),
             None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
         };
-        let caption = if first.is_some() { note(&devs) } else { String::new() };
+        // the weakest device is the value; the caption says how many there are
+        let caption = if first.is_some() { format!("{} connected", devs.iter().filter(|d| d.live()).count()) } else { String::new() };
         if size == Size::S12 {
             return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
         }

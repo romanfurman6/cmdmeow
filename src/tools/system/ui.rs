@@ -96,7 +96,8 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
         }
         "network" => {
             let name = if s.wifi.name.is_empty() { "Network".to_string() } else { s.wifi.name.clone() };
-            (Icon::Wifi, name, split_num(&human_rate(s.net_down)), format!("↑ {}", human_rate(s.net_up)), None)
+            let (n, u) = split_num(&human_rate(s.net_down));
+            (Icon::Wifi, name, (format!("↓ {}", n.strip_suffix(".0").unwrap_or(&n)), u), format!("↑ {}", human_rate(s.net_up)), None)
         }
         "devices" => {
             let n = s.devices.iter().filter(|d| d.live()).count();
@@ -143,8 +144,9 @@ pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect,
         _ => {
             let resp = tile::card(ui, r, wid, sel);
             let p = ui.painter();
-            let note = if id == "network" { "" } else { mt.caption.as_str() };
-            let body = tile::head(p, r, mt.glyph, col, &mt.label, note);
+            // W6: the caption on the right; Wi-Fi shows today's totals there
+            let note = if id == "network" { format!("Today {} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total)) } else { caption.clone() };
+            let body = tile::head(p, r, mt.glyph, col, &mt.label, &note);
             medium_body(&s, id, &mt, p, body);
             resp
         }
@@ -165,11 +167,18 @@ fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32) {
 fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
     let lines: Vec<Line> = match id {
         "storage" => {
-            let tot = s.disk_total.max(1) as f32;
-            let used = s.disk_total.saturating_sub(s.disk_free);
-            let mut v: Vec<Line> = vec![("Used".into(), mt.bar, human_bytes(used))];
-            v.extend(s.categories.iter().take(2).map(|(n, b)| (n.clone(), Some(((*b as f32 / tot).clamp(0.01, 1.0), tint::HEALTH())), human_bytes(*b))));
-            v
+            // one disk bar across the width, used and the total under it
+            if s.disk_total > 0 {
+                let used = s.disk_total.saturating_sub(s.disk_free);
+                let top = r.center().y - (8.0 + 6.0 + 14.0) / 2.0;
+                let br = Rect::from_min_size(Pos2::new(r.left(), top), egui::Vec2::new(r.width(), 8.0));
+                bar(p, br, used as f32 / s.disk_total as f32, mt.bar.map(|b| b.1).unwrap_or(tint::HEALTH()));
+                let y = br.bottom() + 6.0 + 7.0;
+                let tr = p.text(Pos2::new(r.right(), y), Align2::RIGHT_CENTER, human_bytes(s.disk_total), ty::caption(), ty::caption_color());
+                text_fit(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &format!("{} used", human_bytes(used)), ty::caption(), ty::caption_color(), tr.left() - r.left() - 8.0);
+                return;
+            }
+            Vec::new()
         }
         "memory" => {
             let top = s.mem_active.max(s.mem_wired).max(s.mem_compressed).max(1) as f32;
@@ -185,9 +194,6 @@ fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
             let mut v: Vec<Line> = vec![("Charge".into(), mt.bar, format!("{}%", b.percent))];
             if let Some(h) = b.health_pct {
                 v.push(("Health".into(), Some(((h / 100.0).clamp(0.01, 1.0), if h < 80.0 { AMBER() } else { GREEN() })), format!("{h:.0}%")));
-            }
-            if b.cycles > 0 {
-                v.push(("Cycles".into(), None, b.cycles.to_string()));
             }
             if !b.present {
                 v.clear();
@@ -213,7 +219,8 @@ fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
 /// are scaled to the list's largest item so they read as a comparison.
 fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rect) {
     let big = p.text(body.left_top(), Align2::LEFT_TOP, &mt.big, bold(28.0), TEXT());
-    let unit = p.text(Pos2::new(big.right() + 4.0, big.bottom() - 5.0), Align2::LEFT_BOTTOM, &mt.unit, font(13.0), TEXT_DIM());
+    let gap = if mt.unit == "%" { 0.0 } else { 4.0 };
+    let unit = p.text(Pos2::new(big.right() + gap, big.bottom() - 5.0), Align2::LEFT_BOTTOM, &mt.unit, font(13.0), TEXT_DIM());
     // right of the number: a live graph where there is history
     let beside = Rect::from_min_max(Pos2::new(unit.right() + 16.0, big.top() + 4.0), Pos2::new(body.right(), big.bottom() - 2.0));
     let mut y = big.bottom() + 8.0;
@@ -235,9 +242,6 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
             rel(&items)
         }
         "memory" => {
-            if s.mem_history.len() > 1 {
-                tile::spark_to(p, beside, &s.mem_history, mt.bar.map(|b| b.1).unwrap_or(tint::HEALTH()), (s.mem_history.iter().copied().fold(0.0f32, f32::max) * 1.5).max(30.0));
-            }
             let items = vec![("Apps".to_string(), s.mem_active), ("Wired".to_string(), s.mem_wired), ("Compressed".to_string(), s.mem_compressed)];
             rel(&items)
         }
@@ -247,12 +251,12 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
             Vec::new()
         }
         "network" => {
-            let list = Rect::from_min_max(Pos2::new(body.left(), y), Pos2::new(body.right(), body.bottom() - 2.0 * 22.0 - 4.0));
+            let list = Rect::from_min_max(Pos2::new(body.left(), y), Pos2::new(body.right(), body.bottom() - 22.0 - 4.0));
             if s.net_history.len() > 1 && list.height() > 30.0 {
                 spark_span(p, list, &s.net_history, tint::HEALTH());
                 y = list.bottom() + 4.0;
             }
-            vec![("Upload".into(), None, human_rate(s.net_up)), ("Today".into(), None, format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total)))]
+            vec![("Upload".into(), None, mt.caption.clone())]
         }
         _ => vec![(mt.caption.clone(), mt.bar, String::new())],
     };
