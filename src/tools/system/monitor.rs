@@ -563,6 +563,8 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         s.smart_status = smart;
     }
     loop {
+        // what macOS hands out during a reading is freed after it
+        let _pool = crate::kit::macos::pool();
         if PAUSED.load(Ordering::Relaxed) {
             super::ble::stop();
             while PAUSED.load(Ordering::Relaxed) {
