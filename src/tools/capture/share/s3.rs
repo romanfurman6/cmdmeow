@@ -192,7 +192,8 @@ fn bodyless(b: &Bucket, method: &str, key: &str) -> Result<ureq::http::Response<
     let mut headers: Vec<(String, String)> = vec![("host".into(), b.bucket_host()), ("x-amz-content-sha256".into(), EMPTY.into()), ("x-amz-date".into(), amz_date.clone())];
     let path = b.path(key);
     let auth = authorization(b, method, &path, "", &mut headers, EMPTY, &amz_date);
-    let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_connect(Some(Duration::from_secs(20))).build());
+    // a storage that accepts and then stalls must not hold a scan forever
+    let agent = ureq::Agent::new_with_config(ureq::Agent::config_builder().http_status_as_error(false).timeout_connect(Some(Duration::from_secs(20))).timeout_global(Some(Duration::from_secs(30))).build());
     let url = format!("https://{}{}", b.bucket_host(), path);
     let mut req = if method == "HEAD" { agent.head(&url) } else { agent.delete(&url) };
     for (k, v) in &headers {

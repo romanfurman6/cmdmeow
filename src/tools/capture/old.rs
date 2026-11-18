@@ -137,10 +137,12 @@ fn ours(p: &Path) -> Option<Kind> {
         Kind::Screenshot => matches!(ext.as_str(), "png" | "jpg" | "jpeg"),
         _ => ext == "mp4",
     };
-    // "2026-11-08 at 17.41.12", then anything (" 2", " edited", " framed")
+    // "2026-11-08 at 17.41.12", then only what the app adds: " 2", " edited", " framed"
     let date = rest.get(..22)?;
     let parsed = chrono::NaiveDateTime::parse_from_str(date, "%Y-%m-%d at %H.%M.%S").is_ok();
-    (ok_ext && parsed).then_some(kind)
+    let tail = rest.get(22..)?.rsplit_once('.').map(|(t, _)| t)?;
+    let app_tail = tail.split(' ').skip(1).all(|w| w == "edited" || w == "framed" || (!w.is_empty() && w.chars().all(|c| c.is_ascii_digit())));
+    (ok_ext && parsed && (tail.is_empty() || tail.starts_with(' ')) && app_tail).then_some(kind)
 }
 
 fn age_days(p: &Path) -> f64 {
@@ -168,6 +170,9 @@ mod tests {
         assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.mp4")), None);
         assert_eq!(ours(Path::new("/d/Recording 2026-11-09 at 17.26.12.png")), None);
         assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.png.zip")), None);
+        assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12 my notes.png")), None);
+        assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12x.png")), None);
+        assert_eq!(ours(Path::new("/d/Recording 2026-11-09 at 17.26.12 edited 2.mp4")), Some(Kind::Recording));
     }
 
     #[test]
