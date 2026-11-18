@@ -594,6 +594,22 @@ mod tests {
             let tokens = LogCache::default().update(files.clone(), usage_entry);
             eprintln!("read {} logs, {} MB in {:?} ({} output tokens in 7 days)", files.len(), bytes / 1_000_000, t.elapsed(), tokens.output_7d);
         }
+        // what the count is made of, to hold against another counter
+        let mut cache = LogCache::default();
+        let t = cache.update(files, usage_entry);
+        let all = cache.entries();
+        let part = |f: fn(&UsageEntry) -> u64| all.iter().map(f).sum::<u64>();
+        eprintln!(
+            "all logs: {} replies, input {}, output {}, cache write {}, cache read {}; today {} tokens in {} replies; 7 days {}",
+            all.len(),
+            part(|e| e.input),
+            part(|e| e.output),
+            part(|e| e.cache_write + e.cache_write_1h),
+            part(|e| e.cache_read),
+            t.tokens_today,
+            t.requests_today,
+            t.tokens_7d
+        );
     }
 
     #[test]
