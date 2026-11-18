@@ -243,6 +243,75 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         }
         return;
     }
+    // PROTOTYPE (Keep Awake 1:2 redesign canvas): CMDMEOW_PROTO_AWAKE=a|b|c
+    let proto = std::env::var("CMDMEOW_PROTO_AWAKE").unwrap_or_default();
+    let sub = line2.first().cloned().unwrap_or_default();
+    // the scene drawn so its ring is `rr` round `c`
+    let scene_at = |c: Pos2, rr: f32| scene(&p, Rect::from_center_size(c, Vec2::splat(rr / 0.4375)), st);
+    match proto.as_str() {
+        "a" => {
+            // like the other Wide widgets (W3): the scene ring 50 on the left,
+            // label · state · mode; a click turns On on or off (as 1:1)
+            let (c, rr) = tile::wide_ring(rect);
+            scene_at(c, rr);
+            let x0 = c.x + rr + tile::PAD;
+            let cap = if sub.is_empty() { mode.label().to_string() } else { format!("{} · {}", mode.label(), sub) };
+            // winding down: "Sleeps in" over the time left, so nothing is cut
+            let (label, value) = match st {
+                State::WindDown { left } => ("Sleeps in".to_string(), clock(left)),
+                _ => ("Keep Awake".to_string(), title(st)),
+            };
+            tile::left_text(&p, x0, rect.center().y, &label, &value, &cap, TEXT_DIM(), rect.right() - tile::PAD - x0);
+            if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
+                k.toggle(Via::Panel);
+            }
+            return;
+        }
+        "b" => {
+            // the scene ring 36, the state with a switch for On beside it,
+            // the mode under it; the card opens the page
+            let rr = 18.0;
+            let c = Pos2::new(rect.left() + tile::PAD + rr, rect.center().y);
+            scene_at(c, rr);
+            let x0 = c.x + rr + tile::PAD;
+            let sw = Rect::from_min_size(Pos2::new(rect.right() - tile::PAD - 30.0, rect.center().y - 9.0 - 10.0), Vec2::new(30.0, 18.0));
+            let (head, cap) = match st {
+                State::WindDown { left } => (clock(left), format!("Sleeps in · {}", sub)),
+                _ => (title(st), if sub.is_empty() { mode.label().to_string() } else { format!("{} · {}", mode.label(), sub) }),
+            };
+            let tf = bold(13.0);
+            let (y1, y2) = two_lines_y(&p, rect.center().y, &tf, &font(11.0));
+            text_fit(&p, Pos2::new(x0, y1), Align2::LEFT_CENTER, &head, tf, TEXT(), sw.left() - 6.0 - x0);
+            text_fade(&p, Pos2::new(x0, y2), &cap, font(11.0), TEXT_DIM(), rect.right() - tile::PAD - x0);
+            let sw = Rect::from_center_size(Pos2::new(sw.center().x, y1), sw.size());
+            if switch(ui, sw, id.with("on"), mode == Mode::On, true).clicked() {
+                k.toggle(Via::Panel);
+            } else if resp.clicked() {
+                cx.open_page(ID, "");
+            }
+            return;
+        }
+        "c" => {
+            // no scene: one line of state on top, a full-width control below
+            let inner = rect.shrink2(Vec2::new(12.0, 12.0));
+            let (_, ring_col) = ring(st);
+            let dot = if st == State::Off { white(60) } else { ring_col };
+            let ty0 = inner.top() + 9.0;
+            p.circle_filled(Pos2::new(inner.left() + 4.0, ty0), 4.0, dot);
+            let t = p.text(Pos2::new(inner.left() + 14.0, ty0), Align2::LEFT_CENTER, title(st), bold(13.0), TEXT());
+            if !sub.is_empty() {
+                text_first_fit(&p, Pos2::new(t.right() + 6.0, ty0), Align2::LEFT_CENTER, &line2, font(11.0), TEXT_DIM(), inner.right() - t.right() - 6.0);
+            }
+            let cr = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - 32.0), inner.max);
+            if let Some(m) = control(ui, cr, id.with("mode"), mode, font(12.0)) {
+                k.set_mode(m, Via::Panel);
+            } else if resp.clicked() {
+                cx.open_page(ID, "");
+            }
+            return;
+        }
+        _ => {}
+    }
     // 1:2: the state on top, the control along the bottom
     let inner = rect.shrink2(Vec2::new(12.0, 10.0));
     let sr = Rect::from_min_size(inner.min, Vec2::splat(32.0));
