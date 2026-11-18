@@ -197,11 +197,12 @@ fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Col
         let n = p.text(Pos2::new(u.left() - 3.0, r.top() + 28.0), Align2::RIGHT_BOTTOM, num, ty::hero(), TEXT());
         right = n.left() - sp::M;
     }
-    let cy = r.top() + 9.0;
-    let t = text_fit(p, Pos2::new(r.left(), cy), Align2::LEFT_CENTER, title, ty::title(), TEXT(), right - r.left());
+    // the title sits on the big number's baseline, the same line as its unit,
+    // in every card so titles in a row line up too
+    let t = text_fit(p, Pos2::new(r.left(), r.top() + 26.0), Align2::LEFT_BOTTOM, title, ty::title(), TEXT(), right - r.left());
     if let Some((label, c)) = status {
         if t.right() + 80.0 < right {
-            chip(p, Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, label, (with_alpha(c, 0.16), c));
+            chip(p, Pos2::new(t.right() + sp::S, t.center().y), Align2::LEFT_CENTER, label, (with_alpha(c, 0.16), c));
         }
     }
     r.top() + 28.0 + sp::M
