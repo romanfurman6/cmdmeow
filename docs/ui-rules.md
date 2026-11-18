@@ -50,7 +50,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C13 | Exceptions only: capture/record HUD, the recording dot, traffic lights, third-party brand marks, user content. What the app draws over user content follows C16. | ✅ |
 | C14 | Names say the role: `BLUE`→`ACTION`; `INDIGO`, `PURPLE`, `TEAL`, `CLAUDE` go. | ✅ |
 | C15 | AI (AI Check chip, reveal ring, agent marks) has its own token `AI()`, cyan (today the same value as `tint::HEALTH`). | ✅ |
-| C16 | **On-picture overlays.** Anything the app draws over the user's picture or video frame (selection frame, handles, crop and drag-out outlines, blur/eraser previews, the edge of a pinned screenshot) uses fixed colours, never theme tokens: lime #C8F05A with a dark ring #0E1405 (`overlay::LIME`, `overlay::RING`), the same in both themes. A selected mark's frame and handles sit 5 pt outside it, never over it (`overlay::OUTSET`). Frame: 1 pt lime over a 2 pt ring-colour 60% band. Corners are 12 pt L brackets (3 pt lime, 6 pt ring, 8 pt white 60% halo), sides are 16×6 pt pills with the same ring and halo; 14 pt arms / 20×7 pills on hover or drag. Arrows: two 10 pt lime squares just beyond the tips, no frame. Dashed lines (crop area, drag-out) stay 1.5 pt lime over 3 pt ring 70%. Grab zone 24 pt, nearest handle wins (`overlay::GRAB`). A side's middle handle hides when that side is under 64 pt (`overlay::MID_MIN`). | ⏳ code |
+| C16 | **On-picture overlays.** Anything the app draws over the user's picture or video frame (selection frame, handles, crop and drag-out outlines, blur/eraser previews, the edge of a pinned screenshot) uses fixed colours, never theme tokens: white with a black edge (`overlay::LINE`, `overlay::RING`), the same in both themes, so it shows on light and dark pictures. A selected mark's frame and handles sit 5 pt outside it (`overlay::OUTSET`). Frame: 1 pt white over a 2 pt black 40% band. Corners: 6 pt white squares with a 1 pt black ring, 8 pt on hover or drag. Sides draw no handle but still grab. Arrows: two 6 pt white dots with a dark ring just beyond the tips, no frame. Dashed lines (crop area, drag-out): 1.5 pt white over 3 pt black 50%. Grab zone 24 pt, nearest handle wins (`overlay::GRAB`); a side under 64 pt has no middle grab spot (`overlay::MID_MIN`). | ⏳ code (#283) |
 
 **Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ✅
 
@@ -315,3 +315,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman: selection follows the hover rules: in card lists every lit row is inset 4 pt, radius 8, with no dividers next to it (H2, H3; PR #276).
 
 2026-11-18, Roman: button glow sits deep under the key, narrower than it, lighter tint (B5, variant 6; renders /mnt/project-files/button-glow/).
+
+2026-11-18, Roman: C16 overlays white with a black edge instead of lime (selection frame variant C, PR #283); pin edge and corner grip follow.
