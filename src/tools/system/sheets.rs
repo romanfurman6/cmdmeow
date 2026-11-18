@@ -464,7 +464,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         let rows = sp.legend.len().div_ceil(cols);
         let h = 8.0 + rows as f32 * SHEET_ROW_H;
         let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h));
-        glass_card(p, lr, R_CARD, 0.0, false);
+        data_card(p, lr);
         let cw = w / cols as f32;
         if cols == 2 {
             hairline(p, Pos2::new(x0 + cw, y + 10.0), Pos2::new(x0 + cw, y + h - 10.0));
@@ -491,7 +491,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         }
         y += CARD_TITLE_H;
         let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 92.0));
-        glass_card(p, lr, R_CARD, 0.0, false);
+        data_card(p, lr);
         for (k, (label, v)) in [("Download", sp_.down_mbps), ("Upload", sp_.up_mbps)].iter().enumerate() {
             let x = lr.left() + 12.0 + k as f32 * (w / 2.0);
             p.text(Pos2::new(x, lr.top() + 12.0), Align2::LEFT_TOP, *label, ty::label(), TEXT_DIM());
@@ -525,7 +525,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         y += CARD_TITLE_H;
         let h = 8.0 + sp.apps.len() as f32 * SHEET_ROW_H;
         let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h));
-        glass_card(p, ar, R_CARD, 0.0, false);
+        data_card(p, ar);
         for (i, l) in sp.apps.iter().enumerate() {
             let rr = Rect::from_min_size(Pos2::new(x0, y + 4.0 + i as f32 * SHEET_ROW_H), Vec2::new(w, SHEET_ROW_H));
             legend_row(p, rr, l.color, &l.label, &l.value, l.value_col);
@@ -543,7 +543,7 @@ fn facts_card(p: &egui::Painter, facts: &[Fact], x0: f32, w: f32, y: f32) -> f32
     let measure = |f: &Fact| if f.hint.is_empty() { SHEET_ROW_H } else { 27.0 + p.layout(f.hint.clone(), font(12.0), TEXT_FAINT(), w - 24.0).size().y + 8.0 };
     let h: f32 = 8.0 + facts.iter().map(measure).sum::<f32>();
     let fr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h));
-    glass_card(p, fr, R_CARD, 0.0, false);
+    data_card(p, fr);
     let mut fy = y + 4.0;
     for f in facts {
         fy += fact_row(p, Rect::from_min_size(Pos2::new(x0, fy), Vec2::new(w, 40.0)), &f.label, &f.value, f.col, &f.hint);
@@ -574,7 +574,7 @@ fn switches(ui: &mut Ui, sp: &Spec, x0: f32, w: f32, y: f32) -> Action {
     }
     let p = ui.painter().clone();
     let card = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 8.0 + n as f32 * SWITCH_ROW_H));
-    glass_card(&p, card, R_CARD, 0.0, false);
+    data_card(&p, card);
     let mut action = Action::None;
     let first = sp.limit.is_some() as usize;
     if let Some(sel) = sp.limit {
@@ -630,7 +630,7 @@ fn procs_card(ui: &mut Ui, procs: &[super::procs::Proc], x0: f32, w: f32, y: f32
     card_title(&p, Pos2::new(x0, y), "Top processes");
     let y = y + CARD_TITLE_H;
     let card = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, procs_h(procs.len()) - 14.0 - CARD_TITLE_H));
-    glass_card(&p, card, R_CARD, 0.0, false);
+    data_card(&p, card);
     let now = ui.input(|i| i.time);
     let arm_id = ui.scope_id().with("proc-quit-armed");
     let armed: Option<(u32, f64)> = ui.data(|d| d.get_temp(arm_id)).filter(|(_, t): &(u32, f64)| now - t < QUIT_ARM_SECS);

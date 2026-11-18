@@ -353,14 +353,16 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool
     let cy = rr.center().y;
     // first, so the buttons drawn after it take their own clicks
     let row = ui.interact(rr, ui.scope_id().with(("ai-row", &r.key)), if c.locate { Sense::click() } else { Sense::hover() });
-    if row.hovered() || ui.rect_contains_pointer(rr) {
+    let lit = row.hovered() || ui.rect_contains_pointer(rr);
+    if lit {
         c.hovered = Some(r.key.clone());
         // edge to edge; the last row takes the popover's bottom corners
         let k = R_CARD as u8;
         let corners = if last { egui::CornerRadius { nw: 0, ne: 0, sw: k, se: k } } else { egui::CornerRadius::ZERO };
         p.rect_filled(rr, corners, white(ROW_HOVER));
     }
-    hairline(&p, rr.left_top(), rr.right_top());
+    // H2: no hairline touches a lit row
+    row_divider(ui, &p, rr.left_top(), rr.right_top(), lit, rr.bottom());
     if c.locate && row.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }

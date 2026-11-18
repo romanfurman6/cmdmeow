@@ -305,6 +305,10 @@ pub struct Editor {
     pub requests: Vec<Request>,
     /// The doc changed since it was opened (closing keeps the edit in history).
     pub edited: bool,
+    /// ⌘-scroll or pinch zoom on top of the fit scale (1 = fit).
+    zoom: f32,
+    /// Where the zoomed picture sits, from the canvas centre (points).
+    pan: Vec2,
 }
 
 impl Editor {
@@ -347,6 +351,8 @@ impl Editor {
             share_progress: None,
             requests: Vec::new(),
             edited: false,
+            zoom: 1.0,
+            pan: Vec2::ZERO,
         }
     }
 
@@ -1058,8 +1064,20 @@ impl Editor {
         let geom = frame.map(|f| render::frame_geom(view.width(), view.height(), &f, self.px_per_pt));
         let outer = geom.map(|g| g.size).unwrap_or(view.size());
         // fit, but never larger than true size (px_per_pt image pixels per point)
-        let scale = (avail.width() / outer.x).min(avail.height() / outer.y).min(1.0 / self.px_per_pt).max(0.01);
-        let outer_r = Rect::from_center_size(avail.center(), outer * scale);
+        let fit = (avail.width() / outer.x).min(avail.height() / outer.y).min(1.0 / self.px_per_pt).max(0.01);
+        // ⌘-scroll or pinch zooms toward the pointer; plain scroll pans a zoomed picture
+        let (pinch, wheel, at) = ctx.input(|i| (i.zoom_delta(), i.smooth_scroll_delta, i.pointer.hover_pos()));
+        if let Some(at) = at.filter(|a| area.contains(*a)) {
+            if (pinch - 1.0).abs() > 1e-4 {
+                let max = (ZOOM_MAX / self.px_per_pt / fit).max(1.0);
+                (self.zoom, self.pan) = zoom_at(self.zoom, self.pan, pinch, at - avail.center(), max);
+            } else if self.zoom > 1.0 {
+                self.pan += wheel;
+            }
+        }
+        self.pan = clamp_pan(self.pan, outer * fit * self.zoom, avail.size());
+        let scale = fit * self.zoom;
+        let outer_r = Rect::from_center_size(avail.center() + self.pan, outer * scale);
         let shown = match geom {
             Some(g) => Rect::from_min_size(outer_r.min + g.inner.min.to_vec2() * scale, view.size() * scale),
             None => outer_r,
@@ -1317,7 +1335,8 @@ impl Editor {
             }
         }
         if self.ocr_busy {
-            spinner(&p, Pos2::new(shown.right() - 16.0, shown.top() + 16.0), 7.0, ctx.input(|i| i.time), Color32::WHITE);
+            let sv = shown.intersect(area);
+            spinner(&p, Pos2::new(sv.right() - 16.0, sv.top() + 16.0), 7.0, ctx.input(|i| i.time), Color32::WHITE);
             crate::kit::glass::poll(&ctx);
         }
     }
@@ -1820,6 +1839,24 @@ fn nearest(spots: &[(usize, Pos2)], q: Pos2, scale: f32) -> Option<usize> {
         .map(|(k, _)| k)
 }
 
+/// Most a picture can zoom: this many times its true size.
+const ZOOM_MAX: f32 = 8.0;
+
+/// Zoom by `by` around `at` (pointer, from the canvas centre) so the spot under
+/// the pointer stays put, as in Preview. Returns the new zoom and pan.
+fn zoom_at(zoom: f32, pan: Vec2, by: f32, at: Vec2, max: f32) -> (f32, Vec2) {
+    let z = (zoom * by).clamp(1.0, max);
+    let k = z / zoom;
+    (z, at - (at - pan) * k)
+}
+
+/// Keep a zoomed picture over the canvas: no gap at an edge while it is larger,
+/// centred on an axis where it fits.
+fn clamp_pan(pan: Vec2, size: Vec2, avail: Vec2) -> Vec2 {
+    let room = ((size - avail) / 2.0).max(Vec2::ZERO);
+    Vec2::new(pan.x.clamp(-room.x, room.x), pan.y.clamp(-room.y, room.y))
+}
+
 fn shade_outside(p: &egui::Painter, shown: Rect, keep: Rect) {
     let keep = keep.intersect(shown);
     let shade = Color32::from_black_alpha(140);
@@ -2113,5 +2150,27 @@ mod tests {
         assert_eq!(e.area.unwrap().min, Pos2::ZERO);
         e.set_tool(Tool::Rect);
         assert_eq!(e.area, None, "another tool drops the area");
+    }
+
+    #[test]
+    fn zoom_keeps_the_spot_under_the_pointer() {
+        // picture centred, pointer 100 pt right of centre: the spot under it stays
+        let at = Vec2::new(100.0, -40.0);
+        let (z, pan) = zoom_at(1.0, Vec2::ZERO, 2.0, at, 8.0);
+        assert_eq!(z, 2.0);
+        // picture point under the pointer, before and after: (at - pan) / zoom
+        assert!(((at - pan) / z - at).length() < 1e-4);
+        // out past fit stops at fit; in past the cap stops at the cap
+        assert_eq!(zoom_at(2.0, pan, 0.1, at, 8.0).0, 1.0);
+        assert_eq!(zoom_at(2.0, pan, 100.0, at, 8.0).0, 8.0);
+    }
+
+    #[test]
+    fn zoomed_picture_stays_over_the_canvas() {
+        let avail = Vec2::new(400.0, 300.0);
+        // fits: centred
+        assert_eq!(clamp_pan(Vec2::new(50.0, 50.0), Vec2::new(300.0, 200.0), avail), Vec2::ZERO);
+        // 800 wide: at most 200 either way; 250 tall still fits
+        assert_eq!(clamp_pan(Vec2::new(500.0, 30.0), Vec2::new(800.0, 250.0), avail), Vec2::new(200.0, 0.0));
     }
 }
