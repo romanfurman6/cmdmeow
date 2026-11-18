@@ -7,7 +7,7 @@
 //! that moves, and only because time passes.
 
 use super::engine::{names, today_start, Engine, Mode, Span, State, Via, GRACE_SECS};
-use super::{KeepAwake, KeyRec, ID};
+use super::{KeepAwake, KeyRec};
 use crate::core::tool::Size;
 use crate::kit::glass::*;
 use crate::kit::hotkeys::{listen, Heard};
@@ -81,7 +81,16 @@ fn detail(e: &Engine, st: State, now: i64) -> String {
     }
 }
 
-/// The 1:2 widget's second line, the longest that fits first.
+/// "Claude +1": the first agent and how many more, for a short line.
+fn names_short(a: &[super::sessions::Source]) -> String {
+    match a {
+        [] => String::new(),
+        [one] => one.name().to_string(),
+        [first, rest @ ..] => format!("{} +{}", first.name(), rest.len()),
+    }
+}
+
+/// The 1:2 widget's mode detail, the longest that fits first.
 fn detail_short(e: &Engine, st: State, now: i64) -> Vec<String> {
     let since = e.awake_since.map(time_of_day).unwrap_or_default();
     match st {
@@ -89,18 +98,14 @@ fn detail_short(e: &Engine, st: State, now: i64) -> Vec<String> {
         State::Off => vec![],
         State::Agent => {
             let a = e.working_agents(now);
-            vec![names(&a), format!("{} agents", a.len())]
+            vec![names(&a), names_short(&a), format!("{} agents", a.len())]
         }
-        State::WindDown { .. } => vec![format!("{} finished", names(&e.last_agents)), "Finished".into()],
+        State::WindDown { .. } => {
+            let a = &e.last_agents;
+            vec![format!("{} finished", names(a)), format!("{} finished", names_short(a)), "Finished".into()]
+        }
         State::On => vec![format!("Since {since}")],
     }
-}
-
-/// The first of `options` that fits `max_w`; the last one fitted.
-fn text_first_fit(p: &Painter, pos: Pos2, align: Align2, options: &[String], f: FontId, color: Color32, max_w: f32) {
-    let Some(last) = options.last() else { return };
-    let pick = options.iter().find(|o| p.layout_no_wrap((*o).clone(), f.clone(), color).size().x <= max_w).unwrap_or(last);
-    text_fit(p, pos, align, pick, f, color, max_w);
 }
 
 /// How far around the ring is filled, and its colour.
@@ -217,9 +222,8 @@ fn control(ui: &mut Ui, r: Rect, id: egui::Id, mode: Mode, f: FontId) -> Option<
 
 // ---------------------------------------------------------------- panel
 
-/// The Keep Awake widget: 1:1 (a tap turns On on or off) or 1:2 (the
-/// control).
-pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut crate::core::tool::Cx) {
+/// The Keep Awake widget: 1:1 or 1:2; in both a click turns On on or off.
+pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, _cx: &mut crate::core::tool::Cx) {
     let now = k.now();
     let id = ui.scope_id().with("w-awake");
     let (st, mode, line2) = {
@@ -227,8 +231,8 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         let st = e.state(now);
         (st, e.mode(), detail_short(&e, st, now))
     };
-    // 1:1 is one button and sinks; 1:2 holds the switch, so only the switch presses (W1)
-    let resp = if size == Size::S11 { tile::card(ui, rect, id, false) } else { tile::frame(ui, rect, id, false) };
+    // one action in both sizes, so the whole card presses (W1)
+    let resp = tile::card(ui, rect, id, false);
     let p = ui.painter().clone();
     if size == Size::S11 {
         let sr = Rect::from_min_size(Pos2::new(rect.center().x - 25.0, rect.top() + 7.0), Vec2::splat(50.0));
@@ -243,26 +247,25 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, cx: &mut c
         }
         return;
     }
-    // 1:2: the state on top, the control along the bottom
-    let inner = rect.shrink2(Vec2::new(12.0, 10.0));
-    let sr = Rect::from_min_size(inner.min, Vec2::splat(32.0));
-    scene(&p, sr, st);
-    let x = sr.right() + 8.0;
-    let w = inner.right() - x;
-    let tf = bold(13.0);
-    if line2.is_empty() {
-        text_fit(&p, Pos2::new(x, sr.center().y), Align2::LEFT_CENTER, &title(st), tf, TEXT(), w);
-    } else {
-        let (y1, y2) = two_lines_y(&p, sr.center().y, &tf, &font(11.0));
-        text_fit(&p, Pos2::new(x, y1), Align2::LEFT_CENTER, &title(st), tf, TEXT(), w);
-        text_first_fit(&p, Pos2::new(x, y2), Align2::LEFT_CENTER, &line2, font(11.0), TEXT_DIM(), w);
-    }
-    // W7: the panel's segmented control at its own size, 28 with 12 labels
-    let cr = Rect::from_min_max(Pos2::new(inner.left(), inner.bottom() - sp::CONTROL_H), inner.max);
-    if let Some(m) = control(ui, cr, id.with("mode"), mode, font(12.0)) {
-        k.set_mode(m, Via::Panel);
-    } else if resp.clicked() {
-        cx.open_page(ID, "");
+    // 1:2 (W3, like the other Wide widgets): the scene ring 50 on the left,
+    // then "Keep Awake", the state and the mode; a click turns On on or off
+    // as on 1:1 (Auto is picked on the page)
+    let (c, rr) = tile::wide_ring(rect);
+    scene(&p, Rect::from_center_size(c, Vec2::splat(rr / 0.4375)), st);
+    let x0 = c.x + rr + tile::PAD;
+    let tw = rect.right() - tile::PAD - x0;
+    // the longest mode line that fits, so nothing is cut ("Auto · Claude +1")
+    let caps: Vec<String> = line2.iter().map(|s| format!("{} · {}", mode.label(), s)).chain(std::iter::once(mode.label().to_string())).collect();
+    let fits = |t: &str| p.layout_no_wrap(t.to_string(), ty::caption(), TEXT_DIM()).size().x <= tw;
+    let cap = caps.iter().find(|t| fits(t)).cloned().unwrap_or_else(|| mode.label().to_string());
+    // winding down: "Sleeps in" over the time left, so nothing is cut
+    let (label, value) = match st {
+        State::WindDown { left } => ("Sleeps in".to_string(), clock(left)),
+        _ => ("Keep Awake".to_string(), title(st)),
+    };
+    tile::left_text(&p, x0, rect.center().y, &label, &value, &cap, TEXT_DIM(), tw);
+    if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
+        k.toggle(Via::Panel);
     }
 }
 
@@ -516,6 +519,15 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_names() {
+        use super::super::sessions::Source;
+        assert_eq!(names_short(&[]), "");
+        assert_eq!(names_short(&[Source::Claude]), "Claude");
+        assert_eq!(names_short(&[Source::Claude, Source::Codex]), "Claude +1");
+        assert_eq!(names_short(&[Source::Claude, Source::Codex, Source::Gemini]), "Claude +2");
+    }
 
     #[test]
     fn words() {
