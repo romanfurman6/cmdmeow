@@ -21,13 +21,14 @@ pub enum Group {
     Developer,
     Projects,
     Installers,
+    Captures,
     Logs,
     Trash,
 }
 
 impl Group {
-    pub const COUNT: usize = 7;
-    pub const ALL: [Group; Group::COUNT] = [Group::AiTools, Group::AppCaches, Group::Developer, Group::Projects, Group::Installers, Group::Logs, Group::Trash];
+    pub const COUNT: usize = 8;
+    pub const ALL: [Group; Group::COUNT] = [Group::AiTools, Group::AppCaches, Group::Developer, Group::Projects, Group::Installers, Group::Captures, Group::Logs, Group::Trash];
     pub fn title(self) -> &'static str {
         match self {
             Group::AiTools => "AI Tools",
@@ -35,6 +36,7 @@ impl Group {
             Group::Developer => "Developer",
             Group::Projects => "Projects",
             Group::Installers => "Installers",
+            Group::Captures => "Captures",
             Group::Logs => "Logs",
             Group::Trash => "Trash",
         }
@@ -46,6 +48,7 @@ impl Group {
             Group::Developer => "Xcode build data, simulator caches, package downloads",
             Group::Projects => "node_modules, target and other build output of idle projects",
             Group::Installers => "Old installers in Downloads",
+            Group::Captures => "Screenshots, recordings and uploads older than 30 days",
             Group::Logs => "Logs from apps and macOS",
             Group::Trash => "Items in the Trash",
         }
@@ -94,6 +97,9 @@ pub enum Action {
     SimRuntime(String),
     /// `brew cleanup`: old versions and downloads.
     BrewCleanup,
+    /// An old upload: deleted from the person's storage, then forgotten
+    /// here (`local` is the file that was shared).
+    Upload { key: String, local: PathBuf },
 }
 
 #[derive(Clone, Debug)]
@@ -336,6 +342,9 @@ pub(super) fn guard(group: Group, p: &Path) -> Option<&'static str> {
     if group == Group::Projects {
         return super::projects::still_build_output(p);
     }
+    if group == Group::Captures {
+        return super::captures::guard(p);
+    }
     is_protected(p)
 }
 
@@ -518,7 +527,7 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
     std::thread::spawn(move || {
         let (running_ids, running_names) = running_apps();
         let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, brew: false, shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
-        let steps: [ScanStep; 12] = [
+        let steps: [ScanStep; 13] = [
             ("Claude", scan_claude),
             ("AI tools", scan_ai_tools),
             ("Homebrew", scan_brew),
@@ -530,6 +539,7 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
             ("Developer caches", scan_developer),
             ("Projects", super::projects::scan),
             ("Installers", scan_installers),
+            ("Captures", super::captures::scan),
             ("Trash", scan_trash),
         ];
         // finding what to look at is quick; measuring it is the long part
@@ -964,7 +974,7 @@ fn judge(shared: &Shared, ctx: &egui::Context, agent: super::agent::Agent, cance
     let h = home().display().to_string();
     let candidates: Vec<usize> = {
         let g = shared.lock_ok();
-        g.items.iter().enumerate().filter(|(_, it)| !it.hard_keep && it.bytes >= m::AI_MIN_BYTES).map(|(i, _)| i).collect()
+        g.items.iter().enumerate().filter(|(_, it)| !it.hard_keep && it.group != Group::Captures && it.bytes >= m::AI_MIN_BYTES).map(|(i, _)| i).collect()
     };
     // what the person kept before tells Claude what they care about
     let mut system = SYSTEM.to_string();
@@ -1255,6 +1265,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
             let res = match (how, &it.action) {
                 (How::Emptied, _) => empty_trash(&it.path),
                 (How::Command, Action::BrewCleanup) => run_brew_cleanup(),
+                (How::Command, Action::Upload { key, local }) => super::captures::delete_upload(local, key),
                 (How::Command, a) => super::xcode::remove(a).or_else(|e| if matches!(a, Action::SimDevice(_)) && it.path.is_dir() { remove(&it.path) } else { Err(e) }),
                 (How::Trash, _) => move_to_trash(&it.path),
                 (How::Deleted, _) => {
@@ -1295,6 +1306,9 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
                     g.log.push(format!("{}: {} ({})", how.verb(), it.path.display(), crate::kit::glass::human_bytes(it.bytes)));
                     g.items.retain(|x| x.path != it.path);
                     journal.items.push(super::journal::Removed { title: it.title.clone(), path: it.path.display().to_string(), bytes: it.bytes, how: *how });
+                    if it.kind == super::captures::HISTORY {
+                        crate::kit::old_captures::history_changed();
+                    }
                     // an archive's day folder left empty goes too
                     if it.kind == "Archives" && matches!(how, How::Trash | How::Deleted) {
                         if let Some(day) = it.path.parent() {
@@ -1545,7 +1559,7 @@ mod tests {
         }
         assert_eq!(live_progress(&live, &w), 1.0);
         // a group that was big last time weighs more
-        let w = group_weights(Some(&[50_000_000_000, 0, 0, 0, 0, 0, 0]));
+        let w = group_weights(Some(&[50_000_000_000, 0, 0, 0, 0, 0, 0, 0]));
         let mut live = [GroupLive { total: 1, done: 1, ..Default::default() }; Group::COUNT];
         live[0] = GroupLive { total: 2, done: 1, ..Default::default() };
         assert!(live_progress(&live, &w) < 0.4);
@@ -1776,6 +1790,25 @@ mod tests {
         assert_eq!(s.pending_questions(), 1);
         assert_eq!(s.group_bytes(Group::Logs), 80);
         assert_eq!(s.claude_safe_bytes(), 10);
+    }
+
+    #[test]
+    fn old_captures_go_to_the_trash_and_uploads_are_deleted_from_the_storage() {
+        let shot = plain(Group::Captures, "/d/Capture 2026-09-01 at 10.10.04.png", crate::tools::cleanup::captures::SCREENSHOTS, Verdict::Ask, Action::Files);
+        let hist = plain(Group::Captures, "/h/1759000000000.png", crate::tools::cleanup::captures::HISTORY, Verdict::Safe, Action::Files);
+        let up = plain(Group::Captures, "https://x/v/1", crate::tools::cleanup::captures::UPLOADS, Verdict::Ask, Action::Upload { key: "v/1.mp4".into(), local: PathBuf::from("/d/a.mp4") });
+        let plan: Vec<How> = plan_clean(&[shot, hist, up.clone()], false).into_iter().map(|(_, h)| h).collect();
+        // the person's files can come back from the Trash; an upload can't
+        assert_eq!(plan, vec![How::Trash, How::Trash, How::Command]);
+        assert!(up.by_command());
+    }
+
+    #[test]
+    fn captures_guard_refuses_anything_not_made_by_the_app() {
+        let h = home();
+        assert!(guard(Group::Captures, &h.join("Desktop/Screenshot 2026-09-01 at 10.10.04.png")).is_some());
+        assert!(guard(Group::Captures, &h.join("Desktop")).is_some());
+        assert!(guard(Group::Captures, &h.join("Desktop/Capture 2026-09-01 at 10.10.04.png")).is_some(), "a file that isn't there");
     }
 
     fn plain(group: Group, path: &str, kind: &'static str, verdict: Verdict, action: Action) -> Item {

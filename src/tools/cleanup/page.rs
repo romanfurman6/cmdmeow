@@ -113,8 +113,8 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     page_header(&p, r, "Cleanup", "", TEXT_DIM());
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
     let (total, free) = crate::kit::fs::volume_space("/");
-    let last = if app.demo && !app.demo_fresh { Some(super::engine::LastScan { when: chrono::Utc::now().timestamp() - 2 * 86400, groups: vec![14_200_000_000, 9_800_000_000, 21_600_000_000, 6_100_000_000, 2_200_000_000, 1_300_000_000, 3_400_000_000] }) } else { super::engine::last_scan() };
-    let sizes: Option<Vec<u64>> = last.as_ref().map(|l| Group::ALL.iter().enumerate().map(|(i, _)| l.groups.get(i).copied().unwrap_or(0)).collect());
+    let last = if app.demo && !app.demo_fresh { Some(super::engine::LastScan { when: chrono::Utc::now().timestamp() - 2 * 86400, groups: vec![14_200_000_000, 9_800_000_000, 21_600_000_000, 6_100_000_000, 2_200_000_000, 6_400_000_000, 1_300_000_000, 3_400_000_000] }) } else { super::engine::last_scan() };
+    let sizes: Option<Vec<u64>> = last.as_ref().filter(|l| l.groups.len() == Group::COUNT).map(|l| Group::ALL.iter().enumerate().map(|(i, _)| l.groups.get(i).copied().unwrap_or(0)).collect());
 
     // the block: ring column, a hairline, the rows; centred in the page
     const LEFT_W: f32 = 240.0;
@@ -192,6 +192,7 @@ fn group_icon(p: &egui::Painter, g: Group, r: Rect, col: Color32) {
         Group::Developer => Icon::Gear,
         Group::Projects => Icon::Folder,
         Group::Installers => Icon::Down,
+        Group::Captures => Icon::Camera,
         Group::Logs => Icon::Doc,
         Group::Trash => Icon::Trash,
     };
@@ -458,6 +459,7 @@ fn bundle_of(it: &Item) -> Option<&'static str> {
         Group::AiTools if it.title.starts_with("Uploaded files · ") => Some("Claude Code uploads"),
         Group::AiTools if it.kind == "Old Sessions" && it.title.starts_with("Project · ") => Some("Old Claude Code chats"),
         Group::Projects if it.rule_verdict == Verdict::Ask => Some("Recent build output"),
+        Group::Captures => super::captures::bundle(it.kind),
         _ => None,
     }
 }
@@ -1693,6 +1695,22 @@ pub fn demo_results() -> cleanup::State {
     // dozens of alike questions show as one row
     for (name, bytes) in [("com.apple.Safari", 640_000_000), ("com.apple.Music", 410_000_000), ("com.apple.helpd", 120_000_000), ("com.apple.Maps", 96_000_000)] {
         items.push(mk(Group::AppCaches, &name.replace("com.apple.", ""), &format!("~/Library/Caches/{name}"), bytes, "Caches", Verdict::Ask, "macOS system cache, usually safe, rebuilt by macOS", Who::Rule));
+    }
+    // old captures: screenshots and recordings to the Trash, uploads deleted for good
+    for (k, b) in [2_400_000u64, 3_100_000, 1_900_000, 2_700_000].into_iter().enumerate() {
+        items.push(mk(Group::Captures, &format!("Capture 2026-09-0{} at 10.1{k}.04.png", k + 1), &format!("~/Desktop/Capture 2026-09-0{} at 10.1{k}.04.png", k + 1), b, super::captures::SCREENSHOTS, Verdict::Ask, "Taken 70 days ago", Who::Rule));
+    }
+    for (k, b) in [1_900_000_000u64, 2_900_000_000, 1_400_000_000].into_iter().enumerate() {
+        items.push(mk(Group::Captures, &format!("Recording 2026-09-1{k} at 15.02.40.mp4"), &format!("~/Desktop/Recording 2026-09-1{k} at 15.02.40.mp4"), b, super::captures::RECORDINGS, Verdict::Ask, "Recorded 60 days ago", Who::Rule));
+    }
+    for (k, b) in [1_200_000_000u64, 900_000_000, 600_000_000].into_iter().enumerate() {
+        let mut up = mk(Group::Captures, &format!("Recording 2026-08-2{k} at 11.40.02.mp4"), &format!("https://share.example.com/v/{k}"), b, super::captures::UPLOADS, Verdict::Ask, "Shared 80 days ago; the link stops working", Who::Rule);
+        up.permanent = true;
+        up.selected = false;
+        items.push(up);
+    }
+    for (k, b) in [3_800_000u64, 4_200_000, 2_900_000].into_iter().enumerate() {
+        items.push(mk(Group::Captures, &format!("Capture 2026-09-2{k} at 09.30.12"), &format!("~/Library/Application Support/cmdmeow/capture/history/175900000000{k}.png"), b, super::captures::HISTORY, Verdict::Safe, "History copy from 50 days ago", Who::Rule));
     }
     cleanup::State { phase: Phase::Results, items, ai_used: true, ..Default::default() }
 }

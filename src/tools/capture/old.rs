@@ -1,0 +1,156 @@
+//! Old captures for Cleanup: screenshots and recordings this app saved,
+//! its history copies, and uploads to the person's storage. Only files the
+//! app made, found by their names ("Capture 2026-11-08 at 17.41.12.png",
+//! "Recording … .mp4" and their " 2", " edited", " framed" copies).
+
+use super::{settings, share, store::Store};
+use crate::kit::old_captures::{File, Kind, Upload};
+use std::path::{Path, PathBuf};
+
+/// Let Cleanup find and remove old captures.
+pub(super) fn register() {
+    crate::kit::old_captures::register(crate::kit::old_captures::Source { local, uploads, delete_upload, still_ours });
+}
+
+fn history_dir() -> PathBuf {
+    settings::data_dir().join("history")
+}
+
+/// Screenshots, recordings and history copies older than `min_days`.
+/// Pinned captures stay. The save folder is read only when macOS won't ask
+/// about it (a capture was saved there, or Full Disk Access is on).
+fn local(min_days: f64) -> Vec<File> {
+    let s = settings::load(&settings::data_dir());
+    let st = Store::open(history_dir());
+    let pinned: Vec<&Path> = st.shots.iter().filter(|x| x.pinned).filter_map(|x| x.saved.as_deref()).collect();
+    let mut out = Vec::new();
+    let saved_there = st.shots.iter().any(|x| x.saved.as_deref().is_some_and(|p| p.starts_with(&s.folder)));
+    if saved_there || !crate::kit::fs::behind_folder_prompt(&s.folder) {
+        let rd = std::fs::read_dir(&s.folder).map(|rd| rd.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
+        for p in rd {
+            let Some(kind) = ours(&p) else { continue };
+            if pinned.contains(&p.as_path()) || !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
+                continue;
+            }
+            let age = age_days(&p);
+            if age >= min_days {
+                out.push(File { path: p, kind, age_days: age });
+            }
+        }
+    }
+    let now = chrono::Local::now();
+    for x in st.shots.iter().filter(|x| !x.pinned) {
+        let age = (now - x.time()).num_seconds() as f64 / 86_400.0;
+        if age >= min_days {
+            out.push(File { path: st.path(x.id), kind: Kind::History, age_days: age });
+        }
+    }
+    out
+}
+
+/// Uploads older than `min_days`, when sharing is set up. Sizes come from
+/// what was recorded at upload, the file here, or the storage itself.
+fn uploads(min_days: f64) -> Vec<Upload> {
+    let s = settings::load(&settings::data_dir());
+    if !s.share.set_up(share::VIDEO_ACCOUNT) {
+        return Vec::new();
+    }
+    let now = chrono::Utc::now().timestamp();
+    let mut out: Vec<Upload> = share::all()
+        .into_iter()
+        .filter(|(_, sh)| sh.at > 0 && (now - sh.at) as f64 / 86_400.0 >= min_days)
+        .map(|(local, sh)| {
+            let bytes = if sh.bytes > 0 { sh.bytes } else { std::fs::metadata(&local).map(|m| m.len()).unwrap_or(0) };
+            Upload { local, key: sh.key, link: sh.link, age_days: (now - sh.at) as f64 / 86_400.0, bytes }
+        })
+        .collect();
+    // sizes nobody knows: ask the storage (a few at a time)
+    if out.iter().any(|u| u.bytes == 0) {
+        let b = s.share.bucket(share::VIDEO_ACCOUNT);
+        if b.ready() {
+            std::thread::scope(|sc| {
+                for chunk in out.chunks_mut(8) {
+                    let b = &b;
+                    sc.spawn(move || {
+                        for u in chunk.iter_mut().filter(|u| u.bytes == 0) {
+                            // gone from the storage already (or no answer): nothing to free
+                            if let Ok(Some(n)) = share::s3::size(b, &u.key) {
+                                u.bytes = n;
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }
+    out.retain(|u| u.bytes > 0);
+    out
+}
+
+/// Remove an upload from the storage, then forget it here.
+fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
+    let s = settings::load(&settings::data_dir());
+    let b = s.share.bucket(share::VIDEO_ACCOUNT);
+    if !b.ready() {
+        return Err("Sharing isn't set up".into());
+    }
+    share::s3::delete(&b, key)?;
+    share::forget(local);
+    Ok(())
+}
+
+/// Is `p` a file this app made that Cleanup may remove? A capture or
+/// recording in the save folder, or a history copy.
+fn still_ours(p: &Path) -> bool {
+    if !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
+        return false;
+    }
+    if p.parent() == Some(history_dir().as_path()) {
+        return p.extension().is_some_and(|e| e == "png") && p.file_stem().is_some_and(|s| s.to_string_lossy().chars().all(|c| c.is_ascii_digit()));
+    }
+    let folder = settings::load(&settings::data_dir()).folder;
+    p.parent() == Some(folder.as_path()) && ours(p).is_some()
+}
+
+/// What a file in the save folder is, by its name, if this app made it.
+fn ours(p: &Path) -> Option<Kind> {
+    let name = p.file_name()?.to_string_lossy().to_string();
+    let ext = p.extension()?.to_string_lossy().to_lowercase();
+    let (kind, rest) = name.strip_prefix("Capture ").map(|r| (Kind::Screenshot, r)).or_else(|| name.strip_prefix("Recording ").map(|r| (Kind::Recording, r)))?;
+    let ok_ext = match kind {
+        Kind::Screenshot => matches!(ext.as_str(), "png" | "jpg" | "jpeg"),
+        _ => ext == "mp4",
+    };
+    // "2026-11-08 at 17.41.12", then anything (" 2", " edited", " framed")
+    let date = rest.get(..22)?;
+    let parsed = chrono::NaiveDateTime::parse_from_str(date, "%Y-%m-%d at %H.%M.%S").is_ok();
+    (ok_ext && parsed).then_some(kind)
+}
+
+fn age_days(p: &Path) -> f64 {
+    p.symlink_metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| std::time::SystemTime::now().duration_since(t).ok())
+        .map(|d| d.as_secs_f64() / 86_400.0)
+        .unwrap_or(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_names_this_app_gives() {
+        assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.png")), Some(Kind::Screenshot));
+        assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12 2.jpg")), Some(Kind::Screenshot));
+        assert_eq!(ours(Path::new("/d/Recording 2026-11-09 at 17.26.12.mp4")), Some(Kind::Recording));
+        assert_eq!(ours(Path::new("/d/Recording 2026-11-09 at 17.26.12 framed.mp4")), Some(Kind::Recording));
+        // macOS's own, the person's files, wrong kinds
+        assert_eq!(ours(Path::new("/d/Screenshot 2026-11-08 at 17.41.12.png")), None);
+        assert_eq!(ours(Path::new("/d/Capture of my notes.png")), None);
+        assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.mp4")), None);
+        assert_eq!(ours(Path::new("/d/Recording 2026-11-09 at 17.26.12.png")), None);
+        assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.png.zip")), None);
+    }
+}

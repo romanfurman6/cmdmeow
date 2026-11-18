@@ -14,6 +14,7 @@ mod grab;
 mod hotkeys;
 mod icons;
 mod mac;
+mod old;
 pub mod record;
 mod render;
 mod settings;
@@ -216,6 +217,7 @@ impl Capture {
             (s, None, demo_store())
         } else {
             let dir = settings::data_dir();
+            old::register();
             (settings::load(&dir), Some(dir.clone()), Store::open(dir.join("history")))
         };
         let mut c = Capture {
@@ -1107,6 +1109,12 @@ impl Tool for Capture {
         self.rec.tray()
     }
     fn tick(&mut self, ctx: &egui::Context) -> bool {
+        // Cleanup removed old history copies
+        if crate::kit::old_captures::take_history_changed() {
+            if let Some(dir) = &self.dir {
+                self.store = Store::open(dir.join("history"));
+            }
+        }
         if let Some(k) = &self.keys {
             if self.recording.is_none() {
                 for c in k.poll() {
