@@ -908,20 +908,36 @@ pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint
 /// ring at [`DISK_RING_D`]; Mac Health draws it smaller, one size per page.
 /// The value shrinks to fit inside the ring rather than being cut.
 pub fn stat_ring(p: &Painter, c: Pos2, d: f32, frac: f32, tint: Color32, value: &str, caption: &str) {
+    stat_ring_paced(p, c, d, frac, None, tint, value, caption);
+}
+
+/// [`stat_ring`] with a faint arc under the used one up to `pace` (0..1,
+/// where even use would be by now), in `pace_col` (a solid colour, so the
+/// caps don't double up). AI Usage limits: running ahead of pace shows as
+/// colour past the faint arc.
+#[allow(clippy::too_many_arguments)]
+pub fn stat_ring_paced(p: &Painter, c: Pos2, d: f32, frac: f32, pace: Option<(f32, Color32)>, tint: Color32, value: &str, caption: &str) {
     use egui::epaint::{PathShape, PathStroke};
     const STROKE: f32 = 12.0;
     let r = (d - STROKE) / 2.0 - 2.0;
     p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
-    let f = frac.clamp(0.0, 1.0);
-    if f > 0.0 {
+    let arc = |f: f32, col: Color32| {
+        let f = f.clamp(0.0, 1.0);
+        if f <= 0.0 {
+            return;
+        }
         let a0 = -std::f32::consts::FRAC_PI_2;
         let a1 = a0 + std::f32::consts::TAU * f.max(0.01);
-        p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, tint)));
+        p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, col)));
         // round caps
         for a in [a0, a1] {
-            p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, tint);
+            p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, col);
         }
+    };
+    if let Some((f, col)) = pace {
+        arc(f, col);
     }
+    arc(frac, tint);
     if value.is_empty() {
         return;
     }
@@ -933,7 +949,8 @@ pub fn stat_ring(p: &Painter, c: Pos2, d: f32, frac: f32, tint: Color32, value: 
         big_f.size = (big_f.size * inner / tw).max(11.0);
     }
     let big = line_h(p, &big_f);
-    let small = line_h(p, &ty::label());
+    // no caption: the value alone sits in the middle
+    let small = if caption.is_empty() { -2.0 } else { line_h(p, &ty::label()) };
     let y0 = c.y - (big + 2.0 + small) / 2.0;
     text_fit(p, Pos2::new(c.x, y0), Align2::CENTER_TOP, value, big_f, TEXT(), inner);
     text_fit(p, Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, caption, ty::label(), TEXT_DIM(), inner);

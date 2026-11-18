@@ -197,7 +197,7 @@ impl Tool for Claude {
         vec![Recommendation {
             priority: 60,
             title: format!("Your {} session is almost used up", info.provider),
-            body: format!("{:.0}% of the current 5-hour session is used. It {}.", l.pct, ui::short_reset(&l.resets)),
+            body: format!("{:.0}% of the current 5-hour session is used. It resets {}.", l.pct, parts::reset_when(l)),
             action: "See Limits".into(),
             go: Action::ShowDetail { tool: ID.into(), detail: LIMITS.into(), toggle: true },
         }]
