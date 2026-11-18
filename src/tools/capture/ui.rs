@@ -855,6 +855,11 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
 /// videos, and everything shared so far.
 pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     use super::share::{secret, LinkKind, SHOT_FOLDER, VIDEO_ACCOUNT, VIDEO_FOLDER};
+    // the storage file Claude saved, dropped on the page
+    let dropped: Vec<std::path::PathBuf> = ui.ctx().input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| super::share::import::is_storage_file(p)).collect());
+    for f in dropped {
+        c.import_storage(&f);
+    }
     let p = ui.painter().clone();
     let shared = super::share::all();
     let ready = c.settings.share.set_up(VIDEO_ACCOUNT);

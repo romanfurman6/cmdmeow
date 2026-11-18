@@ -11,6 +11,7 @@ pub const VIDEO_ACCOUNT: &str = "secret-key";
 pub const VIDEO_FOLDER: &str = "cmdmeow/videos/";
 pub const SHOT_FOLDER: &str = "cmdmeow/screenshots/";
 
+pub mod import;
 pub mod s3;
 pub mod setup;
 

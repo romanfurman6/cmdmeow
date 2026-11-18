@@ -202,6 +202,9 @@ impl Capture {
     }
 
     pub fn new(env: &ToolEnv) -> Self {
+        if !env.demo {
+            crate::kit::url_scheme::on_files(share::import::opened);
+        }
         let (tx, rx) = channel();
         let (settings, dir, store) = if env.demo {
             let mut s = Settings::default();
@@ -321,6 +324,36 @@ impl Capture {
         if self.recording.is_none() {
             self.apply_keys();
         }
+    }
+
+    /// Take a storage file Claude saved (see [`share::import`]): fill the
+    /// Sharing page, put the secret key in the Keychain, trash the file.
+    fn import_storage(&mut self, path: &std::path::Path) {
+        let Some(st) = share::import::read(path) else {
+            self.hud("Not a Cmd+Meow sharing file");
+            return;
+        };
+        if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
+            self.hud(format!("Couldn't save to the Keychain: {e}"));
+            return;
+        }
+        let s = &mut self.settings.share;
+        s.endpoint = st.endpoint;
+        s.bucket = st.bucket;
+        s.access_key = st.access_key;
+        s.region.clear();
+        s.public_url = st.public_url;
+        s.link = if s.public_url.is_empty() { share::LinkKind::Week } else { share::LinkKind::Public };
+        s.secret_saved = true;
+        self.has_secret = Some(true);
+        self.save_settings();
+        // read it straight back: any Keychain approval happens now
+        share::secret::approve_now(share::VIDEO_ACCOUNT);
+        // the keys shouldn't stay in Downloads
+        if let Err(e) = crate::kit::fs::move_to_trash(path) {
+            eprintln!("[share] couldn't trash {}: {e}", path.display());
+        }
+        self.hud("Sharing set up");
     }
 
     fn hud(&mut self, msg: impl Into<String>) {
@@ -1117,6 +1150,12 @@ impl Tool for Capture {
         if let Some(l) = &self.links {
             for c in l.take() {
                 self.queue.push((c, 0));
+            }
+        }
+        // not in demo mode (screenshots), where a Keychain prompt would block
+        if self.links.is_some() {
+            for f in share::import::take() {
+                self.import_storage(&f);
             }
         }
         while let Ok(d) = self.rx.try_recv() {

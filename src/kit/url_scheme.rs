@@ -58,6 +58,36 @@ pub fn open(url: &str) {
     p.push((host, action));
 }
 
+type FileHandler = Box<dyn Fn(std::path::PathBuf) + Send>;
+static FILE_HANDLER: Mutex<Option<FileHandler>> = Mutex::new(None);
+/// Files opened before anyone asked for them (the one that launched the app).
+static PENDING_FILES: Mutex<Vec<std::path::PathBuf>> = Mutex::new(Vec::new());
+
+/// Let `f` take the files Finder opens with the app (double-click, Open
+/// With). Files that came early are handed over now.
+pub fn on_files(f: impl Fn(std::path::PathBuf) + Send + 'static) {
+    let early = std::mem::take(&mut *PENDING_FILES.lock().unwrap_or_else(|e| e.into_inner()));
+    for p in early {
+        f(p);
+    }
+    *FILE_HANDLER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(f));
+}
+
+/// Finder opened `path` with the app.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn open_file(path: std::path::PathBuf) {
+    let h = FILE_HANDLER.lock().unwrap_or_else(|e| e.into_inner());
+    match h.as_ref() {
+        Some(f) => f(path),
+        None => {
+            let mut p = PENDING_FILES.lock().unwrap_or_else(|e| e.into_inner());
+            if p.len() < PENDING_CAP {
+                p.push(path);
+            }
+        }
+    }
+}
+
 /// Links to `host` as commands for a tool to pick up in its `tick`: `read`
 /// turns an action into a command (None = unknown action). Links arrive
 /// outside a ui pass, while the tool is busy elsewhere, so they wait here.
@@ -111,7 +141,10 @@ pub fn after_launch() {
     #[cfg(target_os = "macos")]
     {
         static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(mac::set_reopen);
+        ONCE.call_once(|| {
+            mac::set_reopen();
+            mac::teach_delegate_to_open_files();
+        });
     }
 }
 
@@ -172,6 +205,13 @@ mod mac {
                 super::open(super::REOPEN_LINK);
             }
 
+            /// AppKit is about to finish launching: the app's delegate is
+            /// set, and a file that launched the app is not opened yet.
+            #[unsafe(method(handleWillFinish:))]
+            fn will_finish(&self, _note: &AnyObject) {
+                teach_delegate_to_open_files();
+            }
+
             /// Another copy of the app asked this one to show itself.
             #[unsafe(method(handleReopenNote:))]
             fn reopen_note(&self, _note: &AnyObject) {
@@ -201,8 +241,37 @@ mod mac {
             let name = NSString::from_str(&super::reopen_note());
             let center: Retained<AnyObject> = msg_send![class!(NSDistributedNotificationCenter), defaultCenter];
             let _: () = msg_send![&*center, addObserver: h, selector: sel!(handleReopenNote:), name: &*name, object: Option::<&AnyObject>::None, suspensionBehavior: DELIVER_IMMEDIATELY];
+            let local: Retained<AnyObject> = msg_send![class!(NSNotificationCenter), defaultCenter];
+            let will = NSString::from_str("NSApplicationWillFinishLaunchingNotification");
+            let _: () = msg_send![&*local, addObserver: h, selector: sel!(handleWillFinish:), name: &*will, object: Option::<&AnyObject>::None];
         }
         set_reopen();
+    }
+
+    /// AppKit hands opened files (double-click in Finder, Open With) to its
+    /// delegate's `application:openURLs:`. The delegate is winit's, which
+    /// doesn't answer it, so the method is added to its class here. Adding
+    /// it twice does nothing.
+    pub fn teach_delegate_to_open_files() {
+        use objc2::runtime::{AnyClass, Imp, Sel};
+        unsafe extern "C-unwind" fn open_urls(_this: &AnyObject, _cmd: Sel, _app: &AnyObject, urls: &AnyObject) {
+            let n: usize = unsafe { msg_send![urls, count] };
+            for i in 0..n {
+                let url: Retained<AnyObject> = unsafe { msg_send![urls, objectAtIndex: i] };
+                let path: Option<Retained<NSString>> = unsafe { msg_send![&*url, path] };
+                if let Some(p) = path {
+                    super::open_file(std::path::PathBuf::from(p.to_string()));
+                }
+            }
+        }
+        unsafe {
+            let app: Retained<AnyObject> = msg_send![class!(NSApplication), sharedApplication];
+            let delegate: Option<Retained<AnyObject>> = msg_send![&*app, delegate];
+            let Some(d) = delegate else { return };
+            let cls = d.class() as *const AnyClass as *mut AnyClass;
+            let imp: Imp = std::mem::transmute(open_urls as unsafe extern "C-unwind" fn(&AnyObject, Sel, &AnyObject, &AnyObject));
+            let _ = objc2::ffi::class_addMethod(cls, sel!(application:openURLs:), imp, c"v@:@@".as_ptr());
+        }
     }
 
     /// Answer "opened again" ourselves (see [`super::after_launch`]).
