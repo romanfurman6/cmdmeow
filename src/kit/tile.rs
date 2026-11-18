@@ -71,8 +71,24 @@ pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     paint_face(p, rect, hover, selected);
 }
 
+/// Light theme (S2w/W1): the card is a white sheet (90%, 98% on hover)
+/// with a 1 pt ink 9% hairline and a soft two-step shadow, widest last
+/// (`0 4 14` black 5%, then `0 1 3` black 7%).
+const LIGHT_FILL: Color32 = Color32::from_rgba_premultiplied(230, 230, 230, 230);
+const LIGHT_FILL_HOVER: Color32 = Color32::from_rgba_premultiplied(250, 250, 250, 250);
+const LIGHT_EDGE: Color32 = Color32::from_rgba_premultiplied(2, 2, 2, 23);
+const LIGHT_SHADOW: [(i8, u8, u8); 2] = [(4, 14, 13), (1, 3, 18)];
+
 /// The base under the card (2 pt, 1 pt while pressed, like a quiet key).
 fn paint_base(p: &egui::Painter, rect: Rect) {
+    if is_light() {
+        // light theme: a soft shadow under a white sheet, no ink base
+        for (y, blur, a) in LIGHT_SHADOW {
+            let s = egui::epaint::Shadow { offset: [0, y], blur, spread: 0, color: Color32::from_black_alpha(a) };
+            p.add(s.as_shape(rect, R_TILE));
+        }
+        return;
+    }
     // the panel header's icon buttons' base (B1 quiet key), so cards and
     // buttons read as one surface
     let look = super::key::Look::quiet(0.06, 0.15);
@@ -81,6 +97,15 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
 
 /// The card itself (W1): see-through, so the panel glow shows through.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
+    if is_light() {
+        // light theme: a white sheet with a hairline; no top highlight
+        p.rect_filled(rect, R_TILE, lerp_color(LIGHT_FILL, LIGHT_FILL_HOVER, hover));
+        p.rect_stroke(rect, R_TILE, Stroke::new(1.0, LIGHT_EDGE), StrokeKind::Inside);
+        if selected {
+            p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
+        }
+        return;
+    }
     // the same face as the panel header's icon buttons (key::Look::quiet):
     // fill, 1 pt top highlight and hairline, a little lighter on hover
     let look = super::key::Look::quiet(0.06, 0.15);
