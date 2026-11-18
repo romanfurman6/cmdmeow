@@ -151,8 +151,8 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | # | Rule | Status |
 |---|------|---|
 | H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. In inset lists (sidebar, group rail, Clipboard) two lit rows never touch: lit fills sit 1 pt in from the row (`glass::LIT_INSET`) or rows step 2 apart, a 2 pt gap. Edge-to-edge lists (H2) have no gap. Inside a widget nothing hovers but the whole card (SP13 W12); inner clickables show the pointer cursor. | ✅ |
-| H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines between rows are left out above and below a lit row, so the fill stands alone (`glass::row_divider`). | ✅ (AI Check, hover A) |
-| H3 | Selected row: lime at 16% (`selected_fill`), text `ACCENT`. Sidebar and group rail: inset, radius 8 (H1). Content lists such as the Uninstaller table: edge to edge with no corners, like hover (H2). | ✅ |
+| H2 | **Lit rows in a card list** (hover, selected, AI Check ring, a state wash such as Startup's red) sit 4 pt in from the card's sides and 1 pt from the next row, radius 8 (`glass::lit_rect`, `LIT_R`), so they never meet the card's rounded corners. Content stays 12 pt inside (H9), 16 pt from the card. No divider touches a lit row, above or below (`glass::row_divider`). Popovers and menus keep edge-to-edge rows, the last row takes the popover's corners; start lists on the backdrop (SP1) stay edge to edge. | ✅ (AI Check, hover A) |
+| H3 | Selected row: lime at 16% (`selected_fill`), text `ACCENT`. Sidebar and group rail: inset, radius 8 (H1). Content lists in cards such as the Uninstaller table: inset like hover (H2). | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ✅ |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
@@ -309,3 +309,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman: M5 window-open loader, look A (canvas https://claude.ai/artifact/KxiUnErRbP6J3sadUv6B1z).
 
 2026-11-18, Roman: row content 12 pt inside a lit fill everywhere (H9), no hairlines at a lit row (H2), start list rows (SP1); canvas https://claude.ai/artifact/5UDhPQqitdkayGPa28m98i, variant A.
+
+2026-11-18, Roman: selection follows the hover rules: in card lists every lit row is inset 4 pt, radius 8, with no dividers next to it (H2, H3; PR #276).
