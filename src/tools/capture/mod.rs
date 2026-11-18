@@ -206,6 +206,13 @@ impl Capture {
         let (settings, dir, store) = if env.demo {
             let mut s = Settings::default();
             s.folder = demo_folder();
+            // mouse buttons as shortcuts, the widest one included
+            if std::env::var_os("CMB_DEMO_MOUSE").is_some() {
+                use crate::kit::hotkeys::Shortcut;
+                s.set_shortcut(Command::Area, Shortcut::mouse(4, false, false, false, false));
+                s.set_shortcut(Command::Screen, Shortcut::mouse(5, false, false, true, false));
+                s.set_shortcut(Command::Text, Shortcut::mouse(3, true, true, true, true));
+            }
             (s, None, demo_store())
         } else {
             let dir = settings::data_dir();

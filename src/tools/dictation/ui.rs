@@ -5,7 +5,6 @@ use super::settings::{Engine, SILENCE_CHOICES};
 use super::{mac, Dictation, Note, Phase, Tab, ID, TINT};
 use crate::core::tool::{Cx, Size};
 use crate::kit::glass::*;
-use crate::kit::hotkeys::Shortcut;
 use crate::kit::perms::{Perm, Status};
 use crate::kit::tile;
 use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, ViewportBuilder, ViewportId};
@@ -674,33 +673,24 @@ fn settings_page(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     });
 }
 
-/// While recording: the next key press with a modifier becomes the shortcut.
+/// While recording: the next key press with a modifier, or extra mouse
+/// button, becomes the shortcut.
 fn record_key(d: &mut Dictation, ui: &mut Ui, cx: &mut Cx) {
+    use crate::kit::hotkeys::{listen, Heard};
     if !d.recording_key {
         return;
     }
     d.recording_seen = std::time::Instant::now();
-    let mut result: Option<Option<Shortcut>> = None;
-    let mut cancel = false;
-    ui.input(|i| {
-        for e in &i.events {
-            if let egui::Event::Key { key, pressed: true, modifiers, .. } = e {
-                let plain = !modifiers.command && !modifiers.ctrl && !modifiers.alt && !modifiers.mac_cmd;
-                if *key == egui::Key::Escape && plain {
-                    cancel = true;
-                } else if (*key == egui::Key::Backspace || *key == egui::Key::Delete) && plain {
-                    result = Some(None);
-                } else if let Some(s) = Shortcut::from_press(*key, *modifiers) {
-                    result = Some(Some(s));
-                }
-            }
+    let s = match listen(ui.ctx()) {
+        Heard::Nothing => None,
+        Heard::Cancel => {
+            d.recording_key = false;
+            return;
         }
-    });
-    if cancel {
-        d.recording_key = false;
-        return;
-    }
-    if let Some(s) = result {
+        Heard::Remove => Some(None),
+        Heard::Set(s) => Some(Some(s)),
+    };
+    if let Some(s) = s {
         if let Some(w) = s.as_ref().and_then(|s| s.conflict()) {
             cx.toast(format!("{}: {w}", s.as_ref().map(|s| s.display()).unwrap_or_default()));
         }

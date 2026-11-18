@@ -933,6 +933,9 @@ impl Tool for Dictation {
             }
             "dictation-settings" => {
                 self.tab = Tab::Settings;
+                if std::env::var_os("CMB_DEMO_MOUSE").is_some() {
+                    self.settings.shortcut = Shortcut::mouse(5, false, false, false, false);
+                }
                 Some(View::Page)
             }
             // the first visit: the try-it field, in each of its states
