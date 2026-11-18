@@ -126,9 +126,11 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let groups = s.groups();
         let lh = 24.0;
         let fit = ((rect.bottom() - 10.0 - (y0 + 22.0)) / lh).floor().max(0.0) as usize;
-        for (i, g) in groups.iter().take(fit).enumerate() {
+        let shown: Vec<(&str, String)> = groups.iter().take(fit).map(|g| (g.group.label(), format!("{:.0} °C", g.max))).collect();
+        let cols = tile::bar_cols(p, &shown.iter().map(|(l, v)| (*l, v.as_str())).collect::<Vec<_>>());
+        for (i, (g, (label, v))) in groups.iter().zip(&shown).enumerate() {
             let lr = Rect::from_min_size(Pos2::new(x0, y0 + 22.0 + i as f32 * lh), Vec2::new(x1 - x0, lh));
-            tile::bar_line(p, lr, g.group.label(), Some((heat_pos(g.max).max(0.03), heat(g.max))), &format!("{:.0} °C", g.max));
+            tile::bar_line(p, lr, label, Some((heat_pos(g.max).max(0.03), heat(g.max))), v, cols);
         }
         return;
     }
