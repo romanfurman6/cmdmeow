@@ -199,7 +199,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 | SP6 | **Locked tool**: a permission screen per tool that names what is missing in the words of the fix (T16), not a dimmed page. | ✅ |
 | SP7 | **Big state + control** (Keep Awake): centred scene, title hero 28, detail body dim in a fixed 18 line (kept when empty), then one segmented control 32 tall (Off · Auto · On). The control is the only switch, so state and control never disagree (T17). | ✅ |
 | SP8 | **Hourly chart**: 24 columns, gap 4, 72 tall, stacked series in lavender steps (On = `tint::KEEP_AWAKE`, Auto = `series::util(1)`; never `GREEN`, C4) (top corners radius 3), dashed `white(26)` guides with 11 faint labels in a 36 right gutter, 00/06/12/18 under it. Hover a column → tooltip plus 1.5 outline, linked to the list below. Legend sits on the section title row (10 swatch, label 12 dim, value bold 12). | ✅ |
-| SP9 | **Keep Awake widgets**: 1:1 (scene + one word, tap toggles) and 1:2 (scene + two lines + control) only. All widgets also follow SP13. | ✅ |
+| SP9 | **Keep Awake widgets**: 1:1 (scene + one word) and 1:2 only. 1:2 is a Wide like the others (W3): the scene ring 50 on the left, then "Keep Awake" ("Sleeps in" while winding down), the state ("Awake", "Can sleep", the time left), and the mode with its detail ("Auto · Claude, Codex", "On · Since 13:07"). In both sizes a click turns On on or off; Off · Auto · On is picked on the page (SP7). All widgets also follow SP13. | ✅ |
 
 ### SP13 Widgets (W1–W12) ⏳ code
 
@@ -301,6 +301,8 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman ("щоб було однаково"): W5 bars inline in every size (1:4 variant A, Medium/Large M-A), shared name / bar / value columns.
 
 2026-11-18, Roman (live on his Mac, "хай вони будуть такі як ці кнопки"): widget cards S2w/W1 take the panel header buttons' quiet-key surface with a softer hover (40%); the S1 glow is a beam down the centre to the bottom, in the panel and the app window; native Liquid Glass dropped. Settings › General adds "Keep menu bar panel open" (off by default).
+
+2026-11-18, Roman: SP9 Keep Awake 1:2 is a Wide like the others (variant A, canvas https://claude.ai/artifact/NgHchuWhYA8ERfC2M2pN5K); the control stays on the page.
 
 2026-11-18, Roman: 1:4 name column 70, value 44 (names in full on SF), device lines show their type in 1:4.
 

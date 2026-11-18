@@ -233,7 +233,7 @@ pub fn wide_full(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Colo
 /// app's number and keeps its width; label and caption can be a name (a
 /// device's), so they fade at `tw` rather than end in "…".
 #[allow(clippy::too_many_arguments)]
-fn left_text(p: &egui::Painter, x0: f32, cy: f32, label: &str, value: &str, caption: &str, caption_col: Color32, tw: f32) {
+pub fn left_text(p: &egui::Painter, x0: f32, cy: f32, label: &str, value: &str, caption: &str, caption_col: Color32, tw: f32) {
     let y = stack_lines(p, x0, cy, &[(label, ty::label(), Color32::TRANSPARENT), (value, ty::lead(), TEXT()), (caption, ty::caption(), Color32::TRANSPARENT)], tw);
     let mut k = 0;
     for (t, f, c) in [(label, ty::label(), ty::caption_color()), (value, ty::lead(), Color32::TRANSPARENT), (caption, ty::caption(), caption_col)] {

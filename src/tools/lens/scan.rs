@@ -101,10 +101,15 @@ pub fn asks_permission(p: &Path) -> bool {
     if p.extension().is_some_and(|e| e == "musiclibrary" || e == "tvlibrary") {
         return true;
     }
-    let Some(home) = dirs::home_dir() else { return false };
-    ["Music/Music", "Music/iTunes", "Movies/TV", "Library/Calendars", "Library/Reminders", "Library/Application Support/AddressBook", "Library/Application Support/CallHistoryDB"]
+    // asked for every folder on the disk: the list is built once
+    static GUARDED: std::sync::OnceLock<Vec<PathBuf>> = std::sync::OnceLock::new();
+    GUARDED
+        .get_or_init(|| {
+            let Some(home) = dirs::home_dir() else { return Vec::new() };
+            ["Music/Music", "Music/iTunes", "Movies/TV", "Library/Calendars", "Library/Reminders", "Library/Application Support/AddressBook", "Library/Application Support/CallHistoryDB"].iter().map(|x| home.join(x)).collect()
+        })
         .iter()
-        .any(|x| p == home.join(x))
+        .any(|g| p == g)
 }
 
 /// Run the current thread just below the UI, so mapping never makes the
@@ -411,7 +416,15 @@ struct Walker<'a> {
     clones: Mutex<HashSet<u64>>,
 }
 
-type Files = Vec<(PathBuf, u64, String)>;
+/// The files of one folder: how many, their bytes, and the big ones
+/// (path, bytes, name) that get an entry of their own. A disk holds
+/// millions of small files; only their sum is needed.
+#[derive(Default)]
+struct Files {
+    count: u64,
+    bytes: u64,
+    big: Vec<(PathBuf, u64, String)>,
+}
 
 impl<'a> Walker<'a> {
     fn new(root: &Path, s: &'a Scan, ctx: &'a egui::Context) -> Self {
@@ -504,24 +517,33 @@ impl<'a> Walker<'a> {
         node
     }
 
-    /// Subfolders and (path, bytes, name) files of `p`. `None` when it can't
-    /// be read or is on another volume (network mounts, backups, the Data
-    /// volume's own mount point).
+    /// Subfolders and files of `p`. `None` when it can't be read or is on
+    /// another volume (network mounts, backups, the Data volume's own mount
+    /// point).
     fn list(&self, p: &Path) -> Option<(Vec<PathBuf>, Files)> {
         let (dev, entries) = crate::kit::fs::list_dir(p)?;
         if !self.devs.is_empty() && !self.devs.contains(&dev) {
             return None;
         }
-        let (mut dirs, mut files) = (Vec::new(), Vec::new());
+        let (mut dirs, mut files) = (Vec::new(), Files::default());
         for e in &entries {
-            let cp = p.join(&e.name);
-            if asks_permission(&cp) || self.skip.contains(&cp) {
-                continue; // never touch folders behind a permission prompt
-            }
             if e.dir {
+                let cp = p.join(&e.name);
+                if asks_permission(&cp) || self.skip.contains(&cp) {
+                    continue; // never touch folders behind a permission prompt
+                }
                 dirs.push(cp);
             } else {
-                files.push((cp, self.charge(dev, e), e.name.to_string_lossy().into_owned()));
+                // a media library kept as one file is left alone as well
+                if Path::new(&e.name).extension().is_some_and(|x| x == "musiclibrary" || x == "tvlibrary") {
+                    continue;
+                }
+                let b = self.charge(dev, e);
+                files.count += 1;
+                files.bytes += b;
+                if b >= KEEP_FILES_OVER {
+                    files.big.push((p.join(&e.name), b, e.name.to_string_lossy().into_owned()));
+                }
             }
         }
         Some((dirs, files))
@@ -529,22 +551,21 @@ impl<'a> Walker<'a> {
 
     /// Count `files` into `node`; big ones get their own entry when `keep`.
     fn add_files(&self, node: &mut Node, files: Files, top: Option<&AtomicU64>, keep: bool) {
-        let mut sum = 0;
-        self.s.files.fetch_add(files.len() as u64, Ordering::Relaxed);
-        for (path, b, name) in files {
-            node.bytes += b;
-            node.items += 1;
-            sum += b;
-            if keep && b >= KEEP_FILES_OVER {
+        self.s.files.fetch_add(files.count, Ordering::Relaxed);
+        node.bytes += files.bytes;
+        node.items += files.count;
+        let mut own = 0;
+        if keep {
+            for (path, b, name) in files.big {
+                own += b;
                 node.children.push(Node { name, path, bytes: b, items: 1, children: vec![], other: 0 });
-            } else {
-                node.other += b;
             }
         }
+        node.other += files.bytes - own;
         if let Some(t) = top {
-            t.fetch_add(sum, Ordering::Relaxed);
+            t.fetch_add(files.bytes, Ordering::Relaxed);
         }
-        self.s.bytes.fetch_add(sum, Ordering::Relaxed);
+        self.s.bytes.fetch_add(files.bytes, Ordering::Relaxed);
     }
 
     fn progress(&self, p: &Path) {
@@ -822,6 +843,21 @@ mod tests {
         let updated = w.refresh(updated, 0, &[Change { path: base.join("t2"), deep: true }]).unwrap();
         same(&updated, &map_now(&base));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// How long mapping a folder takes, for comparing changes to the walker:
+    /// `CMDMEOW_BENCH_DIR=~ cargo test --release walk_speed -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn walk_speed() {
+        let Some(dir) = std::env::var_os("CMDMEOW_BENCH_DIR").map(PathBuf::from) else { return };
+        for _ in 0..5 {
+            let shared: Shared = Default::default();
+            let ctx = egui::Context::default();
+            let t = std::time::Instant::now();
+            let n = Walker::new(&dir, &shared, &ctx).root(&dir);
+            eprintln!("mapped {} items, {} bytes in {:?}", n.items, n.bytes, t.elapsed());
+        }
     }
 
     #[test]
