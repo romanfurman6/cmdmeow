@@ -1162,7 +1162,7 @@ impl Editor {
         // resizes it, as in Select; anywhere else it draws a new one
         let draws = self.tool.drags() || self.tool == Tool::Pen;
         if draws && resp.drag_started() {
-            self.grab = resp.interact_pointer_pos().map(to_img).is_some_and(|q| self.on_selected(q, scale));
+            self.grab = press_at(&resp).map(to_img).is_some_and(|q| self.on_selected(q, scale));
         }
         if draws && resp.clicked() {
             if let Some(q) = resp.interact_pointer_pos().map(at_img) {
@@ -1346,7 +1346,7 @@ impl Editor {
         let sr = Rect::from_min_max(to_screen(r.min), to_screen(r.max));
         match self.tool {
             Tool::Blur | Tool::Eraser => {
-                p.rect_filled(sr, 3.0, with_alpha(overlay::LIME, 0.16));
+                p.rect_filled(sr, 3.0, with_alpha(overlay::LINE, 0.16));
                 overlay::dashed(p, sr, 5.0, 3.0);
             }
             _ => {
@@ -1446,7 +1446,11 @@ impl Editor {
     /// one within the grab zone (C16).
     fn handle_at(&self, q: Pos2, scale: f32) -> Option<(usize, usize)> {
         let i = self.selected?;
-        let k = nearest(&handle_spots(self.doc.marks.get(i)?, scale), q, scale)?;
+        let m = self.doc.marks.get(i)?;
+        let k = nearest(&handle_spots(m, scale), q, scale).or_else(|| {
+            // sides draw no handle; their whole line grabs (C16)
+            (m.handles().len() == 8).then(|| side_at(m.bounds().expand(overlay::OUTSET / scale), q, scale)).flatten()
+        })?;
         Some((i, k))
     }
 
@@ -1458,7 +1462,8 @@ impl Editor {
 
     /// The picked area's handle under `q` (image px), if any.
     fn area_handle_at(&self, q: Pos2, scale: f32) -> Option<usize> {
-        nearest(&box_spots(self.area?, scale), q, scale)
+        let a = self.area?;
+        nearest(&box_spots(a, scale), q, scale).or_else(|| side_at(a, q, scale))
     }
 
     /// Select: click a mark to select it, drag it to move, drag a handle to
@@ -1497,7 +1502,7 @@ impl Editor {
             }
         }
         if resp.drag_started() {
-            if let Some(q) = resp.interact_pointer_pos().map(raw) {
+            if let Some(q) = press_at(resp).map(raw) {
                 if let Some((i, k)) = self.handle_at(q, scale) {
                     self.grab_off = q - self.doc.marks[i].handles()[k];
                     self.resizing = Some((i, k, self.doc.marks[i].clone()));
@@ -1540,7 +1545,7 @@ impl Editor {
             return;
         }
         if resp.drag_started() || resp.clicked() {
-            if let Some(s) = resp.interact_pointer_pos() {
+            if let Some(s) = press_at(resp) {
                 let q = at_img(s);
                 let hit = if alt && picking { None } else { self.doc.marks.iter().rposition(|m| m.hit(q, slack)) };
                 self.selected = hit;
@@ -1829,11 +1834,33 @@ fn box_spots(r: Rect, scale: f32) -> Vec<(usize, Pos2)> {
         .collect()
 }
 
+/// The side of frame `f` (image px) whose line `q` is near, nearest first,
+/// as a [`render::box_handles`] index: up to [`overlay::EDGE`] outside the
+/// line, only 2 pt inside it, so a press on the mark itself still moves it.
+fn side_at(f: Rect, q: Pos2, scale: f32) -> Option<usize> {
+    let (out, inn) = (overlay::EDGE / scale, 2.0 / scale);
+    let along_x = q.x >= f.min.x - out && q.x <= f.max.x + out;
+    let along_y = q.y >= f.min.y - out && q.y <= f.max.y + out;
+    // how far `q` lies outside each line (negative: inside)
+    [(1, along_x, f.min.y - q.y), (3, along_y, q.x - f.max.x), (5, along_x, q.y - f.max.y), (7, along_y, f.min.x - q.x)]
+        .into_iter()
+        .filter(|(_, on, d)| *on && *d <= out && *d >= -inn)
+        .min_by(|a, b| a.2.abs().total_cmp(&b.2.abs()))
+        .map(|(k, _, _)| k)
+}
+
+/// Where the press that started this drag went down (screen), not where the
+/// pointer was once it had moved far enough to count as a drag.
+fn press_at(resp: &egui::Response) -> Option<Pos2> {
+    resp.ctx.input(|i| i.pointer.press_origin()).or_else(|| resp.interact_pointer_pos())
+}
+
 /// The spot nearest `q` within the grab zone, if any.
 fn nearest(spots: &[(usize, Pos2)], q: Pos2, scale: f32) -> Option<usize> {
     spots
         .iter()
-        .map(|(k, h)| (*k, (*h - q).length() * scale))
+        // a square zone: a diagonal press just off a corner still grabs it
+        .map(|(k, h)| (*k, (*h - q).abs().max_elem() * scale))
         .filter(|(_, d)| *d <= overlay::GRAB)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(k, _)| k)
@@ -1992,6 +2019,26 @@ mod tests {
         // a zero-length arrow keeps its handles on the point instead of NaN
         let dot = Mark::Arrow { a: Pos2::new(5.0, 5.0), b: Pos2::new(5.0, 5.0), color: [0; 4], width: 4.0, heads: Heads::default() };
         assert!(handle_spots(&dot, 1.0).iter().all(|(_, p)| p.x.is_finite()));
+    }
+
+    #[test]
+    fn sides_grab_along_their_whole_line() {
+        let f = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(200.0, 100.0));
+        // near the top line, far from its middle
+        assert_eq!(side_at(f, Pos2::new(30.0, -7.0), 1.0), Some(1));
+        assert_eq!(side_at(f, Pos2::new(30.0, 1.5), 1.0), Some(1));
+        assert_eq!(side_at(f, Pos2::new(207.0, 80.0), 1.0), Some(3));
+        assert_eq!(side_at(f, Pos2::new(150.0, 106.0), 1.0), Some(5));
+        assert_eq!(side_at(f, Pos2::new(-6.0, 20.0), 1.0), Some(7));
+        // inside past 2 pt (the mark itself), the middle and far outside: none
+        assert_eq!(side_at(f, Pos2::new(30.0, 5.0), 1.0), None);
+        assert_eq!(side_at(f, Pos2::new(100.0, 50.0), 1.0), None);
+        assert_eq!(side_at(f, Pos2::new(30.0, -20.0), 1.0), None);
+        // zoomed in 2×: the band is 8 pt on screen, 4 px on the picture
+        assert_eq!(side_at(f, Pos2::new(30.0, -6.0), 2.0), None);
+        // a corner grabs in a square: 9 pt off on both axes still counts
+        assert_eq!(nearest(&[(0, Pos2::ZERO)], Pos2::new(-9.0, -9.0), 1.0), Some(0));
+        assert_eq!(nearest(&[(0, Pos2::ZERO)], Pos2::new(-13.0, 0.0), 1.0), None);
     }
 
     #[test]
