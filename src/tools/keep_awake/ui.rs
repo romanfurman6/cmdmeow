@@ -306,8 +306,8 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     today(ui, &p, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, r.bottom() - sp::XL)), &e, now, id.with("today"));
 }
 
-/// On's shortcut in the header: click, then press the keys. Esc keeps the
-/// old one, ⌫ removes it.
+/// On's shortcut in the header: click, then press the keys (or a mouse
+/// button). Esc keeps the old one, ⌫ removes it.
 fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut KeyRec, now: i64, id: egui::Id) {
     if keys.recording {
         keys.seen = Some(std::time::Instant::now());
@@ -342,7 +342,7 @@ fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut Key
         dashed_rect(p, br, R_SMALL, white(60));
     }
     p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys. Esc cancels, ⌫ removes it").clicked() {
+    if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
         keys.recording = !rec;
         keys.seen = Some(std::time::Instant::now());
     }
