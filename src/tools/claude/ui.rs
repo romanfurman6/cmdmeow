@@ -59,10 +59,14 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
             let resp = tile::card(ui, r, id, sel);
             let p = ui.painter();
             let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), "AI Usage", &status(cl));
-            for (k, (label, l)) in [("Session", cl.session()), ("Week", cl.weekly())].into_iter().enumerate() {
+            let rows: Vec<(&str, _, String)> = [("Session", cl.session()), ("Week", cl.weekly())]
+                .into_iter()
+                .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, short_reset(&l.resets).trim_start_matches("resets "))).unwrap_or_default()))
+                .collect();
+            let cols = tile::bar_cols(p, &rows.iter().map(|r| (r.0, r.2.as_str())).collect::<Vec<_>>());
+            for (k, (label, l, v)) in rows.iter().enumerate() {
                 let lr = Rect::from_min_size(Pos2::new(body.left(), body.top() + k as f32 * 22.0), Vec2::new(body.width(), 22.0));
-                let v = l.map(|l| format!("{:.0}% · {}", l.pct, short_reset(&l.resets).trim_start_matches("resets "))).unwrap_or_default();
-                tile::bar_line(p, lr, label, l.map(|l| ((l.pct / 100.0).max(0.01), super::page::usage_color(l.pct))), &v);
+                tile::bar_line(p, lr, label, l.map(|l| ((l.pct / 100.0).max(0.01), super::page::usage_color(l.pct))), v, cols);
             }
             let lr = Rect::from_min_max(Pos2::new(body.left(), body.top() + 52.0), body.max);
             p.text(lr.left_top(), Align2::LEFT_TOP, "Tokens · 7 days", font(11.0), TEXT_FAINT());

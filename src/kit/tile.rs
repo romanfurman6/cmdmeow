@@ -466,20 +466,31 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
     }
 }
 
-/// A list line inside a Medium or Large widget: label, bar, value.
-pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Color32)>, value: &str) {
-    // the value keeps its full width ("62% · tomorrow 23:40"): app text, never cut
-    let lw = p.layout_no_wrap(label.to_string(), font(12.0), TEXT()).size().x;
-    let vw = p.layout_no_wrap(value.to_string(), font(12.0), TEXT()).size().x.max(40.0);
-    // the label keeps its full width when it can; the bar takes what's left
-    let room = r.width() - vw - lw - 22.0;
-    // W5: label and value at their own width, the bar takes the rest
-    let bw = if frac.is_some() && room >= 24.0 { room } else { 0.0 };
-    p.text(Pos2::new(r.right(), r.center().y), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
-    if let (Some((f, c)), true) = (frac, bw > 0.0) {
-        bar(p, Rect::from_min_max(Pos2::new(r.right() - vw - 10.0 - bw, r.center().y - 2.0), Pos2::new(r.right() - vw - 10.0, r.center().y + 2.0)), f, c);
+/// The shared columns of a Medium or Large widget's list (W5): the widest
+/// name and the widest value of its lines, so every bar in the card starts
+/// and ends on the same two lines.
+pub fn bar_cols(p: &egui::Painter, lines: &[(&str, &str)]) -> (f32, f32) {
+    let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x;
+    let lw = lines.iter().map(|l| w(l.0)).fold(0.0f32, f32::max);
+    let vw = lines.iter().map(|l| w(l.1)).fold(0.0f32, f32::max);
+    (lw.ceil(), vw.ceil())
+}
+
+/// A list line inside a Medium or Large widget: name, bar, value, on the
+/// card's shared columns from [`bar_cols`]. The value is never cut; the bar
+/// takes what's between the columns.
+pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Color32)>, value: &str, cols: (f32, f32)) {
+    let (lw, vw) = cols;
+    let cy = r.center().y;
+    let vr = p.text(Pos2::new(r.right(), cy), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
+    let x0 = r.left() + lw + 10.0;
+    let x1 = r.right() - vw - 10.0;
+    if let (Some((f, c)), true) = (frac, x1 - x0 >= 24.0) {
+        bar(p, Rect::from_min_max(Pos2::new(x0, cy - 2.0), Pos2::new(x1, cy + 2.0)), f, c);
     }
-    text_fit(p, Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, label, font(12.0), white(166), r.width() - vw - bw - 22.0);
+    // the name column is the widest name, so a name fits; without a bar it may run on
+    let room = if frac.is_some() { lw } else { vr.left() - r.left() - 8.0 };
+    text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), room);
 }
 
 /// A quiet line where the data would be (W11): no frame round it.
