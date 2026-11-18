@@ -576,10 +576,12 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
 /// The backdrop's gradient (S1): colours from the glow's centre out to its
 /// edge, as fractions of the way.
 pub fn backdrop_stops(light: bool) -> &'static [(f32, Color32)] {
+    const LIGHT: &[(f32, Color32)] = &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))];
+    const DARK: &[(f32, Color32)] = &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))];
     if light {
-        &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
+        LIGHT
     } else {
-        &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
+        DARK
     }
 }
 
