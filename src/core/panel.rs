@@ -11,6 +11,20 @@ use crate::kit::glass::*;
 use crate::kit::mechanics as m;
 use egui::{Align2, Id, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2};
 
+/// Settings › General "Keep panel open": the panel stays up when focus
+/// leaves it and while a capture runs, so it can be screenshotted. Off by
+/// default.
+pub const KEEP_OPEN_KEY: &str = "panel.keep_open";
+static KEEP_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn keep_open() -> bool {
+    KEEP_OPEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_keep_open(on: bool) {
+    KEEP_OPEN.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Height of the title line above the widgets.
 pub const HEADER: f32 = 60.0;
 /// Space below the widgets: a gap plus the "Edit widgets…" link.
@@ -158,9 +172,6 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     header(app, ui, rect);
     let area = Rect::from_min_max(Pos2::new(rect.left() + PAD, rect.top() + HEADER), Pos2::new(rect.right() - PAD, rect.bottom() - FOOTER - banner_h()));
     let need = content_height(app);
-    // Liquid Glass under the cards (macOS 26): the cards note their rects
-    let liquid = app.liquid_glass();
-    crate::kit::tile::native_cards(liquid);
     if need > area.height() + 0.5 {
         // the bar runs in the right padding, beside the widgets
         let scroll_r = Rect::from_min_max(area.min, Pos2::new(area.right() + PAD - 2.0, area.bottom()));
@@ -174,22 +185,6 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         });
     } else {
         widgets(app, ui, Rect::from_min_size(area.min, Vec2::new(area.width(), need)), cx);
-    }
-    let cards = crate::kit::tile::native_cards(false);
-    if liquid {
-        let clip = area.expand2(Vec2::new(PAD, 8.0));
-        let rr = |r: Rect| [r.left(), r.top(), r.width(), r.height()];
-        let rects: Vec<[f32; 4]> = cards.iter().map(|c| rr(c.0)).collect();
-        // the hovered card frosts: a Regular glass fading in over its Clear one
-        let hover = cards.iter().enumerate().filter(|(_, c)| c.1 > 0.01).max_by(|a, b| a.1 .1.total_cmp(&b.1 .1)).map(|(i, c)| (i, c.1));
-        let view = eframe::viewport_ns_view(egui::ViewportId::ROOT);
-        if view.is_none() {
-            static ONCE: std::sync::Once = std::sync::Once::new();
-            ONCE.call_once(|| eprintln!("[glass] no NSView for the root viewport"));
-        }
-        if let Some(view) = view {
-            crate::kit::native::sync_card_glass(view, rr(clip), &rects, hover, crate::kit::tile::R_TILE as f64, crate::kit::glass::is_light(), |w, h| crate::kit::glass::panel_glow_rgba(w, h, crate::kit::glass::is_light()));
-        }
     }
     if banner_h() > 0.0 {
         let r = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.bottom() - FOOTER - sp::ROW_H), Vec2::new(rect.width() - 2.0 * PAD, sp::ROW_H));
