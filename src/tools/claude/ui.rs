@@ -160,7 +160,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let n = cl.limits.len();
     let lim_h = if n == 0 { 64.0 } else { n as f32 * 58.0 + 13.0 };
     let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, lim_h));
-    glass_card(&p, lr, R_CARD, 0.0, false);
+    data_card(&p, lr);
     if n == 0 {
         let msg = cl.error.clone().unwrap_or_else(|| format!("Asking {} for your limits…", cl.provider));
         paragraph(&p, lr.min + Vec2::new(12.0, 12.0), &msg, font(13.0), TEXT_DIM(), w - 24.0);
@@ -181,7 +181,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     card_title(&p, Pos2::new(x0, y), "On this Mac");
     y += CARD_TITLE_H;
     let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 160.0));
-    glass_card(&p, ar, R_CARD, 0.0, false);
+    data_card(&p, ar);
     let stats = [("last 5 hours", cl.local.tokens_5h), ("today", cl.local.tokens_today), ("7 days", cl.local.tokens_7d)];
     for (i, (k, v)) in stats.iter().enumerate() {
         let x = ar.left() + 12.0 + i as f32 * ((w - 24.0) / 3.0);
@@ -220,7 +220,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         shown += 1;
     }
     let ur = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h + 6.0));
-    glass_card(&p, ur, R_CARD, 0.0, false);
+    data_card(&p, ur);
     let mut ly = ur.top() + 12.0;
     for ((l, c, s), hh) in lines.iter().zip(&heights).take(shown) {
         paragraph(&p, Pos2::new(ur.left() + 12.0, ly), l, font(*s), *c, w - 24.0);

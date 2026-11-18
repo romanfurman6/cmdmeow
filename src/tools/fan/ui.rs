@@ -346,7 +346,7 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     let rows = groups.len().min(8);
     if rows > 0 {
         let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * SHEET_ROW_H + 8.0));
-        glass_card(&p, gr, R_CARD, 0.0, false);
+        data_card(&p, gr);
         for (i, g) in groups.iter().take(rows).enumerate() {
             let cy = gr.top() + 4.0 + SHEET_ROW_H / 2.0 + i as f32 * SHEET_ROW_H;
             p.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 16.5, cy), Vec2::splat(9.0)), 3.0, heat(g.max));
@@ -365,7 +365,7 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     let fr = Rect::from_min_size(fr.min, Vec2::new(w, need));
     let by = rect.bottom() - 16.0 - BTN_H;
     if fr.bottom() < by - 8.0 {
-        glass_card(&p, fr, R_CARD, 0.0, false);
+        data_card(&p, fr);
         let fr = fr.translate(Vec2::new(0.0, 4.0));
         let _ = hint; // T1: the word says it
         fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, "");
