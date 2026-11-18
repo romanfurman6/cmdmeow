@@ -386,7 +386,7 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
     // bar (R12): the columns line up with the rows, not with the card edge
     let c_size = list.right() - sp::SCROLL_GUTTER - sp::L;
     let c_used = c_size - SIZE_W - sp::L;
-    let c_name = list.left() + 14.0 + 16.0 + 10.0 + 26.0 + 10.0;
+    let c_name = list.left() + sp::L + 16.0 + 10.0 + 26.0 + 10.0;
     section_header(&p, Pos2::new(c_name, hy), Align2::LEFT_CENTER, "Name");
     section_header(&p, Pos2::new(c_used, hy), Align2::RIGHT_CENTER, "Last used");
     section_header(&p, Pos2::new(c_size, hy), Align2::RIGHT_CENTER, "Size");
@@ -423,17 +423,18 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
                 };
                 let resp = ui.interact(r, ui.scope_id().with(("un-row", &a.path)), Sense::click());
                 let sel = u.selected.as_ref() == Some(&a.path);
-                // a content list: selected and hover run edge to edge (H2, H3)
+                // a card list: selected and hover sit inside the card (H2, H3)
                 if sel {
-                    crate::kit::glass::selected_fill(&p, r, 0.0);
+                    crate::kit::glass::selected_fill(&p, crate::kit::glass::lit_rect(r), crate::kit::glass::LIT_R);
                 } else if resp.hovered() {
-                    p.rect_filled(r, 0.0, white(ROW_HOVER));
+                    crate::kit::glass::row_hover_fill(&p, r);
                 }
                 if resp.clicked() {
                     u.selected = Some(a.path.clone());
                 }
                 let dim = a.locked.is_some();
-                let cb = Rect::from_center_size(Pos2::new(r.left() + 14.0 + 8.0, r.center().y), Vec2::splat(15.0));
+                // H9: 12 in from the lit fill
+                let cb = Rect::from_center_size(Pos2::new(r.left() + sp::L + 8.0, r.center().y), Vec2::splat(15.0));
                 let on = u.checked.contains(&a.path);
                 if checkbox(ui, cb, ui.scope_id().with(("un-check", &a.path)), on, !dim).clicked() && !dim {
                     if on {
@@ -1017,7 +1018,7 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
     let c_size = list.right() - sp::SCROLL_GUTTER - sp::L;
     let c_when = c_size - SIZE_W - sp::L;
     let c_where = c_when - 90.0 - 16.0 - 250.0;
-    let c_name = list.left() + 14.0 + 16.0 + 12.0;
+    let c_name = list.left() + sp::L + 16.0 + 12.0;
     let hy = list.top() + sp::TABLE_HEAD_H / 2.0;
     section_header(&p, Pos2::new(c_name, hy), Align2::LEFT_CENTER, "Removed app");
     section_header(&p, Pos2::new(c_where, hy), Align2::LEFT_CENTER, "Where");
@@ -1050,10 +1051,10 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
             }
             let resp = ui.interact(r, ui.scope_id().with(("un-orow", &o.id)), Sense::click());
             if resp.hovered() {
-                p.rect_filled(r.shrink2(Vec2::new(4.0, 1.0)), 7.0, white(8));
+                crate::kit::glass::row_hover_fill(&p, r);
             }
-            reveal::rect(&p, r.shrink2(Vec2::new(4.0, 1.0)), 7.0, u.ai.ring(ui.ctx(), &o.id));
-            let cb = Rect::from_center_size(Pos2::new(r.left() + 14.0 + 8.0, r.center().y), Vec2::splat(15.0));
+            reveal::row(&p, r, u.ai.ring(ui.ctx(), &o.id));
+            let cb = Rect::from_center_size(Pos2::new(r.left() + sp::L + 8.0, r.center().y), Vec2::splat(15.0));
             if checkbox(ui, cb, ui.scope_id().with(("un-ocheck", &o.id)), o.selected, true).clicked() || resp.clicked() {
                 let mut g = u.st.lock_ok();
                 if let Some(x) = g.orphans.iter_mut().find(|x| x.id == o.id) {

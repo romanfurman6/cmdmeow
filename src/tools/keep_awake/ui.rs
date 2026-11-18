@@ -488,7 +488,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
                 new_hover = Some(i);
             }
             if resp.hovered() || hour_lit {
-                p.rect_filled(row.shrink2(Vec2::new(0.0, 0.5)), 0.0, white(ROW_HOVER));
+                crate::kit::glass::row_hover_fill(&p, row);
             }
             let c = Pos2::new(inner.left(), row.center().y);
             p.rect_filled(Rect::from_min_size(Pos2::new(c.x, c.y - 5.0), Vec2::splat(10.0)), 3.0, if s.agent { AUTO() } else { ON() });

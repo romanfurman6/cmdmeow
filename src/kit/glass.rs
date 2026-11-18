@@ -428,16 +428,35 @@ pub fn start_row_fill(p: &egui::Painter, rr: Rect) {
     p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
 }
 
+/// A lit row in a card list (hover, selected, AI Check ring): 4 in from the
+/// card's sides and 1 from the row's top and bottom, radius 8, so it never
+/// meets the card's rounded corners (H2). Popovers and menus stay edge to edge.
+pub fn lit_rect(row: Rect) -> Rect {
+    row.shrink2(Vec2::new(sp::XS, LIT_INSET))
+}
+/// Corner radius of [`lit_rect`].
+pub const LIT_R: f32 = 8.0;
+
+/// Hover fill of a row in a card list (H1, H2).
+pub fn row_hover_fill(p: &Painter, row: Rect) {
+    p.rect_filled(lit_rect(row), LIT_R, white(ROW_HOVER));
+}
+
 /// A row's top divider in a list with hairlines between rows (H2): left
 /// out above and below a lit row, so the fill stands alone. Rows call it
 /// top to bottom in one pass, after deciding `lit`; `bottom` is the row's
 /// bottom edge.
 pub fn row_divider(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32) {
+    row_divider_stroke(ui, p, a, b, lit, bottom, Stroke::new(1.0, white(HAIRLINE)));
+}
+
+/// [`row_divider`] in a given stroke (card dividers use `CARD_EDGE`).
+pub fn row_divider_stroke(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32, stroke: Stroke) {
     let id = egui::Id::unique("row-divider-lit");
     let pass = ui.ctx().cumulative_pass_nr();
     let above_lit = ui.ctx().data(|d| d.get_temp::<(u64, f32)>(id)).is_some_and(|(n, y)| n == pass && (y - a.y).abs() < 1.5);
     if !lit && !above_lit {
-        hairline(p, a, b);
+        p.line_segment([a, b], stroke);
     }
     if lit {
         ui.ctx().data_mut(|d| d.insert_temp(id, (pass, bottom)));
@@ -476,6 +495,11 @@ pub mod reveal {
         let ai = AI();
         p.rect_filled(r, radius, with_alpha(ai, FILL * k));
         p.rect_stroke(r, radius, Stroke::new(RING_W, with_alpha(ai, k)), egui::StrokeKind::Inside);
+    }
+
+    /// The ring on a row of a card list, inside the card like hover (H2).
+    pub fn row(p: &Painter, r: Rect, k: f32) {
+        rect(p, super::lit_rect(r), super::LIT_R, k);
     }
 
     /// The ring around a circle (a Disk Map bubble).
