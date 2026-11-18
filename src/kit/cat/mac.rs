@@ -130,8 +130,9 @@ struct Main {
     voice: Option<(Retained<AnyObject>, bool)>,
     /// The purr that is fading out.
     fading: Option<Retained<AnyObject>>,
-    /// Taps that still sound (each `NSSound` is kept while it plays).
-    taps: Vec<Retained<AnyObject>>,
+    /// The desk sounds, read once and played again (a few of each, so
+    /// quick ones overlap): which, and the `NSSound`.
+    taps: Vec<(Hit, Retained<AnyObject>)>,
     /// When each desk sound last started (one at a time per 50 ms).
     tapped: [Option<Instant>; 7],
     buzz_turn: u32,
@@ -699,11 +700,15 @@ impl Main {
                 return on_main(|m| m.tidying = false);
             }
             save_spots(&spots);
-            stage::shoot(move |icons, paper| on_main(move |m| m.tidy_go(spots, view, icons, paper)));
+            stage::shoot(move |icons, paper| {
+                // read off the main thread: the screen's worth of pixels
+                let mask = stage::mask(icons.as_ref());
+                on_main(move |m| m.tidy_go(spots, view, icons, paper, mask))
+            });
         });
     }
 
-    fn tidy_go(&mut self, spots: Vec<grid::Spot>, view: grid::View, icons: Option<stage::Shot>, paper: Option<stage::Shot>) {
+    fn tidy_go(&mut self, spots: Vec<grid::Spot>, view: grid::View, icons: Option<stage::Shot>, paper: Option<stage::Shot>, mask: Option<grid::Mask>) {
         // switched off while Finder was asked
         if !super::tidy_on() {
             self.tidying = false;
@@ -713,7 +718,6 @@ impl Main {
             self.tidying = false;
             return;
         };
-        let mask = stage::mask(icons.as_ref());
         let off = stage::finder_offset(&spots, view.icon, mask.as_ref());
         // the middles of the icons' pictures
         let mids: Vec<grid::Spot> = spots.iter().map(|s| grid::Spot { name: s.name.clone(), x: s.x - off.0, y: s.y - off.1 }).collect();
@@ -725,14 +729,27 @@ impl Main {
         }
         let middles: Vec<(f64, f64)> = mids.iter().map(|s| (s.x, s.y)).collect();
         let mut desktop = Desktop { spots, view, pitch, off, icons, paper, boxes: Vec::new(), mask: None, mids: middles };
-        // what each icon and its name really cover: the picture lifted and the patch over its old spot
-        if let Some(m) = &mask {
-            let mids = &desktop.mids;
-            desktop.boxes = (0..mids.len()).map(|i| grid::ink_box(m, mids, i, view.icon, desktop.cell(mids[i]))).collect();
+        // off the main thread: what each icon and its name really cover, and
+        // its picture and patch cut out (a heap lifts several in one frame)
+        let _ = std::thread::Builder::new().name("cat cut out".into()).spawn(move || {
+            if let Some(m) = &mask {
+                let mids = &desktop.mids;
+                desktop.boxes = (0..mids.len()).map(|i| grid::ink_box(m, mids, i, view.icon, desktop.cell(mids[i]))).collect();
+            }
+            desktop.mask = mask;
+            let kept = Stage::cut_all(&desktop);
+            on_main(move |m| m.tidy_start(desktop, kept, at, slots, pitch));
+        });
+    }
+
+    /// The pictures are cut out: the cat sets off.
+    fn tidy_start(&mut self, desktop: Desktop, kept: HashMap<usize, stage::Kept>, at: Vec<(usize, f64, f64)>, slots: Vec<(f64, f64)>, pitch: (f64, f64)) {
+        if !super::tidy_on() {
+            self.tidying = false;
+            return;
         }
-        desktop.mask = mask;
         self.with_stage(move |st, now| {
-            st.set_desktop(desktop);
+            st.set_desktop(desktop, kept);
             st.live.tidy(at, &slots, (pitch.0 * 0.46, pitch.1 * 0.46), now);
         });
         if self.broken {
@@ -751,14 +768,24 @@ impl Main {
             return;
         }
         *last = Some(Instant::now());
-        let Some(path) = stage::asset(&format!("{}.mp3", hit.file())) else { return };
-        self.taps.retain(|s| unsafe { msg_send![&**s, isPlaying] });
-        let Some(s) = sound(&path, false) else { return };
+        // one of this sound's copies that is not playing, or a new one
+        // (up to 4); never read from disk again on the main thread
+        let free = self.taps.iter().position(|(h, s)| *h == hit && !unsafe { msg_send![&**s, isPlaying] });
+        let k = match free {
+            Some(k) => k,
+            None if self.taps.iter().filter(|(h, _)| *h == hit).count() < 4 => {
+                let Some(path) = stage::asset(&format!("{}.mp3", hit.file())) else { return };
+                let Some(s) = sound(&path, false) else { return };
+                self.taps.push((hit, s));
+                self.taps.len() - 1
+            }
+            None => return,
+        };
+        let s = &self.taps[k].1;
         unsafe {
-            let _: () = msg_send![&*s, setVolume: if soft { 0.5f32 } else { 1.0f32 }];
-            let _: bool = msg_send![&*s, play];
+            let _: () = msg_send![&**s, setVolume: if soft { 0.5f32 } else { 1.0f32 }];
+            let _: bool = msg_send![&**s, play];
         }
-        self.taps.push(s);
     }
 
     /// A reaction's sound, `n`. While the cat lives on the desk it says
@@ -1005,7 +1032,22 @@ fn tint(rgba: &[u8], ink: [f32; 4]) -> Vec<u8> {
 
 /// Sounds may play: the sound is on, and nothing records or listens.
 fn may_sound() -> bool {
-    crate::kit::sound::on() && !crate::kit::activity::recording() && !mic_in_use()
+    crate::kit::sound::on() && !crate::kit::activity::recording() && !mic_busy()
+}
+
+/// [`mic_in_use`], asked at most once a second (the desk taps come many
+/// a second, and asking Core Audio each time costs the frame).
+fn mic_busy() -> bool {
+    static LAST: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    match *last {
+        Some((at, busy)) if at.elapsed() < Duration::from_secs(1) => busy,
+        _ => {
+            let busy = mic_in_use();
+            *last = Some((Instant::now(), busy));
+            busy
+        }
+    }
 }
 
 /// An `NSSound` of the file at `path`, looping or not (not started).
