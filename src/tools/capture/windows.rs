@@ -411,12 +411,14 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
             p.image(tex, r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
             let resp = ui.interact(r, ui.scope_id().with("pin"), Sense::click_and_drag());
             let hovered = ui.rect_contains_pointer(r);
-            // resize handles (added after the body, so they win where they overlap)
-            let band = 8.0;
+            // resize handles (added after the body, so they win where they
+            // overlap); the grab zone reaches 12 pt in from the edge (C16)
+            let band = crate::kit::glass::overlay::GRAB;
+            let corner = 2.0 * band;
             let handles = [
-                (Grip::Corner, Rect::from_min_max(r.max - Vec2::splat(18.0), r.max), egui::CursorIcon::ResizeNwSe),
-                (Grip::Right, Rect::from_min_max(Pos2::new(r.right() - band, r.top() + 36.0), Pos2::new(r.right(), r.bottom() - 18.0)), egui::CursorIcon::ResizeHorizontal),
-                (Grip::Bottom, Rect::from_min_max(Pos2::new(r.left(), r.bottom() - band), Pos2::new(r.right() - 18.0, r.bottom())), egui::CursorIcon::ResizeVertical),
+                (Grip::Corner, Rect::from_min_max(r.max - Vec2::splat(corner), r.max), egui::CursorIcon::ResizeNwSe),
+                (Grip::Right, Rect::from_min_max(Pos2::new(r.right() - band, r.top() + 36.0), Pos2::new(r.right(), r.bottom() - corner)), egui::CursorIcon::ResizeHorizontal),
+                (Grip::Bottom, Rect::from_min_max(Pos2::new(r.left(), r.bottom() - band), Pos2::new(r.right() - corner, r.bottom())), egui::CursorIcon::ResizeVertical),
             ];
             let mut resized = None;
             for (grip, hr, cursor) in handles {
@@ -440,7 +442,12 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                     pin.resize = None;
                 }
             }
-            p.rect_stroke(r, 0.0, Stroke::new(1.0, if hovered { with_alpha(ACCENT(), 0.8) } else { white(40) }), StrokeKind::Inside);
+            // the edge on hover is an on-picture overlay: lime over a dark band (C16)
+            if hovered || pin.resize.is_some() {
+                crate::kit::glass::overlay::frame(&p, r, 0.0, StrokeKind::Inside);
+            } else {
+                p.rect_stroke(r, 0.0, Stroke::new(1.0, white(40)), StrokeKind::Inside);
+            }
             if resp.drag_started() && pin.resize.is_none() {
                 vctx.send_viewport_cmd(ViewportCommand::StartDrag);
             }
@@ -462,11 +469,13 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                     pin.scale = scale;
                     vctx.send_viewport_cmd(ViewportCommand::InnerSize(pin.base * pin.scale));
                 }
-                // corner grip
+                // corner grip: lime over a dark band, like every on-picture line (C16)
                 let c = r.max - Vec2::splat(5.0);
                 for k in 1..=3 {
                     let d = 4.0 * k as f32;
-                    p.line_segment([c - Vec2::new(d, 0.0), c - Vec2::new(0.0, d)], Stroke::new(1.5, Color32::from_white_alpha(200)));
+                    let seg = [c - Vec2::new(d, 0.0), c - Vec2::new(0.0, d)];
+                    p.line_segment(seg, Stroke::new(3.0, with_alpha(crate::kit::glass::overlay::RING, 0.7)));
+                    p.line_segment(seg, Stroke::new(1.5, crate::kit::glass::overlay::LIME));
                 }
                 let cr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.top() + 16.0), Vec2::splat(22.0));
                 let b = ui.interact(cr, ui.scope_id().with("close"), Sense::click());
