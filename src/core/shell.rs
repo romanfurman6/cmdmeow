@@ -977,7 +977,7 @@ impl eframe::App for App {
             Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
-                glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);
+                glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 if self.sheet_open() {
                     let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));
