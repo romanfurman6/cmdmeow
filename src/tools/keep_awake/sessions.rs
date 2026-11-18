@@ -2,7 +2,8 @@
 //! session as it works, so a session written in the last couple of minutes
 //! is working. Where the log shows a tool call still waiting for its result
 //! (a long build, tests), that counts as working too, even though the log
-//! stays quiet while it runs.
+//! stays quiet while it runs; but only while the agent itself is still
+//! running, so a closed terminal or a crash doesn't keep the Mac awake.
 //!
 //! - Claude Code: `~/.claude/projects/<project>/<session>.jsonl` (subagents
 //!   in a folder named after the session). Open tool calls: yes.
@@ -96,6 +97,17 @@ impl Source {
         }
     }
 
+    /// The name its command-line program runs under, where a tool call
+    /// can be seen in its log.
+    fn process(self) -> Option<&'static str> {
+        match self {
+            Source::Claude => Some("claude"),
+            Source::Codex => Some("codex"),
+            Source::OpenCode => Some("opencode"),
+            Source::Gemini => None,
+        }
+    }
+
     /// The folder its sessions are written to.
     pub fn root(self) -> PathBuf {
         match self {
@@ -128,6 +140,12 @@ impl Scanner {
             Source::Gemini => self.scan_gemini(&root, now),
             Source::OpenCode => self.scan_opencode(&root, now),
         };
+        // a call nobody is waiting for any more: the agent quit or crashed
+        if out.iter().any(|s| s.tool_running) && source.process().is_some_and(|name| !process_running(name)) {
+            for s in &mut out {
+                s.tool_running = false;
+            }
+        }
         out.sort_by_key(|s| std::cmp::Reverse(s.last_write));
         out
     }
@@ -269,6 +287,18 @@ impl Scanner {
             None => fallback_name(folder),
         }
     }
+}
+
+/// Is a program called `name` running: as a command ("claude", "node
+/// /opt/homebrew/bin/claude …"), as a package ("…/claude-code/cli.js") or
+/// as the agent's desktop app, which runs it inside? Letter case doesn't
+/// matter, and "couldn't tell" counts as running: staying awake a while too
+/// long is the smaller mistake.
+fn process_running(name: &str) -> bool {
+    let pattern = format!("(^|[/ ]){name}([ -]|$)|{name}[-_]code");
+    let found = std::process::Command::new("/usr/bin/pgrep").args(["-i", "-f", "--", &pattern]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output();
+    // pgrep: 0 found, 1 none, anything else is an error
+    !matches!(found, Ok(o) if o.status.code() == Some(1))
 }
 
 /// The end of a log, where an open tool call would be.
@@ -469,6 +499,27 @@ mod tests {
         assert!(!s.working(1000 + TOOL_CAP_SECS + 200), "an abandoned call stops counting");
         let quiet = Session { tool_running: false, ..s };
         assert!(!quiet.working(1000 + 1800));
+    }
+
+    #[test]
+    fn a_tool_call_counts_only_while_its_agent_runs() {
+        if !Path::new("/usr/bin/pgrep").exists() {
+            return;
+        }
+        let name = format!("cmbagent{}", std::process::id());
+        assert!(!process_running(&name));
+        // as a shell starts it: argv[0] is the bare name, whatever the file is
+        let mut child = std::process::Command::new("/bin/bash").args(["-c", &format!("exec -a {name} sleep 30")]).spawn().unwrap();
+        let seen = (0..50).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            process_running(&name)
+        });
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(seen, "a running agent is found by its name");
+        assert!(!process_running(&name), "and not once it has quit");
+        // a longer name is another program
+        assert!(!process_running(&name[..name.len() - 1]));
     }
 
     fn tmp(name: &str) -> PathBuf {
