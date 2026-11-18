@@ -317,7 +317,7 @@ fn tail(log: &Path) -> Vec<u8> {
 /// Does Claude's log end asking for a tool whose result isn't logged yet?
 /// The last assistant or user entry decides.
 fn open_tool_call(text: &[u8]) -> bool {
-    let has = |l: &[u8], pat: &[u8]| l.windows(pat.len()).any(|w| w == pat);
+    let has = |l: &[u8], pat: &[u8]| crate::kit::ai::find(l, pat).is_some();
     for line in text.split(|b| *b == b'\n').rev() {
         if has(line, b"\"tool_result\"") {
             return false;
@@ -335,7 +335,7 @@ fn open_tool_call(text: &[u8]) -> bool {
 /// The same for a Codex rollout: the last call, its output, a message or
 /// the end of the turn decides. Token counts and reasoning don't.
 fn codex_open_call(text: &[u8]) -> bool {
-    let has = |l: &[u8], pat: &[u8]| l.windows(pat.len()).any(|w| w == pat);
+    let has = |l: &[u8], pat: &[u8]| crate::kit::ai::find(l, pat).is_some();
     for line in text.split(|b| *b == b'\n').rev() {
         if has(line, b"\"type\":\"function_call_output\"") || has(line, b"\"type\":\"custom_tool_call_output\"") {
             return false;

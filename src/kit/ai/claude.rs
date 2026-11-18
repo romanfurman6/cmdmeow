@@ -581,6 +581,21 @@ mod tests {
         assert_eq!(usage_entry(reply, &mut ctx).map(|e| e.output), Some(900));
     }
 
+    /// How long a first read of session logs takes:
+    /// `CMDMEOW_BENCH_LOGS=~/.claude/projects cargo test --release log_read_speed -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn log_read_speed() {
+        let Some(dir) = std::env::var_os("CMDMEOW_BENCH_LOGS").map(PathBuf::from) else { return };
+        let files = recent_jsonl(&dir, 3);
+        let bytes: u64 = files.iter().filter_map(|f| std::fs::metadata(f).ok()).map(|m| m.len()).sum();
+        for _ in 0..3 {
+            let t = std::time::Instant::now();
+            let tokens = LogCache::default().update(files.clone(), usage_entry);
+            eprintln!("read {} logs, {} MB in {:?} ({} output tokens in 7 days)", files.len(), bytes / 1_000_000, t.elapsed(), tokens.output_7d);
+        }
+    }
+
     #[test]
     fn model_cache_kinds_and_cost() {
         let line = b"{\"cwd\":\"/w/app\",\"timestamp\":\"2026-11-08T10:00:00Z\",\"message\":{\"model\":\"claude-sonnet-4-6\",\"id\":\"msg_x\",\"usage\":{\"input_tokens\":1000000,\"output_tokens\":1000000,\"cache_creation_input_tokens\":3000000,\"cache_read_input_tokens\":1000000,\"cache_creation\":{\"ephemeral_5m_input_tokens\":2000000,\"ephemeral_1h_input_tokens\":1000000}}}}";
