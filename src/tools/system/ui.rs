@@ -157,14 +157,8 @@ pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect,
 /// A list line: label, optional bar, value.
 type Line = (String, Option<(f32, Color32)>, String);
 
-/// A history graph with its time span under it ("2 min ago" … "now").
 fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32) {
-    let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 13.0));
-    tile::spark(p, gr, values, color, None);
-    let span = values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000;
-    let start = if span >= 60 { format!("{} min ago", span / 60) } else { format!("{span} s ago") };
-    p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
-    p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
+    tile::spark_span(p, r, values, color, None);
 }
 
 /// The right half of a Row metric: its breakdown, or the CPU's history.
@@ -179,7 +173,7 @@ fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
         }
         "memory" => {
             let top = s.mem_active.max(s.mem_wired).max(s.mem_compressed).max(1) as f32;
-            [("App", s.mem_active), ("Wired", s.mem_wired), ("Compressed", s.mem_compressed)].into_iter().map(|(n, b)| (n.to_string(), Some(((b as f32 / top).clamp(0.01, 1.0), tint::HEALTH())), human_bytes(b))).collect()
+            [("Apps", s.mem_active), ("Wired", s.mem_wired), ("Compressed", s.mem_compressed)].into_iter().map(|(n, b)| (n.to_string(), Some(((b as f32 / top).clamp(0.01, 1.0), tint::HEALTH())), human_bytes(b))).collect()
         }
         "cpu" => {
             // the graph, with its time span under it
@@ -244,7 +238,7 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
             if s.mem_history.len() > 1 {
                 tile::spark_to(p, beside, &s.mem_history, mt.bar.map(|b| b.1).unwrap_or(tint::HEALTH()), (s.mem_history.iter().copied().fold(0.0f32, f32::max) * 1.5).max(30.0));
             }
-            let items = vec![("App memory".to_string(), s.mem_active), ("Wired".to_string(), s.mem_wired), ("Compressed".to_string(), s.mem_compressed)];
+            let items = vec![("Apps".to_string(), s.mem_active), ("Wired".to_string(), s.mem_wired), ("Compressed".to_string(), s.mem_compressed)];
             rel(&items)
         }
         "cpu" => {

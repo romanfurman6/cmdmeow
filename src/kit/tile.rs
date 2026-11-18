@@ -433,6 +433,21 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
     }
 }
 
+/// A history graph with its time span under it ("2 min ago" … "now", W5),
+/// for widgets and the Mac Health page alike. `top` is the top of the scale
+/// (None: the highest value). The captions take the bottom 13 pt of `r`.
+pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top: Option<f32>) {
+    let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 13.0));
+    match top {
+        Some(t) => spark_to(p, gr, values, color, t),
+        None => spark(p, gr, values, color, None),
+    }
+    let span = values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000;
+    let start = if span >= 60 { format!("{} min ago", span / 60) } else { format!("{span} s ago") };
+    p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
+    p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
+}
+
 /// The shared columns of a Medium or Large widget's list (W5): the widest
 /// name and the widest value of its lines, so every bar in the card starts
 /// and ends on the same two lines.
