@@ -665,6 +665,32 @@ pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: b
     }
 }
 
+/// A card that shows live data on a page (Mac Health, AI Usage, Fan
+/// Control, Keep Awake): the same surface as the panel widgets
+/// ([`card_surface`] at `tile::R_TILE`), so a page and its widgets read as one.
+pub fn data_card(p: &Painter, rect: Rect) {
+    card_surface(p, rect, crate::kit::tile::R_TILE, 0.0, false);
+}
+
+/// The one card surface (S2w), for widgets and pages alike: a 1 pt base
+/// under the card (`TILE_BASE`), the see-through `CARD` fill, a 1 pt top
+/// highlight (`TILE_HI`) and the 1 pt `CARD_EDGE` inside.
+pub fn card_surface(p: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
+    p.rect_filled(rect.translate(Vec2::new(0.0, 1.0)), r, TILE_BASE());
+    card_face(p, rect, r, hover, selected);
+}
+
+/// [`card_surface`] without the base (a pressed widget card sits on it).
+pub fn card_face(p: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
+    p.rect_filled(rect, r, lerp_color(CARD(), RAISED(), hover * 0.5));
+    let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
+    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, r, TILE_HI());
+    p.rect_stroke(rect, r, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
+    if selected {
+        p.rect_stroke(rect, r, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
+    }
+}
+
 /// Button kinds for [`pill_button`].
 pub const BTN_SECONDARY: u8 = 0;
 pub const BTN_PRIMARY: u8 = 1;
@@ -856,27 +882,11 @@ pub const DISK_RING_H: f32 = DISK_RING_D + sp::M + 18.0;
 /// volume's name under the ring. `top` is the top centre of the ring; the
 /// whole thing is [`DISK_RING_H`] tall.
 pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint: Color32) {
-    use egui::epaint::{PathShape, PathStroke};
-    const STROKE: f32 = 12.0;
-    let r = (DISK_RING_D - STROKE) / 2.0 - 2.0;
     let c = Pos2::new(top.x, top.y + DISK_RING_D / 2.0);
-    p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
     if total > 0 {
-        let used = disk_used(total, free);
-        if used > 0.0 {
-            let a0 = -std::f32::consts::FRAC_PI_2;
-            let a1 = a0 + std::f32::consts::TAU * used.max(0.01);
-            p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, tint)));
-            // round caps
-            for a in [a0, a1] {
-                p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, tint);
-            }
-        }
-        let big = line_h(p, &ty::hero());
-        let small = line_h(p, &ty::label());
-        let y0 = c.y - (big + 2.0 + small) / 2.0;
-        p.text(Pos2::new(c.x, y0), Align2::CENTER_TOP, human_bytes(free), ty::hero(), TEXT());
-        p.text(Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, format!("free of {}", human_bytes(total)), ty::label(), TEXT_DIM());
+        stat_ring(p, c, DISK_RING_D, disk_used(total, free), tint, &human_bytes(free), &format!("free of {}", human_bytes(total)));
+    } else {
+        stat_ring(p, c, DISK_RING_D, 0.0, tint, "", "");
     }
     // the name, with the disk glyph in front, centred as one
     let ny = top.y + DISK_RING_D + sp::M + 9.0;
@@ -886,6 +896,43 @@ pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint
     let x = c.x - (22.0 + nw) / 2.0;
     icon(p, Icon::Disk, Rect::from_center_size(Pos2::new(x + 8.0, ny), Vec2::splat(16.0)), TEXT_SOFT());
     text_fit(p, Pos2::new(x + 22.0, ny), Align2::LEFT_CENTER, name, ty::body(), TEXT_SOFT(), room);
+}
+
+/// The one big stat ring (SP2): a 12 pt `tint` arc from 12 o'clock with
+/// round caps on a `white(16)` track, `d` across, the value in hero 28/600
+/// over its caption in label 12 dim. The disk ring of start screens is this
+/// ring at [`DISK_RING_D`]; Mac Health draws it smaller, one size per page.
+/// The value shrinks to fit inside the ring rather than being cut.
+pub fn stat_ring(p: &Painter, c: Pos2, d: f32, frac: f32, tint: Color32, value: &str, caption: &str) {
+    use egui::epaint::{PathShape, PathStroke};
+    const STROKE: f32 = 12.0;
+    let r = (d - STROKE) / 2.0 - 2.0;
+    p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
+    let f = frac.clamp(0.0, 1.0);
+    if f > 0.0 {
+        let a0 = -std::f32::consts::FRAC_PI_2;
+        let a1 = a0 + std::f32::consts::TAU * f.max(0.01);
+        p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, tint)));
+        // round caps
+        for a in [a0, a1] {
+            p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, tint);
+        }
+    }
+    if value.is_empty() {
+        return;
+    }
+    // the chord through the centre, less a little air
+    let inner = 2.0 * (r - STROKE / 2.0) - 8.0;
+    let mut big_f = ty::hero();
+    let tw = p.layout_no_wrap(value.to_owned(), big_f.clone(), TEXT()).size().x;
+    if tw > inner {
+        big_f.size = (big_f.size * inner / tw).max(11.0);
+    }
+    let big = line_h(p, &big_f);
+    let small = line_h(p, &ty::label());
+    let y0 = c.y - (big + 2.0 + small) / 2.0;
+    text_fit(p, Pos2::new(c.x, y0), Align2::CENTER_TOP, value, big_f, TEXT(), inner);
+    text_fit(p, Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, caption, ty::label(), TEXT_DIM(), inner);
 }
 
 /// How full a disk is, 0..1 (0 when its size is unknown).

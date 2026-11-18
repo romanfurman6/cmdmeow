@@ -4,7 +4,7 @@
 //! the header of a Medium or Large widget, rings and sparklines.
 
 use super::glass::*;
-use egui::{Align2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Align2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 
 /// Corner radius of a widget (R_TILE, SP13 W1).
 pub const R_TILE: f32 = 10.0;
@@ -76,16 +76,9 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
     p.rect_filled(rect.translate(Vec2::new(0.0, PRESS_DROP)), R_TILE, TILE_BASE());
 }
 
-/// The card itself: see-through CARD (the panel glow shows through), the
-/// top highlight and the page cards' 1 pt edge.
+/// The card itself: the one card face (glass::card_face), at R_TILE.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
-    p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
-    let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
-    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
-    p.rect_stroke(rect, R_TILE, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
-    if selected {
-        p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
-    }
+    card_face(p, rect, R_TILE, hover, selected);
 }
 
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,
@@ -431,6 +424,21 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
         let c = with_alpha(color, 0.8);
         p.rect_filled(Rect::from_min_max(Pos2::new(x, r.bottom() - h), Pos2::new(x + bw, r.bottom())), egui::CornerRadius { nw: 2, ne: 2, sw: 0, se: 0 }, c);
     }
+}
+
+/// A history graph with its time span under it ("2 min ago" … "now", W5),
+/// for widgets and the Mac Health page alike. `top` is the top of the scale
+/// (None: the highest value). The captions take the bottom 13 pt of `r`.
+pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top: Option<f32>) {
+    let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 13.0));
+    match top {
+        Some(t) => spark_to(p, gr, values, color, t),
+        None => spark(p, gr, values, color, None),
+    }
+    let span = values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000;
+    let start = if span >= 60 { format!("{} min ago", span / 60) } else { format!("{span} s ago") };
+    p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
+    p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
 }
 
 /// The shared columns of a Medium or Large widget's list (W5): the widest
