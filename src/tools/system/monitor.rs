@@ -359,8 +359,8 @@ pub fn forget_device(mon: &Shared, key: &str) {
 /// each with its trend and estimate. Updates the stores.
 fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     let mut list = profile.connected.clone();
-    let mut io = run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
-    io.push_str(&run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
+    let mut io = run_cmd("/usr/sbin/ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
+    io.push_str(&run_cmd("/usr/sbin/ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
     devices::merge(&mut list, &devices::parse_ioreg(&io));
     // read Bluetooth before taking the store lock (IOBluetooth can be slow,
     // and forgetting a device from the UI takes the same lock)
@@ -619,7 +619,7 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
             sync_charge(&shared, &policy);
         }
         let battery = battery_due.then(|| {
-            let mut b = parse_battery(&run_cmd("ioreg", &["-rn", "AppleSmartBattery"]));
+            let mut b = parse_battery(&run_cmd("/usr/sbin/ioreg", &["-rn", "AppleSmartBattery"]));
             if b.present {
                 if health_text.is_empty() || health_at.due(BATTERY_HEALTH_EVERY) {
                     health_text = power_health_text();
@@ -669,7 +669,7 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         let none_connected = bt_connected.as_ref().is_some_and(|c| c.is_empty());
         let slow_profile = (activity::visible() || !none_connected) && BT_PROFILE_EVERY.due(&mut profile_at);
         if slow_profile {
-            bt_profile = devices::parse_profiler(&run_cmd("system_profiler", &["SPBluetoothDataType", "-json"]));
+            bt_profile = devices::parse_profiler(&run_cmd("/usr/sbin/system_profiler", &["SPBluetoothDataType", "-json"]));
         }
         let devices = (HID_EVERY.due(&mut hid_at) || slow_profile).then(|| read_devices(&bt_profile));
 
@@ -772,6 +772,8 @@ fn has_address(mut addrs: impl Iterator<Item = std::net::IpAddr>) -> bool {
     })
 }
 
+/// What a system tool prints. `cmd` is its full path, so starting it doesn't
+/// look through every folder of PATH first.
 fn run_cmd(cmd: &str, args: &[&str]) -> String {
     Command::new(cmd)
         .args(args)
@@ -781,7 +783,7 @@ fn run_cmd(cmd: &str, args: &[&str]) -> String {
 }
 
 fn hardware() -> (String, String) {
-    let out = run_cmd("system_profiler", &["SPHardwareDataType", "-json"]);
+    let out = run_cmd("/usr/sbin/system_profiler", &["SPHardwareDataType", "-json"]);
     let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
     let item = &v["SPHardwareDataType"][0];
     let model = item["machine_name"].as_str().unwrap_or("Mac").to_string();
@@ -790,7 +792,7 @@ fn hardware() -> (String, String) {
 }
 
 fn disk_info() -> (String, String) {
-    let out = run_cmd("diskutil", &["info", "/"]);
+    let out = run_cmd("/usr/sbin/diskutil", &["info", "/"]);
     let mut name = "Macintosh HD".to_string();
     let mut smart = String::new();
     for line in out.lines() {
@@ -956,7 +958,7 @@ fn parse_battery(out: &str) -> Battery {
 /// macOS's battery verdict, the same text the original reads from the power
 /// source ("BatteryHealth" / "BatteryHealthCondition").
 fn power_health_text() -> String {
-    let out = run_cmd("system_profiler", &["SPPowerDataType", "-json"]);
+    let out = run_cmd("/usr/sbin/system_profiler", &["SPPowerDataType", "-json"]);
     let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
     if let Some(arr) = v["SPPowerDataType"].as_array() {
         for e in arr {
@@ -972,7 +974,7 @@ fn power_health_text() -> String {
 /// may scan for networks, so it runs rarely; [`wifi_name`] fills in between.
 fn wifi_details() -> Wifi {
     let mut w = Wifi::default();
-    let out = run_cmd("system_profiler", &["SPAirPortDataType", "-json"]);
+    let out = run_cmd("/usr/sbin/system_profiler", &["SPAirPortDataType", "-json"]);
     let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
     if let Some(ifaces) = v["SPAirPortDataType"][0]["spairport_airport_interfaces"].as_array() {
         for i in ifaces {
@@ -1007,7 +1009,7 @@ fn wifi_name(details: &Wifi) -> Wifi {
     }
     // macOS hides the network name without Location access
     let iface = if w.iface.is_empty() { "en0" } else { w.iface.as_str() };
-    let summary = run_cmd("ipconfig", &["getsummary", iface]);
+    let summary = run_cmd("/usr/sbin/ipconfig", &["getsummary", iface]);
     apply_ipconfig(&mut w, &summary);
     if w.name.is_empty() {
         w.name = if w.security.is_empty() { "Network".into() } else { "Wi-Fi".into() };

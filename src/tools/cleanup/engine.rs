@@ -761,7 +761,7 @@ fn ago(days: f64) -> String {
 }
 
 fn process_running(name: &str) -> bool {
-    Command::new("pgrep").args(["-x", name]).output().map(|o| o.status.success()).unwrap_or(false)
+    Command::new("/usr/bin/pgrep").args(["-x", name]).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 // ---- other AI tools (AIToolScanning catalog)
