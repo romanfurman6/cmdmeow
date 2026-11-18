@@ -179,14 +179,16 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     if liquid {
         let clip = area.expand2(Vec2::new(PAD, 8.0));
         let rr = |r: Rect| [r.left(), r.top(), r.width(), r.height()];
-        let rects: Vec<[f32; 4]> = cards.into_iter().map(rr).collect();
+        let rects: Vec<[f32; 4]> = cards.iter().map(|c| rr(c.0)).collect();
+        // the hovered card frosts: a Regular glass fading in over its Clear one
+        let hover = cards.iter().enumerate().filter(|(_, c)| c.1 > 0.01).max_by(|a, b| a.1 .1.total_cmp(&b.1 .1)).map(|(i, c)| (i, c.1));
         let view = eframe::viewport_ns_view(egui::ViewportId::ROOT);
         if view.is_none() {
             static ONCE: std::sync::Once = std::sync::Once::new();
             ONCE.call_once(|| eprintln!("[glass] no NSView for the root viewport"));
         }
         if let Some(view) = view {
-            crate::kit::native::sync_card_glass(view, rr(clip), &rects, crate::kit::tile::R_TILE as f64, crate::kit::glass::is_light(), |w, h| crate::kit::glass::panel_glow_rgba(w, h, crate::kit::glass::is_light()));
+            crate::kit::native::sync_card_glass(view, rr(clip), &rects, hover, crate::kit::tile::R_TILE as f64, crate::kit::glass::is_light(), |w, h| crate::kit::glass::panel_glow_rgba(w, h, crate::kit::glass::is_light()));
         }
     }
     if banner_h() > 0.0 {

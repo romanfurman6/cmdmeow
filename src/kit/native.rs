@@ -114,6 +114,8 @@ mod mac {
         glow_key: (u32, u32, bool),
         clip: Retained<NSView>,
         views: Vec<Retained<NSGlassEffectView>>,
+        frost: Option<Retained<NSGlassEffectView>>,
+        last_hover: Option<(usize, f32)>,
         last: Vec<[f32; 4]>,
         last_clip: [f32; 4],
     }
@@ -137,7 +139,7 @@ mod mac {
     /// whose egui view is `content_view`), clipped to `clip`; `glow` is the
     /// panel background (width, height, RGBA rows top first) for `light`.
     #[allow(clippy::too_many_arguments)]
-    pub fn sync_card_glass(content_view: *mut std::ffi::c_void, clip: [f32; 4], cards: &[[f32; 4]], radius: f64, light: bool, glow: impl FnOnce(u32, u32) -> Vec<u8>) {
+    pub fn sync_card_glass(content_view: *mut std::ffi::c_void, clip: [f32; 4], cards: &[[f32; 4]], hover: Option<(usize, f32)>, radius: f64, light: bool, glow: impl FnOnce(u32, u32) -> Vec<u8>) {
         if content_view.is_null() || MainThreadMarker::new().is_none() {
             return;
         }
@@ -167,7 +169,7 @@ mod mac {
                     l.setMasksToBounds(true);
                 }
                 superview.addSubview_positioned_relativeTo(&clip, NSWindowOrderingMode::Below, Some(content));
-                *c = Some(CardGlass { content: content_view as usize, superview: sup, glow, glow_key: (0, 0, false), clip, views: Vec::new(), last: Vec::new(), last_clip: [0.0; 4] });
+                *c = Some(CardGlass { content: content_view as usize, superview: sup, glow, glow_key: (0, 0, false), clip, views: Vec::new(), frost: None, last_hover: None, last: Vec::new(), last_clip: [0.0; 4] });
                 eprintln!("[glass] card glass on: content {} {:?} in {}\n{}", content.class().name().to_string_lossy(), (cf.origin.x, cf.origin.y, w, h), superview.class().name().to_string_lossy(), debug_windows());
             }
             let g = c.as_mut().unwrap();
@@ -210,6 +212,27 @@ mod mac {
                 }
                 for v in g.views.iter().skip(cards.len()) {
                     v.setHidden(true);
+                }
+            }
+            // hover: a Regular (frosted) glass over the card, faded in
+            let hover = hover.filter(|(i, _)| *i < cards.len());
+            if g.last_hover != hover || g.last.as_slice() != cards {
+                g.last_hover = hover;
+                if g.frost.is_none() {
+                    let v = NSGlassEffectView::initWithFrame(mtm.alloc::<NSGlassEffectView>(), ns_rect(0.0, 0.0, 10.0, 10.0));
+                    v.setCornerRadius(radius);
+                    v.setStyle(NSGlassEffectViewStyle::Regular);
+                    g.clip.addSubview(&v);
+                    g.frost = Some(v);
+                }
+                let f = g.frost.as_ref().unwrap();
+                match hover {
+                    Some((i, a)) => {
+                        f.setFrame(g.views[i].frame());
+                        f.setAlphaValue(a as f64 * 0.7);
+                        f.setHidden(false);
+                    }
+                    None => f.setHidden(true),
                 }
             }
             g.glow.setHidden(false);
@@ -663,7 +686,7 @@ mod other {
     pub fn liquid_glass() -> bool {
         false
     }
-    pub fn sync_card_glass(_v: *mut std::ffi::c_void, _clip: [f32; 4], _cards: &[[f32; 4]], _radius: f64, _light: bool, _glow: impl FnOnce(u32, u32) -> Vec<u8>) {}
+    pub fn sync_card_glass(_v: *mut std::ffi::c_void, _clip: [f32; 4], _cards: &[[f32; 4]], _hover: Option<(usize, f32)>, _radius: f64, _light: bool, _glow: impl FnOnce(u32, u32) -> Vec<u8>) {}
     pub fn hide_card_glass() {}
     pub fn system_light() -> bool {
         false
