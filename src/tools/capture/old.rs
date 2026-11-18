@@ -22,14 +22,14 @@ fn history_dir() -> PathBuf {
 fn local(min_days: f64) -> Vec<File> {
     let s = settings::load(&settings::data_dir());
     let st = Store::open(history_dir());
-    let pinned: Vec<&Path> = st.shots.iter().filter(|x| x.pinned).filter_map(|x| x.saved.as_deref()).collect();
+    let pinned = pinned_stamps(&st);
     let mut out = Vec::new();
     let saved_there = st.shots.iter().any(|x| x.saved.as_deref().is_some_and(|p| p.starts_with(&s.folder)));
     if saved_there || !crate::kit::fs::behind_folder_prompt(&s.folder) {
         let rd = std::fs::read_dir(&s.folder).map(|rd| rd.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
         for p in rd {
             let Some(kind) = ours(&p) else { continue };
-            if pinned.contains(&p.as_path()) || !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
+            if stamp(&p).is_some_and(|t| pinned.contains(&t)) || !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
                 continue;
             }
             let age = age_days(&p);
@@ -105,11 +105,27 @@ fn still_ours(p: &Path) -> bool {
     if !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
         return false;
     }
+    // pinned since the scan: stays
+    let st = Store::open(history_dir());
     if p.parent() == Some(history_dir().as_path()) {
-        return p.extension().is_some_and(|e| e == "png") && p.file_stem().is_some_and(|s| s.to_string_lossy().chars().all(|c| c.is_ascii_digit()));
+        let id = p.file_stem().and_then(|s| s.to_string_lossy().parse::<u64>().ok());
+        return p.extension().is_some_and(|e| e == "png") && id.is_some_and(|id| !st.shots.iter().any(|x| x.id == id && x.pinned));
     }
     let folder = settings::load(&settings::data_dir()).folder;
-    p.parent() == Some(folder.as_path()) && ours(p).is_some()
+    p.parent() == Some(folder.as_path()) && stamp(p).is_some_and(|t| !pinned_stamps(&st).contains(&t))
+}
+
+/// The name a capture was saved under, without the " 2", " edited",
+/// " framed" its copies add: "Capture 2026-11-08 at 17.41.12".
+fn stamp(p: &Path) -> Option<String> {
+    let kind = ours(p)?;
+    let prefix = if kind == Kind::Screenshot { "Capture " } else { "Recording " };
+    p.file_name()?.to_string_lossy().get(..prefix.len() + 22).map(str::to_string)
+}
+
+/// Stamps of pinned captures: their copies stay too.
+fn pinned_stamps(st: &Store) -> Vec<String> {
+    st.shots.iter().filter(|x| x.pinned).filter_map(|x| x.saved.as_deref()).filter_map(stamp).collect()
 }
 
 /// What a file in the save folder is, by its name, if this app made it.
@@ -152,5 +168,15 @@ mod tests {
         assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.mp4")), None);
         assert_eq!(ours(Path::new("/d/Recording 2026-11-09 at 17.26.12.png")), None);
         assert_eq!(ours(Path::new("/d/Capture 2026-11-08 at 17.41.12.png.zip")), None);
+    }
+
+    #[test]
+    fn copies_share_the_original_stamp() {
+        let t = stamp(Path::new("/d/Capture 2026-11-08 at 17.41.12.png"));
+        assert_eq!(t.as_deref(), Some("Capture 2026-11-08 at 17.41.12"));
+        for copy in ["/d/Capture 2026-11-08 at 17.41.12 2.png", "/d/Capture 2026-11-08 at 17.41.12 edited.png"] {
+            assert_eq!(stamp(Path::new(copy)), t, "{copy}");
+        }
+        assert_eq!(stamp(Path::new("/d/Recording 2026-11-09 at 17.26.12 framed.mp4")).as_deref(), Some("Recording 2026-11-09 at 17.26.12"));
     }
 }
