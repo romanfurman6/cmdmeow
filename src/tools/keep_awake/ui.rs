@@ -81,7 +81,16 @@ fn detail(e: &Engine, st: State, now: i64) -> String {
     }
 }
 
-/// The 1:2 widget's second line, the longest that fits first.
+/// "Claude +1": the first agent and how many more, for a short line.
+fn names_short(a: &[super::sessions::Source]) -> String {
+    match a {
+        [] => String::new(),
+        [one] => one.name().to_string(),
+        [first, rest @ ..] => format!("{} +{}", first.name(), rest.len()),
+    }
+}
+
+/// The 1:2 widget's mode detail, the longest that fits first.
 fn detail_short(e: &Engine, st: State, now: i64) -> Vec<String> {
     let since = e.awake_since.map(time_of_day).unwrap_or_default();
     match st {
@@ -89,9 +98,12 @@ fn detail_short(e: &Engine, st: State, now: i64) -> Vec<String> {
         State::Off => vec![],
         State::Agent => {
             let a = e.working_agents(now);
-            vec![names(&a), format!("{} agents", a.len())]
+            vec![names(&a), names_short(&a), format!("{} agents", a.len())]
         }
-        State::WindDown { .. } => vec![format!("{} finished", names(&e.last_agents)), "Finished".into()],
+        State::WindDown { .. } => {
+            let a = &e.last_agents;
+            vec![format!("{} finished", names(a)), format!("{} finished", names_short(a)), "Finished".into()]
+        }
         State::On => vec![format!("Since {since}")],
     }
 }
@@ -241,14 +253,17 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, _cx: &mut 
     let (c, rr) = tile::wide_ring(rect);
     scene(&p, Rect::from_center_size(c, Vec2::splat(rr / 0.4375)), st);
     let x0 = c.x + rr + tile::PAD;
-    let sub = line2.first().cloned().unwrap_or_default();
-    let cap = if sub.is_empty() { mode.label().to_string() } else { format!("{} · {}", mode.label(), sub) };
+    let tw = rect.right() - tile::PAD - x0;
+    // the longest mode line that fits, so nothing is cut ("Auto · Claude +1")
+    let caps: Vec<String> = line2.iter().map(|s| format!("{} · {}", mode.label(), s)).chain(std::iter::once(mode.label().to_string())).collect();
+    let fits = |t: &str| p.layout_no_wrap(t.to_string(), ty::caption(), TEXT_DIM()).size().x <= tw;
+    let cap = caps.iter().find(|t| fits(t)).cloned().unwrap_or_else(|| mode.label().to_string());
     // winding down: "Sleeps in" over the time left, so nothing is cut
     let (label, value) = match st {
         State::WindDown { left } => ("Sleeps in".to_string(), clock(left)),
         _ => ("Keep Awake".to_string(), title(st)),
     };
-    tile::left_text(&p, x0, rect.center().y, &label, &value, &cap, TEXT_DIM(), rect.right() - tile::PAD - x0);
+    tile::left_text(&p, x0, rect.center().y, &label, &value, &cap, TEXT_DIM(), tw);
     if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
         k.toggle(Via::Panel);
     }
@@ -504,6 +519,15 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn short_names() {
+        use super::super::sessions::Source;
+        assert_eq!(names_short(&[]), "");
+        assert_eq!(names_short(&[Source::Claude]), "Claude");
+        assert_eq!(names_short(&[Source::Claude, Source::Codex]), "Claude +1");
+        assert_eq!(names_short(&[Source::Claude, Source::Codex, Source::Gemini]), "Claude +2");
+    }
 
     #[test]
     fn words() {
