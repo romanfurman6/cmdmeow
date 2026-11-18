@@ -98,7 +98,7 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 
 | # | Rule | Status |
 |---|------|---|
-| S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. The glow ellipse starts at the top centre and is never smaller than the default window's: rx = max(w, `APP_WIDTH` 1180) × 0.75, ry = max(h, `APP_HEIGHT` 740) × 1.05, so the 380 pt panel reads as the middle slice of the window's glow. The menu bar panel's glow is a beam of light down the centre to the bottom, darker at the sides: rx = w × 0.85, ry = max(the window's ry, h × 1.9) (`glass::backdrop_panel`). No native glass (NSGlassEffectView) on the panel or its cards. | ✅ |
+| S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. The glow ellipse starts at the top centre and is never smaller than the default window's: rx = max(w, `APP_WIDTH` 1180) × 0.75, ry = max(h, `APP_HEIGHT` 740) × 1.05, so the 380 pt panel reads as the middle slice of the window's glow. Every window (app, setup, menu bar panel) shows it as a beam of light down the centre to the bottom, darker at the sides: rx = w × 0.85, ry = max(that ry, h × 1.9). No native glass (NSGlassEffectView) on the panel or its cards. | ✅ |
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. | ✅ |
 | S2w | **Widget card** (`kit::tile` only: panel widgets, the widget editor and gallery; the panel update banner and the Uninstaller inline confirm also use it): the same surface as the quiet keys, e.g. the panel header's Open / Hide / Quit buttons (B4, drawn from `key::Look::quiet(0.06, 0.15)`): ink 6% fill, see-through so the S1 panel glow shows; 1 pt top highlight `TILE_HI` (white 9% dark / 95% light), 1 pt base under the card `TILE_BASE` (black 35% dark / ink 14% light); 1 pt `CARD_EDGE` inside (white 8% dark / ink 12% light); no sheen, no bottom shade. Radius `R_TILE` 10 (selected ring and Dictation live ring follow it). Hover is a light touch: 40% of the key's step (fill toward ink 15%, edge toward ink 18%). A single-action card presses like `kit::key` (34 ms, down 1 pt, base to 0, spring back); a card with buttons or rows inside doesn't move, its inner items press. Page cards keep S2. | ⏳ code |
 | S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
@@ -151,13 +151,14 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | # | Rule | Status |
 |---|------|---|
 | H1 | One hover fill for rows everywhere (lists, rails, popovers, sidebar, start lists): `ROW_HOVER` = `white(10)`. Edge to edge in lists and popovers (H2); inset radius 8 only in the sidebar and rail. In inset lists (sidebar, group rail, Clipboard) two lit rows never touch: lit fills sit 1 pt in from the row (`glass::LIT_INSET`) or rows step 2 apart, a 2 pt gap. Edge-to-edge lists (H2) have no gap. Inside a widget nothing hovers but the whole card (SP13 W12); inner clickables show the pointer cursor. | ✅ |
-| H2 | Row hover runs edge to edge with no inset and no corners of its own; the container clips it (popover 12 corners, card 12). Hairlines stay. | ✅ (AI Check, hover A) |
-| H3 | Selected row: lime at 16% (`selected_fill`), text `ACCENT`. Sidebar and group rail: inset, radius 8 (H1). Content lists such as the Uninstaller table: edge to edge with no corners, like hover (H2). | ✅ |
+| H2 | **Lit rows in a card list** (hover, selected, AI Check ring, a state wash such as Startup's red) sit 4 pt in from the card's sides and 1 pt from the next row, radius 8 (`glass::lit_rect`, `LIT_R`), so they never meet the card's rounded corners. Content stays 12 pt inside (H9), 16 pt from the card. No divider touches a lit row, above or below (`glass::row_divider`). Popovers and menus keep edge-to-edge rows, the last row takes the popover's corners; start lists on the backdrop (SP1) stay edge to edge. | ✅ (AI Check, hover A) |
+| H3 | Selected row: lime at 16% (`selected_fill`), text `ACCENT`. Sidebar and group rail: inset, radius 8 (H1). Content lists in cards such as the Uninstaller table: inset like hover (H2). | ✅ |
 | H6 | Hierarchy by indent: a child row's icon starts under its parent's title text (sidebar items under the section title, bundle children 28 in). Icons in one list share one fixed box (16 in the sidebar), so the label never shifts with the glyph. | ✅ |
 | H4 | Selected card: 1.5 pt lime ring inside. | ✅ |
 | H5 | Reveal (`reveal::RING_W` 2, `FILL` .14, `HOLD` 1.8 s, `FADE` 1.4 s): a click on an AI suggestion closes the popover, scrolls to the item and rings it 2 pt cyan with a 12–14% cyan fill; it holds ~1.8 s and fades by ~3.2 s. Only items visible on the page are clickable. | ✅ (canvas https://claude.ai/artifact/WHbrjAR7nMt8RKFkuivn5y) |
 | H7 | A picked or selected item has no hover, because a click on it does nothing: sidebar, group rail, picked segment, picked radio, picked card (H4), single-choice tiles. Items where a click changes state (checkbox, toggle chip, a widget card with its sheet open) keep their hover. | ✅ (PR #242) |
 | H8 | A row's background shows only state: hover (H1) or selected (H3). Size or share never fills a row; show it as a number (R8), an R4 bar under the name, or on a chart or map. | ✅ (PR #242) |
+| H9 | **Content never touches a lit fill.** The first and last element of a row (checkbox, icon, chip, value) sit at least 12 pt (`sp::M`) inside the hover or selected fill. Sidebar rows (28 pt) keep 8. | ⏳ code |
 
 ## 9. Motion
 
@@ -167,6 +168,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | M2 | Every animation is finite or tied to visible work, and stops repainting when done. | ✅ |
 | M3 | Press: down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)` (B7). Hover fades via `animate_bool`. | ✅ |
 | M4 | Loader: fill eases 0.6 s, wave loops 1.6 s linear, ⌘→✓ crossfade 0.25 s plus one 0.46 s hop. | ✅ |
+| M5 | **Window open:** if the window's first frame isn't drawn 150 ms after it appears, show the S1 backdrop and the P6 loader mark (56 pt, centred, lime fill rising on a loop). Fades in over 120 ms; the first frame covers it and it stops (M2). No text, card or frame. Core Animation under egui's frame (M1). | ⏳ code |
 
 ## 10. Sound ✅
 
@@ -186,7 +188,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 
 | # | Pattern | Status |
 |---|------|---|
-| SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. Every start screen has this list: Cleanup its groups, Uninstaller what a scan sorts apps into (counts the listing knows), Disk Map the places to map instead of the disk (a click maps one). | ✅ |
+| SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. Every start screen has this list: Cleanup its groups, Uninstaller what a scan sorts apps into (counts the listing knows), Disk Map the places to map instead of the disk (a click maps one). List rows hover edge to edge with no corners (H2); icon, name and value sit 12 pt in from the row edges (`glass::START_PAD`), the section title stays at the row edge. Group tips show beside the list (P7). | ✅ |
 | SP2 | **Disk ring** (`kit`, one function, Cleanup and Disk Map start): 208 across, 12 stroke, track `white(16)`, used arc in the tool tint with a round cap from 12 o'clock clockwise. Centre: free space in hero 28/600 over "free of <total>" in label 12 `TEXT_DIM`. 12 below the ring: a 16 disk icon and the volume name in body `TEXT_SOFT`. Disk Map's own ring (r 64, "X of Y used") goes. | ✅ |
 | SP10 | **Start list rows on the backdrop** (Cleanup groups): a 44 head line with "Last scan 2 days ago" as a 12/600 section title and the total right; rows 44 with a 28 tinted icon circle and the name, hairlines between, `ROW_HOVER` on hover. A group's description shows on hover only. After a scan each row gets a 4 pt bar and a right-aligned size. | ✅ |
 | SP11 | **Fan glyph:** one shape for every fan, turning or still (`kit::spin`): four rounded blades with the hub cut out, so the surface under it shows through (Magnific/Flaticon Premium icon 17711600). Tint `tint::FAN` (C3). It turns with the fan, one turn per 2400/rpm s, on Core Animation (M1). Fan page card: radius 38 on a 44 disc; panel row 12; widgets as before. With no fans it stands still in `white(40)`. `Icon::Fan` (sidebar, headers, tiles) is the same glyph, still, filled; it is the one tool icon that is not an SF Symbol. | ✅ |
@@ -298,10 +300,16 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 
 2026-11-18, Roman ("щоб було однаково"): W5 bars inline in every size (1:4 variant A, Medium/Large M-A), shared name / bar / value columns.
 
-2026-11-18, Roman (live on his Mac, "хай вони будуть такі як ці кнопки"): widget cards S2w/W1 take the panel header buttons' quiet-key surface with a softer hover (40%); the panel glow S1 is a beam down the centre to the bottom; native Liquid Glass dropped. Settings › General adds "Keep menu bar panel open" (off by default).
+2026-11-18, Roman (live on his Mac, "хай вони будуть такі як ці кнопки"): widget cards S2w/W1 take the panel header buttons' quiet-key surface with a softer hover (40%); the S1 glow is a beam down the centre to the bottom, in the panel and the app window; native Liquid Glass dropped. Settings › General adds "Keep menu bar panel open" (off by default).
 
 2026-11-18, Roman: 1:4 name column 70, value 44 (names in full on SF), device lines show their type in 1:4.
 
 2026-11-18, Roman ("щоб було консістент"): Uninstaller and Disk Map start screens follow SP1 like Cleanup, variant A (canvas https://claude.ai/artifact/EQCfEUPxzBcgPzX6mwRhJJ).
 
 2026-11-18, Roman: buttons look like widgets (canvas https://claude.ai/artifact/ND3dqKVXA3VNCfycyAge34): 1 pt base everywhere, quiet keys use the widget surface (B4), glow only on main keys ≥ 32 pt, softer (B5); press drops 1 pt onto the base for every kind (B7).
+
+2026-11-18, Roman: M5 window-open loader, look A (canvas https://claude.ai/artifact/KxiUnErRbP6J3sadUv6B1z).
+
+2026-11-18, Roman: row content 12 pt inside a lit fill everywhere (H9), no hairlines at a lit row (H2), start list rows (SP1); canvas https://claude.ai/artifact/5UDhPQqitdkayGPa28m98i, variant A.
+
+2026-11-18, Roman: selection follows the hover rules: in card lists every lit row is inset 4 pt, radius 8, with no dividers next to it (H2, H3; PR #276).
