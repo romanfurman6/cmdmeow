@@ -505,8 +505,14 @@ pub fn save_json<T: Serialize + ?Sized>(path: &Path, v: &T, pretty: bool) -> boo
 
 enum Write {
     /// Path, bytes, owner-only.
-    File(PathBuf, Vec<u8>, bool),
+    File(PathBuf, Bytes, bool),
     Flush(Sender<()>),
+}
+
+/// A file's bytes, or what makes them once the writer gets to it.
+enum Bytes {
+    Ready(Vec<u8>),
+    Make(Box<dyn FnOnce() -> Option<Vec<u8>> + Send>),
 }
 
 /// The background writer: the newest bytes per file win, so a burst of
@@ -522,7 +528,7 @@ fn writer() -> &'static Mutex<Sender<Write>> {
 
 fn write_loop(rx: Receiver<Write>) {
     while let Ok(first) = rx.recv() {
-        let mut files: Vec<(PathBuf, Vec<u8>, bool)> = Vec::new();
+        let mut files: Vec<(PathBuf, Bytes, bool)> = Vec::new();
         let mut flushes = Vec::new();
         for w in std::iter::once(first).chain(rx.try_iter()) {
             match w {
@@ -534,7 +540,13 @@ fn write_loop(rx: Receiver<Write>) {
             }
         }
         for (p, b, private) in files {
-            write_atomic_as(&p, &b, private);
+            let bytes = match b {
+                Bytes::Ready(b) => Some(b),
+                Bytes::Make(make) => make(),
+            };
+            if let Some(b) = bytes {
+                write_atomic_as(&p, &b, private);
+            }
         }
         for done in flushes {
             let _ = done.send(());
@@ -546,13 +558,20 @@ fn write_loop(rx: Receiver<Write>) {
 /// Serializing happens here, so later changes to `v` don't leak in.
 pub fn save_json_later<T: Serialize + ?Sized>(path: &Path, v: &T, pretty: bool) {
     if let Some(b) = to_json(v, pretty) {
-        let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), b, false));
+        let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), Bytes::Ready(b), false));
     }
 }
 
 /// Write `bytes` to `path` owner-only ([`write_private`]) on the background writer.
 pub fn save_private_later(path: &Path, bytes: Vec<u8>) {
-    let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), bytes, true));
+    let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), Bytes::Ready(bytes), true));
+}
+
+/// [`save_private_later`] for bytes that take a while to make (a large
+/// file serialized and sealed): `make` runs on the background writer too,
+/// and not at all when a newer save of the same file is already waiting.
+pub fn save_private_made_later(path: &Path, make: impl FnOnce() -> Option<Vec<u8>> + Send + 'static) {
+    let _ = writer().lock().unwrap_or_else(|e| e.into_inner()).send(Write::File(path.to_path_buf(), Bytes::Make(Box::new(make)), true));
 }
 
 /// Wait (up to 2 s) until every background save so far is on disk.
@@ -792,6 +811,42 @@ mod tests {
         flush_writes();
         assert_eq!(load_json::<Vec<i32>>(&f), vec![19]);
         assert_eq!(load_json::<Vec<i32>>(&dir.join("missing.json")), Vec::<i32>::new());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn bytes_made_on_the_writer_are_made_once_per_burst() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let dir = std::env::temp_dir().join(format!("cmb-made-{}", std::process::id()));
+        let f = dir.join("index.bin");
+        // hold the writer on another file while a burst for `f` queues up
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        save_private_made_later(&dir.join("held.bin"), move || {
+            let _ = wait.recv_timeout(std::time::Duration::from_secs(5));
+            None
+        });
+        let made = Arc::new(AtomicUsize::new(0));
+        for i in 0..20u8 {
+            let made = made.clone();
+            save_private_made_later(&f, move || {
+                made.fetch_add(1, Ordering::SeqCst);
+                Some(vec![i])
+            });
+        }
+        go.send(()).unwrap();
+        flush_writes();
+        // the newest bytes are on disk, and nothing was written for `None`
+        assert_eq!(std::fs::read(&f).ok(), Some(vec![19]));
+        assert!(!dir.join("held.bin").exists());
+        // only what was still wanted was made (the first may have been
+        // picked up together with the held file)
+        assert!(made.load(Ordering::SeqCst) <= 2, "{}", made.load(Ordering::SeqCst));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
