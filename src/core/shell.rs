@@ -367,17 +367,24 @@ impl App {
                 }
                 return;
             }
-            // every widget that offers Row (1:4), at that size
-            "rows" => {
+            // every widget that offers a size, at that size ("rows" is 1:4)
+            "rows" | "all-s11" | "all-s12" | "all-s14" | "all-s24" | "all-s44" => {
+                let z = match view {
+                    "all-s11" => Size::S11,
+                    "all-s12" => Size::S12,
+                    "all-s24" => Size::S24,
+                    "all-s44" => Size::S44,
+                    _ => Size::S14,
+                };
                 for t in &mut self.tools {
                     t.demo_view("sizes");
                 }
                 for e in &mut self.widgets {
                     e.on = false;
                 }
-                let keys: Vec<String> = self.tools.iter().flat_map(|t| t.widgets().into_iter().filter(|w| w.sizes.contains(&Size::S14)).map(|w| super::settings::widget_key(t.id(), w.id)).collect::<Vec<_>>()).collect();
+                let keys: Vec<String> = self.tools.iter().flat_map(|t| t.widgets().into_iter().filter(|w| w.sizes.contains(&z)).map(|w| super::settings::widget_key(t.id(), w.id)).collect::<Vec<_>>()).collect();
                 for k in keys {
-                    super::settings::add_entry(&mut self.widgets, &k, Size::S14, None);
+                    super::settings::add_entry(&mut self.widgets, &k, z, None);
                 }
                 return;
             }

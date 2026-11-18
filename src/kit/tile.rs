@@ -360,41 +360,27 @@ pub fn row_split_list(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color:
     row_split_full(ui, rect, id, glyph, color, None, title, sub, "", ty::caption_color(), selected)
 }
 
-/// The lines of a Row's right part (W5): name on the left and value on the
-/// right of each line, a line's bar under it across the whole part, so every
-/// Row's bars start and end on the same two lines. As many as fit (two with
-/// bars); `empty` is shown when there are none.
+/// Name column of a Row's right part (W5), the same in every Row.
+pub const ROW_NAME: f32 = 40.0;
+/// Value column of a Row's right part (W5), the same in every Row.
+pub const ROW_VALUE: f32 = 60.0;
+
+/// The lines of a Row's right part (W5): name, bar, value in three columns
+/// shared by every Row, so bars start and end on the same two lines across
+/// Rows. A longer name or value pushes its own bar in rather than being cut.
+/// Up to three lines; `empty` is shown when there are none.
 pub fn lines(p: &egui::Painter, r: Rect, lines: &[(String, Option<(f32, Color32)>, String)], empty: &str) {
     if lines.is_empty() {
         text_fit(p, r.center(), Align2::CENTER_CENTER, empty, font(11.0), TEXT_FAINT(), r.width());
         return;
     }
-    const TEXT_H: f32 = 15.0;
-    const BAR_GAP: f32 = 4.0;
-    const BAR_H: f32 = 4.0;
-    let h = |l: &(String, Option<(f32, Color32)>, String)| if l.1.is_some() { TEXT_H + BAR_GAP + BAR_H } else { TEXT_H };
-    let gap = if lines.iter().any(|l| l.1.is_some()) { 6.0 } else { 4.0 };
-    let mut n = 0;
-    let mut total = 0.0;
-    for l in lines {
-        let next = total + if n > 0 { gap } else { 0.0 } + h(l);
-        if next > r.height() + 0.5 {
-            break;
-        }
-        total = next;
-        n += 1;
-    }
-    let n = n.max(1);
-    let mut y = r.center().y - total / 2.0;
-    for (label, frac, value) in lines.iter().take(n) {
-        let cy = y + TEXT_H / 2.0;
-        let vr = p.text(Pos2::new(r.right(), cy), Align2::RIGHT_CENTER, value, font(12.0), TEXT());
-        text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), vr.left() - r.left() - 8.0);
-        if let Some((f, c)) = frac {
-            let by = y + TEXT_H + BAR_GAP;
-            bar(p, Rect::from_min_max(Pos2::new(r.left(), by), Pos2::new(r.right(), by + BAR_H)), *f, *c);
-        }
-        y += h(&(label.clone(), *frac, value.clone())) + gap;
+    let n = lines.len().min(3).min(((r.height() / 18.0).floor() as usize).max(1));
+    let lh = (r.height() / n as f32).min(22.0);
+    let top = r.center().y - lh * n as f32 / 2.0;
+    for (k, (label, frac, value)) in lines.iter().take(n).enumerate() {
+        let lr = Rect::from_min_size(Pos2::new(r.left(), top + k as f32 * lh), Vec2::new(r.width(), lh));
+        let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x.ceil();
+        bar_line(p, lr, label, *frac, value, (w(label).max(ROW_NAME), w(value).max(ROW_VALUE)));
     }
 }
 

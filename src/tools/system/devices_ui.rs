@@ -149,12 +149,14 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
         let others: Vec<&Device> = devs.iter().filter(|d| d.live()).skip(1).collect();
         let line = |name: &str, b: Option<u8>, v: String| (name.to_string(), b.map(|b| (frac(Some(b)), devices::color(b))), v);
         let lines: Vec<(String, Option<(f32, Color32)>, String)> = match first {
-            // one device: its parts (AirPods: buds and case), not "no other devices"
+            // one device: its parts (AirPods: left, right and case), not "no other devices"
             Some(d) if others.is_empty() => {
                 let mut v = Vec::new();
-                if d.left.is_some() || d.right.is_some() {
-                    let both = [d.left, d.right].iter().flatten().map(|b| format!("{b}%")).collect::<Vec<_>>().join(" · ");
-                    v.push(line("Buds", d.battery(), both));
+                if d.left.is_some() {
+                    v.push(line("Left", d.left, pct_text(d.left)));
+                }
+                if d.right.is_some() {
+                    v.push(line("Right", d.right, pct_text(d.right)));
                 }
                 if d.case.is_some() {
                     v.push(line("Case", d.case, pct_text(d.case)));
