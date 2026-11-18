@@ -20,6 +20,9 @@ use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Ui, UiBuilder, Vec2};
 const BENTO_MIN_W: f32 = 760.0;
 /// Below this body height the bento scrolls.
 const BENTO_MIN_H: f32 = 520.0;
+/// Past this the cards stop growing and the grid stays at the top: charts
+/// and rings don't stretch to fill a tall window.
+const BENTO_MAX_H: f32 = 2.0 * 340.0 + sp::L;
 
 fn level_color(l: Level) -> Color32 {
     match l {
@@ -109,7 +112,7 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     } else {
         // 3 columns (1.4 : 1 : 1) × 2 rows
         let fits = inner.width() >= BENTO_MIN_W;
-        let total_h = if fits { (body.height() - 2.0 * sp::L).max(BENTO_MIN_H) } else { 6.0 * 250.0 + 5.0 * sp::L };
+        let total_h = if fits { (body.height() - 2.0 * sp::L).clamp(BENTO_MIN_H, BENTO_MAX_H) } else { 6.0 * 250.0 + 5.0 * sp::L };
         let mut child = ui.new_child(UiBuilder::new().max_rect(body).id_salt("health-page"));
         ScrollArea::vertical().id_salt("health-scroll").auto_shrink([false, false]).show(&mut child, |ui| {
             let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), total_h + 2.0 * sp::L), Sense::hover());
@@ -190,15 +193,15 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
 
 /// Card title (13/600), an optional status chip after it, and an optional
 /// big value on the right. Returns the y where the content starts.
-fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Color32)>, big: Option<(&str, &str)>) -> f32 {
+fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Color32)>, big: Option<&str>) -> f32 {
     let mut right = r.right();
-    if let Some((num, unit)) = big {
-        let u = p.text(Pos2::new(r.right(), r.top() + 26.0), Align2::RIGHT_BOTTOM, unit, ty::body(), ty::caption_color());
-        let n = p.text(Pos2::new(u.left() - 3.0, r.top() + 28.0), Align2::RIGHT_BOTTOM, num, ty::hero(), TEXT());
+    // the title names the big number ("CPU load"), the number stays plain ("16%")
+    if let Some(num) = big {
+        let n = p.text(Pos2::new(r.right(), r.top() + 28.0), Align2::RIGHT_BOTTOM, num, ty::hero(), TEXT());
         right = n.left() - sp::M;
     }
-    // the title sits on the big number's baseline, the same line as its unit,
-    // in every card so titles in a row line up too
+    // the title sits on the big number's baseline in every card, so titles
+    // in a row line up too
     let t = text_fit(p, Pos2::new(r.left(), r.top() + 26.0), Align2::LEFT_BOTTOM, title, ty::title(), TEXT(), right - r.left());
     if let Some((label, c)) = status {
         if t.right() + 80.0 < right {
@@ -279,9 +282,9 @@ fn legend(p: &egui::Painter, r: Rect, rows: &[(Option<Color32>, String, String)]
 }
 
 fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
-    let load = format!("{:.0}", s.cpu_load);
+    let load = format!("{:.0}%", s.cpu_load);
     let th = (["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], level_status(s.thermal_level()));
-    let y = card_title(p, r, "CPU", if s.thermal_level() == Level::Good { None } else { Some(th) }, Some((&load, "% load")));
+    let y = card_title(p, r, "CPU load", if s.thermal_level() == Level::Good { None } else { Some(th) }, Some(&load));
     let foot = r.bottom() - 18.0;
     let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), foot - sp::M));
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
@@ -323,8 +326,8 @@ fn memory_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
         Level::Fair => "Elevated",
         Level::Critical => "High",
     };
-    let pct = format!("{:.0}", s.mem_pressure);
-    let y = card_title(p, r, "Memory", if s.mem_level() == Level::Good { None } else { Some((word, level_status(s.mem_level()))) }, Some((&pct, "% pressure")));
+    let pct = format!("{:.0}%", s.mem_pressure);
+    let y = card_title(p, r, "Memory pressure", if s.mem_level() == Level::Good { None } else { Some((word, level_status(s.mem_level()))) }, Some(&pct));
     // one stacked bar of what holds the memory
     let tot = s.mem_total.max(1) as f32;
     let parts = [(s.mem_active, series::monitor(0)), (s.mem_wired, series::monitor(1)), (s.mem_compressed, series::monitor(2))];

@@ -90,6 +90,7 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R11 | A list's section title is 12/600 in a 44 row: 16 above, 12 below to the first row; its link sits on the same line. Table heads sit in a 36 row with the hairline at its bottom. | `section_title()`, `sp::SECTION_H`, `sp::TABLE_HEAD_H` |
 | R12 | Scroll bars float in a 14 gutter on the right, taken only when the content scrolls. Content in a scroll area takes `ui.available_width()`. | `sp::SCROLL_GUTTER` |
 | R14 | A master switch is the first row of its card. While it is off, the rows that depend on it show disabled (L6) and keep their values. | |
+| R15 | A page grid of cards fills the width but not the height: each card row grows to at most 340 pt and the grid stays at the top; the rest of a tall window stays empty below. Charts and rings never stretch past what the card needs. | `BENTO_MAX_H` (Mac Health) |
 
 Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60, sheet header 58, sheet buttons 32.
 
@@ -250,7 +251,7 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 
 | # | Rule | Instead of | Write |
 |---|------|------------|-------|
-| T14 | Every number and time says what it is, with a word or a symbol, never a bare value. Rates are KB/s, MB/s, never /sec. In a 1:1 widget the ring and its hover tooltip may name the value ("1.44 TB", tip "free of 2 TB"). | "17:04", "4 / 8", "1/2" | "Updated 17:04", "↻ 19:53", or drop it |
+| T14 | Every number and time says what it is, with a word or a symbol, never a bare value. Rates are KB/s, MB/s, never /sec. In a 1:1 widget the ring and its hover tooltip may name the value ("1.44 TB", tip "free of 2 TB"). A big number may be plain ("16%") when the card title names it ("CPU load"). | "17:04", "4 / 8", "1/2" | "Updated 17:04", "↻ 19:53", or drop it |
 | T15 | One column, one kind of data. Don't mix counts, shortcuts and states in the same place. | sidebar right column: "11", "⇧⌘2", "Set up" | shortcuts only |
 | T16 | A locked or disabled thing says what is missing, in the words of the fix. | lock icon; "Full Disk Access · Finding files to clean up" | "Needs Full Disk Access" |
 | T17 | A big state and its control never disagree. If something else holds the state, say who. | "Awake" with the switch off | "Awake · by Claude" |
@@ -292,3 +293,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman: T21 shortcuts and mouse buttons (canvas https://claude.ai/artifact/Y1KGGgepf5m15MYkmCv6CX).
 
 2026-11-18, Roman: S1 glow never smaller than the default window's, widget cards get CARD_EDGE, no TILE_SHADE (panel variant C, canvas https://claude.ai/artifact/XJi3CqUKt9j86WLFN1AHE7); W5 Row 1:4 on one shared divider line, ROW_SPLIT 172 (variant B, canvas https://claude.ai/artifact/Gdvrk5REUpSfDMyhK9awnK).
+
+2026-11-18, Roman: R15 card rows stop at 340 pt in tall windows; big numbers plain under a naming title, "CPU load … 16%" (canvases https://claude.ai/artifact/WNxYgmBHLUs5aBFmAZS13K, https://claude.ai/artifact/MJ4ox66fzu6By8W8dTKb2J).
