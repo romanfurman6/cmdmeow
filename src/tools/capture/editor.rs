@@ -1184,8 +1184,8 @@ impl Editor {
         }
         let alt = ctx.input(|i| i.modifiers.alt);
         match self.tool {
-            Tool::Select => self.select_tool(&resp, &at_img, &to_img, view, ui.ctx(), scale, alt),
-            _ if grab => self.select_tool(&resp, &at_img, &to_img, view, ui.ctx(), scale, false),
+            Tool::Select => self.select_tool(&resp, &to_img, view, ui.ctx(), scale, alt),
+            _ if grab => self.select_tool(&resp, &to_img, view, ui.ctx(), scale, false),
             Tool::Pen => {
                 if resp.drag_started() {
                     if let Some(s) = resp.interact_pointer_pos().filter(|s| shown.contains(*s)) {
@@ -1446,7 +1446,9 @@ impl Editor {
     /// resize; drag an empty spot (or ⌥-drag anywhere) to pick an area.
     /// `raw` maps a screen point to image px without clamping to the
     /// picture (`view`): handles can sit just outside it.
-    fn select_tool(&mut self, resp: &egui::Response, at_img: &dyn Fn(Pos2) -> Pos2, raw: &dyn Fn(Pos2) -> Pos2, view: Rect, ctx: &egui::Context, scale: f32, alt: bool) {
+    fn select_tool(&mut self, resp: &egui::Response, raw: &dyn Fn(Pos2) -> Pos2, view: Rect, ctx: &egui::Context, scale: f32, alt: bool) {
+        let clamp = |q: Pos2| Pos2::new(q.x.clamp(view.min.x, view.max.x), q.y.clamp(view.min.y, view.max.y));
+        let at_img = |s: Pos2| clamp(raw(s));
         let slack = 6.0 / scale;
         let picking = self.tool == Tool::Select;
         // handles first: they sit outside the mark's edge
@@ -1488,10 +1490,7 @@ impl Editor {
         }
         // the edge follows the pointer's travel since the press, kept on the picture
         let off = self.grab_off;
-        let target = |s: Pos2| {
-            let t = raw(s) - off;
-            Pos2::new(t.x.clamp(view.min.x, view.max.x), t.y.clamp(view.min.y, view.max.y))
-        };
+        let target = |s: Pos2| clamp(raw(s) - off);
         if let Some((i, k, orig)) = self.resizing.clone() {
             if i >= self.doc.marks.len() {
                 self.resizing = None;
