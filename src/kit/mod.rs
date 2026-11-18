@@ -33,6 +33,7 @@ pub mod old_captures;
 pub mod perms;
 pub mod plist;
 pub mod remove;
+pub mod frame_log;
 pub mod repaint_log;
 pub mod settings_window;
 pub mod smc;
