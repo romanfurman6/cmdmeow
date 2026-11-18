@@ -186,7 +186,7 @@ Approved for the base on 2026-11-15; fine-tuning later (files are swappable, lev
 
 | # | Pattern | Status |
 |---|------|---|
-| SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. | ✅ |
+| SP1 | **Start screen** (before the first run): no cards (S3). Left: the disk ring or tool icon, the action button 32 below it. Right of a 1 pt hairline divider with a 48 gap: the list straight on the backdrop. Every start screen has this list: Cleanup its groups, Uninstaller what a scan sorts apps into (counts the listing knows), Disk Map the places to map instead of the disk (a click maps one). | ✅ |
 | SP2 | **Disk ring** (`kit`, one function, Cleanup and Disk Map start): 208 across, 12 stroke, track `white(16)`, used arc in the tool tint with a round cap from 12 o'clock clockwise. Centre: free space in hero 28/600 over "free of <total>" in label 12 `TEXT_DIM`. 12 below the ring: a 16 disk icon and the volume name in body `TEXT_SOFT`. Disk Map's own ring (r 64, "X of Y used") goes. | ✅ |
 | SP10 | **Start list rows on the backdrop** (Cleanup groups): a 44 head line with "Last scan 2 days ago" as a 12/600 section title and the total right; rows 44 with a 28 tinted icon circle and the name, hairlines between, `ROW_HOVER` on hover. A group's description shows on hover only. After a scan each row gets a 4 pt bar and a right-aligned size. | ✅ |
 | SP11 | **Fan glyph:** one shape for every fan, turning or still (`kit::spin`): four rounded blades with the hub cut out, so the surface under it shows through (Magnific/Flaticon Premium icon 17711600). Tint `tint::FAN` (C3). It turns with the fan, one turn per 2400/rpm s, on Core Animation (M1). Fan page card: radius 38 on a 44 disc; panel row 12; widgets as before. With no fans it stands still in `white(40)`. `Icon::Fan` (sidebar, headers, tiles) is the same glyph, still, filled; it is the one tool icon that is not an SF Symbol. | ✅ |
@@ -299,3 +299,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman ("щоб було однаково"): W5 bars inline in every size (1:4 variant A, Medium/Large M-A), shared name / bar / value columns.
 
 2026-11-18, Roman: 1:4 name column 70, value 44 (names in full on SF), device lines show their type in 1:4.
+
+2026-11-18, Roman ("щоб було консістент"): Uninstaller and Disk Map start screens follow SP1 like Cleanup, variant A (canvas https://claude.ai/artifact/EQCfEUPxzBcgPzX6mwRhJJ).

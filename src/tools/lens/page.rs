@@ -108,8 +108,9 @@ fn view(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         // for a click
         if shared.result.read_ok().is_none() {
             match intro(ui, r, &root_label(&app.lens_root)) {
-                Some(true) => begin(app, ui.ctx()),
-                Some(false) => choose_folder(app, ui.ctx()),
+                Some(Start::Disk) => begin(app, ui.ctx()),
+                Some(Start::Folder(p)) => begin_at(app, ui.ctx(), p),
+                Some(Start::Choose) => choose_folder(app, ui.ctx()),
                 None => {}
             }
         }
@@ -166,27 +167,75 @@ fn tilde(p: &Path) -> String {
 
 // ---------------------------------------------------------------- start
 
-/// Before the first map, centred and without a card (R13): the shared disk
-/// ring, a big Map disk and a quiet link to map a folder instead.
-/// Some(true): map the disk; Some(false): choose a folder.
-fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<bool> {
+/// What the start screen asks for.
+enum Start {
+    Disk,
+    Folder(PathBuf),
+    Choose,
+}
+
+/// Before the first map, no cards (SP1): the disk ring and Map disk on the
+/// left, a hairline, and on the right the places that can be mapped instead.
+fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<Start> {
     let p = ui.painter().clone();
     page_header(&p, r, "Disk Map", "", TEXT_DIM());
-    let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H), r.max);
+    let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
     let (total, free) = crate::kit::fs::volume_space("/");
-    let link_h = line_h(&p, &bold(13.0));
-    let block_h = DISK_RING_H + sp::XXL + 44.0 + sp::L + link_h;
-    let top = body.center().y - block_h / 2.0;
-    let cx = body.center().x;
-    disk_ring(&p, Pos2::new(cx, top), name, total, free, tint::DISK_MAP());
-    let y = top + DISK_RING_H + sp::XXL;
-    let br = Rect::from_min_size(Pos2::new(cx - 100.0, y), Vec2::new(200.0, 44.0));
+    const LEFT_W: f32 = 240.0;
+    const GAP: f32 = 48.0;
+    const BTN: Vec2 = Vec2::new(200.0, 44.0);
+    let h = home();
+    let rows: [(&str, Icon, Option<PathBuf>); 6] = [
+        ("Home", Icon::Home, Some(h.clone())),
+        ("Downloads", Icon::Down, Some(h.join("Downloads"))),
+        ("Documents", Icon::Doc, Some(h.join("Documents"))),
+        ("Desktop", Icon::Monitor, Some(h.join("Desktop"))),
+        ("Applications", Icon::Window, Some(PathBuf::from("/Applications"))),
+        ("Choose a folder", Icon::Folder, None),
+    ];
+    let left_h = DISK_RING_H + sp::XXL + BTN.y;
+    let rows_h = sp::SECTION_H + rows.len() as f32 * sp::ROW_H;
+    let block_w = body.width().min(840.0);
+    let block_h = left_h.max(rows_h);
+    let top = (body.center().y - block_h / 2.0).max(body.top());
+    let block = Rect::from_min_size(Pos2::new(body.center().x - block_w / 2.0, top), Vec2::new(block_w, block_h));
+    let lc = block.left() + LEFT_W / 2.0;
+    let ly = block.top() + (block_h - left_h) / 2.0;
+    disk_ring(&p, Pos2::new(lc, ly), name, total, free, tint::DISK_MAP());
+    let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
     let id = ui.scope_id().with("map-disk");
-    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
-    if resp.clicked() {
-        return Some(true);
+    if crate::kit::empty::hero_button(ui, br.center(), id, "Map disk", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width()).clicked() {
+        return Some(Start::Disk);
     }
-    link(ui, Pos2::new(cx, br.bottom() + sp::L), Align2::CENTER_TOP, "or choose a folder", 13.0).clicked().then_some(false)
+    let dx = block.left() + LEFT_W + GAP;
+    hairline(&p, Pos2::new(dx, block.top()), Pos2::new(dx, block.bottom()));
+    let x0 = dx + 1.0 + GAP;
+    let x1 = block.right();
+    let mut y = block.top() + (block_h - rows_h) / 2.0;
+    section_title(&p, x0, y, "Or map a folder");
+    y += sp::SECTION_H;
+    let mut out = None;
+    for (k, (label, ic, path)) in rows.into_iter().enumerate() {
+        let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
+        let resp = ui.interact(rr, ui.scope_id().with(("map-place", k)), Sense::click());
+        if resp.hovered() {
+            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+        }
+        if k > 0 {
+            hairline(&p, rr.left_top(), rr.right_top());
+        }
+        let cy = rr.center().y;
+        let icp = Pos2::new(x0 + 14.0, cy);
+        let col = tint::DISK_MAP();
+        p.circle_filled(icp, 14.0, with_alpha(col, 0.14));
+        icon(&p, ic, Rect::from_center_size(icp, Vec2::splat(16.0)), col);
+        p.text(Pos2::new(x0 + 28.0 + sp::M, cy), Align2::LEFT_CENTER, label, ty::body(), TEXT());
+        if resp.clicked() {
+            out = Some(path.map_or(Start::Choose, Start::Folder));
+        }
+        y += sp::ROW_H;
+    }
+    out
 }
 
 /// A folder dragged over the window: an outline says it can be dropped.
