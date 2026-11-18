@@ -22,6 +22,7 @@ pub const KEY_DROP: f32 = 1.0;
 pub const KEY_BASE_QUIET: f32 = 1.0;
 pub const KEY_DROP_QUIET: f32 = 1.0;
 /// Lime and red keys this tall or taller glow (hero 44, primary 32); 28 pt never.
+// 30, not 32: legacy 30 pt primaries (B1, moving to 32 in the audit) glow too.
 pub const GLOW_MIN_H: f32 = 30.0;
 /// Press down (ease-out) and release (spring) in seconds.
 pub const PRESS_IN: f32 = 0.05;
