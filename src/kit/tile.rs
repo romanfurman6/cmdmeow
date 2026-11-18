@@ -77,42 +77,15 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
 }
 
 /// The card itself: see-through CARD (the panel glow shows through), the
-/// shade at its bottom, the top highlight, the light-mode edge.
+/// top highlight and the page cards' 1 pt edge.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     p.rect_filled(rect, R_TILE, lerp_color(CARD(), RAISED(), hover * 0.5));
-    let shade = TILE_SHADE();
-    if shade.a() > 0 {
-        shade_bottom(p, rect, shade);
-    }
     let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
     p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, TILE_HI());
-    let edge = TILE_EDGE();
-    if edge.a() > 0 {
-        p.rect_stroke(rect, R_TILE, Stroke::new(1.0, edge), StrokeKind::Inside);
-    }
+    p.rect_stroke(rect, R_TILE, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
     if selected {
         p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
-}
-
-/// A dark wash from 55% of the card's height to `col` at its bottom edge.
-fn shade_bottom(p: &egui::Painter, rect: Rect, col: Color32) {
-    use egui::epaint::{Mesh, Vertex, WHITE_UV};
-    let y0 = rect.top() + rect.height() * 0.55;
-    // the ramp stops where the bottom corners start; a rounded band below
-    // carries the colour it reached there
-    let y1 = (rect.bottom() - R_TILE).max(y0);
-    let at_y1 = with_alpha(col, col.a() as f32 / 255.0 * ((y1 - y0) / (rect.bottom() - y0).max(1.0)));
-    let mut m = Mesh::default();
-    for (y, c) in [(y0, Color32::TRANSPARENT), (y1, at_y1)] {
-        m.vertices.push(Vertex { pos: Pos2::new(rect.left(), y), uv: WHITE_UV, color: c });
-        m.vertices.push(Vertex { pos: Pos2::new(rect.right(), y), uv: WHITE_UV, color: c });
-    }
-    m.add_triangle(0, 1, 2);
-    m.add_triangle(1, 3, 2);
-    p.add(Shape::mesh(m));
-    let band = Rect::from_min_max(Pos2::new(rect.left(), y1), rect.max);
-    p.rect_filled(band, egui::CornerRadius { nw: 0, ne: 0, sw: R_TILE as u8, se: R_TILE as u8 }, at_y1);
 }
 
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,
