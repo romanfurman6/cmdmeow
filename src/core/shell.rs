@@ -519,10 +519,14 @@ impl App {
                 Vec2::new(w, self.panel_height().min(self.max_panel_height(ctx)))
             }
             // screenshots: CMDMEOW_SHOT_W=<pt> (or "min") checks narrow windows
-            Mode::Window => match std::env::var("CMDMEOW_SHOT_W").ok().filter(|_| self.screenshot.is_some()) {
-                Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, m::APP_HEIGHT),
-                None => Vec2::new(m::APP_WIDTH, m::APP_HEIGHT),
-            },
+            // (CMDMEOW_SHOT_H=<pt> checks tall windows)
+            Mode::Window => {
+                let h = std::env::var("CMDMEOW_SHOT_H").ok().filter(|_| self.screenshot.is_some()).and_then(|v| v.parse::<f32>().ok()).unwrap_or(m::APP_HEIGHT);
+                match std::env::var("CMDMEOW_SHOT_W").ok().filter(|_| self.screenshot.is_some()) {
+                    Some(w) => Vec2::new(if w == "min" { Self::min_app_width() } else { w.parse().unwrap_or(m::APP_WIDTH).max(Self::min_app_width()) }, h),
+                    None => Vec2::new(m::APP_WIDTH, h),
+                }
+            }
             // setup shows in the app window: screenshots at its size
             // (CMDMEOW_SHOT_W / CMDMEOW_SHOT_H=<pt> check other window sizes)
             Mode::Setup => {
