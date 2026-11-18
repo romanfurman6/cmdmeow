@@ -255,6 +255,37 @@ mod mac {
         }
     }
 
+    /// The title of our window that has the keyboard, if any.
+    pub fn key_window_title() -> Option<String> {
+        let mtm = MainThreadMarker::new()?;
+        NSApplication::sharedApplication(mtm).keyWindow().map(|w| w.title().to_string())
+    }
+
+    /// The process id of the app in front, when it isn't us.
+    pub fn front_other_app() -> Option<i32> {
+        let pid = NSWorkspace::sharedWorkspace().frontmostApplication()?.processIdentifier();
+        (pid != std::process::id() as i32 && pid > 0).then_some(pid)
+    }
+
+    /// Hand the keyboard to the app with `pid`. macOS allows it while we are
+    /// the active app; our windows stay where they are.
+    pub fn give_focus_to(pid: i32) -> bool {
+        use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
+        let Some(mtm) = MainThreadMarker::new() else { return false };
+        let Some(other) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) else { return false };
+        if other.isTerminated() {
+            return false;
+        }
+        let me = NSApplication::sharedApplication(mtm);
+        // macOS 14+: cooperative activation, the active app yields first
+        let modern: bool = unsafe { objc2::msg_send![&*me, respondsToSelector: objc2::sel!(yieldActivationToApplication:)] };
+        if modern {
+            let _: () = unsafe { objc2::msg_send![&*me, yieldActivationToApplication: &*other] };
+        }
+        #[allow(deprecated)]
+        other.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps)
+    }
+
     pub fn activate() {
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
@@ -493,6 +524,15 @@ mod other {
     pub fn install_window_menu() {}
     pub fn bring_app_window_front() {}
     pub fn activate() {}
+    pub fn key_window_title() -> Option<String> {
+        None
+    }
+    pub fn front_other_app() -> Option<i32> {
+        None
+    }
+    pub fn give_focus_to(_pid: i32) -> bool {
+        false
+    }
     pub fn thermal_state() -> u8 {
         0
     }

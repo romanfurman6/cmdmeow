@@ -143,6 +143,9 @@ pub struct Capture {
     countdown: Option<windows::Countdown>,
     preview: Option<windows::Preview>,
     pins: Vec<windows::Pin>,
+    /// The app that had the keyboard before a click on one of our small
+    /// capture windows; closing a pin hands it back (see `windows::pins`).
+    pin_return: Option<i32>,
     editor: Option<windows::EditorWin>,
     overlay: Option<windows::Overlay>,
     hud: Option<(String, Instant)>,
@@ -240,6 +243,7 @@ impl Capture {
             countdown: None,
             preview: None,
             pins: Vec::new(),
+            pin_return: None,
             editor: None,
             overlay: None,
             hud: None,
