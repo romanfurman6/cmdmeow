@@ -120,8 +120,10 @@ fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
         return;
     }
     // the same face as the panel header's icon buttons (key::Look::quiet):
-    // fill, 1 pt top highlight and hairline, lighter on hover
+    // fill, 1 pt top highlight and hairline, a little lighter on hover
     let look = super::key::Look::quiet(0.06, 0.15);
+    // hover is a light touch on a card: 40% of the button's step
+    let hover = hover * 0.4;
     p.rect_filled(rect, R_TILE, lerp_color(look.fill, look.fill_hover, hover));
     let (sheen, shade) = (TILE_SHEEN(), TILE_SHADE());
     if sheen.a() > 0 {
