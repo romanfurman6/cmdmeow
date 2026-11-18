@@ -619,11 +619,11 @@ fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) 
 }
 
 /// The panel's glow as pixels (straight RGBA, rows from the top), for the
-/// native layer under Liquid Glass cards: partly clear, so the system blur
-/// behind the panel shows (`CMDMEOW_LIQUID_GLOW`, default 0.75).
+/// native layer under Liquid Glass cards: solid, the panel itself isn't
+/// glass (`CMDMEOW_LIQUID_GLOW` < 1 lets the system blur through).
 pub fn panel_glow_rgba(w: u32, h: u32, light: bool) -> Vec<u8> {
     static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    let alpha = *A.get_or_init(|| std::env::var("CMDMEOW_LIQUID_GLOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0.75));
+    let alpha = *A.get_or_init(|| std::env::var("CMDMEOW_LIQUID_GLOW").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0));
     let color = glow_color(Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32)), light, alpha, true);
     let mut out = Vec::with_capacity((w * h * 4) as usize);
     for y in 0..h {

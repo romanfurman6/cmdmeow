@@ -109,6 +109,7 @@ mod mac {
 
     struct CardGlass {
         content: usize,
+        superview: usize,
         glow: Retained<NSView>,
         glow_key: (u32, u32, bool),
         clip: Retained<NSView>,
@@ -148,7 +149,10 @@ mod mac {
         let (w, h) = (cf.size.width, cf.size.height);
         CARDS.with(|c| {
             let mut c = c.borrow_mut();
-            if c.as_ref().map(|g| g.content) != Some(content_view as usize) {
+            // (re)build when the egui view is new or was moved to another
+            // superview (the window's frame view can be replaced on first show)
+            let sup = Retained::as_ptr(&superview) as usize;
+            if c.as_ref().map(|g| (g.content, g.superview)) != Some((content_view as usize, sup)) {
                 if let Some(old) = c.take() {
                     old.glow.removeFromSuperview();
                     old.clip.removeFromSuperview();
@@ -163,7 +167,8 @@ mod mac {
                     l.setMasksToBounds(true);
                 }
                 superview.addSubview_positioned_relativeTo(&clip, NSWindowOrderingMode::Below, Some(content));
-                *c = Some(CardGlass { content: content_view as usize, glow, glow_key: (0, 0, false), clip, views: Vec::new(), last: Vec::new(), last_clip: [0.0; 4] });
+                *c = Some(CardGlass { content: content_view as usize, superview: sup, glow, glow_key: (0, 0, false), clip, views: Vec::new(), last: Vec::new(), last_clip: [0.0; 4] });
+                eprintln!("[glass] card glass on: content {} {:?} in {}\n{}", content.class().name().to_string_lossy(), (cf.origin.x, cf.origin.y, w, h), superview.class().name().to_string_lossy(), debug_windows());
             }
             let g = c.as_mut().unwrap();
             // the glow, rebuilt when the window's size or the theme changes
@@ -192,7 +197,8 @@ mod mac {
                     if i == g.views.len() {
                         let v = NSGlassEffectView::initWithFrame(mtm.alloc::<NSGlassEffectView>(), ns_rect(0.0, 0.0, 10.0, 10.0));
                         v.setCornerRadius(radius);
-                        v.setStyle(NSGlassEffectViewStyle::Regular);
+                        // Clear, like the Dock: the glow shows through, bent at the rim
+                        v.setStyle(if std::env::var("CMDMEOW_GLASS_STYLE").as_deref() == Ok("regular") { NSGlassEffectViewStyle::Regular } else { NSGlassEffectViewStyle::Clear });
                         g.clip.addSubview(&v);
                         g.views.push(v);
                     }
@@ -208,6 +214,12 @@ mod mac {
             }
             g.glow.setHidden(false);
             g.clip.setHidden(false);
+            static LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            if LOGGED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 30 {
+                let cl = g.clip.frame();
+                let first = g.views.first().map(|v| { let f = v.frame(); (f.origin.x, f.origin.y, f.size.width, f.size.height) });
+                eprintln!("[glass] 30 passes: {} cards, clip {:?}, first glass {:?}, glow {:?}\n{}", cards.len(), (cl.origin.x, cl.origin.y, cl.size.width, cl.size.height), first, g.glow_key, debug_windows());
+            }
         });
     }
 
