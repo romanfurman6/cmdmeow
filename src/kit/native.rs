@@ -255,12 +255,6 @@ mod mac {
         }
     }
 
-    /// Our app has the keyboard (some window of ours is active).
-    pub fn app_active() -> bool {
-        let Some(mtm) = MainThreadMarker::new() else { return false };
-        NSApplication::sharedApplication(mtm).isActive()
-    }
-
     /// The title of our window that has the keyboard, if any.
     pub fn key_window_title() -> Option<String> {
         let mtm = MainThreadMarker::new()?;
@@ -530,9 +524,6 @@ mod other {
     pub fn install_window_menu() {}
     pub fn bring_app_window_front() {}
     pub fn activate() {}
-    pub fn app_active() -> bool {
-        false
-    }
     pub fn key_window_title() -> Option<String> {
         None
     }
