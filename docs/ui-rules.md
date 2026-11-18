@@ -38,7 +38,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ✅ |
 | C2 | Lime is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). A selected row's text may be `ACCENT`, its number included (H3). | ✅ |
 | C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ✅ |
-| C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. | ✅ |
+| C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. A spark or bar chart is one series colour; a tall bar is never `AMBER`. | ✅ |
 | C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ✅ |
 | C6 | The same thing has the same colour and words on every screen. The disk line under the Disk Map list says what the start ring says ("1.35 TB free of 2.00 TB", disk glyph, `tint::DISK_MAP`). | ✅ |
 | C7 | A legend square only when its colour is on a chart on the same screen. | ✅ |
@@ -83,7 +83,7 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R4 | Rows with a bar: 36 tall, name and value on one line, a 4 pt bar 8 pt under them. A value with no limit (AI Usage Today) shows as a number with no bar. | `sp::BAR_ROW_H` |
 | R5 | Controls are 28 inside cards and 32 in page headers. | `sp::CONTROL_H`, `sp::HEADER_CONTROL_H` |
 | R6 | One empty state: centred, 56 icon chip, lead title, body up to 400 wide in dim, one secondary button. Inside a card: one caption-size line in the middle. | `sp::XXL` around it |
-| R7 | Chips say a state (Normal, Charging, In menu bar), never an action: 11/600 on a 16% tint. | `chip()` |
+| R7 | Chips say a state (Elevated, Charging, In menu bar), never an action: 11/600 on a 16% tint. A chip shows only when the state needs a look or changes what the number means (Elevated, Charging, Held at 80% limit, 1 low); the everyday state (Normal, Nominal, Good) gets no chip. | `chip()` |
 | R8 | Numbers in lists and tables are right-aligned. | |
 | R9 | A title with a detail line under it keeps 6 between the lines; such rows are 52 tall. Columns in a row sit 16 apart. | `sp::LINE_GAP`, `two_lines_y()`, `sp::ROW2_H`, `sp::COL_GAP` |
 | R10 | Text the app writes is never cut with "…": it wraps or the layout changes. Only names and paths people bring may be cut. Find cut text with `CMDMEOW_FIT_LOG=1`. | `text_wrap()` |
@@ -143,7 +143,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | MN3 | Menu rows hover with `ROW_HOVER` edge to edge (H2); no press, no sound (B10). | ✅ |
 | MN4 | A picked choice is lime 16% with `ACCENT` text and a check (H3). Never the system blue. | ✅ |
 | MN5 | A submenu row shows a dim chevron; the submenu opens 4 to the right of its menu, never over its rows. | ✅ |
-| MN6 | A "⋯" menu opens 4 under its button, right edges lined up (above when there's no room), so it never covers the row it came from. Destructive rows use `DANGER` text (B6). | ✅ |
+| MN6 | A "⋯" menu opens 4 under its button, right edges lined up (above when there's no room), so it never covers the row it came from. Destructive rows use `DANGER` text (B6). In a list, a row's "⋯" shows while the row is hovered or its menu is open. | ✅ |
 
 ## 8. Hover, selection, focus
 
@@ -285,3 +285,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman: C16 on-picture overlays (canvas https://claude.ai/artifact/GE56ikCenBuyEPhXSo2YTE, option B), for the photo editor and pinned screenshots.
 
 2026-11-18, Roman: C16 handles are variant B4 (corner brackets, side pills), 5 pt outside the mark.
+
+2026-11-18, Roman: Mac Health page review (canvas https://claude.ai/artifact/Gue4tzFYVgffpsduUJMkHu): R7 no chip for the everyday state, C4 sparks one colour, MN6 row "⋯" on hover.

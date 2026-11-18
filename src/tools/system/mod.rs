@@ -139,6 +139,9 @@ impl Tool for System {
             self.ai.set_demo_running();
             return Some(View::Page);
         }
+        if view == "health-plain" {
+            return Some(View::Page);
+        }
         if view == "health" {
             use crate::kit::aicheck::Check;
             self.ai.set_demo(
