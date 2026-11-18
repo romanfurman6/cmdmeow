@@ -71,8 +71,26 @@ pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     paint_face(p, rect, hover, selected);
 }
 
+/// Light-theme canvas experiment: `CMDMEOW_LIGHT_CARD=a|b|c` (light only).
+pub fn light_variant() -> Option<u8> {
+    if !is_light() {
+        return None;
+    }
+    static V: std::sync::OnceLock<Option<u8>> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("CMDMEOW_LIGHT_CARD").ok().and_then(|v| v.bytes().next()).filter(|b| matches!(b, b'a' | b'b' | b'c')))
+}
+
 /// The base under the card (2 pt, 1 pt while pressed, like a quiet key).
 fn paint_base(p: &egui::Painter, rect: Rect) {
+    if let Some(v) = light_variant() {
+        // light-theme canvas variants: a soft shadow instead of the ink base
+        let (a1, a2) = match v { b'a' => (0.07, 0.05), b'b' => (0.05, 0.03), _ => (0.06, 0.05) };
+        let s1 = egui::epaint::Shadow { offset: [0, 1], blur: 3, spread: 0, color: Color32::from_black_alpha((a1 * 255.0) as u8) };
+        let s2 = egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha((a2 * 255.0) as u8) };
+        p.add(s2.as_shape(rect, R_TILE));
+        p.add(s1.as_shape(rect, R_TILE));
+        return;
+    }
     // the panel header's icon buttons' base (B1 quiet key), so cards and
     // buttons read as one surface
     let look = super::key::Look::quiet(0.06, 0.15);
@@ -81,6 +99,30 @@ fn paint_base(p: &egui::Painter, rect: Rect) {
 
 /// The card itself (W1): see-through, so the panel glow shows through.
 fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
+    if let Some(v) = light_variant() {
+        let (fill, fill_h, edge) = match v {
+            // A: white sheet
+            b'a' => (Color32::from_rgba_unmultiplied(255, 255, 255, 230), Color32::from_rgba_unmultiplied(255, 255, 255, 250), Color32::from_rgba_unmultiplied(20, 24, 26, 22)),
+            // B: frosted glass on a stronger green beam
+            b'b' => (Color32::from_rgba_unmultiplied(255, 255, 255, 140), Color32::from_rgba_unmultiplied(255, 255, 255, 180), Color32::from_rgba_unmultiplied(255, 255, 255, 210)),
+            // C: solid white on a neutral background
+            _ => (Color32::WHITE, Color32::from_rgb(252, 253, 251), Color32::from_rgba_unmultiplied(20, 24, 26, 18)),
+        };
+        let hover = hover * 0.6;
+        p.rect_filled(rect, R_TILE, lerp_color(fill, fill_h, hover));
+        if v == b'b' {
+            let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
+            p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, R_TILE, Color32::WHITE);
+            p.rect_stroke(rect, R_TILE, Stroke::new(1.0, edge), StrokeKind::Inside);
+            p.rect_stroke(rect.expand(0.5), R_TILE + 0.5, Stroke::new(0.5, Color32::from_rgba_unmultiplied(20, 40, 10, 26)), StrokeKind::Inside);
+        } else {
+            p.rect_stroke(rect, R_TILE, Stroke::new(1.0, edge), StrokeKind::Inside);
+        }
+        if selected {
+            p.rect_stroke(rect, R_TILE, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
+        }
+        return;
+    }
     // the same face as the panel header's icon buttons (key::Look::quiet):
     // fill, 1 pt top highlight and hairline, a little lighter on hover
     let look = super::key::Look::quiet(0.06, 0.15);

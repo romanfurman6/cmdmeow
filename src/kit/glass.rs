@@ -585,7 +585,11 @@ fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: b
 /// The backdrop's colour at a point of `rect`: a radial glow from the top
 /// centre (S1). `tall` is the panel's: a beam down the centre to the bottom.
 fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
-    let stops: Vec<(f32, Color32)> = if light {
+    let stops: Vec<(f32, Color32)> = if light && crate::kit::tile::light_variant() == Some(b'b') {
+        vec![(0.0, hex(0xF6FBEF)), (0.5, hex(0xDCEBC8)), (1.0, hex(0xC3D9A8))]
+    } else if light && crate::kit::tile::light_variant() == Some(b'c') {
+        vec![(0.0, hex(0xFBFCF8)), (0.55, hex(0xF0F2EC)), (1.0, hex(0xE7EAE2))]
+    } else if light {
         vec![(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
     } else {
         vec![(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
