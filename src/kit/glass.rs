@@ -87,12 +87,6 @@ pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255
 /// is the page cards' [`CARD_EDGE`].
 #[allow(non_snake_case)]
 pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
-/// …the glass sheen down from its top (white, fading out by 60%)…
-#[allow(non_snake_case)]
-pub fn TILE_SHEEN() -> Color32 { Color32::TRANSPARENT }
-/// …and the shade up from its bottom (dark only: black 10%, fading out by 45%).
-#[allow(non_snake_case)]
-pub fn TILE_SHADE() -> Color32 { Color32::TRANSPARENT }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
@@ -554,11 +548,10 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
     backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, false);
 }
 
-/// The menu bar panel's surface: the same glow, reaching from the top to
-/// the bottom of the tall panel (W1, like the widget canvas), and a little
-/// clear so the system's frosted blur shows through behind the glass cards.
+/// The menu bar panel's surface (S1): the same glow, as a beam of light
+/// down the centre of the tall panel to its bottom, darker at the sides.
 pub fn backdrop_panel(painter: &Painter, rect: Rect, radius: f32, opaque: bool) {
-    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { panel_alpha() }, true);
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, true);
 }
 
 fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: bool) {
@@ -618,22 +611,6 @@ fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) 
     }
 }
 
-/// The panel's glow as pixels (straight RGBA, rows from the top), for the
-/// native layer under Liquid Glass cards: solid, the panel itself isn't
-/// glass (`CMDMEOW_LIQUID_GLOW` < 1 lets the system blur through).
-pub fn panel_glow_rgba(w: u32, h: u32, light: bool) -> Vec<u8> {
-    static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    let alpha = *A.get_or_init(|| std::env::var("CMDMEOW_LIQUID_GLOW").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0));
-    let color = glow_color(Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32)), light, alpha, true);
-    let mut out = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        for x in 0..w {
-            out.extend_from_slice(&color(Pos2::new(x as f32 + 0.5, y as f32 + 0.5)).to_srgba_unmultiplied());
-        }
-    }
-    out
-}
-
 fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
     let color_at = glow_color(rect, light, alpha, tall);
     // a fan of rings from the centre out to the rounded outline
@@ -672,13 +649,6 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -
 fn backdrop_alpha() -> f32 {
     static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
     *A.get_or_init(|| std::env::var("CMDMEOW_BACKDROP_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
-}
-
-/// How much the panel's backdrop covers the frosted blur behind it
-/// (`CMDMEOW_PANEL_ALPHA`, 1 = solid).
-fn panel_alpha() -> f32 {
-    static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *A.get_or_init(|| std::env::var("CMDMEOW_PANEL_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
 }
 
 /// `pts` (a closed outline) with extra points so no edge is longer than `step`.
