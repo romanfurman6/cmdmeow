@@ -11,15 +11,19 @@
 
 use egui::{epaint::Mesh, Color32, Id, Painter, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-use super::glass::{lerp_color, pick, white, with_alpha, ACTION, DANGER, R_BUTTON};
+use super::glass::{lerp_color, white, with_alpha, ACTION, CARD_EDGE, DANGER, R_BUTTON, TILE_BASE, TILE_HI};
 use super::sound::{self, Click};
 
-/// Base under a lime or red face, and how far that face sinks.
-pub const KEY_BASE: f32 = 3.0;
-pub const KEY_DROP: f32 = 2.0;
+/// Base under a lime or red face, and how far that face sinks: 1 pt,
+/// like the widget cards (B4).
+pub const KEY_BASE: f32 = 1.0;
+pub const KEY_DROP: f32 = 1.0;
 /// Base and sink of quiet kinds (secondary, side, icon, round, tile).
-pub const KEY_BASE_QUIET: f32 = 2.0;
+pub const KEY_BASE_QUIET: f32 = 1.0;
 pub const KEY_DROP_QUIET: f32 = 1.0;
+/// Lime and red keys this tall or taller glow (hero 44, primary 32); 28 pt never.
+// 30, not 32: legacy 30 pt primaries (B1, moving to 32 in the audit) glow too.
+pub const GLOW_MIN_H: f32 = 30.0;
 /// Press down (ease-out) and release (spring) in seconds.
 pub const PRESS_IN: f32 = 0.05;
 pub const PRESS_OUT: f32 = 0.16;
@@ -181,10 +185,10 @@ impl Look {
             base: lerp_color(c, Color32::BLACK, base_black),
             depth: KEY_BASE,
             drop: KEY_DROP,
-            highlight: Color32::from_white_alpha(97),
+            highlight: Color32::from_white_alpha(64),
             edge: None,
             edge_w: 1.0,
-            glow: Some(with_alpha(c, 0.70)),
+            glow: Some(with_alpha(c, 0.50)),
             ring: c,
             radius: R_BUTTON,
         }
@@ -198,21 +202,22 @@ impl Look {
     /// Destructive confirm: [`DANGER`] (the state red stays `RED()`).
     pub fn danger() -> Look {
         let mut l = Look::tint(DANGER(), 0.40, 0.22);
-        l.glow = Some(with_alpha(DANGER(), 0.65));
+        l.glow = Some(with_alpha(DANGER(), 0.45));
         l
     }
 
-    /// A quiet key: ink at `fill` (0..1), `fill_hover` on hover, hairline,
-    /// a 2 pt base at ink 14%.
+    /// A quiet key: ink at `fill` (0..1), `fill_hover` on hover, on the
+    /// widget card's surface (B4): `TILE_HI` top line, `CARD_EDGE` hairline,
+    /// 1 pt `TILE_BASE` base.
     pub fn quiet(fill: f32, fill_hover: f32) -> Look {
         Look {
             fill: ink(fill),
             fill_hover: ink(fill_hover),
-            base: ink(0.14),
+            base: TILE_BASE(),
             depth: KEY_BASE_QUIET,
             drop: KEY_DROP_QUIET,
-            highlight: pick(Color32::from_white_alpha(20), Color32::from_white_alpha(191)),
-            edge: Some((ink(0.10), ink(0.18))),
+            highlight: TILE_HI(),
+            edge: Some((CARD_EDGE(), ink(0.18))),
             edge_w: 1.0,
             glow: None,
             ring: ink(1.0),
@@ -256,8 +261,9 @@ pub fn paint_at(p: &Painter, rect: Rect, look: &Look, hover: f32, press: f32, al
     let r = look.radius.min(rect.height() / 2.0).min(rect.width() / 2.0);
     let face = rect.translate(Vec2::new(0.0, look.drop * press));
     let fade = |c: Color32| with_alpha(c, c.a() as f32 / 255.0 * alpha);
-    if let Some(g) = look.glow.filter(|_| alpha >= 1.0) {
-        // 0 6 18 -5 at rest, 0 3 10 -5 held
+    // B5: only main buttons 32 pt and taller glow
+    if let Some(g) = look.glow.filter(|_| alpha >= 1.0 && rect.height() >= GLOW_MIN_H) {
+        // 0 6 18 -6 at rest, 0 3 10 -6 held
         let k = press.clamp(0.0, 1.0);
         let glow = egui::epaint::Shadow {
             offset: [0, (6.0 - 3.0 * k).round() as i8],
@@ -265,7 +271,7 @@ pub fn paint_at(p: &Painter, rect: Rect, look: &Look, hover: f32, press: f32, al
             spread: 0,
             color: with_alpha(g, g.a() as f32 / 255.0 * (1.0 - 0.2 * k)),
         };
-        p.add(glow.as_shape(rect.shrink(5.0), r));
+        p.add(glow.as_shape(rect.shrink(6.0), r));
     }
     // the base shows below the face: what's left of it after the face sank
     base(p, face, r, look.depth - look.drop * press.max(0.0), fade(look.base));
