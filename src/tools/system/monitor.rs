@@ -973,17 +973,27 @@ fn power_health_text() -> String {
 /// Wi-Fi details from `system_profiler`. Slow: it can take ~10 s, as it
 /// may scan for networks, so it runs rarely; [`wifi_name`] fills in between.
 fn wifi_details() -> Wifi {
+    parse_wifi(&run_cmd("/usr/sbin/system_profiler", &["SPAirPortDataType", "-json"]))
+}
+
+/// The Wi-Fi interface and its network from `system_profiler`'s report.
+fn parse_wifi(out: &str) -> Wifi {
     let mut w = Wifi::default();
-    let out = run_cmd("/usr/sbin/system_profiler", &["SPAirPortDataType", "-json"]);
-    let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+    let v: Value = serde_json::from_str(out).unwrap_or(Value::Null);
     if let Some(ifaces) = v["SPAirPortDataType"][0]["spairport_airport_interfaces"].as_array() {
         for i in ifaces {
+            // AirDrop's own interface (awdl0) is listed too, sometimes with
+            // network details of its own: the network is on an en* one
+            let iface = i["_name"].as_str().unwrap_or("");
+            if !iface.starts_with("en") {
+                continue;
+            }
             if w.iface.is_empty() {
-                w.iface = i["_name"].as_str().unwrap_or("").to_string();
+                w.iface = iface.to_string();
             }
             let cur = &i["spairport_current_network_information"];
             if cur.is_object() {
-                w.iface = i["_name"].as_str().unwrap_or("").to_string();
+                w.iface = iface.to_string();
                 w.name = cur["_name"].as_str().unwrap_or("").to_string();
                 w.security = cur["spairport_security_mode"]
                     .as_str()
@@ -994,6 +1004,7 @@ fn wifi_details() -> Wifi {
                 w.phy = cur["spairport_network_phymode"].as_str().unwrap_or("").to_string();
                 w.channel = cur["spairport_network_channel"].as_str().unwrap_or("").to_string();
                 w.signal = cur["spairport_signal_noise"].as_str().unwrap_or("").to_string();
+                break;
             }
         }
     }
@@ -1206,6 +1217,20 @@ mod tests {
         // Wi-Fi off or no cable: nothing, or only what the interface gives itself
         assert!(!has_address(std::iter::empty()));
         assert!(!has_address([ip("fe80::1c2a:1"), ip("169.254.12.7")].into_iter()));
+    }
+
+    #[test]
+    fn the_wifi_interface_is_not_airdrops() {
+        // the Wi-Fi interface, then AirDrop's with details of its own
+        let report = r#"{"SPAirPortDataType":[{"spairport_airport_interfaces":[
+            {"_name":"en1","spairport_current_network_information":{"_name":"<redacted>","spairport_security_mode":"spairport_security_mode_wpa2_personal","spairport_network_channel":"36 (5GHz, 80MHz)"}},
+            {"_name":"awdl0","spairport_current_network_information":{"spairport_network_channel":"149 (5GHz, 80MHz)"}}]}]}"#;
+        let w = parse_wifi(report);
+        assert_eq!((w.iface.as_str(), w.security.as_str(), w.channel.as_str()), ("en1", "WPA2 PERSONAL", "36 (5GHz, 80MHz)"));
+        // Wi-Fi on but not joined: still the en* interface
+        let idle = r#"{"SPAirPortDataType":[{"spairport_airport_interfaces":[{"_name":"awdl0","spairport_current_network_information":{}},{"_name":"en0"}]}]}"#;
+        assert_eq!(parse_wifi(idle).iface, "en0");
+        assert_eq!(parse_wifi("").iface, "");
     }
 
     #[test]
