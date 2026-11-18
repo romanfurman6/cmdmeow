@@ -97,6 +97,181 @@ mod mac {
         }
     }
 
+    // ---- Liquid Glass under the panel's widget cards (macOS 26+) ----
+    //
+    // The panel window stacks, back to front: the frosted blur (apply_glass),
+    // the glow (an image: light down the centre, darker sides), a view that
+    // clips to the scrolling area with one NSGlassEffectView per widget card,
+    // and egui's own view on top, which draws the cards' content only.
+
+    use objc2_app_kit::{NSGlassEffectView, NSGlassEffectViewStyle};
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    struct CardGlass {
+        content: usize,
+        superview: usize,
+        glow: Retained<NSView>,
+        glow_key: (u32, u32, bool),
+        clip: Retained<NSView>,
+        views: Vec<Retained<NSGlassEffectView>>,
+        frost: Option<Retained<NSGlassEffectView>>,
+        last_hover: Option<(usize, f32)>,
+        last: Vec<[f32; 4]>,
+        last_clip: [f32; 4],
+    }
+
+    thread_local! {
+        static CARDS: RefCell<Option<CardGlass>> = const { RefCell::new(None) };
+    }
+
+    /// True when this macOS has Liquid Glass (NSGlassEffectView, macOS 26).
+    /// Off unless `CMDMEOW_LIQUID=1` (Roman 2026-11-18: cards look like the
+    /// header buttons instead).
+    pub fn liquid_glass() -> bool {
+        static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *S.get_or_init(|| std::env::var("CMDMEOW_LIQUID").as_deref() == Ok("1") && objc2::runtime::AnyClass::get(c"NSGlassEffectView").is_some())
+    }
+
+    fn ns_rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
+        NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
+    }
+
+    /// Put glass under `cards` (egui points, top-left origin, in the window
+    /// whose egui view is `content_view`), clipped to `clip`; `glow` is the
+    /// panel background (width, height, RGBA rows top first) for `light`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sync_card_glass(content_view: *mut std::ffi::c_void, clip: [f32; 4], cards: &[[f32; 4]], hover: Option<(usize, f32)>, radius: f64, light: bool, glow: impl FnOnce(u32, u32) -> Vec<u8>) {
+        if content_view.is_null() || MainThreadMarker::new().is_none() {
+            return;
+        }
+        let mtm = MainThreadMarker::new().unwrap();
+        // SAFETY: the pointer is the live NSView of eframe's root window
+        let content: &NSView = unsafe { &*(content_view as *const NSView) };
+        let Some(superview) = (unsafe { content.superview() }) else { return };
+        let cf = content.frame();
+        let (w, h) = (cf.size.width, cf.size.height);
+        CARDS.with(|c| {
+            let mut c = c.borrow_mut();
+            // (re)build when the egui view is new or was moved to another
+            // superview (the window's frame view can be replaced on first show)
+            let sup = Retained::as_ptr(&superview) as usize;
+            if c.as_ref().map(|g| (g.content, g.superview)) != Some((content_view as usize, sup)) {
+                if let Some(old) = c.take() {
+                    old.glow.removeFromSuperview();
+                    old.clip.removeFromSuperview();
+                }
+                let glow = NSView::initWithFrame(mtm.alloc::<NSView>(), cf);
+                // layer-hosting (our own layer set before wantsLayer), so
+                // AppKit leaves the image we put in its contents alone
+                glow.setLayer(Some(&objc2_quartz_core::CALayer::new()));
+                glow.setWantsLayer(true);
+                glow.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable);
+                superview.addSubview_positioned_relativeTo(&glow, NSWindowOrderingMode::Below, Some(content));
+                let clip = NSView::initWithFrame(mtm.alloc::<NSView>(), cf);
+                clip.setWantsLayer(true);
+                if let Some(l) = clip.layer() {
+                    l.setMasksToBounds(true);
+                }
+                superview.addSubview_positioned_relativeTo(&clip, NSWindowOrderingMode::Below, Some(content));
+                *c = Some(CardGlass { content: content_view as usize, superview: sup, glow, glow_key: (0, 0, false), clip, views: Vec::new(), frost: None, last_hover: None, last: Vec::new(), last_clip: [0.0; 4] });
+                eprintln!("[glass] card glass on: content {} {:?} in {}\n{}", content.class().name().to_string_lossy(), (cf.origin.x, cf.origin.y, w, h), superview.class().name().to_string_lossy(), debug_windows());
+            }
+            let g = c.as_mut().unwrap();
+            // the glow, rebuilt when the window's size or the theme changes
+            let key = (w.round() as u32, h.round() as u32, light);
+            if g.glow_key != key && key.0 > 0 && key.1 > 0 {
+                g.glow_key = key;
+                g.glow.setFrame(cf);
+                if let Some(img) = glow_image(key.0, key.1, glow(key.0, key.1)) {
+                    if let Some(l) = g.glow.layer() {
+                        l.setCornerRadius(radius + 2.0);
+                        l.setMasksToBounds(true);
+                        unsafe { l.setContents(Some(&img)) };
+                    }
+                }
+            }
+            // egui's y runs down from the top; AppKit's runs up from the bottom
+            if g.last_clip != clip {
+                g.last_clip = clip;
+                let [x, y, cw, ch] = clip.map(f64::from);
+                g.clip.setFrame(ns_rect(cf.origin.x + x, cf.origin.y + h - y - ch, cw, ch));
+            }
+            if g.last.as_slice() != cards {
+                g.last = cards.to_vec();
+                let [cx, cy, _, ch] = clip.map(f64::from);
+                for (i, r) in cards.iter().enumerate() {
+                    if i == g.views.len() {
+                        let v = NSGlassEffectView::initWithFrame(mtm.alloc::<NSGlassEffectView>(), ns_rect(0.0, 0.0, 10.0, 10.0));
+                        v.setCornerRadius(radius);
+                        // Clear, like the Dock: the glow shows through, bent at the rim
+                        v.setStyle(if std::env::var("CMDMEOW_GLASS_STYLE").as_deref() == Ok("regular") { NSGlassEffectViewStyle::Regular } else { NSGlassEffectViewStyle::Clear });
+                        g.clip.addSubview(&v);
+                        g.views.push(v);
+                    }
+                    let [x, y, rw, rh] = r.map(f64::from);
+                    let v = &g.views[i];
+                    // in the clip view: x from its left, y up from its bottom
+                    v.setFrame(ns_rect(x - cx, ch - (y - cy) - rh, rw, rh));
+                    v.setHidden(false);
+                }
+                for v in g.views.iter().skip(cards.len()) {
+                    v.setHidden(true);
+                }
+            }
+            // hover: a Regular (frosted) glass over the card, faded in
+            let hover = hover.filter(|(i, _)| *i < cards.len());
+            if g.last_hover != hover || g.last.as_slice() != cards {
+                g.last_hover = hover;
+                if g.frost.is_none() {
+                    let v = NSGlassEffectView::initWithFrame(mtm.alloc::<NSGlassEffectView>(), ns_rect(0.0, 0.0, 10.0, 10.0));
+                    v.setCornerRadius(radius);
+                    v.setStyle(NSGlassEffectViewStyle::Regular);
+                    g.clip.addSubview(&v);
+                    g.frost = Some(v);
+                }
+                let f = g.frost.as_ref().unwrap();
+                match hover {
+                    Some((i, a)) => {
+                        f.setFrame(g.views[i].frame());
+                        f.setAlphaValue(a as f64 * 0.7);
+                        f.setHidden(false);
+                    }
+                    None => f.setHidden(true),
+                }
+            }
+            g.glow.setHidden(false);
+            g.clip.setHidden(false);
+            static LOGGED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            if LOGGED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 30 {
+                let cl = g.clip.frame();
+                let first = g.views.first().map(|v| { let f = v.frame(); (f.origin.x, f.origin.y, f.size.width, f.size.height) });
+                eprintln!("[glass] 30 passes: {} cards, clip {:?}, first glass {:?}, glow {:?}\n{}", cards.len(), (cl.origin.x, cl.origin.y, cl.size.width, cl.size.height), first, g.glow_key, debug_windows());
+            }
+        });
+    }
+
+    /// Hide the glass and the glow (the panel went away, or screenshots).
+    pub fn hide_card_glass() {
+        CARDS.with(|c| {
+            if let Some(g) = c.borrow().as_ref() {
+                g.glow.setHidden(true);
+                g.clip.setHidden(true);
+            }
+        });
+    }
+
+    fn glow_image(w: u32, h: u32, rgba: Vec<u8>) -> Option<Retained<objc2_app_kit::NSImage>> {
+        use objc2::AllocAnyThread;
+        use objc2_app_kit::NSImage;
+        use objc2_foundation::NSData;
+        let img = image::RgbaImage::from_raw(w, h, rgba)?;
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
+        let ns = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(&png))?;
+        ns.setSize(NSSize::new(w as f64, h as f64));
+        Some(ns)
+    }
+
     /// A white rounded square, 2x, that stretches between its corners: the
     /// mask that gives the blur the window's rounded corners.
     fn rounded_mask(radius: f64) -> Option<Retained<objc2_app_kit::NSImage>> {
@@ -512,6 +687,11 @@ pub const PLAIN_WINDOW: &str = "plain-";
 #[cfg(not(target_os = "macos"))]
 mod other {
     pub fn apply_glass(_r: f64) {}
+    pub fn liquid_glass() -> bool {
+        false
+    }
+    pub fn sync_card_glass(_v: *mut std::ffi::c_void, _clip: [f32; 4], _cards: &[[f32; 4]], _hover: Option<(usize, f32)>, _radius: f64, _light: bool, _glow: impl FnOnce(u32, u32) -> Vec<u8>) {}
+    pub fn hide_card_glass() {}
     pub fn system_light() -> bool {
         false
     }

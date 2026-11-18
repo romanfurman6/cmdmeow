@@ -65,7 +65,7 @@ fn not_set_up(a: Availability, cl: &UsageInfo, demo: bool, ui: &mut Ui, r: Rect,
     y += 32.0 + 12.0;
     let steps: &[&str] = if a == Availability::SignedOut { m.sign_in_steps } else { m.install_steps };
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(colw, 12.0 + steps.len() as f32 * 34.0));
-    glass_card(&p, card, R_CARD, 0.0, false);
+    data_card(&p, card);
     for (i, s) in steps.iter().enumerate() {
         let cy = card.top() + 6.0 + 17.0 + i as f32 * 34.0;
         let c = Pos2::new(card.left() + 24.0, cy);
@@ -515,7 +515,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: bool) {
     let p = ui.painter().clone();
     let resp = ui.interact(cr, ui.scope_id().with(("ai-all", info.provider)), egui::Sense::click());
-    card_surface(&p, cr, crate::kit::tile::R_TILE, if resp.hovered() { 1.0 } else { 0.0 }, false);
+    crate::kit::tile::paint_card(&p, cr, if resp.hovered() { 1.0 } else { 0.0 }, false);
     if resp.clicked() {
         backend::select(ai::index_of(ai::meta(info.provider).id), false);
     }

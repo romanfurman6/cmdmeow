@@ -87,6 +87,12 @@ pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255
 /// is the page cards' [`CARD_EDGE`].
 #[allow(non_snake_case)]
 pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
+/// …the glass sheen down from its top (white, fading out by 60%)…
+#[allow(non_snake_case)]
+pub fn TILE_SHEEN() -> Color32 { Color32::TRANSPARENT }
+/// …and the shade up from its bottom (dark only: black 10%, fading out by 45%).
+#[allow(non_snake_case)]
+pub fn TILE_SHADE() -> Color32 { Color32::TRANSPARENT }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
 pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
@@ -545,13 +551,23 @@ pub fn float_shadow_egui() -> egui::epaint::Shadow {
 /// blur behind it shows through a little; `opaque` (screenshots)
 /// paints it solid.
 pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f64) {
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, false);
+}
+
+/// The menu bar panel's surface: the same glow, reaching from the top to
+/// the bottom of the tall panel (W1, like the widget canvas), and a little
+/// clear so the system's frosted blur shows through behind the glass cards.
+pub fn backdrop_panel(painter: &Painter, rect: Rect, radius: f32, opaque: bool) {
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { panel_alpha() }, true);
+}
+
+fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: bool) {
     let light = is_light();
-    let alpha = if opaque { 1.0 } else { backdrop_alpha() };
     // the mesh only changes with the window's size and the theme: build it
     // once, not every frame (it's ~1.4k vertices of gradient math)
-    type Key = ([u32; 5], bool, u32);
+    type Key = ([u32; 5], bool, u32, bool);
     static CACHE: std::sync::Mutex<Vec<(Key, std::sync::Arc<egui::epaint::Mesh>)>> = std::sync::Mutex::new(Vec::new());
-    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits());
+    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits(), tall);
     let mesh = {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(i) = cache.iter().position(|(k, _)| *k == key) {
@@ -560,7 +576,7 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
             cache.push(hit);
             mesh
         } else {
-            let mesh = std::sync::Arc::new(backdrop_mesh(rect, radius, light, alpha));
+            let mesh = std::sync::Arc::new(backdrop_mesh(rect, radius, light, alpha, tall));
             // a few windows (panel, app window, setup), newest last
             if cache.len() >= 4 {
                 cache.remove(0);
@@ -573,24 +589,53 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
     painter.rect_stroke(rect, radius, Stroke::new(1.0, white(HAIRLINE_STRONG)), StrokeKind::Inside);
 }
 
-fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epaint::Mesh {
-    let stops: &[(f32, Color32)] = if light {
-        &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
+/// The backdrop's colour at a point of `rect`: a radial glow from the top
+/// centre (S1). `tall` is the panel's: a beam down the centre to the bottom.
+fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
+    let stops: Vec<(f32, Color32)> = if light {
+        vec![(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
     } else {
-        &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
+        vec![(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
     };
     let glow = Pos2::new(rect.center().x, rect.top());
     // the glow is an ellipse: wide across, reaching the bottom edge,
     // never smaller than the app window's: the narrow panel shows the
     // centre of the same glow instead of a squeezed copy of it (S1)
-    let (rx, ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
-    let color_at = |q: Pos2| {
+    let (mut rx, mut ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
+    if tall {
+        // the panel: a beam of light down the centre to the bottom (its
+        // bottom edge at the gradient's middle, not the near-black end),
+        // darker towards the sides
+        ry = ry.max(rect.height() * 1.9);
+        rx = rect.width() * 0.85;
+    }
+    move |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
         with_alpha(lerp_color(c0, c1, (d - t0) / (t1 - t0).max(1e-3)), alpha)
-    };
+    }
+}
+
+/// The panel's glow as pixels (straight RGBA, rows from the top), for the
+/// native layer under Liquid Glass cards: solid, the panel itself isn't
+/// glass (`CMDMEOW_LIQUID_GLOW` < 1 lets the system blur through).
+pub fn panel_glow_rgba(w: u32, h: u32, light: bool) -> Vec<u8> {
+    static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    let alpha = *A.get_or_init(|| std::env::var("CMDMEOW_LIQUID_GLOW").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0));
+    let color = glow_color(Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32)), light, alpha, true);
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            out.extend_from_slice(&color(Pos2::new(x as f32 + 0.5, y as f32 + 0.5)).to_srgba_unmultiplied());
+        }
+    }
+    out
+}
+
+fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
+    let color_at = glow_color(rect, light, alpha, tall);
     // a fan of rings from the centre out to the rounded outline
     let outline = densify(&rounded_points(rect, radius), 24.0);
     let c = rect.center();
@@ -627,6 +672,13 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epai
 fn backdrop_alpha() -> f32 {
     static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
     *A.get_or_init(|| std::env::var("CMDMEOW_BACKDROP_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
+}
+
+/// How much the panel's backdrop covers the frosted blur behind it
+/// (`CMDMEOW_PANEL_ALPHA`, 1 = solid).
+fn panel_alpha() -> f32 {
+    static A: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *A.get_or_init(|| std::env::var("CMDMEOW_PANEL_ALPHA").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0))
 }
 
 /// `pts` (a closed outline) with extra points so no edge is longer than `step`.
@@ -666,30 +718,12 @@ pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: b
 }
 
 /// A card that shows live data on a page (Mac Health, AI Usage, Fan
-/// Control, Keep Awake): the same surface as the panel widgets
-/// ([`card_surface`] at `tile::R_TILE`), so a page and its widgets read as one.
+/// Control, Keep Awake): the panel widgets' card ([`crate::kit::tile::paint_card`]),
+/// so a page and its widgets read as one.
 pub fn data_card(p: &Painter, rect: Rect) {
-    card_surface(p, rect, crate::kit::tile::R_TILE, 0.0, false);
+    crate::kit::tile::paint_card(p, rect, 0.0, false);
 }
 
-/// The one card surface (S2w), for widgets and pages alike: a 1 pt base
-/// under the card (`TILE_BASE`), the see-through `CARD` fill, a 1 pt top
-/// highlight (`TILE_HI`) and the 1 pt `CARD_EDGE` inside.
-pub fn card_surface(p: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
-    p.rect_filled(rect.translate(Vec2::new(0.0, 1.0)), r, TILE_BASE());
-    card_face(p, rect, r, hover, selected);
-}
-
-/// [`card_surface`] without the base (a pressed widget card sits on it).
-pub fn card_face(p: &Painter, rect: Rect, r: f32, hover: f32, selected: bool) {
-    p.rect_filled(rect, r, lerp_color(CARD(), RAISED(), hover * 0.5));
-    let top = Rect::from_min_max(rect.min, Pos2::new(rect.right(), rect.top() + 1.0));
-    p.with_clip_rect(top.intersect(p.clip_rect())).rect_filled(rect, r, TILE_HI());
-    p.rect_stroke(rect, r, Stroke::new(1.0, CARD_EDGE()), StrokeKind::Inside);
-    if selected {
-        p.rect_stroke(rect, r, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
-    }
-}
 
 /// Button kinds for [`pill_button`].
 pub const BTN_SECONDARY: u8 = 0;

@@ -502,6 +502,12 @@ impl App {
     }
 
     /// Whether a tool's detail sheet sits beside the panel.
+    /// The panel's cards sit on native Liquid Glass (macOS 26, live only:
+    /// screenshots and demo views draw egui alone).
+    pub fn liquid_glass(&self) -> bool {
+        self.screenshot.is_none() && !self.demo && crate::kit::native::liquid_glass()
+    }
+
     pub fn sheet_open(&self) -> bool {
         self.detail.is_some()
     }
@@ -880,7 +886,10 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
+        // CMDMEOW_PIN_PANEL=1 (debugging): the panel stays open when focus leaves
+        static PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let pinned = *PIN.get_or_init(|| std::env::var("CMDMEOW_PIN_PANEL").is_ok_and(|v| v == "1"));
+        if !pinned && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
             self.hide(ctx);
         }
     }
@@ -977,7 +986,13 @@ impl eframe::App for App {
             Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
-                glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);
+                if self.liquid_glass() {
+                    // the glow is a native layer under the glass cards
+                    ui.painter().rect_stroke(full, m::CARD_RADIUS + 2.0, egui::Stroke::new(1.0, white(HAIRLINE_STRONG)), egui::StrokeKind::Inside);
+                } else {
+                    crate::kit::native::hide_card_glass();
+                    glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
+                }
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 if self.sheet_open() {
                     let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));
