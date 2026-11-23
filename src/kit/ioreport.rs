@@ -24,6 +24,9 @@ pub struct Sample {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Freqs {
     pub ecpu: Vec<f32>,
+    /// The middle cores of M5 Pro and Max, when they have a table of their
+    /// own; empty otherwise.
+    pub mcpu: Vec<f32>,
     pub pcpu: Vec<f32>,
     pub gpu: Vec<f32>,
 }
@@ -109,11 +112,43 @@ pub fn summarize(samples: &[Sample], secs: f64, f: &Freqs) -> Reading {
     // "ECPU0", "PCPU3"; "MCPU2" for the middle cores of M5 Pro and Max (the
     // lower of their two kinds); "DIE_1_PCPU1_CPU0" on an Ultra chip
     let cores = |kinds: &'static [&'static str]| samples.iter().filter(move |s| s.group == "CPU Stats" && s.subgroup == "CPU Core Performance States" && kinds.iter().any(|k| s.channel.contains(k)));
-    r.ecpu = usage(cores(&["ECPU", "MCPU"]), &f.ecpu);
+    // a chip whose lower cores are all middle cores clocks them by their own table
+    let lower = if !f.mcpu.is_empty() && cores(&["ECPU"]).next().is_none() { &f.mcpu } else { &f.ecpu };
+    r.ecpu = usage(cores(&["ECPU", "MCPU"]), lower);
     r.pcpu = usage(cores(&["PCPU"]), &f.pcpu);
     let gpu = samples.iter().filter(|s| s.group == "GPU Stats" && s.subgroup == "GPU Performance States" && s.channel == "GPUPH");
     r.gpu = usage(gpu, &f.gpu);
     r
+}
+
+/// macOS 27 can stop the CPU energy counter for apps without Apple's
+/// entitlement: it reads 0, then makes up for it in one jump. A CPU that
+/// ran this code never used no energy at all over half a second, so a 0
+/// there means the counter can't be trusted.
+pub fn cpu_energy_frozen(samples: &[Sample], secs: f64) -> bool {
+    let mut cpu = samples.iter().filter(|s| s.group == "Energy Model" && s.channel.ends_with("CPU Energy")).peekable();
+    secs >= 0.5 && cpu.peek().is_some() && cpu.all(|s| s.value <= 0)
+}
+
+/// Which `voltage-states{n}-sram` table each kind of core uses, from the
+/// `acc-clusters` property of `pmgr`: one 8-byte entry per kind of core,
+/// the table's number first, then the kind (0 the slowest).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Tables {
+    /// The slowest kind.
+    pub low: Option<u8>,
+    /// The kind just under the fastest, when there are three or more.
+    pub mid: Option<u8>,
+    /// The fastest kind.
+    pub top: Option<u8>,
+}
+
+pub fn cluster_tables(acc: &[u8]) -> Tables {
+    let mut kinds: Vec<(u8, u8)> = acc.chunks_exact(8).map(|c| (c[1], c[0])).collect();
+    kinds.sort();
+    kinds.dedup_by_key(|k| k.0);
+    let n = kinds.len();
+    Tables { low: kinds.first().map(|k| k.1), mid: (n >= 3).then(|| kinds[n - 2].1), top: kinds.last().map(|k| k.1) }
 }
 
 /// The clocks in a `pmgr` `voltage-states…` property: pairs of little-endian
@@ -130,7 +165,7 @@ pub use mac::Sampler;
 
 #[cfg(target_os = "macos")]
 mod mac {
-    use super::{parse_freqs, summarize, Freqs, Reading, Sample};
+    use super::{cluster_tables, cpu_energy_frozen, parse_freqs, summarize, Freqs, Reading, Sample};
     use std::ffi::{c_char, c_void, CStr, CString};
     use std::time::Instant;
 
@@ -215,7 +250,7 @@ mod mac {
                 let mut buf = [0 as c_char; 128];
                 let is_pmgr = IORegistryEntryGetName(e, buf.as_mut_ptr()) == 0 && CStr::from_ptr(buf.as_ptr()).to_bytes() == b"pmgr";
                 if is_pmgr {
-                    let prop = |key: &str| {
+                    let bytes = |key: &str| -> Vec<u8> {
                         let k = cfstr(key);
                         let d = IORegistryEntryCreateCFProperty(e, k, std::ptr::null(), 0);
                         CFRelease(k);
@@ -225,16 +260,22 @@ mod mac {
                         let out = if CFGetTypeID(d) == CFDataGetTypeID() {
                             let n = CFDataGetLength(d).max(0) as usize;
                             let p = CFDataGetBytePtr(d);
-                            if p.is_null() { Vec::new() } else { parse_freqs(std::slice::from_raw_parts(p, n)) }
+                            if p.is_null() { Vec::new() } else { std::slice::from_raw_parts(p, n).to_vec() }
                         } else {
                             Vec::new()
                         };
                         CFRelease(d);
                         out
                     };
-                    f.ecpu = prop("voltage-states1-sram");
-                    f.pcpu = prop("voltage-states5-sram");
-                    f.gpu = prop("voltage-states9");
+                    let table = |n: u8| parse_freqs(&bytes(&format!("voltage-states{n}-sram")));
+                    // M1 to M4 keep the two tables under fixed numbers; later
+                    // chips say which table each kind of core uses
+                    let by_kind = cluster_tables(&bytes("acc-clusters"));
+                    let or = |fixed: Vec<f32>, n: Option<u8>| if fixed.is_empty() { n.map(table).unwrap_or_default() } else { fixed };
+                    f.ecpu = or(table(1), by_kind.low);
+                    f.pcpu = or(table(5), by_kind.top);
+                    f.mcpu = by_kind.mid.map(table).unwrap_or_default();
+                    f.gpu = parse_freqs(&bytes("voltage-states9"));
                 }
                 IOObjectRelease(e);
                 if is_pmgr {
@@ -254,6 +295,8 @@ mod mac {
         prev: Cf,
         at: Instant,
         freqs: Freqs,
+        /// The CPU energy counter stopped once: no watts from it any more.
+        frozen: bool,
     }
 
     // The CF objects are only used from the thread that owns the sampler.
@@ -303,7 +346,7 @@ mod mac {
                     CFRelease(sub);
                     return None;
                 }
-                Some(Sampler { sub, chans: subbed, prev, at: Instant::now(), freqs: freqs() })
+                Some(Sampler { sub, chans: subbed, prev, at: Instant::now(), freqs: freqs(), frozen: false })
             }
         }
 
@@ -346,7 +389,13 @@ mod mac {
                     }
                 }
                 CFRelease(delta);
-                Some(summarize(&samples, secs, &self.freqs))
+                let mut r = summarize(&samples, secs, &self.freqs);
+                self.frozen |= cpu_energy_frozen(&samples, secs);
+                if self.frozen {
+                    // no number beats a wrong one
+                    (r.cpu_w, r.gpu_w, r.ane_w) = (0.0, 0.0, 0.0);
+                }
+                Some(r)
             }
         }
     }
@@ -391,7 +440,7 @@ mod tests {
 
     #[test]
     fn cluster_usage_and_clock() {
-        let f = Freqs { ecpu: vec![600.0, 1000.0], pcpu: vec![1000.0, 3000.0], gpu: vec![] };
+        let f = Freqs { ecpu: vec![600.0, 1000.0], pcpu: vec![1000.0, 3000.0], ..Default::default() };
         let s = [
             // half busy: 1/4 at 600, 1/4 at 1000 -> 800 MHz
             core("ECPU000", &[("IDLE", 50), ("V0P5", 25), ("V1P4", 25)]),
@@ -412,6 +461,55 @@ mod tests {
         let s = [core("MCPU0", &[("IDLE", 50), ("V0", 50)]), core("DIE_0_PCPU1_CPU0", &[("IDLE", 25), ("V0", 75)]), core("DIE_1_PCPU0_CPU1", &[("IDLE", 75), ("V0", 25)])];
         let r = summarize(&s, 1.0, &Freqs::default());
         assert_eq!((r.ecpu.busy, r.pcpu.busy), (0.5, 0.5));
+    }
+
+    #[test]
+    fn middle_cores_use_their_own_table() {
+        let f = Freqs { ecpu: vec![600.0], mcpu: vec![1500.0, 2500.0], pcpu: vec![4000.0], ..Default::default() };
+        // M5 Pro and Max: middle and top cores, no efficiency cores
+        let s = [core("MCPU0", &[("IDLE", 0), ("V0", 50), ("V1", 50)]), core("PCPU0", &[("IDLE", 0), ("V0", 100)])];
+        let r = summarize(&s, 1.0, &f);
+        assert_eq!((r.ecpu.mhz, r.pcpu.mhz), (2000.0, 4000.0));
+        // without such a table they fall back to the lower one
+        let r = summarize(&s, 1.0, &Freqs { mcpu: vec![], ..f.clone() });
+        assert_eq!(r.ecpu.mhz, 600.0);
+        // efficiency cores keep theirs
+        let s = [core("ECPU0", &[("IDLE", 0), ("V0", 100)])];
+        assert_eq!(summarize(&s, 1.0, &f).ecpu.mhz, 600.0);
+    }
+
+    #[test]
+    fn tables_by_kind_of_core() {
+        let entry = |table: u8, kind: u8| [table, kind, 0, 0, 0, 0, 0, 0];
+        // an M5 Max lists three kinds: table 22 for the slowest, 23 for the
+        // middle cores, 5 for the top ones
+        let max = [entry(22, 0), entry(23, 1), entry(5, 2)].concat();
+        assert_eq!(cluster_tables(&max), Tables { low: Some(22), mid: Some(23), top: Some(5) });
+        // in any order
+        let mixed = [entry(5, 2), entry(22, 0), entry(23, 1)].concat();
+        assert_eq!(cluster_tables(&mixed), cluster_tables(&max));
+        // two kinds: no middle one
+        let two = [entry(1, 0), entry(5, 1)].concat();
+        assert_eq!(cluster_tables(&two), Tables { low: Some(1), mid: None, top: Some(5) });
+        // nothing, or a cut-off entry
+        assert_eq!(cluster_tables(&[]), Tables::default());
+        assert_eq!(cluster_tables(&[22, 0, 0]), Tables::default());
+    }
+
+    #[test]
+    fn a_stopped_cpu_counter_is_noticed() {
+        let run = |cpu: i64, secs: f64| cpu_energy_frozen(&[energy("CPU Energy", "mJ", cpu), energy("GPU Energy", "mJ", 300)], secs);
+        assert!(run(0, 2.0));
+        assert!(!run(40, 2.0));
+        // too short to tell
+        assert!(!run(0, 0.1));
+        // nothing was read at all
+        assert!(!cpu_energy_frozen(&[], 2.0));
+        assert!(!cpu_energy_frozen(&[energy("GPU Energy", "mJ", 300)], 2.0));
+        // an Ultra chip: every die stopped
+        let dies = |a: i64, b: i64| cpu_energy_frozen(&[energy("DIE_0_CPU Energy", "mJ", a), energy("DIE_1_CPU Energy", "mJ", b)], 2.0);
+        assert!(dies(0, 0));
+        assert!(!dies(0, 900));
     }
 
     #[test]
