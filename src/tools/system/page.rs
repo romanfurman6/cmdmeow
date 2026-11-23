@@ -256,14 +256,14 @@ fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Col
         let n = p.text(Pos2::new(r.right(), r.top() + 28.0), Align2::RIGHT_BOTTOM, num, ty::hero(), TEXT());
         right = n.left() - sp::M;
     }
-    // the title sits on the big number's baseline in every card, so titles
-    // in a row line up too
+    // the title sits at the card's top edge in every card, level with the
+    // big number's top, so titles in a row line up too
     // a long title in a narrow card steps down to 13 rather than cut (R10)
     let mut f = title_font();
     while f.size > 13.0 && p.layout_no_wrap(title.to_owned(), f.clone(), TEXT()).size().x + 14.0 > right - r.left() {
         f.size -= 1.0;
     }
-    let t = text_fit(p, Pos2::new(r.left(), r.top() + 26.0), Align2::LEFT_BOTTOM, title, f.clone(), TEXT(), right - r.left() - 14.0);
+    let t = text_fit(p, Pos2::new(r.left(), r.top()), Align2::LEFT_TOP, title, f.clone(), TEXT(), right - r.left() - 14.0);
     // the card opens its details: a chevron after the title says so
     let ch = p.text(Pos2::new(t.right() + 4.0, t.bottom()), Align2::LEFT_BOTTOM, "›", f, TEXT_FAINT());
     if let Some((label, c)) = status {
