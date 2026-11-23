@@ -281,9 +281,12 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             };
             sp.facts.push(fact("Thermal pressure", ["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], tc, ""));
             if let Some(pw) = &s.power {
-                let parts = pw.cpu_w + pw.gpu_w + pw.ane_w;
-                let total = s.sys_watts.unwrap_or(parts);
-                sp.facts.push(fact("Power", watts(total), TEXT(), ""));
+                // the whole Mac; without that sensor, what the chip draws,
+                // unless its counters stopped (macOS 27)
+                let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
+                if let Some(total) = s.sys_watts.or(parts) {
+                    sp.facts.push(fact("Power", watts(total), TEXT(), ""));
+                }
             }
             sp.procs = s.procs.clone();
             sp.facts.push(fact("Uptime", human_duration(s.uptime_secs), if s.uptime_warning() { AMBER() } else { TEXT() }, ""));

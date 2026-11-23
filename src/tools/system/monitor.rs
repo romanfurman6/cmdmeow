@@ -604,7 +604,8 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         let shown = activity::visible();
         #[cfg(target_os = "macos")]
         let (power, sys_watts) = if shown {
-            (sampler.as_mut().and_then(|s| s.read()), smc.as_ref().and_then(|s| s.read("PSTR")).filter(|w| w.is_finite() && *w > 0.0 && *w < 1000.0))
+            let battery = shared.lock_ok().battery.present;
+            (sampler.as_mut().and_then(|s| s.read()), smc.as_ref().and_then(|s| system_watts(|key| s.read(key), battery)))
         } else {
             (None, None)
         };
@@ -955,6 +956,14 @@ fn parse_battery(out: &str) -> Battery {
     b
 }
 
+/// Watts the whole Mac draws, from the SMC. A Mac without a battery can
+/// read 0 under the usual key and reports what comes in from the wall.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn system_watts(read: impl Fn(&str) -> Option<f32>, battery: bool) -> Option<f32> {
+    let keys: &[&str] = if battery { &["PSTR"] } else { &["PSTR", "PDTR", "PD0R"] };
+    keys.iter().filter_map(|key| read(key)).find(|w| w.is_finite() && *w > 0.0 && *w < 1000.0)
+}
+
 /// macOS's battery verdict, the same text the original reads from the power
 /// source ("BatteryHealth" / "BatteryHealthCondition").
 fn power_health_text() -> String {
@@ -1194,6 +1203,21 @@ mod tests {
         // 65535 means unknown
         let unknown = IOREG.replace("\"IsCharging\" = Yes", "\"IsCharging\" = No");
         assert_eq!(parse_battery(&unknown).minutes_left, None);
+    }
+
+    #[test]
+    fn whole_mac_watts_by_kind_of_mac() {
+        let smc = |vals: &'static [(&'static str, f32)]| move |key: &str| vals.iter().find(|v| v.0 == key).map(|v| v.1);
+        // a MacBook: the usual key, never the power input (it also charges the battery)
+        assert_eq!(system_watts(smc(&[("PSTR", 11.5), ("PDTR", 60.0)]), true), Some(11.5));
+        assert_eq!(system_watts(smc(&[("PSTR", 0.0), ("PDTR", 60.0)]), true), None);
+        // a desktop Mac: the usual key when it reads, else the power input
+        assert_eq!(system_watts(smc(&[("PSTR", 31.0), ("PDTR", 40.0)]), false), Some(31.0));
+        assert_eq!(system_watts(smc(&[("PSTR", 0.0), ("PDTR", 40.0)]), false), Some(40.0));
+        assert_eq!(system_watts(smc(&[("PSTR", 0.0), ("PDTR", 0.0), ("PD0R", 22.0)]), false), Some(22.0));
+        // nothing usable
+        assert_eq!(system_watts(smc(&[("PSTR", f32::NAN), ("PD0R", 5000.0)]), false), None);
+        assert_eq!(system_watts(smc(&[]), false), None);
     }
 
     #[test]
