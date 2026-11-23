@@ -677,6 +677,11 @@ impl App {
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(false));
     }
 
+    /// When the panel last hid.
+    pub fn last_hide(&self) -> Instant {
+        self.last_hide
+    }
+
     /// Open the full app in its own normal window on a tool's page; the menu
     /// panel steps aside.
     pub fn open_window(&mut self, ctx: &egui::Context, page: usize) {
