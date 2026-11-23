@@ -139,7 +139,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | P5 | Every removal that can take longer than 0.4 s shows the removal loader (`kit::loader::show`): card 340 wide, padding 24, mark 88, title (lead, verb + "…"), "x of y" (body dim), current path (mono 11 faint, cut in the middle), 28 buttons (Stop where safe; Done, Put back where undo exists). It appears after 0.4 s and stays at least 0.8 s. Scans and measuring keep `spinner()` and the bar. | ✅ |
 | P6 | The loader mark is one shape with the ⌘ cut out; Done turns ⌘ into ✓. | ✅ |
 | P7 | **Tip placement:** a hover tip opens on the side away from the edge its bar is docked to, 8 pt from the bar, and never covers another control. Tips of a top bar with a sub bar open under the sub bar (`glass::tip_below`). A row's tip in a rail or sidebar opens beside it, 8 pt out, centred on the row (`glass::tip_beside`), never at the pointer over the next row. | ✅ |
-| P8 | **Details popup** (`kit::modal::details`; Mac Health, AI Usage): a card's details open over the page, never in a side sheet. 440 wide, centred, `SCRIM()` under it (P4), `POPOVER` fill, radius 16, height fits the content. Closes with ×, Esc or a click outside. | ⏳ code (#292) |
+| P8 | **Details popup** (`kit::modal::details`; Mac Health, AI Usage): a card's details open over the page, never in a side sheet. 440 wide, centred, `SCRIM()` under it (P4), `POPOVER` fill, radius 16, height fits the content. Closes with ×, Esc or a click outside. Content sits straight on the popup on its 16 pt text column, groups split by a hairline; no cards or boxes inside (S2, no frame in a frame). | ⏳ code (#292) |
 | MN1 | **Menus** ("⋯" and right-click) come only from `kit::menu` (`popup`, `context`, `item`, `choice`, `sub`, `note`, `separator`, `danger`); never `ui.button` in a menu. Frame: radius 10, 1 pt edge, Whisper shadow (P1, P2), 4 above and below the rows. | ✅ (canvas https://claude.ai/artifact/4C5Z47zFtr7PiiQD8qPtyv) |
 | MN2 | Menu rows 28, body 13, text 12 in from the edge. A note (state, command) is caption 11 dim, wraps at 320, mono for commands. Hairline separators edge to edge with 4 above and below. | ✅ |
 | MN3 | Menu rows hover with `ROW_HOVER` edge to edge (H2); no press, no sound (B10). | ✅ |
@@ -327,3 +327,5 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-18, Roman: light-theme data cards and widgets are a white sheet with a soft shadow (variant A, canvas https://claude.ai/artifact/JvUYUzsJhHwHPd2vd9QhCA); quiet keys stay as they are (S2w, W1).
 
 2026-11-23, Roman: Mac Health v3 (canvas https://claude.ai/artifact/RLBUbQ54MYxGDAYufjnZhy, PR #292): details popup P8, clickable cards (S2), card titles 15/13 (R2), widget sheets retired (SP12), header tips SP14.
+
+2026-11-23, Roman: details popup content has no inner boxes (P8, PR #295).
