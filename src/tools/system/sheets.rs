@@ -172,14 +172,10 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             sp.segs.push((other as f32 / total, OTHER()));
             sp.legend.push(leg(OTHER(), "Other", human_bytes(other)));
             sp.legend.push(leg_dim("Free", human_bytes(s.disk_free)));
-            let (hv, hc, hh) = if s.smart_status.is_empty() {
-                ("—".to_string(), TEXT(), "")
-            } else if s.smart_status.eq_ignore_ascii_case("Verified") {
-                ("Verified".into(), GREEN(), "")
-            } else {
-                (s.smart_status.clone(), RED(), "Back up now and replace it")
-            };
-            sp.facts.push(fact("Drive health", hv, hc, hh));
+            // drive health only when it fails (T1), as on the page's card
+            if !s.smart_status.is_empty() && !s.smart_status.eq_ignore_ascii_case("Verified") {
+                sp.facts.push(fact("Drive health", s.smart_status.clone(), RED(), "Back up now and replace it"));
+            }
             match s.trash_bytes {
                 Some(b) => {
                     let hint = if s.trash_overfill() { "Empty it in Cleanup".to_string() } else { String::new() };
@@ -412,7 +408,7 @@ pub fn details(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
     let x1 = rect.right() - 16.0;
     let top = rect.top() + SHEET_HEADER_H + 16.0;
     let h = body(&p, ui.ctx(), &sp, kind, s, x0, x1 - x0, top);
-    let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(super::procs::TOP_N)], x0, x1 - x0, top + h + 14.0);
+    let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(super::procs::TOP_N)], x0, x1 - x0, top + h + GROUP_GAP);
     if pa != Action::None {
         action = pa;
     }
@@ -423,6 +419,23 @@ pub fn details(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
     action
 }
 
+
+/// A row's rect for the shared row painters (`legend_row`, `fact_row`),
+/// which inset their text 12 from the edge: in the popup there is no card
+/// around the rows (S2, no frame inside a frame), so the text sits on the
+/// popup's own text column at `x0` and the values end at `x0 + w`.
+fn bare(x0: f32, w: f32, y: f32, h: f32) -> Rect {
+    Rect::from_min_size(Pos2::new(x0 - 12.0, y), Vec2::new(w + 24.0, h))
+}
+
+/// A hairline between two groups of rows, `GROUP_GAP` above the next one.
+fn divider(p: &egui::Painter, x0: f32, w: f32, y: f32) -> f32 {
+    hairline(p, Pos2::new(x0, y), Pos2::new(x0 + w, y));
+    GROUP_GAP
+}
+
+/// Space around the hairline between groups.
+const GROUP_GAP: f32 = 12.0;
 
 /// Legends this wide get two columns.
 const LEGEND_TWO_COLUMNS_MIN: f32 = 400.0;
@@ -467,21 +480,19 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
     // legend card
     if !sp.legend.is_empty() {
         // wide enough (the window page): two columns, split by a hairline
-        let cols = if w >= LEGEND_TWO_COLUMNS_MIN && sp.legend.len() >= 4 { 2 } else { 1 };
+        // device names are long: one column, so they're never cut (R10)
+        let cols = if kind != Sheet::Devices && w >= LEGEND_TWO_COLUMNS_MIN && sp.legend.len() >= 4 { 2 } else { 1 };
         let rows = sp.legend.len().div_ceil(cols);
-        let h = 8.0 + rows as f32 * SHEET_ROW_H;
-        let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h));
-        data_card(p, lr);
-        let cw = w / cols as f32;
-        if cols == 2 {
-            hairline(p, Pos2::new(x0 + cw, y + 10.0), Pos2::new(x0 + cw, y + h - 10.0));
-        }
+        let h = rows as f32 * SHEET_ROW_H;
+        // two columns with a gutter, no rule between them
+        let gut = 24.0;
+        let cw = (w - gut * (cols - 1) as f32) / cols as f32;
         for (i, l) in sp.legend.iter().enumerate() {
             let (c, r) = (i / rows, i % rows);
-            let rr = Rect::from_min_size(Pos2::new(x0 + c as f32 * cw, y + 4.0 + r as f32 * SHEET_ROW_H), Vec2::new(cw, SHEET_ROW_H));
+            let rr = bare(x0 + c as f32 * (cw + gut), cw, y + r as f32 * SHEET_ROW_H, SHEET_ROW_H);
             legend_row(p, rr, l.color, &l.label, &l.value, l.value_col);
         }
-        y += h + 14.0;
+        y += h + GROUP_GAP;
     } else if kind == Sheet::Devices {
         y += paragraph(p, Pos2::new(x0, y), "No devices", font(13.0), TEXT_DIM(), w) + 14.0;
     }
@@ -489,6 +500,9 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
     // speed test card: its title over it (R2), ping on the title line
     if sp.speed {
         let sp_ = &s.speed;
+        if y > top {
+            y += divider(p, x0, w, y);
+        }
         card_title(p, Pos2::new(x0, y), "Speed test");
         if let Some(l) = sp_.latency_ms {
             p.text(Pos2::new(x0 + w, y), Align2::RIGHT_TOP, match sp_.jitter_ms {
@@ -497,8 +511,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
             }, ty::label(), TEXT_DIM());
         }
         y += CARD_TITLE_H;
-        let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 92.0));
-        data_card(p, lr);
+        let lr = Rect::from_min_size(Pos2::new(x0 - 12.0, y - 12.0), Vec2::new(w + 24.0, 92.0));
         for (k, (label, v)) in [("Download", sp_.down_mbps), ("Upload", sp_.up_mbps)].iter().enumerate() {
             let x = lr.left() + 12.0 + k as f32 * (w / 2.0);
             p.text(Pos2::new(x, lr.top() + 12.0), Align2::LEFT_TOP, *label, ty::label(), TEXT_DIM());
@@ -523,39 +536,38 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
             let txt = if good.is_empty() { "Very slow".to_string() } else { format!("Good for {}", good.join(", ").to_lowercase()) };
             text_fit(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, &txt, ty::label(), TEXT_DIM(), w - 24.0);
         }
-        y += lr.height() + 14.0;
+        y += lr.height() - 12.0 + GROUP_GAP;
     }
 
     // busiest apps, then the facts
     if !sp.apps.is_empty() {
+        if y > top {
+            y += divider(p, x0, w, y);
+        }
         card_title(p, Pos2::new(x0, y), "Apps");
         y += CARD_TITLE_H;
-        let h = 8.0 + sp.apps.len() as f32 * SHEET_ROW_H;
-        let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h));
-        data_card(p, ar);
         for (i, l) in sp.apps.iter().enumerate() {
-            let rr = Rect::from_min_size(Pos2::new(x0, y + 4.0 + i as f32 * SHEET_ROW_H), Vec2::new(w, SHEET_ROW_H));
-            legend_row(p, rr, l.color, &l.label, &l.value, l.value_col);
+            legend_row(p, bare(x0, w, y + i as f32 * SHEET_ROW_H, SHEET_ROW_H), l.color, &l.label, &l.value, l.value_col);
         }
-        y += h + 14.0;
+        y += sp.apps.len() as f32 * SHEET_ROW_H + GROUP_GAP;
     }
     if !sp.facts.is_empty() {
-        y += facts_card(p, &sp.facts, x0, w, y);
+        if y > top {
+            y += divider(p, x0, w, y);
+        }
+        y += facts_rows(p, &sp.facts, x0, w, y) + GROUP_GAP;
     }
-    y - top
+    // the last group's gap goes: the caller sets what follows
+    y - top - GROUP_GAP
 }
 
-/// A card of fact rows (measured first, then drawn). Returns its height.
-fn facts_card(p: &egui::Painter, facts: &[Fact], x0: f32, w: f32, y: f32) -> f32 {
-    let measure = |f: &Fact| if f.hint.is_empty() { SHEET_ROW_H } else { 27.0 + p.layout(f.hint.clone(), font(12.0), TEXT_FAINT(), w - 24.0).size().y + 8.0 };
-    let h: f32 = 8.0 + facts.iter().map(measure).sum::<f32>();
-    let fr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h));
-    data_card(p, fr);
-    let mut fy = y + 4.0;
+/// Fact rows on the popup, no card. Returns their height.
+fn facts_rows(p: &egui::Painter, facts: &[Fact], x0: f32, w: f32, y: f32) -> f32 {
+    let mut fy = y;
     for f in facts {
-        fy += fact_row(p, Rect::from_min_size(Pos2::new(x0, fy), Vec2::new(w, 40.0)), &f.label, &f.value, f.col, &f.hint);
+        fy += fact_row(p, bare(x0, w, fy, 40.0), &f.label, &f.value, f.col, &f.hint);
     }
-    h
+    fy - y
 }
 
 const PROC_ROW_H: f32 = SHEET_ROW_H;
@@ -564,7 +576,7 @@ const QUIT_ARM_SECS: f64 = 4.0;
 
 /// Height of the processes card plus the gap above it.
 fn procs_h(n: usize) -> f32 {
-    if n == 0 { 0.0 } else { 14.0 + CARD_TITLE_H + n as f32 * PROC_ROW_H + 8.0 }
+    if n == 0 { 0.0 } else { 2.0 * GROUP_GAP + CARD_TITLE_H + n as f32 * PROC_ROW_H }
 }
 
 /// The busiest processes in one card at `y`; Quit (twice) on the user's own.
@@ -573,16 +585,15 @@ fn procs_card(ui: &mut Ui, procs: &[super::procs::Proc], x0: f32, w: f32, y: f32
         return Action::None;
     }
     let p = ui.painter().clone();
+    let y = y + divider(&p, x0, w, y);
     card_title(&p, Pos2::new(x0, y), "Top processes");
     let y = y + CARD_TITLE_H;
-    let card = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, procs_h(procs.len()) - 14.0 - CARD_TITLE_H));
-    data_card(&p, card);
     let now = ui.input(|i| i.time);
     let arm_id = ui.scope_id().with("proc-quit-armed");
     let armed: Option<(u32, f64)> = ui.data(|d| d.get_temp(arm_id)).filter(|(_, t): &(u32, f64)| now - t < QUIT_ARM_SECS);
     let mut action = Action::None;
     for (k, pr) in procs.iter().enumerate() {
-        let rr = Rect::from_min_size(Pos2::new(x0, y + 4.0 + k as f32 * PROC_ROW_H), Vec2::new(w, PROC_ROW_H));
+        let rr = bare(x0, w, y + k as f32 * PROC_ROW_H, PROC_ROW_H);
         let hover = ui.rect_contains_pointer(rr);
         let is_armed = armed.is_some_and(|(pid, _)| pid == pr.pid);
         let mut right = rr.right() - 12.0;
