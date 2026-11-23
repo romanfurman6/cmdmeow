@@ -267,9 +267,13 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 // only the total load is drawn, so the rows carry no squares
                 leg_plain("User", format!("{:.0}%", s.cpu_user), TEXT()),
                 leg_plain("System", format!("{:.0}%", s.cpu_system), TEXT()),
-                leg_plain("Idle", format!("{:.0}%", (100.0 - s.cpu_load).max(0.0)), TEXT_DIM()),
             ];
             if let Some(pw) = &s.power {
+                // whole-Mac watts beside user / system, so the cores get a column of their own
+                let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
+                if let Some(total) = s.sys_watts.or(parts) {
+                    sp.legend.push(leg_plain("Power", watts(total), TEXT()));
+                }
                 for (label, u) in [("E-cores", pw.ecpu), ("P-cores", pw.pcpu), ("GPU", pw.gpu)] {
                     sp.legend.push(leg_plain(label, usage_text(u), TEXT()));
                 }
@@ -280,14 +284,6 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 _ => RED(),
             };
             sp.facts.push(fact("Thermal pressure", ["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], tc, ""));
-            if let Some(pw) = &s.power {
-                // the whole Mac; without that sensor, what the chip draws,
-                // unless its counters stopped (macOS 27)
-                let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
-                if let Some(total) = s.sys_watts.or(parts) {
-                    sp.facts.push(fact("Power", watts(total), TEXT(), ""));
-                }
-            }
             sp.procs = s.procs.clone();
             sp.facts.push(fact("Uptime", human_duration(s.uptime_secs), if s.uptime_warning() { AMBER() } else { TEXT() }, ""));
             sp
@@ -310,7 +306,7 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             }
             sp.facts.push(fact("Security", dash(&title_case(&s.wifi.security)), TEXT(), ""));
             sp.facts.push(fact("Channel", dash(&channel_text(&s.wifi.channel)), TEXT(), ""));
-            sp.facts.push(fact("Signal / noise", dash(&s.wifi.signal), TEXT(), ""));
+            sp.facts.push(fact("Signal", dash(s.wifi.signal.split(" / ").next().unwrap_or("").trim()), TEXT(), ""));
             use super::monitor::SpeedMode;
             sp.buttons = vec![("Full test", BTN_SECONDARY, Action::SpeedTest(SpeedMode::Full)), ("Quick test", BTN_PRIMARY, Action::SpeedTest(SpeedMode::Quick))];
             sp
@@ -383,7 +379,41 @@ fn busy_label(act: Action) -> &'static str {
 }
 
 pub fn sheet(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
-    let sp = spec(kind, s);
+    sheet_as(ui, rect, kind, s, false)
+}
+
+/// The spec as the Mac Health details popup shows it: charging settings live
+/// in Mac Health › Settings, and there is room for every busy process.
+fn page_spec(kind: Sheet, s: &Snapshot) -> Spec {
+    let mut sp = spec(kind, s);
+    sp.limit = None;
+    sp.switches.clear();
+    sp.buttons.retain(|b| b.2 != Action::InstallHelper);
+    // the charging settings live in Mac Health › Settings
+    if kind == Sheet::Battery && s.battery.present {
+        sp.buttons.push(("Charging settings", BTN_SECONDARY, Action::Open("health-settings")));
+    }
+    sp
+}
+
+/// The details popup on the Mac Health page: the sheet's content in `rect`.
+pub fn details(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
+    sheet_as(ui, rect, kind, s, true)
+}
+
+/// Height the details popup needs at `w`: measured with a painter that
+/// draws nothing.
+pub fn details_height(ui: &Ui, kind: Sheet, s: &Snapshot, w: f32) -> f32 {
+    let sp = page_spec(kind, s);
+    let p = ui.painter().with_clip_rect(Rect::NOTHING);
+    let body_h = body(&p, ui.ctx(), &sp, kind, s, 16.0, w - 32.0, 0.0);
+    let procs = procs_h(sp.procs.len().min(super::procs::TOP_N));
+    let btns = if sp.buttons.is_empty() { 0.0 } else { BTN_H + 16.0 };
+    SHEET_HEADER_H + 16.0 + body_h + procs + btns + 16.0
+}
+
+fn sheet_as(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot, page: bool) -> Action {
+    let sp = if page { page_spec(kind, s) } else { spec(kind, s) };
     let mut action = Action::None;
     if sheet_header(ui, rect, sp.icon, sp.chip, &sp.title, &sp.sub) {
         action = Action::Close;
@@ -408,7 +438,8 @@ pub fn sheet(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
         action = sw;
     }
     // the panel's sheet has room for fewer
-    let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(SHEET_PROCS)], x0, x1 - x0, top + h + switches_h(&sp) + 14.0);
+    let n_procs = if page { super::procs::TOP_N } else { SHEET_PROCS };
+    let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(n_procs)], x0, x1 - x0, top + h + switches_h(&sp) + 14.0);
     if pa != Action::None {
         action = pa;
     }
