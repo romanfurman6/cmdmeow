@@ -589,6 +589,10 @@ impl Capture {
         }
         cx.push(Action::HidePanel);
         self.preview = None;
+        // the model loads while the area is being picked
+        if p == Purpose::Text {
+            mac::warm_ocr();
+        }
         if !self.perm_skip && !mac::can_record_screen() {
             self.perm_needed = true;
             self.perm_card = Some((g, p, delay));

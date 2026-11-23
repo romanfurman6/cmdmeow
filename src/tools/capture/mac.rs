@@ -158,15 +158,28 @@ pub fn ocr_status() -> &'static str {
     }
 }
 
+/// A few words for the warm-up: Vision loads its recognizer and language
+/// model only once it finds text, so a blank image warms only half of it.
+const WARM_PNG: &[u8] = include_bytes!("../../../assets/ocr/warm.png");
+
+/// One accurate pass at a time, so a Copy text that lands while the warm-up
+/// runs waits for the model it is loading instead of loading a second copy.
+static OCR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Load the OCR model in the background so the first Copy text is quick.
+/// Called when Copy text or the editor starts, not at launch: the model
+/// keeps ~30 MB, which only people who use text recognition should pay.
 pub fn warm_ocr() {
     use std::sync::atomic::Ordering;
     if OCR_READY.load(Ordering::Relaxed) || OCR_WARMING.swap(true, Ordering::SeqCst) {
         return;
     }
     std::thread::spawn(|| {
-        let img = image::RgbaImage::from_pixel(64, 24, image::Rgba([255, 255, 255, 255]));
-        let _ = recognize_image(&img);
+        let path = std::env::temp_dir().join(format!("cmdmeow-ocr-warm-{}.png", std::process::id()));
+        if std::fs::write(&path, WARM_PNG).is_ok() {
+            let _ = recognize_path(&path, false);
+            let _ = std::fs::remove_file(&path);
+        }
     });
 }
 
@@ -199,6 +212,7 @@ pub fn recognize_file(path: &Path) -> Vec<TextLine> {
 
 fn recognize_path(path: &Path, fast: bool) -> Vec<TextLine> {
     let Ok((w, h)) = image::image_dimensions(path) else { return Vec::new() };
+    let _one = (!fast).then(|| OCR_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
     let mut lines = imp::recognize(path, w as f32, h as f32, fast);
     sort_reading_order(&mut lines);
     OCR_READY.store(true, std::sync::atomic::Ordering::Relaxed);
