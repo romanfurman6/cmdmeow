@@ -204,7 +204,7 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
 
 /// The card title's font. Proto: CMDMEOW_CARD_TITLE=<pt> tries sizes.
 fn title_font() -> egui::FontId {
-    let pt = std::env::var("CMDMEOW_CARD_TITLE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(13.0);
+    let pt = std::env::var("CMDMEOW_CARD_TITLE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(15.0);
     bold(pt)
 }
 
@@ -261,7 +261,8 @@ fn cpu_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<She
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
     tile::spark_span(p, gr, &s.cpu_history, level_color(s.thermal_level()), Some((peak * 1.15).max(25.0)));
     let mut x = r.left();
-    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system), format!("Idle {:.0}%", (100.0 - s.cpu_load).max(0.0))] {
+    // no Idle: it is 100 minus the big number (T2)
+    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system)] {
         x = p.text(Pos2::new(x, foot + 9.0), Align2::LEFT_CENTER, t, ty::label(), white(166)).right() + sp::L;
     }
     let rx = split + sp::XL;
@@ -271,8 +272,11 @@ fn cpu_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<She
         for (label, u) in [("E-cores", pw.ecpu), ("P-cores", pw.pcpu), ("GPU", pw.gpu)] {
             rows.push((Some((u.busy.clamp(0.01, 1.0), tint::HEALTH())), label.to_string(), super::sheets::usage_text(u)));
         }
-        let total = s.sys_watts.unwrap_or(pw.cpu_w + pw.gpu_w + pw.ane_w);
-        rows.push((None, "Power".to_string(), super::sheets::watts(total)));
+        // the whole Mac; without that sensor, what the chip draws, unless its counters stopped
+        let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
+        if let Some(total) = s.sys_watts.or(parts) {
+            rows.push((None, "Power".to_string(), super::sheets::watts(total)));
+        }
     }
     lines_at(p, rx, rw, y, sp::LEGEND_H, &rows);
     let py = y + rows.len() as f32 * sp::LEGEND_H + if rows.is_empty() { 0.0 } else { sp::L };
@@ -346,8 +350,9 @@ fn lines_at(p: &egui::Painter, left: f32, w: f32, top: f32, lh: f32, rows: &[Row
 }
 
 fn disk_rows(s: &Snapshot) -> Vec<Row> {
-    let mut rows: Vec<Row> = vec![(None, "Used".to_string(), human_bytes(s.disk_total.saturating_sub(s.disk_free)))];
-    if !s.smart_status.is_empty() {
+    // no Used: the ring says free of total (T2); drive health only when it isn't fine (T1)
+    let mut rows: Vec<Row> = Vec::new();
+    if !s.smart_status.is_empty() && !s.smart_status.eq_ignore_ascii_case("Verified") {
         rows.push((None, "Drive health".to_string(), s.smart_status.clone()));
     }
     rows.push((None, "Trash".to_string(), s.trash_bytes.map(human_bytes).unwrap_or_else(|| "—".into())));
@@ -441,7 +446,9 @@ fn battery_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let y = card_title(p, r, "Battery", None, Some(&format!("{}%", b.percent)));
     let col = if b.percent <= 20 { RED() } else { GREEN() };
     let state = super::sheets::battery_state(s);
-    let mut rows: Vec<Row> = vec![(Some((b.percent as f32 / 100.0, col)), "Charge".to_string(), state)];
+    let state = if state.starts_with("Held at") { "Held at limit".to_string() } else { state };
+    let _ = col;
+    let mut rows: Vec<Row> = vec![(None, "State".to_string(), state)];
     rows.extend(battery_rows(s));
     lines_at(p, r.left(), r.width(), y, sp::LEGEND_H, &rows);
     // charging controls at the bottom: limit, then its switches or the helper
@@ -514,19 +521,17 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let mut rows: Vec<Row> = vec![(None, "Upload".to_string(), format!("↑ {}", human_rate(s.net_up)))];
     rows.push((None, "Today".to_string(), format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total))));
     if !s.wifi.wired {
-        rows.push((None, "Signal".to_string(), dash(s.wifi.signal.clone())));
+        rows.push((None, "Signal".to_string(), dash(s.wifi.signal.split(" / ").next().unwrap_or("").trim().to_string())));
         rows.push((None, "Security".to_string(), dash(super::sheets::title_case(&s.wifi.security))));
         rows.push((None, "Channel".to_string(), dash(super::sheets::channel_text(&s.wifi.channel))));
     }
+    // the speed only once there is one: the buttons say a test can run (T3)
     let sp_ = &s.speed;
-    let speed = if sp_.running {
-        format!("Testing… {:.0}%", sp_.progress * 100.0)
+    if sp_.running {
+        rows.push((None, "Speed".to_string(), format!("Testing… {:.0}%", sp_.progress * 100.0)));
     } else if let (Some(d), Some(u)) = (sp_.down_mbps, sp_.up_mbps) {
-        format!("{d:.0} down · {u:.0} up Mbps")
-    } else {
-        "Not tested".to_string()
-    };
-    rows.push((None, "Speed".to_string(), speed));
+        rows.push((None, "Speed".to_string(), format!("{d:.0} down · {u:.0} up Mbps")));
+    }
     lines_at(p, rx, rw, y, sp::LEGEND_H, &rows);
     // the busiest apps on the network now (nettop runs while this shows)
     let ay = y + rows.len() as f32 * sp::LEGEND_H + sp::L;
