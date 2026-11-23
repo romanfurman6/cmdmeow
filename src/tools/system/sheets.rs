@@ -500,7 +500,9 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
     // speed test card: its title over it (R2), ping on the title line
     if sp.speed {
         let sp_ = &s.speed;
-        y += divider(p, x0, w, y);
+        if y > top {
+            y += divider(p, x0, w, y);
+        }
         card_title(p, Pos2::new(x0, y), "Speed test");
         if let Some(l) = sp_.latency_ms {
             p.text(Pos2::new(x0 + w, y), Align2::RIGHT_TOP, match sp_.jitter_ms {
@@ -539,7 +541,9 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
 
     // busiest apps, then the facts
     if !sp.apps.is_empty() {
-        y += divider(p, x0, w, y);
+        if y > top {
+            y += divider(p, x0, w, y);
+        }
         card_title(p, Pos2::new(x0, y), "Apps");
         y += CARD_TITLE_H;
         for (i, l) in sp.apps.iter().enumerate() {
@@ -548,7 +552,9 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         y += sp.apps.len() as f32 * SHEET_ROW_H + GROUP_GAP;
     }
     if !sp.facts.is_empty() {
-        y += divider(p, x0, w, y);
+        if y > top {
+            y += divider(p, x0, w, y);
+        }
         y += facts_rows(p, &sp.facts, x0, w, y) + GROUP_GAP;
     }
     // the last group's gap goes: the caller sets what follows
