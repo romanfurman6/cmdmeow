@@ -23,6 +23,8 @@ tray-icon = "0.21"
 libc = "0.2"
 dirs = "6"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# byte search over session logs (already in the tree through other crates)
+memchr = "2"
 # sharing recordings to S3-compatible storage (request signing, random names)
 sha2 = "0.10"
 hmac = "0.12"

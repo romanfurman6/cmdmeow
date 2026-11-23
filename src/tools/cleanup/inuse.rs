@@ -117,15 +117,48 @@ impl OpenFiles {
     }
 }
 
-/// The open paths in `lsof -F n` output ("n/path" lines).
+/// The open paths in `lsof -F n` output ("n/path" lines). A name is kept
+/// whole, and also without a trailing note such as " (deleted)": a folder
+/// called "App (1)" must not be cut at its bracket. Listing a path that
+/// isn't open only makes the clean more careful.
 pub fn parse_names(out: &[u8]) -> Vec<PathBuf> {
-    String::from_utf8_lossy(out)
-        .lines()
-        .filter_map(|l| l.strip_prefix('n'))
-        .filter(|n| n.starts_with('/'))
-        // "(deleted)" and similar notes after the path
-        .map(|n| PathBuf::from(n.split(" (").next().unwrap_or(n)))
-        .collect()
+    let mut list = Vec::new();
+    for n in String::from_utf8_lossy(out).lines().filter_map(|l| l.strip_prefix('n')).filter(|n| n.starts_with('/')) {
+        let bare = n.rfind(" (").filter(|_| n.ends_with(')')).map(|i| &n[..i]);
+        for name in std::iter::once(n).chain(bare) {
+            if let Some(real) = unescape(name) {
+                list.push(real);
+            }
+            list.push(PathBuf::from(name));
+        }
+    }
+    list
+}
+
+/// Without a UTF-8 locale (an app opened from Finder has none) lsof prints
+/// every byte outside ASCII as "\xNN": "/Users/me/Музика" would never match
+/// the real folder. The name with those bytes put back, if it had any.
+fn unescape(name: &str) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+    let b = name.as_bytes();
+    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(b.len());
+    let (mut i, mut found) = (0, false);
+    while i < b.len() {
+        if b[i] == b'\\' && i + 3 < b.len() && b[i + 1] == b'x' {
+            if let (Some(h), Some(l)) = (hex(b[i + 2]), hex(b[i + 3])) {
+                if h >= 8 {
+                    out.push(h * 16 + l);
+                    i += 4;
+                    found = true;
+                    continue;
+                }
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    found.then(|| PathBuf::from(std::ffi::OsString::from_vec(out)))
 }
 
 /// Why `path` must not be removed right now, if it mustn't. Uses the
@@ -185,6 +218,23 @@ mod tests {
         // a sibling with a longer name is not "inside"
         assert!(!o.holds(Path::new("/Users/me/Library/Caches/Ap")));
         assert!(!o.holds(Path::new("/Users/me/Library/Caches/App2")));
+    }
+
+    #[test]
+    fn open_files_with_brackets_or_other_alphabets_in_the_path() {
+        // as lsof prints them when the app has no UTF-8 locale
+        let o = OpenFiles::from(parse_names(
+            "n/Users/me/Library/Caches/App (1)/Cache.db\nn/Users/me/\\xd0\\x9c\\xd1\\x83\\xd0\\xb7\\xd0\\xb8\\xd0\\xba\\xd0\\xb0/Cache/data.db\nn/Users/me/Caf\\xc3\\xa9 (2)/x.db (deleted)\nn/Users/me/Фото/Cache/a.db\nn/Users/me/a\\xzz/b\n".as_bytes(),
+        ));
+        assert!(o.holds(Path::new("/Users/me/Library/Caches/App (1)")));
+        assert!(!o.holds(Path::new("/Users/me/Library/Caches/App")));
+        assert!(o.holds(Path::new("/Users/me/Музика/Cache")));
+        assert!(o.holds(Path::new("/Users/me/Café (2)/x.db")));
+        // already UTF-8 (lsof run from a terminal)
+        assert!(o.holds(Path::new("/Users/me/Фото/Cache")));
+        // not an escape: kept as written
+        assert!(o.holds(Path::new("/Users/me/a\\xzz")));
+        assert!(!o.holds(Path::new("/Users/me/Музика2")));
     }
 
     #[test]

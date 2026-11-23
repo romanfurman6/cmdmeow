@@ -137,14 +137,16 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             };
             let p = ui.painter().clone();
             for rr in rects {
-                glass_card(&p, rr, R_CARD, 0.0, false);
+                data_card(&p, rr);
             }
+            // one ring size on the page: the disk and the battery ring match
+            let ring_d = disk_ring_area(rects[1].shrink(sp::L), &s).size().min_elem().min(battery_ring_area(rects[3].shrink(sp::L), &s).size().min_elem()).min(DISK_RING_D);
             cpu_card(&p, rects[0].shrink(sp::L), &s);
-            if let Some(a) = disk_card(ui, &p, rects[1].shrink(sp::L), &s) {
+            if let Some(a) = disk_card(ui, &p, rects[1].shrink(sp::L), &s, ring_d) {
                 action = a;
             }
             memory_card(&p, rects[2].shrink(sp::L), &s);
-            battery_card(&p, rects[3].shrink(sp::L), &s);
+            battery_card(&p, rects[3].shrink(sp::L), &s, ring_d);
             if let Some(a) = network_card(ui, &p, rects[4].shrink(sp::L), &s) {
                 action = a;
             }
@@ -211,50 +213,12 @@ fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Col
     r.top() + 28.0 + sp::M
 }
 
-/// A big ring with a value and its unit inside, centred in `area`.
-fn ring_stat(p: &egui::Painter, area: Rect, frac: f32, color: Color32, value: &str, unit: &str) {
-    let rr = (area.width().min(area.height()) / 2.0).min(78.0);
-    if rr < 24.0 {
+/// The page's stat ring (SP2 `stat_ring`) at `d`, centred in `area`.
+fn ring_in(p: &egui::Painter, area: Rect, d: f32, frac: f32, color: Color32, value: &str, caption: &str) {
+    if d < 48.0 {
         return;
     }
-    let c = area.center();
-    let w = (rr * 0.14).clamp(8.0, 12.0);
-    tile::ring(p, c, rr - w / 2.0, w, frac.max(0.01), color);
-    // the full chord through the centre, less a little air
-    let inner = 2.0 * (rr - w) - 8.0;
-    // "1.44 TB" + "free": the number alone, its unit goes to the caption ("TB free")
-    let (num, caption) = match value.split_once(' ') {
-        Some((n, u)) => (n, format!("{u} {unit}")),
-        None => (value, unit.to_string()),
-    };
-    // shrink the number to fit the ring rather than cut it
-    let mut font = ty::number();
-    let tw = p.layout_no_wrap(num.to_string(), font.clone(), TEXT()).size().x;
-    if tw > inner {
-        font.size = (font.size * inner / tw).max(11.0);
-    }
-    text_fit(p, c - Vec2::new(0.0, 7.0), Align2::CENTER_CENTER, num, font, TEXT(), inner);
-    p.text(c + Vec2::new(0.0, 15.0), Align2::CENTER_CENTER, caption, ty::caption(), ty::caption_color());
-}
-
-/// A big ring with a whole value ("1.44 TB") and a caption under it
-/// ("free of 2.00 TB"), the disk ring of SP2.
-fn ring_stat_words(p: &egui::Painter, area: Rect, frac: f32, color: Color32, value: &str, caption: &str) {
-    let rr = (area.width().min(area.height()) / 2.0).min(78.0);
-    if rr < 24.0 {
-        return;
-    }
-    let c = area.center();
-    let w = (rr * 0.14).clamp(8.0, 12.0);
-    tile::ring(p, c, rr - w / 2.0, w, frac.max(0.01), color);
-    let inner = 2.0 * (rr - w) - 8.0;
-    let mut font = ty::number();
-    let tw = p.layout_no_wrap(value.to_string(), font.clone(), TEXT()).size().x;
-    if tw > inner {
-        font.size = (font.size * inner / tw).max(11.0);
-    }
-    text_fit(p, c - Vec2::new(0.0, 7.0), Align2::CENTER_CENTER, value, font, TEXT(), inner);
-    text_fit(p, c + Vec2::new(0.0, 15.0), Align2::CENTER_CENTER, caption, ty::label(), TEXT_DIM(), inner);
+    stat_ring(p, area.center(), d, frac, color, value, caption);
 }
 
 fn level_status(l: Level) -> Color32 {
@@ -265,51 +229,65 @@ fn level_status(l: Level) -> Color32 {
     }
 }
 
-/// Legend lines (22 pt each) at the bottom of `r`.
-fn legend(p: &egui::Painter, r: Rect, rows: &[(Option<Color32>, String, String)]) -> f32 {
-    let top = r.bottom() - rows.len() as f32 * sp::LEGEND_H;
-    for (k, (c, label, value)) in rows.iter().enumerate() {
-        let cy = top + (k as f32 + 0.5) * sp::LEGEND_H;
-        let mut x = r.left();
-        if let Some(c) = c {
-            p.rect_filled(Rect::from_center_size(Pos2::new(x + 4.0, cy), Vec2::splat(8.0)), 2.0, *c);
-            x += 14.0;
-        }
-        let vr = p.text(Pos2::new(r.right(), cy), Align2::RIGHT_CENTER, value, ty::label(), TEXT());
-        text_fit(p, Pos2::new(x, cy), Align2::LEFT_CENTER, label, ty::label(), white(166), vr.left() - x - 8.0);
-    }
-    top
-}
-
 fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     let load = format!("{:.0}%", s.cpu_load);
     let th = (["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], level_status(s.thermal_level()));
     let y = card_title(p, r, "CPU load", if s.thermal_level() == Level::Good { None } else { Some(th) }, Some(&load));
     let foot = r.bottom() - 18.0;
+    // the history with its time span under it, as in the widgets (W5)
     let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), foot - sp::M));
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
-    tile::spark_to(p, gr, &s.cpu_history, level_color(s.thermal_level()), (peak * 1.15).max(25.0));
+    tile::spark_span(p, gr, &s.cpu_history, level_color(s.thermal_level()), Some((peak * 1.15).max(25.0)));
     let mut x = r.left();
     for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system), format!("Idle {:.0}%", (100.0 - s.cpu_load).max(0.0))] {
         x = p.text(Pos2::new(x, foot + 9.0), Align2::LEFT_CENTER, t, ty::label(), white(166)).right() + sp::L;
     }
 }
 
-fn disk_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<SheetAction> {
-    let name = if s.volume_name.is_empty() { "Macintosh HD".to_string() } else { s.volume_name.clone() };
-    let y = card_title(p, r, &name, None, None);
-    let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
-    let mut rows: Vec<(Option<Color32>, String, String)> = vec![(None, "Used".to_string(), human_bytes(s.disk_total.saturating_sub(s.disk_free)))];
+type Row = (Option<(f32, Color32)>, String, String);
+
+/// Name · bar · value lines at the bottom of `r` (W5 columns shared in the
+/// card), 22 pt each. Returns the top of the first line.
+fn lines(p: &egui::Painter, r: Rect, rows: &[Row]) -> f32 {
+    let top = r.bottom() - rows.len() as f32 * sp::LEGEND_H;
+    lines_at(p, r.left(), r.width(), top, sp::LEGEND_H, rows);
+    top
+}
+
+/// The same lines from `top` down, `lh` apart.
+fn lines_at(p: &egui::Painter, left: f32, w: f32, top: f32, lh: f32, rows: &[Row]) {
+    let cols = tile::bar_cols(p, &rows.iter().map(|l| (l.1.as_str(), l.2.as_str())).collect::<Vec<_>>());
+    for (k, (frac, label, value)) in rows.iter().enumerate() {
+        let lr = Rect::from_min_size(Pos2::new(left, top + k as f32 * lh), Vec2::new(w, lh));
+        tile::bar_line(p, lr, label, *frac, value, cols);
+    }
+}
+
+fn disk_rows(s: &Snapshot) -> Vec<Row> {
+    let mut rows: Vec<Row> = vec![(None, "Used".to_string(), human_bytes(s.disk_total.saturating_sub(s.disk_free)))];
     if !s.smart_status.is_empty() {
         rows.push((None, "Drive health".to_string(), s.smart_status.clone()));
     }
     rows.push((None, "Trash".to_string(), s.trash_bytes.map(human_bytes).unwrap_or_else(|| "—".into())));
+    rows
+}
+
+/// Where the disk ring may sit: under the title, over the lines and the button.
+fn disk_ring_area(r: Rect, s: &Snapshot) -> Rect {
+    let lt = r.bottom() - BTN_H_ROW - sp::M - disk_rows(s).len() as f32 * sp::LEGEND_H;
+    Rect::from_min_max(Pos2::new(r.left(), r.top() + 28.0 + sp::M), Pos2::new(r.right(), lt - sp::M))
+}
+
+fn disk_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot, ring_d: f32) -> Option<SheetAction> {
+    let name = if s.volume_name.is_empty() { "Macintosh HD".to_string() } else { s.volume_name.clone() };
+    card_title(p, r, &name, None, None);
+    let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
     let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
-    let lt = legend(p, bottom, &rows);
+    lines(p, bottom, &disk_rows(s));
     let col = if s.disk_level() == Level::Good { tint::HEALTH() } else { level_color(s.disk_level()) };
     // SP2: the free space whole, "free of <total>" under it, as on the start ring
-    ring_stat_words(p, Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M)), used, col, &human_bytes(s.disk_free), &format!("free of {}", human_bytes(s.disk_total)));
-    // footer: Trash and the way to free space
+    ring_in(p, disk_ring_area(r, s), ring_d, used, col, &human_bytes(s.disk_free), &format!("free of {}", human_bytes(s.disk_total)));
+    // footer: the way to free space
     let fy = r.bottom() - BTN_H_ROW;
     let mut out = None;
     let bw = button_width(p, "Free up space", BTN_SECONDARY);
@@ -328,38 +306,25 @@ fn memory_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     };
     let pct = format!("{:.0}%", s.mem_pressure);
     let y = card_title(p, r, "Memory pressure", if s.mem_level() == Level::Good { None } else { Some((word, level_status(s.mem_level()))) }, Some(&pct));
-    // one stacked bar of what holds the memory
-    let tot = s.mem_total.max(1) as f32;
-    let parts = [(s.mem_active, series::monitor(0)), (s.mem_wired, series::monitor(1)), (s.mem_compressed, series::monitor(2))];
-    let segs: Vec<(f32, Color32)> = parts.iter().map(|(b, c)| (*b as f32 / tot, *c)).collect();
-    let rows = vec![
-        (Some(series::monitor(0)), "Apps".to_string(), human_bytes(s.mem_active)),
-        (Some(series::monitor(1)), "Wired".to_string(), human_bytes(s.mem_wired)),
-        (Some(series::monitor(2)), "Compressed".to_string(), human_bytes(s.mem_compressed)),
+    // what holds the memory as name · bar · value lines like the widgets
+    // (W5), bars against the largest so they read as a comparison
+    let hi = s.mem_active.max(s.mem_wired).max(s.mem_compressed).max(1) as f32;
+    let bar_of = |b: u64| Some(((b as f32 / hi).clamp(0.01, 1.0), tint::HEALTH()));
+    let rows: Vec<Row> = vec![
+        (bar_of(s.mem_active), "Apps".to_string(), human_bytes(s.mem_active)),
+        (bar_of(s.mem_wired), "Wired".to_string(), human_bytes(s.mem_wired)),
+        (bar_of(s.mem_compressed), "Compressed".to_string(), human_bytes(s.mem_compressed)),
         (None, "Swap used".to_string(), human_bytes(s.swap_used)),
         (None, "Installed".to_string(), human_bytes(s.mem_total)),
     ];
-    let lt = legend(p, r, &rows);
-    // pressure over the last minutes, then what holds the memory
-    let bar_y = lt - sp::M - 10.0;
-    stacked_bar(p, Rect::from_min_size(Pos2::new(r.left(), bar_y), Vec2::new(r.width(), 10.0)), &segs);
-    let cap_y = bar_y - sp::M;
-    if cap_y - y > 24.0 {
-        tile::spark_to(p, Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), cap_y)), &s.mem_history, level_color(s.mem_level()), (s.mem_history.iter().copied().fold(0.0f32, f32::max) * 1.5).max(30.0));
-    }
+    // no pressure graph: it barely moves, so it says nothing (as the
+    // Memory widget); the lines take the card from the top, sheet rows 32
+    let lh = ((r.bottom() - y) / rows.len() as f32).min(SHEET_ROW_H);
+    lines_at(p, r.left(), r.width(), y, lh, &rows);
 }
 
-fn battery_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
+fn battery_rows(s: &Snapshot) -> Vec<Row> {
     let b = &s.battery;
-    if !b.present {
-        card_title(p, r, "Power", Some(("No battery", TEXT_DIM())), None);
-        return;
-    }
-    // the same words as the battery sheet's header (C6)
-    let state = super::sheets::battery_state(s);
-    let scol = if b.charging { GREEN() } else if !b.plugged && b.percent <= 20 { RED() } else { TEXT_DIM() };
-    let y = card_title(p, r, "Battery", Some((&state, scol)), None);
-    let col = if b.percent <= 20 { RED() } else { GREEN() };
     let mut rows = Vec::new();
     if !b.plugged {
         if let Some(min) = b.minutes_left {
@@ -378,8 +343,31 @@ fn battery_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     if let Some(t) = b.temp_c {
         rows.push((None, "Temperature".to_string(), format!("{t:.0} °C")));
     }
-    let lt = legend(p, r, &rows);
-    ring_stat(p, Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M)), b.percent as f32 / 100.0, col, &format!("{}%", b.percent), "charge");
+    rows
+}
+
+/// Where the battery ring may sit: under the title, over the lines.
+fn battery_ring_area(r: Rect, s: &Snapshot) -> Rect {
+    if !s.battery.present {
+        return Rect::from_min_size(r.min, Vec2::splat(f32::INFINITY));
+    }
+    let lt = r.bottom() - battery_rows(s).len() as f32 * sp::LEGEND_H;
+    Rect::from_min_max(Pos2::new(r.left(), r.top() + 28.0 + sp::M), Pos2::new(r.right(), lt - sp::M))
+}
+
+fn battery_card(p: &egui::Painter, r: Rect, s: &Snapshot, ring_d: f32) {
+    let b = &s.battery;
+    if !b.present {
+        card_title(p, r, "Power", Some(("No battery", TEXT_DIM())), None);
+        return;
+    }
+    // the same words as the battery sheet's header (C6)
+    let state = super::sheets::battery_state(s);
+    let scol = if b.charging { GREEN() } else if !b.plugged && b.percent <= 20 { RED() } else { TEXT_DIM() };
+    card_title(p, r, "Battery", Some((&state, scol)), None);
+    let col = if b.percent <= 20 { RED() } else { GREEN() };
+    lines(p, r, &battery_rows(s));
+    ring_in(p, battery_ring_area(r, s), ring_d, b.percent as f32 / 100.0, col, &format!("{}%", b.percent), "charge");
 }
 
 fn devices_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<super::devices_ui::PageAction> {
@@ -394,15 +382,11 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let named = !s.wifi.name.is_empty() && !s.wifi.name.eq_ignore_ascii_case("wi-fi") && !s.wifi.name.eq_ignore_ascii_case("ethernet");
     let title = if named { s.wifi.name.clone() } else if s.wifi.wired { "Ethernet".to_string() } else if s.wifi.name.is_empty() { "Network".to_string() } else { "Wi-Fi".to_string() };
     let status = if !s.online { Some(("Offline", RED())) } else { None };
-    let y = card_title(p, r, &title, status, None);
-    // two numbers side by side
-    let colw = r.width() / 2.0;
-    for (k, (v, label, col)) in [(human_rate(s.net_down), "download", TEXT()), (human_rate(s.net_up), "upload", TEXT())].into_iter().enumerate() {
-        let x = r.left() + k as f32 * colw;
-        text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &v, ty::lead(), col, colw - sp::S);
-        p.text(Pos2::new(x, y + 25.0), Align2::LEFT_TOP, label, ty::caption(), ty::caption_color());
-    }
-    let mut rows = vec![(None, "Today".to_string(), format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total)))];
+    // the download as the big number, like the Wi-Fi widget; upload in the lines
+    let down = format!("↓ {}", human_rate(s.net_down));
+    let y = card_title(p, r, &title, status, Some(&down));
+    let mut rows: Vec<Row> = vec![(None, "Upload".to_string(), format!("↑ {}", human_rate(s.net_up)))];
+    rows.push((None, "Today".to_string(), format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total))));
     if !s.wifi.signal.is_empty() {
         rows.push((None, "Signal".to_string(), s.wifi.signal.clone()));
     }
@@ -416,10 +400,10 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     };
     rows.push((None, "Speed".to_string(), speed));
     let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
-    let lt = legend(p, bottom, &rows);
-    let gr = Rect::from_min_max(Pos2::new(r.left(), y + 40.0 + sp::M), Pos2::new(r.right(), lt - sp::M));
-    if gr.height() > 20.0 {
-        tile::spark(p, gr, &s.net_history, tint::HEALTH(), None);
+    let lt = lines(p, bottom, &rows);
+    let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M));
+    if gr.height() > 40.0 {
+        tile::spark_span(p, gr, &s.net_history, tint::HEALTH(), None);
     }
     let mut out = None;
     // the two tests side by side; each opens the dial in its mode
@@ -461,8 +445,9 @@ fn health_ask(s: &monitor::Snapshot) -> aicheck::Ask {
     let mut facts = vec![
         format!("Mac: {} {}", s.model, s.chip),
         format!("Up {}", human_duration(s.uptime_secs)),
-        format!("CPU load {:.0}% (user {:.0}%, system {:.0}%)", s.cpu_load * 100.0, s.cpu_user * 100.0, s.cpu_system * 100.0),
-        format!("Memory: pressure {:.0}%, {} total, {} compressed, swap {} of {}", s.mem_pressure * 100.0, gb(s.mem_total), gb(s.mem_compressed), gb(s.swap_used), gb(s.swap_total)),
+        // the monitor keeps these as percentages already (0–100)
+        format!("CPU load {:.0}% (user {:.0}%, system {:.0}%)", s.cpu_load, s.cpu_user, s.cpu_system),
+        format!("Memory: pressure {:.0}%, {} total, {} compressed, swap {} of {}", s.mem_pressure, gb(s.mem_total), gb(s.mem_compressed), gb(s.swap_used), gb(s.swap_total)),
         format!("Thermal state: {}", ["nominal", "fair", "serious", "critical"][s.thermal.min(3) as usize]),
         format!("Disk: {} free of {}", gb(s.disk_free), gb(s.disk_total)),
     ];
@@ -485,6 +470,14 @@ fn health_ask(s: &monitor::Snapshot) -> aicheck::Ask {
 mod tests {
     use super::*;
     use crate::tools::system::procs::Proc;
+
+    #[test]
+    fn ai_check_gets_percentages_as_shown() {
+        let s = monitor::demo_snapshot();
+        let facts = health_ask(&s).facts.join("\n");
+        assert!(facts.contains(&format!("CPU load {:.0}%", s.cpu_load)), "{facts}");
+        assert!(facts.contains(&format!("pressure {:.0}%", s.mem_pressure)), "{facts}");
+    }
 
     #[test]
     fn ai_quit_only_the_same_live_process_of_the_user() {

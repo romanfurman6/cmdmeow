@@ -92,10 +92,11 @@ pub fn find(root: &Path, stop: &dyn Fn() -> bool) -> Vec<Found> {
                 }
             }
             if !here.is_empty() {
-                let idle = idle_days(&dir, &artifacts);
+                let (idle, whole) = activity(&dir, &artifacts);
                 for (p, kind, careful) in here {
-                    // a folder one type rebuilds but another treats with care stays careful
-                    let careful = careful || types.iter().any(|t| t.careful.iter().any(|c| dir.join(c) == p));
+                    // a folder one type rebuilds but another treats with care stays careful;
+                    // so does one in a project too big to look through: the person decides
+                    let careful = careful || !whole || types.iter().any(|t| t.careful.iter().any(|c| dir.join(c) == p));
                     out.push(Found { project: dir.clone(), kind, dir: p, careful, idle_days: idle });
                 }
             }
@@ -135,8 +136,10 @@ pub fn still_build_output(p: &Path) -> Option<&'static str> {
     (!known).then_some("Its project files are gone; not sure it's build output")
 }
 
-/// Days since anything in the project (outside its build output) changed.
-pub fn idle_days(project: &Path, artifacts: &[&str]) -> f64 {
+/// Days since anything in the project (outside its build output) changed,
+/// and whether every file was looked at: a project with more than
+/// [`ACTIVITY_FILES`] may have newer files past the ones seen.
+pub fn activity(project: &Path, artifacts: &[&str]) -> (f64, bool) {
     let mut newest = project.symlink_metadata().and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
     // git touches its index on every commit, checkout and add
     for f in [".git/index", ".git/HEAD", ".git/FETCH_HEAD"] {
@@ -145,12 +148,14 @@ pub fn idle_days(project: &Path, artifacts: &[&str]) -> f64 {
         }
     }
     let mut seen = 0usize;
+    let mut whole = true;
     let mut stack = vec![project.to_path_buf()];
     'walk: while let Some(d) = stack.pop() {
         let Ok(rd) = std::fs::read_dir(&d) else { continue };
         for e in rd.flatten() {
             seen += 1;
             if seen > ACTIVITY_FILES {
+                whole = false;
                 break 'walk;
             }
             let n = e.file_name().to_string_lossy().into_owned();
@@ -164,7 +169,7 @@ pub fn idle_days(project: &Path, artifacts: &[&str]) -> f64 {
             }
         }
     }
-    SystemTime::now().duration_since(newest).map(|d| d.as_secs_f64() / 86_400.0).unwrap_or(0.0)
+    (SystemTime::now().duration_since(newest).map(|d| d.as_secs_f64() / 86_400.0).unwrap_or(0.0), whole)
 }
 
 #[cfg(test)]
@@ -225,6 +230,23 @@ mod tests {
         assert_eq!(verdict(&f).unwrap().0, Verdict::Ask);
         let f = Found { project: "/p".into(), kind: "Node".into(), dir: "/p/node_modules".into(), careful: false, idle_days: 10.0 };
         assert_eq!(verdict(&f).unwrap().0, Verdict::Ask);
+    }
+
+    #[test]
+    fn a_project_too_big_to_look_through_asks() {
+        let base = std::env::temp_dir().join(format!("cmdmeow-proj-big-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("big/src")).unwrap();
+        std::fs::create_dir_all(base.join("big/node_modules")).unwrap();
+        std::fs::write(base.join("big/package.json"), "x").unwrap();
+        for i in 0..ACTIVITY_FILES + 10 {
+            std::fs::write(base.join(format!("big/src/{i}.js")), "").unwrap();
+        }
+        assert!(!activity(&base.join("big"), &["node_modules"]).1);
+        assert!(activity(&base.join("big/node_modules"), &[]).1);
+        let f = find(&base, &|| false);
+        assert!(f.len() == 1 && f[0].careful, "{f:?}");
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

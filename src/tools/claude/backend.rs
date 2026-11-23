@@ -100,6 +100,7 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
     // this pass answers a Refresh: every provider shows its spinner until its turn
     let mut asked = false;
     loop {
+        let _pool = crate::kit::macos::pool();
         let set = settings::get();
         let now = chrono::Utc::now().timestamp();
         if asked {

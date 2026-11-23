@@ -396,11 +396,6 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             let item = matches!(row, Row::App(_) | Row::Job(_) | Row::Cron(_) | Row::Ext(_) | Row::Btm(_) | Row::Gone(_));
             let first = !prev_item;
             prev_item = item;
-            let row_line = |r: Rect| {
-                if !first {
-                    hairline(&p, Pos2::new(r.left() + sp::L, r.top()), Pos2::new(r.right() - sp::L, r.top()));
-                }
-            };
             match row {
                 Row::Head(t, l) => {
                     let cy = section_title(&p, a.left() + 4.0, y, t);
@@ -423,9 +418,9 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 Row::Cron(c) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
                     let fl = c.flags();
-                    row_line(r);
+                    row_line(ui, &p, r, first, fl.iter().any(|f| f.strong()));
                     if fl.iter().any(|f| f.strong()) {
-                        p.rect_filled(r, 0.0, red_wash(0.05));
+                        p.rect_filled(crate::kit::glass::lit_rect(r), crate::kit::glass::LIT_R, red_wash(0.05));
                     }
                     let cols = columns(&p, r, true);
                     let name = c.name();
@@ -457,7 +452,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Ext(x) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
-                    row_line(r);
+                    row_line(ui, &p, r, first, false);
                     let cols = columns(&p, r, false);
                     app_icon(s, &ctx, &p, cols.icon, None, &x.name, !x.on, &mut budget);
                     name_line(&p, &cols, &x.name, if x.on { TEXT() } else { TEXT_DIM() }, &[]);
@@ -480,7 +475,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Btm(b) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
-                    row_line(r);
+                    row_line(ui, &p, r, first, false);
                     let cols = columns(&p, r, false);
                     let icon_path = b.path.as_deref().filter(|p| p.extension().is_some_and(|e| e == "app")).or(b.program.as_deref().and_then(|p| owner_of(p)));
                     app_icon(s, &ctx, &p, cols.icon, icon_path, &b.name, !b.on, &mut budget);
@@ -506,7 +501,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 }
                 Row::Gone(g) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));
-                    row_line(r);
+                    row_line(ui, &p, r, first, false);
                     let cols = columns(&p, r, false);
                     app_icon(s, &ctx, &p, cols.icon, None, &g.name, true, &mut budget);
                     name_line(&p, &cols, &g.name, TEXT_DIM(), &[]);
@@ -555,8 +550,9 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     if s.ai.take_scroll(&key) {
                         ui.scroll_to_rect(r, Some(egui::Align::Center));
                     }
-                    row_line(r);
-                    reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &key));
+                    let ring = s.ai.ring(&ctx, &key);
+                    row_line(ui, &p, r, first, ring > 0.0);
+                    reveal::row(&p, r, ring);
                     let cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, Some(&la.path), &la.name, !la.on, &mut budget);
                     name_line(&p, &cols, &la.name, if la.on { TEXT() } else { TEXT_DIM() }, &[]);
@@ -579,11 +575,13 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     if s.ai.take_scroll(&j.label) {
                         ui.scroll_to_rect(r, Some(egui::Align::Center));
                     }
-                    row_line(r);
-                    if why.is_some() || fl.iter().any(|f| f.strong()) {
-                        p.rect_filled(r, 0.0, red_wash(0.05));
+                    let ring = s.ai.ring(&ctx, &j.label);
+                    let washed = why.is_some() || fl.iter().any(|f| f.strong());
+                    row_line(ui, &p, r, first, ring > 0.0 || washed);
+                    if washed {
+                        p.rect_filled(crate::kit::glass::lit_rect(r), crate::kit::glass::LIT_R, red_wash(0.05));
                     }
-                    reveal::rect(&p, r, 10.0, s.ai.ring(&ctx, &j.label));
+                    reveal::row(&p, r, ring);
                     let mut cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, j.owner.as_deref(), &j.name, !j.on, &mut budget);
                     let (sw, more) = (cols.sw, cols.more);
@@ -837,9 +835,9 @@ const STATE_W: f32 = 72.0;
 fn columns(p: &egui::Painter, r: Rect, switch: bool) -> Cols {
     let cy = r.center().y;
     let sw = Rect::from_min_size(Pos2::new(r.right() - sp::L - 36.0, cy - 10.0), Vec2::new(36.0, 20.0));
-    let right = if switch { sw.left() - sp::S } else { r.right() - sp::M };
+    let right = if switch { sw.left() - sp::S } else { r.right() - sp::L };
     let more = Rect::from_min_size(Pos2::new(right - 24.0, cy - 12.0), Vec2::splat(24.0));
-    let icon = Rect::from_center_size(Pos2::new(r.left() + sp::M + 14.0, cy), Vec2::splat(28.0));
+    let icon = Rect::from_center_size(Pos2::new(r.left() + sp::L + 14.0, cy), Vec2::splat(28.0));
     let text_x = icon.right() + sp::M;
     let state = more.left() - sp::COL_GAP - STATE_W;
     let when = state - sp::COL_GAP - WHEN_W;
@@ -876,6 +874,13 @@ fn when_icon(j: &Job) -> Icon {
         When::AtLogin => Icon::Power,
         When::OnDemand => Icon::Forward,
     }
+}
+
+/// The divider above an item row, inset 16; none next to a lit row (H2).
+fn row_line(ui: &Ui, p: &egui::Painter, r: Rect, first: bool, lit: bool) {
+    let (a, b) = (Pos2::new(r.left() + sp::L, r.top()), Pos2::new(r.right() - sp::L, r.top()));
+    let stroke = if first { egui::Stroke::NONE } else { egui::Stroke::new(1.0, white(HAIRLINE)) };
+    crate::kit::glass::row_divider_stroke(ui, p, a, b, lit, r.bottom(), stroke);
 }
 
 fn when_cell(p: &egui::Painter, c: &Cols, cy: f32, ic: Icon, label: &str) {

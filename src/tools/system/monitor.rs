@@ -61,6 +61,8 @@ pub struct Wifi {
     pub channel: String,
     pub signal: String,
     pub wired: bool,
+    /// The Wi-Fi interface ("en0"; "en1" on a Mac with built-in Ethernet).
+    pub iface: String,
 }
 
 /// Where a speed test is.
@@ -357,8 +359,8 @@ pub fn forget_device(mon: &Shared, key: &str) {
 /// each with its trend and estimate. Updates the stores.
 fn read_devices(profile: &devices::Profile) -> Vec<Device> {
     let mut list = profile.connected.clone();
-    let mut io = run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
-    io.push_str(&run_cmd("ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
+    let mut io = run_cmd("/usr/sbin/ioreg", &["-r", "-l", "-k", "BatteryPercent"]);
+    io.push_str(&run_cmd("/usr/sbin/ioreg", &["-r", "-l", "-k", "BatteryPercentSingle"]));
     devices::merge(&mut list, &devices::parse_ioreg(&io));
     // read Bluetooth before taking the store lock (IOBluetooth can be slow,
     // and forgetting a device from the UI takes the same lock)
@@ -561,6 +563,8 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         s.smart_status = smart;
     }
     loop {
+        // what macOS hands out during a reading is freed after it
+        let _pool = crate::kit::macos::pool();
         if PAUSED.load(Ordering::Relaxed) {
             super::ble::stop();
             while PAUSED.load(Ordering::Relaxed) {
@@ -579,12 +583,14 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         let dt = last_net.elapsed().as_secs_f64().max(0.2);
         last_net = Instant::now();
         let (mut rx, mut tx, mut rx_total, mut tx_total) = (0u64, 0u64, 0u64, 0u64);
+        let mut online = false;
         for (name, data) in nets.iter() {
             if name.starts_with("en") {
                 rx += data.received();
                 tx += data.transmitted();
                 rx_total += data.total_received();
                 tx_total += data.total_transmitted();
+                online |= has_address(data.ip_networks().iter().map(|n| n.addr));
             }
         }
         let (total, free) = crate::kit::fs::volume_space("/");
@@ -613,7 +619,7 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
             sync_charge(&shared, &policy);
         }
         let battery = battery_due.then(|| {
-            let mut b = parse_battery(&run_cmd("ioreg", &["-rn", "AppleSmartBattery"]));
+            let mut b = parse_battery(&run_cmd("/usr/sbin/ioreg", &["-rn", "AppleSmartBattery"]));
             if b.present {
                 if health_text.is_empty() || health_at.due(BATTERY_HEALTH_EVERY) {
                     health_text = power_health_text();
@@ -663,7 +669,7 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
         let none_connected = bt_connected.as_ref().is_some_and(|c| c.is_empty());
         let slow_profile = (activity::visible() || !none_connected) && BT_PROFILE_EVERY.due(&mut profile_at);
         if slow_profile {
-            bt_profile = devices::parse_profiler(&run_cmd("system_profiler", &["SPBluetoothDataType", "-json"]));
+            bt_profile = devices::parse_profiler(&run_cmd("/usr/sbin/system_profiler", &["SPBluetoothDataType", "-json"]));
         }
         let devices = (HID_EVERY.due(&mut hid_at) || slow_profile).then(|| read_devices(&bt_profile));
 
@@ -710,7 +716,7 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
             }
             s.net_recv_total = rx_total;
             s.net_sent_total = tx_total;
-            s.online = rx_total + tx_total > 0;
+            s.online = online;
             if let Some(b) = battery {
                 s.battery = b;
             }
@@ -757,6 +763,17 @@ fn run(shared: Shared, ctx: egui::Context, demo: bool) {
 
 // ---------------------------------------------------------------- sources
 
+/// An interface with one of these addresses is on a network: any address
+/// but the ones every interface gives itself (link-local, loopback).
+fn has_address(mut addrs: impl Iterator<Item = std::net::IpAddr>) -> bool {
+    addrs.any(|a| match a {
+        std::net::IpAddr::V4(v) => !(v.is_loopback() || v.is_link_local() || v.is_unspecified()),
+        std::net::IpAddr::V6(v) => !(v.is_loopback() || v.is_unspecified() || v.segments()[0] & 0xffc0 == 0xfe80),
+    })
+}
+
+/// What a system tool prints. `cmd` is its full path, so starting it doesn't
+/// look through every folder of PATH first.
 fn run_cmd(cmd: &str, args: &[&str]) -> String {
     Command::new(cmd)
         .args(args)
@@ -766,7 +783,7 @@ fn run_cmd(cmd: &str, args: &[&str]) -> String {
 }
 
 fn hardware() -> (String, String) {
-    let out = run_cmd("system_profiler", &["SPHardwareDataType", "-json"]);
+    let out = run_cmd("/usr/sbin/system_profiler", &["SPHardwareDataType", "-json"]);
     let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
     let item = &v["SPHardwareDataType"][0];
     let model = item["machine_name"].as_str().unwrap_or("Mac").to_string();
@@ -775,7 +792,7 @@ fn hardware() -> (String, String) {
 }
 
 fn disk_info() -> (String, String) {
-    let out = run_cmd("diskutil", &["info", "/"]);
+    let out = run_cmd("/usr/sbin/diskutil", &["info", "/"]);
     let mut name = "Macintosh HD".to_string();
     let mut smart = String::new();
     for line in out.lines() {
@@ -941,7 +958,7 @@ fn parse_battery(out: &str) -> Battery {
 /// macOS's battery verdict, the same text the original reads from the power
 /// source ("BatteryHealth" / "BatteryHealthCondition").
 fn power_health_text() -> String {
-    let out = run_cmd("system_profiler", &["SPPowerDataType", "-json"]);
+    let out = run_cmd("/usr/sbin/system_profiler", &["SPPowerDataType", "-json"]);
     let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
     if let Some(arr) = v["SPPowerDataType"].as_array() {
         for e in arr {
@@ -956,13 +973,27 @@ fn power_health_text() -> String {
 /// Wi-Fi details from `system_profiler`. Slow: it can take ~10 s, as it
 /// may scan for networks, so it runs rarely; [`wifi_name`] fills in between.
 fn wifi_details() -> Wifi {
+    parse_wifi(&run_cmd("/usr/sbin/system_profiler", &["SPAirPortDataType", "-json"]))
+}
+
+/// The Wi-Fi interface and its network from `system_profiler`'s report.
+fn parse_wifi(out: &str) -> Wifi {
     let mut w = Wifi::default();
-    let out = run_cmd("system_profiler", &["SPAirPortDataType", "-json"]);
-    let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+    let v: Value = serde_json::from_str(out).unwrap_or(Value::Null);
     if let Some(ifaces) = v["SPAirPortDataType"][0]["spairport_airport_interfaces"].as_array() {
         for i in ifaces {
+            // AirDrop's own interface (awdl0) is listed too, sometimes with
+            // network details of its own: the network is on an en* one
+            let iface = i["_name"].as_str().unwrap_or("");
+            if !iface.starts_with("en") {
+                continue;
+            }
+            if w.iface.is_empty() {
+                w.iface = iface.to_string();
+            }
             let cur = &i["spairport_current_network_information"];
             if cur.is_object() {
+                w.iface = iface.to_string();
                 w.name = cur["_name"].as_str().unwrap_or("").to_string();
                 w.security = cur["spairport_security_mode"]
                     .as_str()
@@ -973,6 +1004,7 @@ fn wifi_details() -> Wifi {
                 w.phy = cur["spairport_network_phymode"].as_str().unwrap_or("").to_string();
                 w.channel = cur["spairport_network_channel"].as_str().unwrap_or("").to_string();
                 w.signal = cur["spairport_signal_noise"].as_str().unwrap_or("").to_string();
+                break;
             }
         }
     }
@@ -987,7 +1019,9 @@ fn wifi_name(details: &Wifi) -> Wifi {
         w.name.clear();
     }
     // macOS hides the network name without Location access
-    apply_ipconfig(&mut w, &run_cmd("ipconfig", &["getsummary", "en0"]));
+    let iface = if w.iface.is_empty() { "en0" } else { w.iface.as_str() };
+    let summary = run_cmd("/usr/sbin/ipconfig", &["getsummary", iface]);
+    apply_ipconfig(&mut w, &summary);
     if w.name.is_empty() {
         w.name = if w.security.is_empty() { "Network".into() } else { "Wi-Fi".into() };
     }
@@ -1085,7 +1119,7 @@ pub fn demo_snapshot() -> Snapshot {
         net_sent_total: 1_200_000_000,
         net_recv_total: 5_400_000_000,
         online: true,
-        wifi: Wifi { name: "Home Wi-Fi".into(), security: "WPA3 PERSONAL".into(), phy: "802.11ax".into(), channel: "149 (5GHz, 80MHz)".into(), signal: "-52 dBm / -92 dBm".into(), wired: false },
+        wifi: Wifi { name: "Home Wi-Fi".into(), security: "WPA3 PERSONAL".into(), phy: "802.11ax".into(), channel: "149 (5GHz, 80MHz)".into(), signal: "-52 dBm / -92 dBm".into(), wired: false, iface: "en0".into() },
         devices: devices::demo(),
         hidden_devices: vec![],
         bt_prefs: devices::Prefs::default(),
@@ -1173,6 +1207,30 @@ mod tests {
         // 16 KB pages: app = anonymous − purgeable
         assert_eq!(mem_split(1000, 200, 300, 50, 16384), (800 * 16384, 300 * 16384, 50 * 16384));
         assert_eq!(mem_split(10, 20, 0, 0, 4096), (0, 0, 0));
+    }
+
+    #[test]
+    fn online_needs_a_real_address() {
+        let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
+        assert!(has_address([ip("192.168.1.20")].into_iter()));
+        assert!(has_address([ip("fe80::1c2a:1"), ip("2a02:8108::5")].into_iter()));
+        // Wi-Fi off or no cable: nothing, or only what the interface gives itself
+        assert!(!has_address(std::iter::empty()));
+        assert!(!has_address([ip("fe80::1c2a:1"), ip("169.254.12.7")].into_iter()));
+    }
+
+    #[test]
+    fn the_wifi_interface_is_not_airdrops() {
+        // the Wi-Fi interface, then AirDrop's with details of its own
+        let report = r#"{"SPAirPortDataType":[{"spairport_airport_interfaces":[
+            {"_name":"en1","spairport_current_network_information":{"_name":"<redacted>","spairport_security_mode":"spairport_security_mode_wpa2_personal","spairport_network_channel":"36 (5GHz, 80MHz)"}},
+            {"_name":"awdl0","spairport_current_network_information":{"spairport_network_channel":"149 (5GHz, 80MHz)"}}]}]}"#;
+        let w = parse_wifi(report);
+        assert_eq!((w.iface.as_str(), w.security.as_str(), w.channel.as_str()), ("en1", "WPA2 PERSONAL", "36 (5GHz, 80MHz)"));
+        // Wi-Fi on but not joined: still the en* interface
+        let idle = r#"{"SPAirPortDataType":[{"spairport_airport_interfaces":[{"_name":"awdl0","spairport_current_network_information":{}},{"_name":"en0"}]}]}"#;
+        assert_eq!(parse_wifi(idle).iface, "en0");
+        assert_eq!(parse_wifi("").iface, "");
     }
 
     #[test]

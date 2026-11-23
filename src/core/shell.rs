@@ -18,6 +18,41 @@ const HIDDEN_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(5);
 /// longest the menu panel waits for it before stepping aside anyway.
 const APP_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_millis(700);
 
+/// When the open cover (M5) can go: the window's frames have been coming
+/// steadily for a while. A paint that holds the main thread (the ~1 s
+/// nextDrawable wait behind the grey window) shows as a long gap between
+/// passes; the cover stays until passes have run without one for `CALM`.
+struct OpenCover {
+    made: Instant,
+    last: Instant,
+    calm_since: Instant,
+}
+
+impl OpenCover {
+    /// How often the window draws while the cover is up.
+    const TICK: std::time::Duration = std::time::Duration::from_millis(50);
+    /// A gap between passes this long means a paint held the main thread.
+    const STALL: std::time::Duration = std::time::Duration::from_millis(250);
+    const CALM: std::time::Duration = std::time::Duration::from_millis(300);
+    const LEAST: std::time::Duration = std::time::Duration::from_millis(600);
+    const MOST: std::time::Duration = std::time::Duration::from_secs(4);
+
+    fn new() -> Self {
+        let now = Instant::now();
+        OpenCover { made: now, last: now, calm_since: now }
+    }
+
+    /// Note a pass at `now`; true when the cover can go.
+    fn done(&mut self, now: Instant) -> bool {
+        if now.duration_since(self.last) >= Self::STALL {
+            self.calm_since = now;
+        }
+        self.last = now;
+        let age = now.duration_since(self.made);
+        age >= Self::MOST || (age >= Self::LEAST && now.duration_since(self.calm_since) >= Self::CALM)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
     Panel,
@@ -70,6 +105,8 @@ pub struct App {
     pub app_open: bool,
     /// When the window was asked for (dev log: how long the first frame took).
     pub app_asked: Option<Instant>,
+    /// The open cover (M5) under the app window's first frames, while it's up.
+    open_cover: Option<OpenCover>,
     /// When the app window (or setup in it) last drew.
     app_drawn: Option<Instant>,
     /// When the system appearance (and new windows' glass) was last checked.
@@ -124,6 +161,7 @@ impl App {
         let demo = opts.screenshot.is_some();
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
+        super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
         if !demo {
             crate::kit::sound::prewarm();
         }
@@ -193,6 +231,7 @@ impl App {
             last_hide: Instant::now(),
             app_open: false,
             app_asked: None,
+            open_cover: None,
             app_drawn: None,
             theme_checked: None,
             app_focus: false,
@@ -271,6 +310,7 @@ impl App {
             eframe::set_value(storage, super::settings::STORAGE_KEY, &WidgetPrefs::from_entries(&self.widgets));
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
+            eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
     }
@@ -491,7 +531,7 @@ impl App {
                     self.reshape(ctx);
                 }
                 Action::HidePanel => {
-                    if self.mode == Mode::Panel && self.visible && self.screenshot.is_none() {
+                    if !super::panel::keep_open() && self.mode == Mode::Panel && self.visible && self.screenshot.is_none() {
                         self.hide(ctx);
                     }
                 }
@@ -885,7 +925,7 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
+        if !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
             self.hide(ctx);
         }
     }
@@ -982,7 +1022,7 @@ impl eframe::App for App {
             Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
                 // one glass sheet; the detail opens on its left behind a hairline
-                glass::backdrop(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque, t);
+                glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 if self.sheet_open() {
                     let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));
@@ -1039,7 +1079,7 @@ impl eframe::App for App {
                 self.toast = None;
             }
         }
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1048,7 +1088,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on()) != (&off_before.0, off_before.1) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open()) != (&off_before.0, off_before.1, off_before.2) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
@@ -1172,6 +1212,17 @@ impl App {
                 if crate::kit::fs::is_dev() {
                     eprintln!("[timing] window first frame {} ms after the click", at.elapsed().as_millis());
                 }
+                // the backdrop and loader mark under the first frames: they
+                // show only if the window is still empty after 150 ms (M5)
+                self.open_cover = crate::kit::spin::cover(id, ui.max_rect().size(), 16.0).then(OpenCover::new);
+            }
+            if let Some(cover) = &mut self.open_cover {
+                if cover.done(Instant::now()) {
+                    crate::kit::spin::uncover(id);
+                    self.open_cover = None;
+                } else {
+                    vctx.request_repaint_after(OpenCover::TICK);
+                }
             }
             app_focused = vctx.input(|i| i.viewport().focused) == Some(true);
             if self.app_focus {
@@ -1198,6 +1249,9 @@ impl App {
             if vctx.input(|i| i.viewport().close_requested()) {
                 // closing during setup only hides it: the menu bar brings it back
                 self.app_open = false;
+                if self.open_cover.take().is_some() {
+                    crate::kit::spin::uncover(id);
+                }
                 // the Dock icon goes a moment later: dropping it while macOS
                 // still flashes the menu title (⌘W) left "Window" highlighted
                 self.dock_off_at = Some(Instant::now());
@@ -1418,7 +1472,44 @@ fn install_fonts(ctx: &egui::Context) {
 
 #[cfg(test)]
 mod tests {
-    use super::{link_matches, open_link};
+    use super::{link_matches, open_link, OpenCover};
+    use std::time::Duration;
+
+    /// Passes every `step` ms from the cover's start, with the main thread
+    /// held for `stall` ms after the pass at `stall_at` ms; when it goes.
+    fn cover_goes_at(step: u64, stall_at: Option<(u64, u64)>) -> u64 {
+        let mut c = OpenCover::new();
+        let t0 = c.made;
+        let mut t = 0;
+        loop {
+            t += step;
+            if let Some((at, len)) = stall_at {
+                if t > at && t <= at + step {
+                    t += len;
+                }
+            }
+            if c.done(t0 + Duration::from_millis(t)) {
+                return t;
+            }
+            assert!(t < 10_000);
+        }
+    }
+
+    #[test]
+    fn the_open_cover_stays_until_frames_come_steadily() {
+        // a window that draws right away: gone at the least time
+        let quick = cover_goes_at(16, None);
+        assert!((600..700).contains(&quick), "{quick}");
+        // a paint that held the main thread for a second: stays until
+        // passes ran calm for a while after it
+        let stalled = cover_goes_at(16, Some((30, 1000)));
+        assert!(stalled >= 1030 + 300 && stalled < 1500, "{stalled}");
+        // never longer than the most
+        let mut c = OpenCover::new();
+        let t0 = c.made;
+        let goes = (1..).map(|k| k * 400).find(|t| c.done(t0 + Duration::from_millis(*t))).unwrap();
+        assert!(goes >= 4000 && goes < 4400, "{goes}");
+    }
 
     #[test]
     fn open_links_name_a_tool_and_a_route() {

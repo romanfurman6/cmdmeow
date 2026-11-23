@@ -152,7 +152,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let mut y = block.top() + (block_h - rows_h) / 2.0;
     if let (Some(l), Some(s)) = (&last, &sizes) {
         let cy = section_title(&p, x0, y, &format!("Last scan {}", super::engine::days_ago(l.when)));
-        p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, human_bytes(s.iter().sum()), ty::title(), TEXT());
+        crate::kit::glass::section_value(&p, x1, cy, &human_bytes(s.iter().sum()));
         y += head_h;
     }
     let max = sizes.as_ref().and_then(|s| s.iter().copied().max()).unwrap_or(0).max(1) as f32;
@@ -162,13 +162,15 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("cleanup-group", k)), Sense::hover());
         if resp.hovered() {
-            p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+            crate::kit::glass::start_row_fill(&p, rr);
         }
         if k > 0 || sizes.is_some() {
-            hairline(&p, rr.left_top(), rr.right_top());
+            crate::kit::glass::row_divider(ui, &p, rr.left_top(), rr.right_top(), resp.hovered(), rr.bottom());
         }
         let col = junk_ramp(k);
         let cy = rr.center().y;
+        // H9: content 12 in from the row's edges
+        let (x0, x1) = (x0 + crate::kit::glass::START_PAD, x1 - crate::kit::glass::START_PAD);
         let ic = Pos2::new(x0 + 14.0, cy);
         p.circle_filled(ic, 14.0, with_alpha(col, 0.14));
         group_icon(&p, g, Rect::from_center_size(ic, Vec2::splat(16.0)), col);
@@ -181,7 +183,8 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
                 bar(&p, bar_r, s[k] as f32 / max, col);
             }
         }
-        resp.on_hover_text(g.blurb());
+        // P7: beside the list, never over the next row
+        crate::kit::glass::tip_beside(resp, g.blurb(), rr.right());
         y += sp::ROW_H;
     }
 }
@@ -566,7 +569,8 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
             // ROW_HOVER (ui-rules H1), inset radius 8 in the rail
             p.rect_filled(lit, 8.0, white((ROW_HOVER as f32 * hv) as u8));
         }
-        let c = Pos2::new(rr.left() + sp::S + 12.0, rr.center().y);
+        // H9: 12 from the lit edge, like the size on the right
+        let c = Pos2::new(rr.left() + sp::M + 12.0, rr.center().y);
         p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
         let ir = Rect::from_center_size(c, Vec2::splat(14.0));
         match grp {
@@ -831,9 +835,16 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
             if !ui.is_rect_visible(rr) {
                 continue;
             }
-            // hairlines between the rows of a card
+            // hairlines between the rows of a card, none next to a lit row (H2)
+            let lit = match l {
+                Line::Entry(sec, e) => ui.rect_contains_pointer(rr) || app.ai.hovered.as_deref() == Some(items[es[sec_i(sec)][e].idx[0]].path.display().to_string().as_str()),
+                Line::Member(..) | Line::KeptHead => ui.rect_contains_pointer(rr),
+                _ => false,
+            };
             if k > 0 && l.card().is_some() && lines[k - 1].card() == l.card() {
-                p.line_segment([rr.left_top(), rr.right_top()], Stroke::new(1.0, CARD_EDGE()));
+                crate::kit::glass::row_divider_stroke(ui, &p, rr.left_top(), rr.right_top(), lit, rr.bottom(), Stroke::new(1.0, CARD_EDGE()));
+            } else if lit {
+                crate::kit::glass::row_divider_stroke(ui, &p, rr.left_top(), rr.left_top(), true, rr.bottom(), Stroke::NONE);
             }
             let act = match l {
                 Line::Label(Sec::Ask) => {
@@ -911,8 +922,8 @@ fn section_label(p: &egui::Painter, at: Pos2, title: &str, col: Color32, n: usiz
 fn row_hover(ui: &mut Ui, rr: Rect, salt: impl std::hash::Hash + std::fmt::Debug) -> egui::Response {
     let resp = ui.interact(rr, ui.scope_id().with(("row", salt)), Sense::click());
     if resp.hovered() {
-        // ROW_HOVER (ui-rules H1): edge to edge in lists
-        ui.painter().rect_filled(rr.shrink(1.0), 0.0, white(ROW_HOVER));
+        // ROW_HOVER (H1), inside the card (H2)
+        crate::kit::glass::row_hover_fill(ui.painter(), rr);
     }
     resp
 }
@@ -958,7 +969,7 @@ fn ask_row(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], e: &Entry, ans: Opt
     let resp = row_hover(ui, rr, &key);
     // the AI Check answer under the pointer points at its row
     if app.ai.hovered.as_deref() == Some(key.as_str()) {
-        p.rect_stroke(rr.shrink(1.0), R_SMALL, Stroke::new(2.0, with_alpha(AI(), 0.7)), StrokeKind::Inside);
+        p.rect_stroke(crate::kit::glass::lit_rect(rr), crate::kit::glass::LIT_R, Stroke::new(2.0, with_alpha(AI(), 0.7)), StrokeKind::Inside);
     }
     let mut act = None;
     if e.name.is_some() {
@@ -1049,7 +1060,7 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
     let key = first.path.display().to_string();
     let resp = row_hover(ui, rr, &key);
     if hovered == Some(key.as_str()) {
-        p.rect_stroke(rr.shrink(1.0), R_SMALL, Stroke::new(2.0, with_alpha(AI(), 0.7)), StrokeKind::Inside);
+        p.rect_stroke(crate::kit::glass::lit_rect(rr), crate::kit::glass::LIT_R, Stroke::new(2.0, with_alpha(AI(), 0.7)), StrokeKind::Inside);
     }
     let mut act = None;
     if e.name.is_some() {

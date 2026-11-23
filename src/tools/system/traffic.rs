@@ -102,7 +102,7 @@ pub fn rates(prev: &Totals, now: &Totals, secs: f64) -> Vec<AppRate> {
 }
 
 fn read() -> Totals {
-    let out = Command::new("nettop")
+    let out = Command::new("/usr/bin/nettop")
         .args(["-P", "-L", "1", "-x", "-J", "bytes_in,bytes_out"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())

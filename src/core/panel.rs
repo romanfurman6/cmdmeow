@@ -11,6 +11,20 @@ use crate::kit::glass::*;
 use crate::kit::mechanics as m;
 use egui::{Align2, Id, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2};
 
+/// Settings › General "Keep panel open": the panel stays up when focus
+/// leaves it and while a capture runs, so it can be screenshotted. Off by
+/// default.
+pub const KEEP_OPEN_KEY: &str = "panel.keep_open";
+static KEEP_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn keep_open() -> bool {
+    KEEP_OPEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_keep_open(on: bool) {
+    KEEP_OPEN.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Height of the title line above the widgets.
 pub const HEADER: f32 = 60.0;
 /// Space below the widgets: a gap plus the "Edit widgets…" link.

@@ -325,7 +325,11 @@ impl Ctx {
             it.verdict = Verdict::Ask;
             it.rule_verdict = Verdict::Ask;
             it.app_running = true;
-            let app = if title.contains(' ') && title.len() > 18 { pretty(&name) } else { title.to_string() };
+            let app = match title_app(title) {
+                a if a != title => a.to_string(),
+                _ if title.contains(' ') && title.len() > 18 => pretty(&name),
+                _ => title.to_string(),
+            };
             it.reason = format!("{} is open right now — quit it first or allow anyway", if app.is_empty() { title.to_string() } else { app });
         }
         self.items.push(it);
@@ -348,11 +352,30 @@ pub(super) fn guard(group: Group, p: &Path) -> Option<&'static str> {
     is_protected(p)
 }
 
-/// The app a cache belongs to is running (by its folder's bundle id or the
-/// item's title).
+/// The app named in an item's title: "Slack · Cache" and "Slack (sandboxed)"
+/// are Slack's.
+fn title_app(title: &str) -> &str {
+    let t = title.split(" · ").next().unwrap_or(title);
+    t.strip_suffix(" (sandboxed)").unwrap_or(t)
+}
+
+/// The app a cache belongs to is running: by the item's title, or by the
+/// app's own folder, which is the cache itself (Caches/<bundle id>) or sits
+/// above it (Containers/<bundle id>/Data/Library/Caches, Application
+/// Support/<app>/Cache).
 fn app_open(ids: &HashSet<String>, names: &HashSet<String>, path: &Path, title: &str) -> bool {
-    let name = path.file_name().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
-    ids.contains(&name) || names.contains(&title.to_lowercase())
+    let low = |s: &std::ffi::OsStr| s.to_string_lossy().to_lowercase();
+    let name = path.file_name().map(low).unwrap_or_default();
+    if ids.contains(&name) || names.contains(&title.to_lowercase()) || names.contains(&title_app(title).to_lowercase()) {
+        return true;
+    }
+    let parts: Vec<String> = path.components().map(|c| low(c.as_os_str())).collect();
+    parts.windows(2).any(|w| match w[0].as_str() {
+        // an app's helpers and extensions keep containers of their own
+        "containers" => ids.contains(&w[1]) || ids.iter().any(|id| w[1].strip_prefix(id.as_str()).is_some_and(|rest| rest.starts_with('.'))),
+        "application support" => names.contains(&w[1]) || ids.contains(&w[1]),
+        _ => false,
+    })
 }
 
 /// Drop repeated and nested paths (the outer one stays), then measure what's
@@ -738,7 +761,7 @@ fn ago(days: f64) -> String {
 }
 
 fn process_running(name: &str) -> bool {
-    Command::new("pgrep").args(["-x", name]).output().map(|o| o.status.success()).unwrap_or(false)
+    Command::new("/usr/bin/pgrep").args(["-x", name]).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
 // ---- other AI tools (AIToolScanning catalog)
@@ -1588,6 +1611,28 @@ mod tests {
         assert_eq!(short_id("0123456789abcdef"), "0123456789ab…");
         // multi-byte names used to panic on a byte slice
         assert_eq!(short_id("знімок-екрана-2026"), "знімок-екран…");
+    }
+
+    #[test]
+    fn a_running_app_is_seen_through_its_cache_folder() {
+        let set = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<HashSet<String>>();
+        let (ids, names) = (set(&["com.tinyspeck.slackmacgap", "com.apple.mail", "com.microsoft.vscode"]), set(&["slack", "mail", "code"]));
+        let open = |path: &str, title: &str| app_open(&ids, &names, Path::new(path), title);
+        // Caches/<bundle id>
+        assert!(open("/Users/me/Library/Caches/com.tinyspeck.slackmacgap", "Slackmacgap"));
+        // an Electron app: the cache is a folder inside the app's own
+        assert!(open("/Users/me/Library/Application Support/Slack/Cache", "Slack · Cache"));
+        assert!(open("/Users/me/Library/Application Support/Code/Service Worker/CacheStorage", "Code · Service Worker/CacheStorage"));
+        // a sandboxed app, and an extension of it
+        assert!(open("/Users/me/Library/Containers/com.apple.mail/Data/Library/Caches", "Mail (sandboxed)"));
+        assert!(open("/Users/me/Library/Containers/com.apple.mail.MailQuickLookExtension/Data/Library/Caches", "MailQuickLookExtension (sandboxed)"));
+        // apps that aren't open
+        assert!(!open("/Users/me/Library/Application Support/Discord/Cache", "Discord · Cache"));
+        assert!(!open("/Users/me/Library/Containers/com.apple.mailx/Data/Library/Caches", "Mailx (sandboxed)"));
+        assert!(!open("/Users/me/Library/Caches/com.spotify.client", "Spotify"));
+        assert_eq!(title_app("Slack · Cache"), "Slack");
+        assert_eq!(title_app("Mail (sandboxed)"), "Mail");
+        assert_eq!(title_app("Xcode"), "Xcode");
     }
 
     #[test]

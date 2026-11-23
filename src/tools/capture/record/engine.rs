@@ -289,7 +289,11 @@ mod imp {
         frames: u64,
         thumb: Option<image::RgbaImage>,
         thumb_at: f64,
+        /// The file itself broke (the writer failed): nothing to keep.
         failed: Option<String>,
+        /// The stream ended without us asking (Stop Sharing in the menu bar,
+        /// the display went away, sleep). What's recorded so far is kept.
+        ended: Option<String>,
         done: bool,
         stats: Stats,
     }
@@ -308,7 +312,7 @@ mod imp {
 
     impl Shared {
         fn on_sample(&mut self, sb: &CMSampleBuffer, kind: SCStreamOutputType) {
-            if self.done || self.failed.is_some() {
+            if self.done || self.failed.is_some() || self.ended.is_some() {
                 return;
             }
             let raw = sb as *const CMSampleBuffer as *const c_void;
@@ -382,7 +386,11 @@ mod imp {
                 self.stats.audio_unmapped += 1;
                 return;
             };
-            let stereo = match read_pcm(raw) {
+            // where the buffer says it belongs; the mixer joins it to the
+            // audio before it and follows the device's clock
+            let at = (vt * mixer::RATE as f64).round() as i64;
+            let mixer = &mut self.mixer;
+            let stereo = match read_pcm(raw, |pcm| mixer.resample(src, at, pcm)) {
                 Ok(v) => v,
                 Err(why) => {
                     if self.stats.audio_unreadable == 0 {
@@ -397,7 +405,6 @@ mod imp {
                 Src::System => self.stats.sys_peak = self.stats.sys_peak.max(peak),
                 Src::Mic => self.stats.mic_peak = self.stats.mic_peak.max(peak),
             }
-            let at = (vt * mixer::RATE as f64).round() as i64;
             self.mixer.push(src, at, &stereo);
             self.drain(false);
         }
@@ -518,8 +525,9 @@ mod imp {
         }
     }
 
-    /// The audio in a sample buffer as interleaved stereo at the mixer's rate.
-    fn read_pcm(raw: *const c_void) -> Result<Vec<f32>, String> {
+    /// The audio in a sample buffer as interleaved stereo at the mixer's
+    /// rate; `to_stereo` does the conversion (it keeps each source's state).
+    fn read_pcm(raw: *const c_void, to_stereo: impl FnOnce(&Pcm) -> Vec<f32>) -> Result<Vec<f32>, String> {
         unsafe {
             let desc = CMSampleBufferGetFormatDescription(raw);
             if desc.is_null() {
@@ -563,7 +571,7 @@ mod imp {
                 vec![&samples[..]]
             };
             let pcm = Pcm { rate: asbd.sample_rate, channels: ch, planes, interleaved: !planar };
-            Ok(mixer::to_stereo(&pcm))
+            Ok(to_stereo(&pcm))
         }
     }
 
@@ -643,8 +651,10 @@ mod imp {
             fn did_stop(&self, _stream: &SCStream, error: &NSError) {
                 rlog!("stream stopped: {}", ns_err(error));
                 if let Ok(mut s) = self.ivars().lock() {
-                    if !s.done {
-                        s.failed = Some(ns_err(error));
+                    if !s.done && s.ended.is_none() {
+                        // the video ends here, not when the app notices
+                        s.clock.pause(host_now());
+                        s.ended = Some(ns_err(error));
                     }
                 }
             }
@@ -702,7 +712,7 @@ mod imp {
 
         /// Why the recording broke off, if it did.
         pub fn failure(&self) -> Option<String> {
-            self.shared.lock().ok().and_then(|s| s.failed.clone())
+            self.shared.lock().ok().and_then(|s| s.failed.clone().or_else(|| s.ended.clone()))
         }
 
         /// The microphone has sent a good while of pure digital silence
@@ -714,6 +724,16 @@ mod imp {
         /// Stop and finish the file; `done` runs on a background thread.
         pub fn stop(self, done: Reply<Stopped>) {
             let Session { stream, output, shared, path, size } = self;
+            if shared.lock().map(|s| s.ended.is_some()).unwrap_or(false) {
+                // the stream is already down, so there's no stop to wait for
+                let pack = SendBox((done, stream, output, shared, path));
+                std::thread::spawn(move || {
+                    let pack = pack;
+                    let SendBox((done, _stream, _output, shared, path)) = pack;
+                    finish(shared, path, size, done);
+                });
+                return;
+            }
             let cell = Mutex::new(Some(SendBox((done, output, shared, path))));
             let block = RcBlock::new(move |_err: *mut NSError| {
                 let Some(SendBox((done, _output, shared, path))) = cell.lock().ok().and_then(|mut c| c.take()) else { return };
@@ -725,9 +745,15 @@ mod imp {
         /// Stop and throw the file away.
         pub fn discard(self) {
             let path = self.path.clone();
+            let mut ended = false;
             if let Ok(mut s) = self.shared.lock() {
                 s.done = true;
+                ended = s.ended.is_some();
                 unsafe { s.writer.cancelWriting() };
+            }
+            if ended {
+                let _ = std::fs::remove_file(&path);
+                return;
             }
             let keep = SendBox(self.output.clone());
             let block = RcBlock::new(move |_err: *mut NSError| {
@@ -968,6 +994,7 @@ mod imp {
                 thumb: None,
                 thumb_at: 0.0,
                 failed: None,
+                ended: None,
                 done: false,
                 stats: Stats::default(),
             }));
