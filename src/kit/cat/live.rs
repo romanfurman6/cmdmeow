@@ -1443,9 +1443,10 @@ impl Live {
         for a in 0..n {
             for b in a + 1..n {
                 let (p, q) = (&self.icons[a], &self.icons[b]);
-                // a flying or held icon passes over what is tidy already
-                // and what is tidy stays put: a loose icon is pushed off it
-                if p.fly.is_some() || q.fly.is_some() || (p.held() && q.held()) || (p.home && q.home) || (p.held() && q.home) || (q.held() && p.home) {
+                // a flying or held icon passes over the others (the cat does not
+                // push the next one ahead of it), and what is tidy stays put:
+                // a loose icon is pushed off it
+                if p.fly.is_some() || q.fly.is_some() || p.held() || q.held() || (p.home && q.home) {
                     continue;
                 }
                 let (dx, dy) = (q.x - p.x, q.y - p.y);
@@ -1455,7 +1456,7 @@ impl Live {
                 }
                 let along_x = ox / bw < oy / bh;
                 let (nx, ny, over) = if along_x { (if dx < 0.0 { -1.0 } else { 1.0 }, 0.0, ox) } else { (0.0, if dy < 0.0 { -1.0 } else { 1.0 }, oy) };
-                let fa = if p.held() || p.home { 0.0 } else if q.held() || q.home { 1.0 } else { 0.5 };
+                let fa = if p.home { 0.0 } else if q.home { 1.0 } else { 0.5 };
                 let fb = 1.0 - fa;
                 let vn = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny;
                 {
@@ -3578,6 +3579,50 @@ mod tests {
         assert!(!l.tidying());
         let most = rests.values().copied().max().unwrap_or(0);
         assert!(most <= 3, "an icon was sent to Finder {most} times: {rests:?}");
+    }
+
+    #[test]
+    fn a_loose_icon_is_picked_up_where_it_lies_not_pushed_ahead() {
+        let mut worst = (0.0f64, 0, 0);
+        for seed in 1..40u32 {
+            let (mut l, mut t) = settled();
+            let mut r = seed.wrapping_mul(2654435761) | 1;
+            let mut rnd = |a: f64, b: f64| {
+                r ^= r << 13;
+                r ^= r >> 17;
+                r ^= r << 5;
+                a + (r as f64 / u32::MAX as f64) * (b - a)
+            };
+            let n = 10 + (seed % 18) as usize;
+            let icons: Vec<(usize, f64, f64)> = (0..n).map(|k| (k + 1, rnd(150.0, 1250.0), rnd(110.0, 700.0))).collect();
+            let slots: Vec<(f64, f64)> = (0..n).map(|r| (1440.0 - (r / 8) as f64 * 100.0, 60.0 + (r % 8) as f64 * 92.0)).collect();
+            let start: HashMap<usize, (f64, f64)> = icons.iter().map(|&(id, x, y)| (id, (x, y))).collect();
+            l.tidy(icons, &slots, (47.0, 37.0), t);
+            let t0 = t;
+            let mut taken: HashMap<usize, (f64, f64)> = HashMap::new();
+            while l.tidying() && t - t0 < 90_000.0 {
+                t += 16.7;
+                let _ = l.tick(t);
+                let _ = l.take();
+                for i in &l.icons {
+                    if i.held() && !taken.contains_key(&i.id) {
+                        taken.insert(i.id, i.from.map_or((i.x, i.y), |f| (f.0, f.1)));
+                    }
+                }
+            }
+            // icons dropped on top of each other are pushed apart: that is fine
+            let crowded = |id: usize| start.iter().any(|(&o, &p)| o != id && (p.0 - start[&id].0).abs() < 2.0 * 47.0 && (p.1 - start[&id].1).abs() < 2.0 * 37.0);
+            for (id, at) in &taken {
+                if crowded(*id) {
+                    continue;
+                }
+                let d = dist(*at, start[id]);
+                if d > worst.0 {
+                    worst = (d, seed as usize, *id);
+                }
+            }
+        }
+        assert!(worst.0 < 60.0, "icon {} (seed {}) was pushed {:.0} px before the cat took it", worst.2, worst.1, worst.0);
     }
 
     #[test]

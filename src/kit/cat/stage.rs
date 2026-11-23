@@ -16,7 +16,7 @@ use objc2::{class, msg_send, AnyThread, MainThreadMarker};
 use objc2_app_kit::{NSBackingStoreType, NSColor, NSScreen, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
 use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
 use objc2_foundation::{NSArray, NSError, NSPoint, NSRect, NSSize, NSString};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -162,14 +162,20 @@ struct Proxy {
     icon: Retained<AnyObject>,
     label: Option<Retained<AnyObject>>,
     patch: Option<Retained<AnyObject>>,
+    /// where the patch lies (points, top left origin)
+    area: (f64, f64, f64, f64),
     /// in front of the cat (in its mouth)
     front: bool,
+}
+
+fn overlap(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
 }
 
 /// An icon's pictures, cut out the first time it moves (Finder draws it
 /// elsewhere after): around its picture's middle, the rectangle it and its
 /// label take, and where the label begins.
-struct Kept {
+pub struct Kept {
     cell: (f64, f64, f64, f64),
     pic_h: f64,
     label_h: f64,
@@ -178,6 +184,8 @@ struct Kept {
     file_icon: Option<Image>,
     /// which pixels of that rectangle it drew (for its wallpaper patch)
     ink: Option<(Vec<bool>, usize, usize)>,
+    /// the wallpaper patch over its first spot, cut out ahead (used once)
+    patch: Option<Image>,
 }
 
 /// `cell` (points, top left origin) in `shot`'s pixels, whole pixels.
@@ -189,17 +197,8 @@ fn px_rect(shot: &Shot, cell: (f64, f64, f64, f64)) -> NSRect {
 
 /// The wallpaper over `cell` (points, top left origin) where `k` was
 /// drawn, on `patches`.
-fn patch_layer(patches: &AnyObject, paper: Option<&Shot>, k: &Kept, cell: (f64, f64, f64, f64), h: f64) -> Option<Retained<AnyObject>> {
-    let shot = paper?;
-    let c = unsafe { CGImageCreateWithImageInRect(shot.0 .0, px_rect(shot, cell)) };
-    if c.is_null() {
-        return None;
-    }
-    let img = Image(c);
-    let img = match &k.ink {
-        Some((ink, w, h)) => keep_only(&img, ink, *w, *h)?,
-        None => img,
-    };
+fn patch_layer(patches: &AnyObject, img: Option<Image>, cell: (f64, f64, f64, f64), h: f64) -> Option<Retained<AnyObject>> {
+    let img = img?;
     unsafe {
         let _: () = msg_send![class!(CATransaction), begin];
         let _: () = msg_send![class!(CATransaction), setDisableActions: true];
@@ -209,6 +208,20 @@ fn patch_layer(patches: &AnyObject, paper: Option<&Shot>, k: &Kept, cell: (f64, 
         let _: () = msg_send![&*l, setPosition: CGPoint { x: cell.0, y: h - cell.1 - cell.3 }];
         let _: () = msg_send![class!(CATransaction), commit];
         Some(l)
+    }
+}
+
+/// The wallpaper over `cell` (points, top left origin), only where `k` was drawn.
+fn patch_image(paper: Option<&Shot>, k_ink: &Option<(Vec<bool>, usize, usize)>, cell: (f64, f64, f64, f64)) -> Option<Image> {
+    let shot = paper?;
+    let c = unsafe { CGImageCreateWithImageInRect(shot.0 .0, px_rect(shot, cell)) };
+    if c.is_null() {
+        return None;
+    }
+    let img = Image(c);
+    match k_ink {
+        Some((ink, w, h)) => keep_only(&img, ink, *w, *h),
+        None => Some(img),
     }
 }
 
@@ -270,6 +283,8 @@ pub struct Stage {
     /// picture went (by index into `desktop.spots`)
     kept: HashMap<usize, Kept>,
     at: HashMap<usize, (f64, f64)>,
+    /// moved icons whose picture stays over another icon's patch
+    parked: HashSet<usize>,
     pub desktop: Option<Desktop>,
     through: bool,
 }
@@ -365,7 +380,7 @@ impl Stage {
         // the desk window lies under the cat's, both see-through
         desk.orderFrontRegardless();
         window.orderFrontRegardless();
-        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), kept: HashMap::new(), at: HashMap::new(), desktop: None, through: true })
+        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), kept: HashMap::new(), at: HashMap::new(), parked: HashSet::new(), desktop: None, through: true })
     }
 
     /// The first screen's size, points.
@@ -566,6 +581,11 @@ impl Stage {
     /// the spot Finder has shown it at since its picture last went).
     pub fn lift(&mut self, id: usize) {
         if self.proxies.contains_key(&id) {
+            // its picture stayed over another's patch: Finder's icon under
+            // it, where it rested, is covered as it moves off
+            if self.parked.remove(&id) {
+                self.repatch(id);
+            }
             return;
         }
         let Some(d) = &self.desktop else { return };
@@ -575,12 +595,19 @@ impl Stage {
             let Some(k) = Self::cut_out(d, id, first) else { return };
             e.insert(k);
         }
-        let mid = self.at.get(&id).copied().unwrap_or(first);
-        let Some(k) = self.kept.get(&id) else { return };
+        let moved = self.at.get(&id).copied();
+        let mid = moved.unwrap_or(first);
+        let Some(k) = self.kept.get_mut(&id) else { return };
         let cell = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
         let h = self.frame.size.height;
         // the wallpaper where Finder shows it now, only where it is drawn
-        let patch = patch_layer(&self.patches, d.paper.as_ref(), k, cell, h);
+        // (over its first spot, cut out ahead)
+        let img = match (moved, k.patch.take()) {
+            (None, Some(img)) => Some(img),
+            _ => patch_image(d.paper.as_ref(), &k.ink, cell),
+        };
+        let k = &*k;
+        let patch = patch_layer(&self.patches, img, cell, h);
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
@@ -609,7 +636,7 @@ impl Stage {
             let _: () = msg_send![&*icon, setAnchorPoint: anchor];
             let _: () = msg_send![&*icon, setPosition: CGPoint { x: mid.0, y: h - mid.1 }];
             let _: () = msg_send![class!(CATransaction), commit];
-            self.proxies.insert(id, Proxy { icon, label, patch, front: false });
+            self.proxies.insert(id, Proxy { icon, label, patch, area: cell, front: false });
         }
         self.desk.orderFrontRegardless();
     }
@@ -617,7 +644,24 @@ impl Stage {
     /// Icon `id`'s own pixels in the pictures taken when the tidy began,
     /// its picture's middle at `mid`.
     fn cut_out(d: &Desktop, id: usize, mid: (f64, f64)) -> Option<Kept> {
+        let k = Self::cut_pictures(d, id, mid)?;
+        if k.pic.is_some() {
+            return Some(k);
+        }
         let spot = d.spots.get(id)?;
+        Some(Kept { file_icon: workspace_icon(&spot.name, d.view.icon), ..k })
+    }
+
+    /// Every icon's pictures, cut out ahead (off the main thread: cutting
+    /// one costs a few milliseconds, and a heap lifts several in one frame).
+    /// An icon without a picture of the screen is left for [`Stage::lift`].
+    pub fn cut_all(d: &Desktop) -> HashMap<usize, Kept> {
+        (0..d.spots.len()).filter_map(|id| Self::cut_pictures(d, id, *d.mids.get(id)?).filter(|k| k.pic.is_some()).map(|k| (id, k))).collect()
+    }
+
+    /// [`Stage::cut_out`] from the pictures of the screen only.
+    fn cut_pictures(d: &Desktop, id: usize, mid: (f64, f64)) -> Option<Kept> {
+        d.spots.get(id)?;
         let cell = d.boxes.get(id).copied().unwrap_or_else(|| d.cell(mid));
         // only this icon's own pixels: the picture keeps what is its own,
         // the wallpaper patch covers only where it was drawn
@@ -655,14 +699,14 @@ impl Stage {
         };
         let pic = part(cell.1, pic_h);
         let label = pic.as_ref().and_then(|_| part(cut, label_h).filter(|_| label_h >= 1.0));
-        let file_icon = if pic.is_none() { workspace_icon(&spot.name, d.view.icon) } else { None };
-        Some(Kept { cell: (cell.0 - mid.0, cell.1 - mid.1, cell.2, cell.3), pic_h, label_h, pic, label, file_icon, ink })
+        let patch = patch_image(d.paper.as_ref(), &ink, cell);
+        Some(Kept { cell: (cell.0 - mid.0, cell.1 - mid.1, cell.2, cell.3), pic_h, label_h, pic, label, file_icon: None, ink, patch })
     }
 
     /// A new tidy: what Finder shows now, and pictures of it.
-    pub fn set_desktop(&mut self, d: Desktop) {
+    pub fn set_desktop(&mut self, d: Desktop, kept: HashMap<usize, Kept>) {
         self.drop_all();
-        self.kept.clear();
+        self.kept = kept;
         self.at.clear();
         self.desktop = Some(d);
     }
@@ -680,7 +724,8 @@ impl Stage {
         let Some(p) = self.proxies.get_mut(&id) else { return };
         let cell = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
         let h = self.frame.size.height;
-        let patch = patch_layer(&self.patches, d.paper.as_ref(), k, cell, h);
+        let patch = patch_layer(&self.patches, patch_image(d.paper.as_ref(), &k.ink, cell), cell, h);
+        p.area = cell;
         if let Some(old) = std::mem::replace(&mut p.patch, patch) {
             unsafe {
                 let _: () = msg_send![class!(CATransaction), begin];
@@ -689,24 +734,71 @@ impl Stage {
                 let _: () = msg_send![class!(CATransaction), commit];
             }
         }
+        self.unpark();
     }
 
-    /// Finder shows icon `id` where it came to rest: its picture and patch go.
+    /// Finder shows icon `id` where it came to rest: its picture and patch
+    /// go. Where another icon's patch still lies over that spot (that icon
+    /// still in Finder's old spot, in the cat's mouth), the patch would hide
+    /// it: its picture stays (its own patch goes) until that patch is gone.
     pub fn drop_one(&mut self, id: usize) {
-        let Some(p) = self.proxies.remove(&id) else { return };
+        let Some(p) = self.proxies.get_mut(&id) else { return };
+        let patch = p.patch.take();
+        let covered = match (self.kept.get(&id), self.at.get(&id)) {
+            (Some(k), Some(&mid)) => {
+                let r = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
+                self.proxies.iter().any(|(&o, q)| o != id && q.patch.is_some() && overlap(q.area, r))
+            }
+            _ => false,
+        };
+        let p = if covered {
+            self.parked.insert(id);
+            None
+        } else {
+            self.parked.remove(&id);
+            self.proxies.remove(&id)
+        };
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-            let _: () = msg_send![&*p.icon, removeFromSuperlayer];
-            if let Some(patch) = p.patch {
+            if let Some(p) = p {
+                let _: () = msg_send![&*p.icon, removeFromSuperlayer];
+            }
+            if let Some(patch) = patch {
                 let _: () = msg_send![&*patch, removeFromSuperlayer];
             }
             let _: () = msg_send![class!(CATransaction), commit];
+        }
+        self.unpark();
+    }
+
+    /// The pictures kept over another's patch go once no patch lies there.
+    fn unpark(&mut self) {
+        loop {
+            let free = self.parked.iter().copied().find(|&id| {
+                let (Some(k), Some(&mid)) = (self.kept.get(&id), self.at.get(&id)) else { return true };
+                let r = (mid.0 + k.cell.0, mid.1 + k.cell.1, k.cell.2, k.cell.3);
+                !self.proxies.iter().any(|(&o, q)| o != id && q.patch.is_some() && overlap(q.area, r))
+            });
+            let Some(id) = free else { return };
+            self.parked.remove(&id);
+            if let Some(p) = self.proxies.remove(&id) {
+                unsafe {
+                    let _: () = msg_send![class!(CATransaction), begin];
+                    let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+                    let _: () = msg_send![&*p.icon, removeFromSuperlayer];
+                    if let Some(patch) = p.patch {
+                        let _: () = msg_send![&*patch, removeFromSuperlayer];
+                    }
+                    let _: () = msg_send![class!(CATransaction), commit];
+                }
+            }
         }
     }
 
     /// Finder shows every pushed icon at its new spot: the pictures go.
     pub fn drop_all(&mut self) {
+        self.parked.clear();
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
