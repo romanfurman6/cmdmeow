@@ -160,7 +160,8 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let ch = ROW1_H;
     let slot = |k: usize, span: usize| Rect::from_min_size(Pos2::new(x0 + k as f32 * (cw + GAP), y), Vec2::new(cw * span as f32 + GAP * (span as f32 - 1.0), ch));
 
-    // row 1
+    // row 1; a click anywhere on a limit card opens the limits popup
+    let mut limit_rects: Vec<Rect> = Vec::new();
     if cl.is_api() {
         budget_card(ui, slot(0, 2), &cl);
         today_card(&p, slot(2, 1), &cl, show_usd);
@@ -168,17 +169,8 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     } else if !cl.limits.is_empty() {
         let n = cl.limits.len().min(3);
         for (k, l) in cl.limits.iter().take(n).enumerate() {
-            // a click on a limit opens the limits popup, as Mac Health's cards do
-            let lr = slot(k, 1);
-            let resp = ui.interact(lr, ui.scope_id().with(("ai-limit", k)), egui::Sense::click());
-            limit_card(&p, lr, l);
-            if resp.hovered() {
-                p.rect_filled(lr, crate::kit::tile::R_TILE, white(6));
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            }
-            if resp.clicked() {
-                open_limits(ui.ctx(), true);
-            }
+            limit_card(&p, slot(k, 1), l);
+            limit_rects.push(slot(k, 1));
         }
         let rest = Rect::from_min_max(slot(n, 1).min, Pos2::new(x1, y + ch));
         if show_usd && cl.billing == Billing::Subscription && cl.plan_usd().is_some() {
@@ -222,6 +214,17 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             empty_note(&p, list, &format!("No {} in the last 30 days", title.to_lowercase()));
         }
         parts::share_lines(&p, list, rows, show_usd, &home);
+    }
+    // last, so nothing drawn after takes the card's clicks (the whole card, S2)
+    for (k, lr) in limit_rects.into_iter().enumerate() {
+        let resp = ui.interact(lr, ui.scope_id().with(("ai-limit", k)), egui::Sense::click());
+        if resp.hovered() {
+            p.rect_filled(lr, crate::kit::tile::R_TILE, white(6));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if resp.clicked() {
+            open_limits(ui.ctx(), true);
+        }
     }
     limits_popup(all, ui, cx);
 }
