@@ -31,6 +31,8 @@ pub fn spawn(shared: Arc<Shared>, tx: Sender<Clip>, ctx: egui::Context) {
             let mut last = mac::change_count();
             while !shared.stop.load(Ordering::Relaxed) {
                 std::thread::sleep(EVERY);
+                // what the pasteboard hands out is freed after each look
+                let _pool = crate::kit::macos::pool();
                 let n = mac::change_count();
                 if n == last {
                     continue;

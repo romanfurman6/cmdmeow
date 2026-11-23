@@ -24,7 +24,7 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
     match size {
         // W4: the ring and the number; Session and its reset in the tip
         Size::S11 => {
-            let tip = session.as_ref().map(|l| format!("Session · {}", short_reset(&l.resets))).unwrap_or_else(|| status(cl));
+            let tip = session.as_ref().map(|l| format!("Session · resets {}", super::parts::reset_when(l))).unwrap_or_else(|| status(cl));
             tile::small_ring(ui, r, id, Icon::Gauge, pct / 100.0, col, &value, sel).on_hover_text(tip)
         }
         // W3, W8: "AI Usage", the session %, when it resets
@@ -32,12 +32,15 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
             let ring_ = session.as_ref().map(|_| ((pct / 100.0).max(0.01), col));
             let caption = match &session {
                 Some(l) => {
-                    // another day reads "Resets Nov 19 at 11pm": where that doesn't
-                    // fit beside the ring, the day alone (the hour is in the sheet)
-                    let full = cap_reset(&l.resets);
+                    // the same time as the page and the sheet ("Resets 20:29",
+                    // C6); another day reads "Resets Sun 08:52": where that
+                    // doesn't fit beside the ring, the day alone (the hour
+                    // is in the sheet)
+                    let when = super::parts::reset_when(l);
+                    let full = format!("Resets {when}");
                     let room = if size == Size::S12 { r.width() } else { tile::ROW_SPLIT } - (tile::PAD + 50.0 + tile::PAD) - tile::PAD;
                     let fits = ui.painter().layout_no_wrap(full.clone(), ty::caption(), TEXT()).size().x <= room;
-                    if fits { full } else { full.split(" at ").next().unwrap_or(&full).to_string() }
+                    if when.is_empty() { "Not started".to_string() } else if fits { full } else { format!("Resets {}", when.split(' ').next().unwrap_or(&when)) }
                 }
                 None => status(cl),
             };
@@ -68,7 +71,7 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
             let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), "AI Usage", &status(cl));
             let rows: Vec<(&str, _, String)> = [("Session", cl.session()), ("Week", cl.weekly())]
                 .into_iter()
-                .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, short_reset(&l.resets).trim_start_matches("resets "))).unwrap_or_default()))
+                .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, super::parts::reset_when(l))).unwrap_or_default()))
                 .collect();
             let cols = tile::bar_cols(p, &rows.iter().map(|r| (r.0, r.2.as_str())).collect::<Vec<_>>());
             for (k, (label, l, v)) in rows.iter().enumerate() {
@@ -121,24 +124,6 @@ fn status(cl: &UsageInfo) -> String {
     }
 }
 
-/// "Resets 18:45": a caption line.
-fn cap_reset(s: &str) -> String {
-    let r = short_reset(s);
-    let mut c = r.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        None => String::new(),
-    }
-}
-
-pub fn short_reset(s: &str) -> String {
-    if s.is_empty() {
-        return String::new();
-    }
-    let s = s.split(" (").next().unwrap_or(s);
-    format!("resets {}", s)
-}
-
 /// The Claude sheet beside the panel: limits, local tokens, what uses the
 /// limits, and links to the page and to Cleanup.
 pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
@@ -167,7 +152,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let n = cl.limits.len();
     let lim_h = if n == 0 { 64.0 } else { n as f32 * 58.0 + 13.0 };
     let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, lim_h));
-    glass_card(&p, lr, R_CARD, 0.0, false);
+    data_card(&p, lr);
     if n == 0 {
         let msg = cl.error.clone().unwrap_or_else(|| format!("Asking {} for your limits…", cl.provider));
         paragraph(&p, lr.min + Vec2::new(12.0, 12.0), &msg, font(13.0), TEXT_DIM(), w - 24.0);
@@ -188,7 +173,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     card_title(&p, Pos2::new(x0, y), "On this Mac");
     y += CARD_TITLE_H;
     let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 160.0));
-    glass_card(&p, ar, R_CARD, 0.0, false);
+    data_card(&p, ar);
     let stats = [("last 5 hours", cl.local.tokens_5h), ("today", cl.local.tokens_today), ("7 days", cl.local.tokens_7d)];
     for (i, (k, v)) in stats.iter().enumerate() {
         let x = ar.left() + 12.0 + i as f32 * ((w - 24.0) / 3.0);
@@ -227,7 +212,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         shown += 1;
     }
     let ur = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h + 6.0));
-    glass_card(&p, ur, R_CARD, 0.0, false);
+    data_card(&p, ur);
     let mut ly = ur.top() + 12.0;
     for ((l, c, s), hh) in lines.iter().zip(&heights).take(shown) {
         paragraph(&p, Pos2::new(ur.left() + 12.0, ly), l, font(*s), *c, w - 24.0);

@@ -158,6 +158,7 @@ fn start(ctx: egui::Context, on: Arc<AtomicBool>, live: Arc<Mutex<Live>>, kick: 
             let mut steady = control::Steady::default();
             let mut read_at = activity::Every::default();
             loop {
+                let _pool = crate::kit::macos::pool();
                 let on_now = on.load(Ordering::Relaxed);
                 if on_now && read_at.due(Duration::from_secs(data::SAMPLE_SECS)) {
                     let r = probe.read();

@@ -345,7 +345,9 @@ fn date_is_bare(t: &str) -> bool {
 }
 
 /// The usage in one log line (input + output + cache-write tokens, output
-/// tokens), unless its message was counted already. Cache reads don't count.
+/// tokens). Cache reads don't count. A reply is logged once per part
+/// (thinking, text, each tool call) under one message id, and its token
+/// count grows as it streams: the fullest line stands for the message.
 fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
     // the folder the session works in, named by its lines
     if ctx.project == 0 {
@@ -357,19 +359,19 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
         }
     }
     let ui = find(line, b"\"usage\":{")?;
+    // a subagent's result repeats the usage of its last reply, which its
+    // own log already has
+    if find(line, b"\"toolUseResult\":").is_some_and(|ri| ri < ui) {
+        return None;
+    }
     let ti = find(line, b"\"timestamp\":\"")?;
     let ts_bytes = &line[ti + 13..];
     let te = ts_bytes.iter().position(|&b| b == b'"')?;
     let ts = std::str::from_utf8(&ts_bytes[..te]).ok().and_then(|s| DateTime::parse_from_rfc3339(s).ok()).map(|d| d.timestamp())?;
-    // one reply can be logged in several lines; count each message id once
-    if let Some(mi) = find(line, b"\"id\":\"msg_") {
+    let id = find(line, b"\"id\":\"msg_").and_then(|mi| {
         let rest = &line[mi + 6..];
-        if let Some(e) = rest.iter().position(|&b| b == b'"') {
-            if !ctx.ids.insert(rest[..e].to_vec()) {
-                return None;
-            }
-        }
-    }
+        rest.iter().position(|&b| b == b'"').map(|e| rest[..e].to_vec())
+    });
     let obj = balanced(&line[ui + 8..]);
     let v: Value = serde_json::from_slice(obj).unwrap_or(Value::Null);
     let g = |k: &str| v[k].as_u64().unwrap_or(0);
@@ -379,7 +381,7 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
         let rest = &line[mi + 9..];
         rest.iter().position(|&b| b == b'"').map(|e| super::intern(&String::from_utf8_lossy(&rest[..e])))
     });
-    Some(UsageEntry {
+    let entry = UsageEntry {
         ts,
         input: g("input_tokens"),
         output: g("output_tokens"),
@@ -388,7 +390,24 @@ fn usage_entry(line: &[u8], ctx: &mut ParseCtx) -> Option<UsageEntry> {
         cache_read: g("cache_read_input_tokens"),
         model: model.unwrap_or(0),
         project: ctx.project,
-    })
+    };
+    // count each message id once, by its fullest line
+    if let Some(id) = id {
+        let size = entry.tokens() + entry.cache_read;
+        match ctx.seen.get_mut(&id) {
+            Some((at, best)) => {
+                if size <= *best {
+                    return None;
+                }
+                *best = size;
+                ctx.amend = Some(*at);
+            }
+            None => {
+                ctx.seen.insert(id, (ctx.at, size));
+            }
+        }
+    }
+    Some(entry)
 }
 
 pub fn demo_info() -> UsageInfo {
@@ -422,6 +441,12 @@ pub fn demo_info() -> UsageInfo {
             (l.pct, l.resets_at, l.resets) = (pct.min(99.0), Some(end), super::codex::reset_text(end));
         }
     }
+    // CMDMEOW_DEMO_IDLE=1: no session running yet (0%, nothing to reset)
+    if std::env::var_os("CMDMEOW_DEMO_IDLE").is_some() {
+        if let Some(s) = limits.first_mut() {
+            (s.pct, s.resets_at, s.resets) = (0.0, None, String::new());
+        }
+    }
     UsageInfo {
         provider: NAME,
         loading: false,
@@ -444,7 +469,7 @@ pub fn demo_info() -> UsageInfo {
 fn demo_local() -> LocalTokens {
     let home = dirs::home_dir().unwrap_or_default();
     let p = |rel: &str| home.join(rel).display().to_string();
-    super::demo_local(&[("claude-opus-4-6", 6), ("claude-sonnet-4-6", 3), ("claude-haiku-4-5", 1)], &[&p("Projects/cmdmeow"), &p("Projects/site"), &p("work/api-gateway"), &p("notes")], 3.0)
+    super::demo_local(&[("claude-opus-4-6", 6), ("claude-sonnet-4-6", 3), ("claude-haiku-4-5", 1)], &[&p("Projects/cmdmeow"), &p("Projects/site"), &p("work/api-gateway"), &p("notes"), &p("Library/Application Support/Claude/scratch-workspaces/1f3a9c2e")], 3.0)
 }
 
 #[cfg(test)]
@@ -531,6 +556,66 @@ mod tests {
         read_on(&f, len(&f), &mut log, usage_entry);
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(log.entries.len(), 1);
+    }
+
+    #[test]
+    fn a_streamed_reply_counts_by_its_fullest_line() {
+        let dir = std::env::temp_dir().join(format!("cmb-usage-grow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("s.jsonl");
+        let line = |id: &str, out: u64| format!("{{\"type\":\"assistant\",\"timestamp\":\"2026-11-08T10:00:00Z\",\"message\":{{\"id\":\"{id}\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":{out}}}}}}}\n");
+        // thinking, text, tool call: the first lines carry the count so far
+        let body = line("msg_1", 3) + &line("msg_2", 7) + &line("msg_1", 3) + &line("msg_1", 250);
+        std::fs::write(&f, &body).unwrap();
+        let mut log = LogTail::default();
+        let len = |f: &Path| std::fs::metadata(f).unwrap().len();
+        read_on(&f, len(&f), &mut log, usage_entry);
+        assert_eq!(log.entries.iter().map(|e| e.output).collect::<Vec<_>>(), vec![250, 7]);
+        // the rest of a reply arriving in a later read still updates it
+        std::fs::write(&f, body + &line("msg_2", 90) + &line("msg_2", 40)).unwrap();
+        read_on(&f, len(&f), &mut log, usage_entry);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(log.entries.iter().map(|e| e.output).collect::<Vec<_>>(), vec![250, 90]);
+    }
+
+    #[test]
+    fn a_subagent_result_is_not_a_reply() {
+        let mut ctx = ParseCtx::default();
+        let result = br#"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t1","type":"tool_result"}]},"timestamp":"2026-11-08T10:00:00Z","toolUseResult":{"status":"completed","totalTokens":5000,"usage":{"input_tokens":10,"output_tokens":900}}}"#;
+        assert!(usage_entry(result, &mut ctx).is_none());
+        let reply = br#"{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":10,"output_tokens":900}},"timestamp":"2026-11-08T10:00:00Z"}"#;
+        assert_eq!(usage_entry(reply, &mut ctx).map(|e| e.output), Some(900));
+    }
+
+    /// How long a first read of session logs takes:
+    /// `CMDMEOW_BENCH_LOGS=~/.claude/projects cargo test --release log_read_speed -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn log_read_speed() {
+        let Some(dir) = std::env::var_os("CMDMEOW_BENCH_LOGS").map(PathBuf::from) else { return };
+        let files = recent_jsonl(&dir, 3);
+        let bytes: u64 = files.iter().filter_map(|f| std::fs::metadata(f).ok()).map(|m| m.len()).sum();
+        for _ in 0..3 {
+            let t = std::time::Instant::now();
+            let tokens = LogCache::default().update(files.clone(), usage_entry);
+            eprintln!("read {} logs, {} MB in {:?} ({} output tokens in 7 days)", files.len(), bytes / 1_000_000, t.elapsed(), tokens.output_7d);
+        }
+        // what the count is made of, to hold against another counter
+        let mut cache = LogCache::default();
+        let t = cache.update(files, usage_entry);
+        let all = cache.entries();
+        let part = |f: fn(&UsageEntry) -> u64| all.iter().map(f).sum::<u64>();
+        eprintln!(
+            "all logs: {} replies, input {}, output {}, cache write {}, cache read {}; today {} tokens in {} replies; 7 days {}",
+            all.len(),
+            part(|e| e.input),
+            part(|e| e.output),
+            part(|e| e.cache_write + e.cache_write_1h),
+            part(|e| e.cache_read),
+            t.tokens_today,
+            t.requests_today,
+            t.tokens_7d
+        );
     }
 
     #[test]

@@ -96,17 +96,21 @@ pub fn summarize(samples: &[Sample], secs: f64, f: &Freqs) -> Reading {
         let Some(j) = joules(&s.unit) else { continue };
         let w = (s.value.max(0) as f64 * j / secs) as f32;
         let name = s.channel.as_str();
+        // "CPU Energy", or "DIE_0_CPU Energy" per die on an Ultra chip. The
+        // GPU's memory ("GPU SRAM…") is its own channel, not GPU power.
         if name.ends_with("CPU Energy") {
             r.cpu_w += w;
-        } else if name.starts_with("GPU") {
+        } else if name.ends_with("GPU Energy") {
             r.gpu_w += w;
         } else if name.starts_with("ANE") {
             r.ane_w += w;
         }
     }
-    let cores = |prefix: &'static str| samples.iter().filter(move |s| s.group == "CPU Stats" && s.subgroup == "CPU Core Performance States" && s.channel.starts_with(prefix));
-    r.ecpu = usage(cores("ECPU"), &f.ecpu);
-    r.pcpu = usage(cores("PCPU"), &f.pcpu);
+    // "ECPU0", "PCPU3"; "MCPU2" for the middle cores of M5 Pro and Max (the
+    // lower of their two kinds); "DIE_1_PCPU1_CPU0" on an Ultra chip
+    let cores = |kinds: &'static [&'static str]| samples.iter().filter(move |s| s.group == "CPU Stats" && s.subgroup == "CPU Core Performance States" && kinds.iter().any(|k| s.channel.contains(k)));
+    r.ecpu = usage(cores(&["ECPU", "MCPU"]), &f.ecpu);
+    r.pcpu = usage(cores(&["PCPU"]), &f.pcpu);
     let gpu = samples.iter().filter(|s| s.group == "GPU Stats" && s.subgroup == "GPU Performance States" && s.channel == "GPUPH");
     r.gpu = usage(gpu, &f.gpu);
     r
@@ -372,11 +376,16 @@ mod tests {
 
     #[test]
     fn energy_becomes_watts() {
-        let s = [energy("CPU Energy", "mJ", 4000), energy("GPU Energy", "nJ", 1_000_000_000), energy("ANE0", "mJ", 200), energy("DRAM", "mJ", 999), energy("odd", "kWh", 5)];
+        let s = [energy("CPU Energy", "mJ", 4000), energy("GPU Energy", "nJ", 1_000_000_000), energy("ANE0", "mJ", 200), energy("DRAM", "mJ", 999), energy("odd", "kWh", 5), energy("GPU SRAM0", "mJ", 700)];
         let r = summarize(&s, 2.0, &Freqs::default());
         assert_eq!(r.cpu_w, 2.0);
+        // the GPU's memory is not GPU power
         assert_eq!(r.gpu_w, 0.5);
         assert_eq!(r.ane_w, 0.1);
+        // an Ultra chip: one channel per die
+        let ultra = [energy("DIE_0_CPU Energy", "mJ", 1000), energy("DIE_1_CPU Energy", "mJ", 3000), energy("GPU Energy", "mJ", 500)];
+        let r = summarize(&ultra, 1.0, &Freqs::default());
+        assert_eq!((r.cpu_w, r.gpu_w), (4.0, 0.5));
         assert_eq!(summarize(&s, 0.0, &Freqs::default()), Reading::default());
     }
 
@@ -398,6 +407,11 @@ mod tests {
         assert_eq!(r.pcpu.mhz, 3000.0);
         // no samples
         assert_eq!(r.gpu, Usage::default());
+        // M5 Pro and Max have middle cores instead of efficiency cores;
+        // an Ultra chip names the die first
+        let s = [core("MCPU0", &[("IDLE", 50), ("V0", 50)]), core("DIE_0_PCPU1_CPU0", &[("IDLE", 25), ("V0", 75)]), core("DIE_1_PCPU0_CPU1", &[("IDLE", 75), ("V0", 25)])];
+        let r = summarize(&s, 1.0, &Freqs::default());
+        assert_eq!((r.ecpu.busy, r.pcpu.busy), (0.5, 0.5));
     }
 
     #[test]

@@ -141,7 +141,8 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
             Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), short_name(&d.name), pct_text(d.battery())),
             None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
         };
-        let caption = if first.is_some() { note(&devs) } else { String::new() };
+        // the weakest device is the value; the caption says how many there are
+        let caption = if first.is_some() { format!("{} connected", devs.iter().filter(|d| d.live()).count()) } else { String::new() };
         if size == Size::S12 {
             return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
         }
@@ -195,19 +196,32 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
 /// One device in a list: glyph, name with its parts or kind under it, a
 /// bar and the charge.
 fn device_line(p: &egui::Painter, lr: Rect, d: &Device) {
-    device_line_sub(p, lr, d, &d.detail());
+    device_line_sub(p, lr, d, &d.detail(), bar_w(lr.width()));
+}
+
+/// How long a device line's charge bar is in a list `w` wide: 64 in the
+/// widgets, 40 in the narrower Mac Health card, none when the name would
+/// have no room left. Picked from the list's width, so a row's "⋯" on hover
+/// slides the bar along instead of hiding it.
+fn bar_w(w: f32) -> f32 {
+    if w >= 300.0 {
+        64.0
+    } else if w >= 200.0 {
+        40.0
+    } else {
+        0.0
+    }
 }
 
 /// [`device_line`] with its own line under the name.
-fn device_line_sub(p: &egui::Painter, lr: Rect, d: &Device, sub: &str) {
+fn device_line_sub(p: &egui::Painter, lr: Rect, d: &Device, sub: &str, bw: f32) {
     let b = d.battery();
     let t = Tone::of(d);
     let cy = lr.center().y;
     device_glyph(p, d, Rect::from_center_size(Pos2::new(lr.left() + 9.0, cy), Vec2::splat(17.0)), t.c(TEXT_SOFT()));
     let vr = pct_with_bolt(p, Pos2::new(lr.right(), cy), Align2::RIGHT_CENTER, b, d.charging && d.live(), bold(12.0), t.text(b));
-    // the bar only when the name still has room next to it; it ends at the
-    // same x on every line ("100%" is the widest charge), so bars line up
-    let bw = if lr.width() >= 300.0 { 64.0 } else { 0.0 };
+    // the bar ends at the same x on every line ("100%" is the widest
+    // charge), so bars line up (W5); its length comes from the list (bar_w)
     let col = p.layout_no_wrap("100%".into(), bold(12.0), TEXT()).size().x.max(vr.width());
     let bx1 = lr.right() - col - 10.0;
     if bw > 0.0 {
@@ -403,7 +417,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
         let (resp, shown) = dots(ui, mr, lr, ui.scope_id().with(("dev-card-more", &key)));
         // the value sits on the right edge and slides left while "⋯" shows
         let right = lr.right() - shown * (mr.width() + 6.0);
-        device_line_sub(p, Rect::from_min_max(lr.left_top(), Pos2::new(right, lr.bottom())), d, &sub);
+        device_line_sub(p, Rect::from_min_max(lr.left_top(), Pos2::new(right, lr.bottom())), d, &sub, bar_w(lr.width()));
         if let Some(a) = device_menu(&resp, d, &s.bt_prefs) {
             out = Some(a);
         }

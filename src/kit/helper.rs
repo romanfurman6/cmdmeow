@@ -100,14 +100,8 @@ pub fn install() -> Result<(), String> {
 </plist>
 "#
     );
-    let dir = std::env::temp_dir().join(format!("cmdmeow-fan-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let plist_tmp = dir.join("helper.plist");
-    std::fs::write(&plist_tmp, plist).map_err(|e| e.to_string())?;
-    let script = install_script(&sh_quote(&exe), &sh_quote(&plist_tmp));
-    let r = run_admin(&dir, &script, "Cmd+Meow wants to add its helper so it can change fan speed and charging.");
-    let _ = std::fs::remove_dir_all(&dir);
-    r?;
+    let script = install_script(&sh_quote(&exe), &plist);
+    run_admin(&script, "Cmd+Meow wants to add its helper so it can change fan speed and charging.")?;
     // give launchd a moment to start it
     for _ in 0..40 {
         if ask(&Request::Hello).is_some() {
@@ -129,7 +123,12 @@ pub fn install() -> Result<(), String> {
 ///   signature binds the bundle's Info.plist, so a copy taken out of the
 ///   bundle is "not valid" to AMFI (-420) and launchd can't start it;
 /// - re-enable the service, in case it was turned off.
+///
+/// The launchd plist is written from the script itself (`plist` is its
+/// text), so nothing root reads passes through a folder the user can
+/// write to, apart from the app's own binary.
 fn install_script(exe: &str, plist: &str) -> String {
+    let plist = plist.trim_end();
     format!(
         "set -e\n\
          launchctl bootout system/{LABEL} 2>/dev/null || true\n\
@@ -141,7 +140,7 @@ fn install_script(exe: &str, plist: &str) -> String {
          chmod 755 {BIN}.new\n\
          /usr/bin/codesign --force --sign - --identifier {LABEL} {BIN}.new\n\
          mv -f {BIN}.new {BIN}\n\
-         cp -f {plist} {PLIST}\n\
+         cat > {PLIST} <<'CMDMEOW_PLIST'\n{plist}\nCMDMEOW_PLIST\n\
          chown root:wheel {PLIST}\n\
          chmod 644 {PLIST}\n\
          launchctl enable system/{LABEL} 2>/dev/null || true\n\
@@ -151,12 +150,7 @@ fn install_script(exe: &str, plist: &str) -> String {
 
 /// Stop and remove the helper (fans go back to Auto as it stops).
 pub fn uninstall() -> Result<(), String> {
-    let dir = std::env::temp_dir().join(format!("cmdmeow-fan-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let script = uninstall_script();
-    let r = run_admin(&dir, &script, "Cmd+Meow wants to remove its fan helper.");
-    let _ = std::fs::remove_dir_all(&dir);
-    r
+    run_admin(&uninstall_script(), "Cmd+Meow wants to remove its fan helper.")
 }
 
 /// Stopping the helper switches charging back on; the policy goes too, so a
@@ -169,12 +163,30 @@ fn sh_quote(p: &Path) -> String {
     format!("'{}'", p.to_string_lossy().replace('\'', r"'\''"))
 }
 
+/// Standard base64, for handing a script over in one plain word.
+fn base64(data: &[u8]) -> String {
+    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            out.push(if i <= c.len() { ABC[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// The shell command that runs `script`: the script travels inside the
+/// command. A script file would wait in a folder the user can write to
+/// while the password prompt is up, where anything running as the user
+/// could swap it and have it run as root.
+fn admin_command(script: &str) -> String {
+    format!("/bin/sh -c \"$(/bin/echo {} | /usr/bin/base64 -D)\"", base64(script.as_bytes()))
+}
+
 /// Run `script` as root after the macOS admin prompt.
-fn run_admin(dir: &Path, script: &str, prompt: &str) -> Result<(), String> {
-    let file = dir.join("run.sh");
-    std::fs::write(&file, script).map_err(|e| e.to_string())?;
-    let cmd = format!("/bin/sh {}", sh_quote(&file));
-    let apple = format!("do shell script \"{}\" with prompt \"{}\" with administrator privileges", cmd.replace('\\', "\\\\").replace('"', "\\\""), prompt);
+fn run_admin(script: &str, prompt: &str) -> Result<(), String> {
+    let apple = format!("do shell script \"{}\" with prompt \"{}\" with administrator privileges", admin_command(script).replace('\\', "\\\\").replace('"', "\\\""), prompt);
     let out = std::process::Command::new("/usr/bin/osascript").arg("-e").arg(apple).output().map_err(|e| e.to_string())?;
     if out.status.success() {
         return Ok(());
@@ -213,6 +225,27 @@ mod tests {
     }
 
     #[test]
+    fn the_root_script_travels_in_the_command() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64(b"foobar\n"), "Zm9vYmFyCg==");
+        let script = "set -e\ncat > \"$OUT\" <<'CMDMEOW_PLIST'\n<a k=\"v\">$HOME `x` 'q'</a>\nCMDMEOW_PLIST\necho done >> \"$OUT\"\n";
+        let cmd = admin_command(script);
+        assert!(cmd.starts_with("/bin/sh -c \"$(/bin/echo ") && cmd.ends_with(" | /usr/bin/base64 -D)\""));
+        // run it for real where the tools are the same (macOS)
+        if cfg!(target_os = "macos") {
+            let out = std::env::temp_dir().join(format!("cmdmeow-admin-{}", std::process::id()));
+            let ok = std::process::Command::new("/bin/sh").arg("-c").arg(&cmd).env("OUT", &out).status().unwrap().success();
+            let text = std::fs::read_to_string(&out).unwrap_or_default();
+            let _ = std::fs::remove_file(&out);
+            assert!(ok);
+            assert_eq!(text, "<a k=\"v\">$HOME `x` 'q'</a>\ndone\n");
+        }
+    }
+
+    #[test]
     fn quotes_paths_for_sh() {
         assert_eq!(sh_quote(Path::new("/Applications/CmdMeow Dev.app/x")), "'/Applications/CmdMeow Dev.app/x'");
         assert_eq!(sh_quote(Path::new("/a'b")), r"'/a'\''b'");
@@ -220,7 +253,10 @@ mod tests {
 
     #[test]
     fn install_replaces_the_binary_by_rename() {
-        let s = install_script("'/x/cmdmeow'", "'/t/helper.plist'");
+        let s = install_script("'/x/cmdmeow'", "<plist>\n</plist>\n");
+        // the plist is written by the script, not copied from a temp folder
+        assert!(s.contains(&format!("cat > {PLIST} <<'CMDMEOW_PLIST'\n<plist>\n</plist>\nCMDMEOW_PLIST\n")));
+        assert!(!s.contains("cp -f"));
         // never copy over the running binary in place
         assert!(!s.contains(&format!("cp -f '/x/cmdmeow' {BIN}\n")));
         assert!(s.contains(&format!("mv -f {BIN}.new {BIN}")));

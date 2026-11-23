@@ -484,9 +484,10 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     } else if resp.hovered() {
                         p.rect_filled(r, 7.0, white(ROW_HOVER));
                     }
-                    let th = Rect::from_min_size(Pos2::new(r.left() + 10.0, r.center().y - 12.0), Vec2::splat(24.0));
+                    // H9: 12 in from the lit edge, both sides
+                    let th = Rect::from_min_size(Pos2::new(r.left() + sp::M, r.center().y - 12.0), Vec2::splat(24.0));
                     entry_thumb(c, &p, th, &e, 6.0);
-                    let tr = p.text(Pos2::new(r.right() - 10.0, r.center().y), Align2::RIGHT_CENTER, e.time().format("%-I:%M %P").to_string(), font(12.0), TEXT_FAINT());
+                    let tr = p.text(Pos2::new(r.right() - sp::M, r.center().y), Align2::RIGHT_CENTER, e.time().format("%-I:%M %P").to_string(), font(12.0), TEXT_FAINT());
                     let ax = tr.left() - 110.0;
                     p.rect_filled(Rect::from_center_size(Pos2::new(ax + 6.0, r.center().y), Vec2::splat(12.0)), 3.0, app_color(&e.app));
                     text_fit(&p, Pos2::new(ax + 18.0, r.center().y), Align2::LEFT_CENTER, &e.app, font(12.0), TEXT_DIM(), 86.0);

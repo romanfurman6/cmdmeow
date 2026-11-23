@@ -31,7 +31,13 @@ pub struct SavedDay {
 pub struct History {
     pub samples: Vec<Sample>,
     pub days: Vec<SavedDay>,
+    /// The `COUNTING` the days were saved under.
+    pub counting: u32,
 }
+
+/// Goes up when replies are counted differently, so days saved under the
+/// old rules give way to what the logs say now.
+const COUNTING: u32 = 1;
 
 /// Samples and days older than this are dropped.
 const KEEP_DAYS: i64 = 45;
@@ -68,18 +74,26 @@ impl History {
     }
 
     /// Fill days the logs no longer cover from what was saved, and save
-    /// what the logs say now. A day keeps the larger of the two counts.
+    /// what the logs say now. A past day keeps the larger of the two counts
+    /// (its logs only get deleted); today is what the logs say, so it reads
+    /// the same everywhere and a count that was too high comes back down.
     pub fn merge_days(&mut self, local: &mut LocalTokens, today: NaiveDate) {
         let key = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
         let mut by_date: HashMap<String, SavedDay> = self.days.drain(..).map(|d| (d.date.clone(), d)).collect();
+        // days saved under other counting rules stay only where the logs are gone
+        let same_rules = self.counting == COUNTING;
+        self.counting = COUNTING;
         for d in local.days.iter_mut() {
+            let past = d.date != today;
             match by_date.get(&key(d.date)) {
-                Some(s) if s.tokens > d.tokens => {
+                Some(s) if past && s.tokens > d.tokens && (same_rules || d.tokens == 0) => {
                     *d = Day { date: d.date, tokens: s.tokens, usd: s.usd, requests: s.requests };
                 }
                 _ => {
                     if d.tokens > 0 {
                         by_date.insert(key(d.date), SavedDay { date: key(d.date), tokens: d.tokens, usd: d.usd, requests: d.requests });
+                    } else {
+                        by_date.remove(&key(d.date));
                     }
                 }
             }
@@ -157,5 +171,42 @@ mod tests {
         assert_eq!(later.days[0].tokens, 30);
         assert_eq!(later.days[0].usd, 1.0);
         assert!(later.usd_30d >= 1.0);
+    }
+
+    #[test]
+    fn today_is_what_the_logs_say() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let days = |yesterday: u64, now: u64| LocalTokens {
+            days: vec![Day { date: today - chrono::Days::new(1), tokens: yesterday, usd: 1.0, requests: 1 }, Day { date: today, tokens: now, usd: 1.0, requests: 1 }],
+            ..Default::default()
+        };
+        let mut h = History::default();
+        h.merge_days(&mut days(50, 900), today);
+        // a session counted earlier today is gone from the logs: today
+        // follows them, yesterday keeps what was saved
+        let mut later = days(20, 300);
+        h.merge_days(&mut later, today);
+        assert_eq!(later.days.iter().map(|d| d.tokens).collect::<Vec<_>>(), vec![50, 300]);
+        assert_eq!(h.days.last().map(|d| d.tokens), Some(300));
+        // nothing left today: nothing saved for it either
+        h.merge_days(&mut days(20, 0), today);
+        assert_eq!(h.days.len(), 1);
+    }
+
+    #[test]
+    fn days_counted_under_old_rules_give_way_to_the_logs() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let d = |n: u64| today - chrono::Days::new(n);
+        let saved = |n: u64, tokens: u64| SavedDay { date: d(n).format("%Y-%m-%d").to_string(), tokens, usd: 1.0, requests: 1 };
+        // saved before the counting changed
+        let mut h = History { days: vec![saved(2, 700), saved(1, 700)], ..Default::default() };
+        // the logs still have yesterday, not the day before
+        let mut local = LocalTokens { days: vec![Day { date: d(2), ..Default::default() }, Day { date: d(1), tokens: 400, usd: 1.0, requests: 1 }, Day { date: today, ..Default::default() }], ..Default::default() };
+        h.merge_days(&mut local, today);
+        assert_eq!(local.days.iter().map(|d| d.tokens).collect::<Vec<_>>(), vec![700, 400, 0]);
+        // from then on a past day keeps the larger count again
+        let mut later = LocalTokens { days: vec![Day { date: d(1), tokens: 100, usd: 1.0, requests: 1 }], ..Default::default() };
+        h.merge_days(&mut later, today);
+        assert_eq!(later.days[0].tokens, 400);
     }
 }

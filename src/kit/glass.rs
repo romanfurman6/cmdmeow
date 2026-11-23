@@ -200,104 +200,63 @@ pub fn junk_ramp(i: usize) -> Color32 {
 /// What the app draws over the user's picture or video frame (C16):
 /// selection frames, handles, crop and drag-out outlines, a pinned
 /// screenshot's edge. Fixed colours, the same in both themes, because they
-/// sit on the user's content, not on the app.
+/// sit on the user's content, not on the app: white with a dark edge, so it
+/// shows on light and dark pictures alike.
 pub mod overlay {
-    use super::hex;
-    use egui::epaint::{PathShape, PathStroke};
     use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
 
-    /// The lime of lines and handles.
-    pub const LIME: Color32 = hex(0xC8F05A);
-    /// The dark ring around handles and under lines.
-    pub const RING: Color32 = hex(0x0E1405);
+    /// The colour of lines and handles.
+    pub const LINE: Color32 = Color32::WHITE;
+    /// The dark edge under lines and around handles.
+    pub const RING: Color32 = Color32::BLACK;
     /// A handle's side, at rest and while hovered or dragged.
-    pub const HANDLE: f32 = 10.0;
-    pub const HANDLE_HOT: f32 = 12.0;
+    pub const HANDLE: f32 = 6.0;
+    pub const HANDLE_HOT: f32 = 8.0;
     /// How far from a handle's centre a press still grabs it.
     pub const GRAB: f32 = 12.0;
-    /// A side shorter than this shows no middle handle.
+    /// How far from a side's line a press still grabs that side.
+    pub const EDGE: f32 = 8.0;
+    /// A side shorter than this offers no middle grab spot.
     pub const MID_MIN: f32 = 64.0;
     /// How far a selected mark's frame and handles sit outside it, so they
     /// never cover the mark itself.
     pub const OUTSET: f32 = 5.0;
-    /// A corner bracket's arm, at rest and hot.
-    const ARM: f32 = 12.0;
-    const ARM_HOT: f32 = 14.0;
 
-    fn under() -> Stroke {
-        Stroke::new(3.0, ring(0.7))
+    /// The dark edge at alpha `a`.
+    pub fn ring(a: f32) -> Color32 {
+        Color32::from_black_alpha((a * 255.0) as u8)
     }
 
-    fn ring(a: f32) -> Color32 {
-        Color32::from_rgba_unmultiplied(RING.r(), RING.g(), RING.b(), (a * 255.0) as u8)
-    }
-
-    fn lime(hot: bool) -> Color32 {
-        if hot {
-            super::lerp_color(LIME, Color32::WHITE, 0.3)
-        } else {
-            LIME
-        }
-    }
-
-    /// A selection frame: 1 pt lime over a 2 pt dark band; the corner
-    /// brackets and side grips carry the weight.
+    /// A selection frame: 1 pt white over a 2 pt dark band.
     pub fn frame(p: &Painter, r: Rect, radius: f32, kind: StrokeKind) {
-        p.rect_stroke(r, radius, Stroke::new(2.0, ring(0.6)), kind);
-        p.rect_stroke(r, radius, Stroke::new(1.0, LIME), kind);
+        p.rect_stroke(r, radius, Stroke::new(2.0, ring(0.4)), kind);
+        p.rect_stroke(r, radius, Stroke::new(1.0, LINE), kind);
     }
 
-    /// A dashed frame: the same lime dashes over a solid dark band.
+    /// A dashed frame: white dashes over a solid dark band.
     pub fn dashed(p: &Painter, r: Rect, dash: f32, gap: f32) {
         let pts = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
-        p.add(Shape::line(pts.to_vec(), under()));
-        p.extend(Shape::dashed_line(&pts, Stroke::new(1.5, LIME), dash, gap));
+        p.add(Shape::line(pts.to_vec(), Stroke::new(3.0, ring(0.5))));
+        p.extend(Shape::dashed_line(&pts, Stroke::new(1.5, LINE), dash, gap));
     }
 
-    /// One handle: a lime square with a dark ring and a faint white halo.
-    /// Arrow ends use it.
+    /// An arrow end: a white dot with a dark ring.
     pub fn handle(p: &Painter, at: Pos2, hot: bool) {
-        let s = if hot { HANDLE_HOT } else { HANDLE };
-        let r = Rect::from_center_size(at, Vec2::splat(s));
-        p.rect_filled(r.expand(2.5), 5.0, Color32::from_white_alpha(153));
-        p.rect_filled(r.expand(1.5), 4.0, RING);
-        p.rect_filled(r, 2.5, lime(hot));
+        let r = if hot { HANDLE_HOT } else { HANDLE } / 2.0;
+        p.circle_filled(at, r + 1.0, ring(0.55));
+        p.circle_filled(at, r, LINE);
     }
 
-    /// A box handle `k` (clockwise from the top left, corners even): an L
-    /// bracket on a corner, a pill along the edge on a side.
+    /// A box handle `k` (clockwise from the top left, corners even): a white
+    /// square with a dark ring on a corner. Sides draw nothing; they still
+    /// grab.
     pub fn box_handle(p: &Painter, at: Pos2, k: usize, hot: bool) {
-        if k % 2 == 0 {
-            corner(p, at, k, hot);
-        } else {
-            side(p, at, k == 1 || k == 5, hot);
+        if !k.is_multiple_of(2) {
+            return;
         }
-    }
-
-    /// An L bracket on corner `k` (0 top left, 2 top right, 4 bottom right,
-    /// 6 bottom left), its arms along the two edges.
-    fn corner(p: &Painter, at: Pos2, k: usize, hot: bool) {
-        let a = if hot { ARM_HOT } else { ARM };
-        let sx = if k == 2 || k == 4 { -1.0 } else { 1.0 };
-        let sy = if k == 4 || k == 6 { -1.0 } else { 1.0 };
-        let pts = [at + Vec2::new(sx * a, 0.0), at, at + Vec2::new(0.0, sy * a)];
-        for (w, c) in [(8.0, Color32::from_white_alpha(153)), (6.0, RING), (3.0, lime(hot))] {
-            p.add(PathShape::line(pts.to_vec(), PathStroke::new(w, c)));
-            // round ends and corner
-            for q in pts {
-                p.circle_filled(q, w / 2.0, c);
-            }
-        }
-    }
-
-    /// A 16×6 pill along the edge.
-    fn side(p: &Painter, at: Pos2, horizontal: bool, hot: bool) {
-        let (l, t) = if hot { (20.0, 7.0) } else { (16.0, 6.0) };
-        let r = Rect::from_center_size(at, if horizontal { Vec2::new(l, t) } else { Vec2::new(t, l) });
-        for (e, c) in [(2.5, Color32::from_white_alpha(153)), (1.5, RING), (0.0, lime(hot))] {
-            let rr = r.expand(e);
-            p.rect_filled(rr, rr.width().min(rr.height()) / 2.0, c);
-        }
+        let r = Rect::from_center_size(at, Vec2::splat(if hot { HANDLE_HOT } else { HANDLE }));
+        p.rect_filled(r.expand(1.0), 1.5, RING);
+        p.rect_filled(r, 1.0, LINE);
     }
 }
 
@@ -419,6 +378,50 @@ pub const HAIRLINE_STRONG: u8 = 26; // white at ~10%
 /// as `white(ROW_HOVER)`. In a popover the whole row, edge to edge.
 pub const ROW_HOVER: u8 = 10;
 
+/// SP1 start lists: the row's content (icon, name, value) sits this far in
+/// from the row's edges, so it never touches the hover fill's edge (H9).
+pub const START_PAD: f32 = sp::M;
+
+/// The hover fill of an SP1 start row `rr`: edge to edge, no corners (H2).
+pub fn start_row_fill(p: &egui::Painter, rr: Rect) {
+    p.rect_filled(Rect::from_min_max(rr.min + Vec2::new(0.0, 1.0), rr.max), 0.0, white(ROW_HOVER));
+}
+
+/// A lit row in a card list (hover, selected, AI Check ring): 4 in from the
+/// card's sides and 1 from the row's top and bottom, radius 8, so it never
+/// meets the card's rounded corners (H2). Popovers and menus stay edge to edge.
+pub fn lit_rect(row: Rect) -> Rect {
+    row.shrink2(Vec2::new(sp::XS, LIT_INSET))
+}
+/// Corner radius of [`lit_rect`].
+pub const LIT_R: f32 = 8.0;
+
+/// Hover fill of a row in a card list (H1, H2).
+pub fn row_hover_fill(p: &Painter, row: Rect) {
+    p.rect_filled(lit_rect(row), LIT_R, white(ROW_HOVER));
+}
+
+/// A row's top divider in a list with hairlines between rows (H2): left
+/// out above and below a lit row, so the fill stands alone. Rows call it
+/// top to bottom in one pass, after deciding `lit`; `bottom` is the row's
+/// bottom edge.
+pub fn row_divider(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32) {
+    row_divider_stroke(ui, p, a, b, lit, bottom, Stroke::new(1.0, white(HAIRLINE)));
+}
+
+/// [`row_divider`] in a given stroke (card dividers use `CARD_EDGE`).
+pub fn row_divider_stroke(ui: &Ui, p: &egui::Painter, a: Pos2, b: Pos2, lit: bool, bottom: f32, stroke: Stroke) {
+    let id = egui::Id::unique("row-divider-lit");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let above_lit = ui.ctx().data(|d| d.get_temp::<(u64, f32)>(id)).is_some_and(|(n, y)| n == pass && (y - a.y).abs() < 1.5);
+    if !lit && !above_lit {
+        p.line_segment([a, b], stroke);
+    }
+    if lit {
+        ui.ctx().data_mut(|d| d.insert_temp(id, (pass, bottom)));
+    }
+}
+
 /// "Show where": the ring on the item an AI Check suggestion points at.
 /// It holds, then fades out; nothing repaints once it's gone.
 pub mod reveal {
@@ -451,6 +454,11 @@ pub mod reveal {
         let ai = AI();
         p.rect_filled(r, radius, with_alpha(ai, FILL * k));
         p.rect_stroke(r, radius, Stroke::new(RING_W, with_alpha(ai, k)), egui::StrokeKind::Inside);
+    }
+
+    /// The ring on a row of a card list, inside the card like hover (H2).
+    pub fn row(p: &Painter, r: Rect, k: f32) {
+        rect(p, super::lit_rect(r), super::LIT_R, k);
     }
 
     /// The ring around a circle (a Disk Map bubble).
@@ -545,13 +553,22 @@ pub fn float_shadow_egui() -> egui::epaint::Shadow {
 /// blur behind it shows through a little; `opaque` (screenshots)
 /// paints it solid.
 pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f64) {
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, WINDOW_BEAM);
+}
+
+/// The menu bar panel's surface (S1): the same glow, as a beam of light
+/// down the centre of the tall panel to its bottom, darker at the sides.
+pub fn backdrop_panel(painter: &Painter, rect: Rect, radius: f32, opaque: bool) {
+    backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, true);
+}
+
+fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: bool) {
     let light = is_light();
-    let alpha = if opaque { 1.0 } else { backdrop_alpha() };
     // the mesh only changes with the window's size and the theme: build it
     // once, not every frame (it's ~1.4k vertices of gradient math)
-    type Key = ([u32; 5], bool, u32);
+    type Key = ([u32; 5], bool, u32, bool);
     static CACHE: std::sync::Mutex<Vec<(Key, std::sync::Arc<egui::epaint::Mesh>)>> = std::sync::Mutex::new(Vec::new());
-    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits());
+    let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits(), tall);
     let mesh = {
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(i) = cache.iter().position(|(k, _)| *k == key) {
@@ -560,7 +577,7 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
             cache.push(hit);
             mesh
         } else {
-            let mesh = std::sync::Arc::new(backdrop_mesh(rect, radius, light, alpha));
+            let mesh = std::sync::Arc::new(backdrop_mesh(rect, radius, light, alpha, tall));
             // a few windows (panel, app window, setup), newest last
             if cache.len() >= 4 {
                 cache.remove(0);
@@ -573,24 +590,58 @@ pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f6
     painter.rect_stroke(rect, radius, Stroke::new(1.0, white(HAIRLINE_STRONG)), StrokeKind::Inside);
 }
 
-fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32) -> egui::epaint::Mesh {
-    let stops: &[(f32, Color32)] = if light {
-        &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))]
+/// The backdrop's gradient (S1): colours from the glow's centre out to its
+/// edge, as fractions of the way.
+pub fn backdrop_stops(light: bool) -> &'static [(f32, Color32)] {
+    const LIGHT: &[(f32, Color32)] = &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))];
+    const DARK: &[(f32, Color32)] = &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))];
+    if light {
+        LIGHT
     } else {
-        &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))]
-    };
+        DARK
+    }
+}
+
+/// The backdrop glow's radii for a window of `size`: an ellipse wide
+/// across, reaching the bottom edge, never smaller than the app window's:
+/// the narrow panel shows the centre of the same glow instead of a
+/// squeezed copy of it (S1). Its centre is the top middle. `tall`: a beam
+/// of light down the centre to the bottom (its bottom edge at the
+/// gradient's middle, not the near-black end), darker towards the sides.
+pub fn backdrop_glow(size: Vec2, tall: bool) -> (f32, f32) {
+    let (mut rx, mut ry) = (size.x.max(super::mechanics::APP_WIDTH) * 0.75, size.y.max(super::mechanics::APP_HEIGHT) * 1.05);
+    if tall {
+        ry = ry.max(size.y * 1.9);
+        rx = size.x * 0.85;
+    }
+    (rx, ry)
+}
+
+/// The app window's backdrop is the tall one too (the glow beam).
+pub const WINDOW_BEAM: bool = true;
+
+/// The backdrop's 1 pt edge, drawn inside its outline.
+pub fn backdrop_edge() -> Color32 {
+    white(HAIRLINE_STRONG)
+}
+
+/// The backdrop's colour at a point of `rect`: a radial glow from the top
+/// centre (S1). `tall` is the panel's: a beam down the centre to the bottom.
+fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
+    let stops = backdrop_stops(light);
     let glow = Pos2::new(rect.center().x, rect.top());
-    // the glow is an ellipse: wide across, reaching the bottom edge,
-    // never smaller than the app window's: the narrow panel shows the
-    // centre of the same glow instead of a squeezed copy of it (S1)
-    let (rx, ry) = (rect.width().max(super::mechanics::APP_WIDTH) * 0.75, rect.height().max(super::mechanics::APP_HEIGHT) * 1.05);
-    let color_at = |q: Pos2| {
+    let (rx, ry) = backdrop_glow(rect.size(), tall);
+    move |q: Pos2| {
         let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
         with_alpha(lerp_color(c0, c1, (d - t0) / (t1 - t0).max(1e-3)), alpha)
-    };
+    }
+}
+
+fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
+    let color_at = glow_color(rect, light, alpha, tall);
     // a fan of rings from the centre out to the rounded outline
     let outline = densify(&rounded_points(rect, radius), 24.0);
     let c = rect.center();
@@ -664,6 +715,14 @@ pub fn glass_card(painter: &Painter, rect: Rect, r: f32, hover: f32, selected: b
         painter.rect_stroke(rect, r, Stroke::new(1.5, ACTION()), StrokeKind::Inside);
     }
 }
+
+/// A card that shows live data on a page (Mac Health, AI Usage, Fan
+/// Control, Keep Awake): the panel widgets' card ([`crate::kit::tile::paint_card`]),
+/// so a page and its widgets read as one.
+pub fn data_card(p: &Painter, rect: Rect) {
+    crate::kit::tile::paint_card(p, rect, 0.0, false);
+}
+
 
 /// Button kinds for [`pill_button`].
 pub const BTN_SECONDARY: u8 = 0;
@@ -856,27 +915,11 @@ pub const DISK_RING_H: f32 = DISK_RING_D + sp::M + 18.0;
 /// volume's name under the ring. `top` is the top centre of the ring; the
 /// whole thing is [`DISK_RING_H`] tall.
 pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint: Color32) {
-    use egui::epaint::{PathShape, PathStroke};
-    const STROKE: f32 = 12.0;
-    let r = (DISK_RING_D - STROKE) / 2.0 - 2.0;
     let c = Pos2::new(top.x, top.y + DISK_RING_D / 2.0);
-    p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
     if total > 0 {
-        let used = disk_used(total, free);
-        if used > 0.0 {
-            let a0 = -std::f32::consts::FRAC_PI_2;
-            let a1 = a0 + std::f32::consts::TAU * used.max(0.01);
-            p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, tint)));
-            // round caps
-            for a in [a0, a1] {
-                p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, tint);
-            }
-        }
-        let big = line_h(p, &ty::hero());
-        let small = line_h(p, &ty::label());
-        let y0 = c.y - (big + 2.0 + small) / 2.0;
-        p.text(Pos2::new(c.x, y0), Align2::CENTER_TOP, human_bytes(free), ty::hero(), TEXT());
-        p.text(Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, format!("free of {}", human_bytes(total)), ty::label(), TEXT_DIM());
+        stat_ring(p, c, DISK_RING_D, disk_used(total, free), tint, &human_bytes(free), &format!("free of {}", human_bytes(total)));
+    } else {
+        stat_ring(p, c, DISK_RING_D, 0.0, tint, "", "");
     }
     // the name, with the disk glyph in front, centred as one
     let ny = top.y + DISK_RING_D + sp::M + 9.0;
@@ -886,6 +929,84 @@ pub fn disk_ring(p: &Painter, top: Pos2, name: &str, total: u64, free: u64, tint
     let x = c.x - (22.0 + nw) / 2.0;
     icon(p, Icon::Disk, Rect::from_center_size(Pos2::new(x + 8.0, ny), Vec2::splat(16.0)), TEXT_SOFT());
     text_fit(p, Pos2::new(x + 22.0, ny), Align2::LEFT_CENTER, name, ty::body(), TEXT_SOFT(), room);
+}
+
+/// The one big stat ring (SP2): a 12 pt `tint` arc from 12 o'clock with
+/// round caps on a `white(16)` track, `d` across, the value in hero 28/600
+/// over its caption in label 12 dim. The disk ring of start screens is this
+/// ring at [`DISK_RING_D`]; Mac Health draws it smaller, one size per page.
+/// The value shrinks to fit inside the ring rather than being cut.
+pub fn stat_ring(p: &Painter, c: Pos2, d: f32, frac: f32, tint: Color32, value: &str, caption: &str) {
+    stat_ring_paced(p, c, d, frac, None, tint, value, caption);
+}
+
+/// [`stat_ring`] with a faint arc under the used one up to `pace` (0..1,
+/// where even use would be by now), in `pace_col` (a solid colour, so the
+/// caps don't double up). AI Usage limits: running ahead of pace shows as
+/// colour past the faint arc.
+#[allow(clippy::too_many_arguments)]
+pub fn stat_ring_paced(p: &Painter, c: Pos2, d: f32, frac: f32, pace: Option<(f32, Color32)>, tint: Color32, value: &str, caption: &str) {
+    use egui::epaint::{PathShape, PathStroke};
+    const STROKE: f32 = 12.0;
+    let r = (d - STROKE) / 2.0 - 2.0;
+    p.add(PathShape::closed_line(arc_points(c, r, 0.0, std::f32::consts::TAU, 120)[..120].to_vec(), PathStroke::new(STROKE, white(16))));
+    let arc = |f: f32, col: Color32| {
+        let f = f.clamp(0.0, 1.0);
+        if f <= 0.0 {
+            return;
+        }
+        let a0 = -std::f32::consts::FRAC_PI_2;
+        let a1 = a0 + std::f32::consts::TAU * f.max(0.01);
+        p.add(PathShape::line(arc_points(c, r, a0, a1, 120), PathStroke::new(STROKE, col)));
+        // round caps
+        for a in [a0, a1] {
+            p.circle_filled(c + Vec2::new(a.cos(), a.sin()) * r, STROKE / 2.0, col);
+        }
+    };
+    if let Some((f, col)) = pace {
+        arc(f, col);
+    }
+    arc(frac, tint);
+    if value.is_empty() {
+        return;
+    }
+    // the value and caption sit inside the ring with air on every side and
+    // never cut ("244…"): the width they get is the chord at the block's top
+    // and bottom, not the diameter. A long value or a small ring sets the
+    // value smaller; when even that doesn't fit, the caption goes and the
+    // value takes the middle alone.
+    let ri = r - STROKE / 2.0 - 4.0;
+    let chord = |h: f32| 2.0 * (ri * ri - (h / 2.0).min(ri).powi(2)).max(0.0).sqrt();
+    let width = |f: &FontId, t: &str| p.layout_no_wrap(t.to_owned(), f.clone(), TEXT()).size().x;
+    let label = ty::label();
+    let small = line_h(p, &label);
+    let cap_w = if caption.is_empty() { 0.0 } else { width(&label, caption) };
+    let hero = ty::hero();
+    let fit = |with_caption: bool| -> Option<FontId> {
+        let mut size = hero.size;
+        while size >= 12.0 {
+            let f = FontId::new(size, hero.family.clone());
+            let big = line_h(p, &f);
+            let h = if with_caption { big + 2.0 + small } else { big };
+            let c = chord(h);
+            if width(&f, value) <= c && (!with_caption || cap_w <= c) {
+                return Some(f);
+            }
+            size -= 1.0;
+        }
+        None
+    };
+    let (big_f, with_caption) = match fit(!caption.is_empty()) {
+        Some(f) => (f, !caption.is_empty()),
+        None => (fit(false).unwrap_or(FontId::new(12.0, hero.family.clone())), false),
+    };
+    let big = line_h(p, &big_f);
+    let h = if with_caption { big + 2.0 + small } else { big };
+    let y0 = c.y - h / 2.0;
+    p.text(Pos2::new(c.x, y0), Align2::CENTER_TOP, value, big_f, TEXT());
+    if with_caption {
+        p.text(Pos2::new(c.x, y0 + big + 2.0), Align2::CENTER_TOP, caption, label, TEXT_DIM());
+    }
 }
 
 /// How full a disk is, 0..1 (0 when its size is unknown).
@@ -1258,6 +1379,12 @@ pub fn section_title(p: &Painter, x: f32, top: f32, label: &str) -> f32 {
     let cy = section_title_y(p, top);
     p.text(Pos2::new(x, cy), Align2::LEFT_CENTER, label, ty::section(), white(150));
     cy
+}
+
+/// A section title's value on the right (a total): same style as the title,
+/// so it reads as part of the header, not as one more row value.
+pub fn section_value(p: &Painter, x: f32, cy: f32, text: &str) {
+    p.text(Pos2::new(x, cy), Align2::RIGHT_CENTER, text, ty::section(), white(150));
 }
 
 /// Height a [`card_title`] takes above its card: the title and 12 (R2).

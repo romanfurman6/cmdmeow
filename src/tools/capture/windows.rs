@@ -491,7 +491,7 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                     pin.resize = None;
                 }
             }
-            // the edge on hover is an on-picture overlay: lime over a dark band (C16)
+            // the edge on hover is an on-picture overlay: white over a dark band (C16)
             if hovered || pin.resize.is_some() {
                 crate::kit::glass::overlay::frame(&p, r, 0.0, StrokeKind::Inside);
             } else {
@@ -518,13 +518,13 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                     pin.scale = scale;
                     vctx.send_viewport_cmd(ViewportCommand::InnerSize(pin.base * pin.scale));
                 }
-                // corner grip: lime over a dark band, like every on-picture line (C16)
+                // corner grip: white over a dark band, like every on-picture line (C16)
                 let c = r.max - Vec2::splat(5.0);
                 for k in 1..=3 {
                     let d = 4.0 * k as f32;
                     let seg = [c - Vec2::new(d, 0.0), c - Vec2::new(0.0, d)];
-                    p.line_segment(seg, Stroke::new(3.0, with_alpha(crate::kit::glass::overlay::RING, 0.7)));
-                    p.line_segment(seg, Stroke::new(1.5, crate::kit::glass::overlay::LIME));
+                    p.line_segment(seg, Stroke::new(3.0, crate::kit::glass::overlay::ring(0.5)));
+                    p.line_segment(seg, Stroke::new(1.5, crate::kit::glass::overlay::LINE));
                 }
                 let cr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.top() + 16.0), Vec2::splat(22.0));
                 let b = ui.interact(cr, ui.scope_id().with("close"), Sense::click());

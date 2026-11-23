@@ -16,6 +16,13 @@ use egui::{Align2, Pos2, Rect, Ui, Vec2};
 pub use parts::usage_color;
 
 const GAP: f32 = sp::L;
+/// R15: the grid fills the width but not the height. The limits row and
+/// the chart with models and projects stop growing here, as on Mac Health.
+const GRID_MAX_H: f32 = 2.0 * 340.0 + sp::L;
+/// The top row: title, 12, a limit's ring (SP2 at [`RING_D`]).
+const ROW1_H: f32 = 2.0 * sp::L + 16.0 + sp::M + RING_D;
+/// One ring size for the page (SP2 `stat_ring`, one size per page).
+const RING_D: f32 = 112.0;
 
 /// The provider switch, right-aligned in `area`: "All" and every provider
 /// that's on. Returns its left edge.
@@ -65,7 +72,7 @@ fn not_set_up(a: Availability, cl: &UsageInfo, demo: bool, ui: &mut Ui, r: Rect,
     y += 32.0 + 12.0;
     let steps: &[&str] = if a == Availability::SignedOut { m.sign_in_steps } else { m.install_steps };
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(colw, 12.0 + steps.len() as f32 * 34.0));
-    glass_card(&p, card, R_CARD, 0.0, false);
+    data_card(&p, card);
     for (i, s) in steps.iter().enumerate() {
         let cy = card.top() + 6.0 + 17.0 + i as f32 * 34.0;
         let c = Pos2::new(card.left() + 24.0, cy);
@@ -150,7 +157,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let x1 = r.right() - sp::PAGE_EDGE;
     let y = r.top() + PAGE_HEADER_H + 1.0 + sp::L;
     let cw = (x1 - x0 - 3.0 * GAP) / 4.0;
-    let ch = 158.0;
+    let ch = ROW1_H;
     let slot = |k: usize, span: usize| Rect::from_min_size(Pos2::new(x0 + k as f32 * (cw + GAP), y), Vec2::new(cw * span as f32 + GAP * (span as f32 - 1.0), ch));
 
     // row 1
@@ -171,7 +178,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
     } else if meta.limits && (cl.loading || cl.error.is_some()) {
         let lr = slot(0, 3);
-        glass_card(&p, lr, R_CARD, 0.0, false);
+        data_card(&p, lr);
         let msg = cl.error.clone().unwrap_or_else(|| format!("Asking {} for your limits…", cl.provider));
         p.text(lr.min + Vec2::splat(sp::L), Align2::LEFT_TOP, "Plan limits", ty::title(), TEXT());
         paragraph(&p, lr.min + Vec2::new(sp::L, sp::L + 16.0 + sp::M), &msg, ty::body(), TEXT_SOFT(), lr.width() - 2.0 * sp::L);
@@ -188,7 +195,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 
     // row 2: the chart, then models over projects
     let y2 = y + ch + GAP;
-    let bottom = r.bottom() - sp::L;
+    let bottom = (r.bottom() - sp::L).min(y + GRID_MAX_H).max(y2 + 200.0);
     let chart = Rect::from_min_max(Pos2::new(x0, y2), Pos2::new(x0 + cw * 2.0 + GAP, bottom));
     chart_card(ui, chart, &cl, meta.id, show_usd, demo);
     let col = Rect::from_min_max(Pos2::new(chart.right() + GAP, y2), Pos2::new(x1, bottom));
@@ -196,7 +203,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let home = dirs::home_dir().unwrap_or_default().display().to_string();
     for (k, (title, rows)) in [("Models", &cl.local.models), ("Projects", &cl.local.projects)].into_iter().enumerate() {
         let cr = Rect::from_min_size(Pos2::new(col.left(), col.top() + k as f32 * (half + GAP)), Vec2::new(col.width(), half));
-        glass_card(&p, cr, R_CARD, 0.0, false);
+        data_card(&p, cr);
         let inner = cr.shrink(sp::L);
         p.text(inner.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
         p.text(inner.right_top(), Align2::RIGHT_TOP, "30 days", ty::caption(), ty::caption_color());
@@ -204,7 +211,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         if rows.is_empty() {
             empty_note(&p, list, &format!("No {} in the last 30 days", title.to_lowercase()));
         }
-        parts::share_rows(&p, list, rows, show_usd, &home);
+        parts::share_lines(&p, list, rows, show_usd, &home);
     }
 }
 
@@ -272,36 +279,41 @@ fn money_line(show_usd: bool, usd: f64, req: u64) -> String {
 
 /// A plain number card: title, big value, one line under it.
 fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
-    glass_card(p, r, R_CARD, 0.0, false);
+    data_card(p, r);
     let i = r.shrink(sp::L);
     p.text(i.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
     text_fit(p, Pos2::new(i.left(), i.top() + 16.0 + sp::M), Align2::LEFT_TOP, value, ty::hero(), TEXT(), i.width());
     text_fit(p, i.left_bottom(), Align2::LEFT_BOTTOM, line, ty::label(), TEXT_DIM(), i.width());
 }
 
-/// One plan limit: ring with the even-use arc, pace, forecast.
+/// One plan limit: the page's SP2 ring with the even-use arc under the
+/// used one, and beside it when it runs out (red) and when it resets.
 fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
-    glass_card(p, cr, R_CARD, 0.0, false);
+    data_card(p, cr);
     let inner = cr.shrink(sp::L);
-    split_line(p, inner.left_top(), inner.right_top(), egui::Align::Min, &backend::short_label(&l.label), ty::title(), TEXT(), &parts::reset_when(l), ty::label(), TEXT_DIM());
-    let rr = 34.0;
-    let c = Pos2::new(inner.left() + rr + 5.0, inner.bottom() - rr - 5.0);
-    parts::pace_ring(p, c, rr, 6.0, l);
-    p.text(c, Align2::CENTER_CENTER, format!("{:.0}%", l.pct), ty::lead(), TEXT());
-    let tx = c.x + rr + sp::L;
+    p.text(inner.left_top(), Align2::LEFT_TOP, backend::short_label(&l.label), ty::title(), TEXT());
+    let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 16.0 + sp::M), inner.max);
+    let d = RING_D.min(body.height()).min(body.width() * 0.6);
+    let c = Pos2::new(body.left() + d / 2.0, body.center().y);
+    // no caption in the ring: the card title names the number (T14)
+    stat_ring_paced(p, c, d, l.pct / 100.0, parts::pace_arc(l), parts::limit_color(l), &format!("{:.0}%", l.pct), "");
+    // beside it, centred on the ring; each line wraps rather than being cut
+    // (R10). No pace words (T9): the faint arc shows the pace
+    let tx = c.x + d / 2.0 + sp::M;
     let w = inner.right() - tx;
-    // the forecast centred on the ring; it wraps ("Runs out tomorrow" /
-    // "23:40") rather than being cut. No pace words (T9): the ring's marker
-    // shows the pace
-    let fc = parts::forecast(l);
-    let fg = p.layout(fc.clone(), ty::label(), TEXT_DIM(), w);
-    let top = c.y - fg.size().y / 2.0;
-    text_wrap(p, Pos2::new(tx, top), Align2::LEFT_TOP, &fc, ty::label(), TEXT_DIM(), w, 3);
+    let lines = parts::limit_lines(l);
+    let hs: Vec<f32> = lines.iter().map(|(t, col)| p.layout(t.clone(), ty::label(), *col, w).size().y).collect();
+    let total: f32 = hs.iter().sum::<f32>() + sp::XS * (hs.len().max(1) - 1) as f32;
+    let mut y = c.y - total / 2.0;
+    for ((t, col), h) in lines.iter().zip(hs) {
+        text_wrap(p, Pos2::new(tx, y), Align2::LEFT_TOP, t, ty::label(), *col, w, 3);
+        y += h + sp::XS;
+    }
 }
 
 /// A subscription: the 30 days at API prices against the plan's price.
 fn saved_card(p: &egui::Painter, r: Rect, cl: &UsageInfo) {
-    glass_card(p, r, R_CARD, 0.0, false);
+    data_card(p, r);
     let i = r.shrink(sp::L);
     let plan = cl.plan_usd().unwrap_or(0.0);
     let api = cl.local.usd_30d;
@@ -355,7 +367,7 @@ fn days_in_month() -> u32 {
 /// it runs out. The budget is typed right on the card.
 fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     let p = ui.painter().clone();
-    glass_card(&p, r, R_CARD, 0.0, false);
+    data_card(&p, r);
     let i = r.shrink(sp::L);
     let today = chrono::Local::now().date_naive();
     let spent = cl.local.usd_month;
@@ -415,7 +427,7 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
 /// History: the limit window as a line, or tokens / dollars per day.
 fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, demo: bool) {
     let p = ui.painter().clone();
-    glass_card(&p, r, R_CARD, 0.0, false);
+    data_card(&p, r);
     let i = r.shrink(sp::L);
     // one question per card: limits live in the top row; this card is always
     // daily usage, and Tokens | $ only changes the unit of the same bars
@@ -491,7 +503,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         return;
     }
     let cr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, bottom));
-    glass_card(&p, cr, R_CARD, 0.0, false);
+    data_card(&p, cr);
     let i = cr.shrink(sp::L);
     p.text(i.left_top(), Align2::LEFT_TOP, "At API prices · 30 days", ty::title(), TEXT());
     let mut days: Vec<Day> = Vec::new();
@@ -515,7 +527,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: bool) {
     let p = ui.painter().clone();
     let resp = ui.interact(cr, ui.scope_id().with(("ai-all", info.provider)), egui::Sense::click());
-    glass_card(&p, cr, R_CARD, if resp.hovered() { 1.0 } else { 0.0 }, false);
+    crate::kit::tile::paint_card(&p, cr, if resp.hovered() { 1.0 } else { 0.0 }, false);
     if resp.clicked() {
         backend::select(ai::index_of(ai::meta(info.provider).id), false);
     }

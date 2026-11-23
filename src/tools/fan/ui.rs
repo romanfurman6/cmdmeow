@@ -27,21 +27,6 @@ pub fn blades(p: &egui::Painter, c: Pos2, r: f32, angle: f32, color: Color32) {
     crate::kit::spin::draw(p, c, r, angle, color);
 }
 
-/// A 270° dial: track plus the filled part for `frac`.
-pub fn dial(p: &egui::Painter, c: Pos2, r: f32, width: f32, frac: f32, color: Color32) {
-    let a0 = 0.75 * PI;
-    let span = 1.5 * PI;
-    let track = arc_points(c, r, a0, a0 + span, 64);
-    p.add(Shape::line(track.clone(), Stroke::new(width, white(20))));
-    p.circle_filled(track[0], width / 2.0, white(20));
-    p.circle_filled(*track.last().unwrap(), width / 2.0, white(20));
-    let f = frac.clamp(0.02, 1.0);
-    let fill = arc_points(c, r, a0, a0 + span * f, 64);
-    p.add(Shape::line(fill.clone(), Stroke::new(width, color)));
-    p.circle_filled(fill[0], width / 2.0, color);
-    p.circle_filled(*fill.last().unwrap(), width / 2.0, color);
-}
-
 /// A full ring for small fan icons: track and filled part, starting at 12 o'clock.
 pub fn ring(p: &egui::Painter, c: Pos2, r: f32, width: f32, frac: f32, color: Color32) {
     crate::kit::glass::stroke_circle(&p, c, r, Stroke::new(width, white(20)));
@@ -220,10 +205,10 @@ pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         spinner(&p, Pos2::new(rect.center().x, fy + fh / 2.0), 8.0, t, TEXT_DIM());
         crate::kit::glass::poll(ui.ctx());
     } else if s.fans.is_empty() {
+        // a line on the card, no plate inside it (S2)
         let r = Rect::from_min_size(Pos2::new(x0, fy), Vec2::new(x1 - x0, fh));
-        p.rect_filled(r, 10.0, white(10));
         let msg = if s.has_smc { "No fans. Cools passively" } else { "Fan speed isn't available on this Mac." };
-        text_fit(&p, Pos2::new(r.left() + 12.0, r.center().y), Align2::LEFT_CENTER, msg, font(12.0), TEXT_DIM(), r.width() - 24.0);
+        text_fit(&p, Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, msg, font(12.0), TEXT_DIM(), r.width());
     } else {
         let n = s.fans.len().min(2);
         let gap = 8.0;
@@ -263,10 +248,10 @@ fn card_resp(ui: &mut Ui, rect: Rect, selected: bool) -> egui::Response {
     tile::card(ui, rect, ui.scope_id().with("fan-card"), selected)
 }
 
-/// One fan in the panel card: ring with blades, name and speed.
+/// One fan in the panel card: ring with blades, name and speed, straight
+/// on the card (S2: no plate per fan).
 fn mini_fan(p: &egui::Painter, r: Rect, f: &Fan, name: &str) {
-    p.rect_filled(r, 8.0, white(8));
-    let c = Pos2::new(r.left() + 8.0 + 18.0, r.center().y);
+    let c = Pos2::new(r.left() + 18.0, r.center().y);
     ring(p, c, 17.0, 3.0, f.frac(), LINE());
     crate::kit::spin::blades(p, &format!("fan-card-{name}"), c, 12.0, f.rpm, BLADE());
     let x = c.x + 26.0;
@@ -346,7 +331,7 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     let rows = groups.len().min(8);
     if rows > 0 {
         let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * SHEET_ROW_H + 8.0));
-        glass_card(&p, gr, R_CARD, 0.0, false);
+        data_card(&p, gr);
         for (i, g) in groups.iter().take(rows).enumerate() {
             let cy = gr.top() + 4.0 + SHEET_ROW_H / 2.0 + i as f32 * SHEET_ROW_H;
             p.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 16.5, cy), Vec2::splat(9.0)), 3.0, heat(g.max));
@@ -365,7 +350,7 @@ pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Ve
     let fr = Rect::from_min_size(fr.min, Vec2::new(w, need));
     let by = rect.bottom() - 16.0 - BTN_H;
     if fr.bottom() < by - 8.0 {
-        glass_card(&p, fr, R_CARD, 0.0, false);
+        data_card(&p, fr);
         let fr = fr.translate(Vec2::new(0.0, 4.0));
         let _ = hint; // T1: the word says it
         fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, "");

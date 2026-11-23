@@ -45,6 +45,39 @@ pub fn reveal(path: &std::path::Path) {
     let _ = std::process::Command::new("/usr/bin/open").arg("-R").arg(path).spawn();
 }
 
+/// An autorelease pool for the code that follows, until the value is
+/// dropped. Threads the app starts have none, so the Cocoa objects macOS
+/// hands out there were never freed: a loop that calls into macOS makes one
+/// at the top of each pass (`let _pool = macos::pool();`).
+pub struct Pool(*mut std::ffi::c_void);
+
+pub fn pool() -> Pool {
+    #[cfg(target_os = "macos")]
+    {
+        Pool(unsafe { objc_autoreleasePoolPush() })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Pool(std::ptr::null_mut())
+    }
+}
+
+impl Drop for Pool {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            objc_autoreleasePoolPop(self.0)
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "objc")]
+extern "C" {
+    fn objc_autoreleasePoolPush() -> *mut std::ffi::c_void;
+    fn objc_autoreleasePoolPop(pool: *mut std::ffi::c_void);
+}
+
 /// The app's own icon as straight RGBA pixels, `px` square. Main thread only.
 /// Finder puts file reference URLs (`file:///.file/id=…`) on the drag and
 /// copy pasteboards: turn one into the plain `file:///path` URL. Other

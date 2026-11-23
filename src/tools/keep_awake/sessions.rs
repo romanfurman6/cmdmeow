@@ -2,7 +2,8 @@
 //! session as it works, so a session written in the last couple of minutes
 //! is working. Where the log shows a tool call still waiting for its result
 //! (a long build, tests), that counts as working too, even though the log
-//! stays quiet while it runs.
+//! stays quiet while it runs; but only while the agent itself is still
+//! running, so a closed terminal or a crash doesn't keep the Mac awake.
 //!
 //! - Claude Code: `~/.claude/projects/<project>/<session>.jsonl` (subagents
 //!   in a folder named after the session). Open tool calls: yes.
@@ -96,6 +97,17 @@ impl Source {
         }
     }
 
+    /// The name its command-line program runs under, where a tool call
+    /// can be seen in its log.
+    fn process(self) -> Option<&'static str> {
+        match self {
+            Source::Claude => Some("claude"),
+            Source::Codex => Some("codex"),
+            Source::OpenCode => Some("opencode"),
+            Source::Gemini => None,
+        }
+    }
+
     /// The folder its sessions are written to.
     pub fn root(self) -> PathBuf {
         match self {
@@ -128,6 +140,12 @@ impl Scanner {
             Source::Gemini => self.scan_gemini(&root, now),
             Source::OpenCode => self.scan_opencode(&root, now),
         };
+        // a call nobody is waiting for any more: the agent quit or crashed
+        if out.iter().any(|s| s.tool_running) && source.process().is_some_and(|name| !process_running(name)) {
+            for s in &mut out {
+                s.tool_running = false;
+            }
+        }
         out.sort_by_key(|s| std::cmp::Reverse(s.last_write));
         out
     }
@@ -271,6 +289,42 @@ impl Scanner {
     }
 }
 
+/// Is a program called `name` running that could have a session: as a
+/// command ("claude", "node /opt/homebrew/bin/claude …"), as a package
+/// ("…/claude-code/cli.js") or started by the agent's desktop app? Letter
+/// case doesn't matter, and "couldn't tell" counts as running: staying
+/// awake a while too long is the smaller mistake.
+fn process_running(name: &str) -> bool {
+    let pattern = format!("(^|[/ ]){name}([ -]|$)|{name}[-_]code");
+    // each match with its whole command line
+    let long = if cfg!(target_os = "macos") { "-l" } else { "-a" };
+    let found = std::process::Command::new("/usr/bin/pgrep").args(["-i", "-f", long, "--", &pattern]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output();
+    // pgrep: 0 found, 1 none, anything else is an error
+    match found {
+        Ok(o) if o.status.code() == Some(1) => false,
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).lines().any(runs_sessions),
+        _ => true,
+    }
+}
+
+/// Could the program with this command line be running a session? Not the
+/// desktop app's own windows, nor the Remote Control service waiting for
+/// work: both are open all day and start each session as a program of its
+/// own, which is the one to look for.
+fn runs_sessions(cmd: &str) -> bool {
+    let low = cmd.to_lowercase();
+    // "/Claude.app/Contents/MacOS/Claude": the app itself, not a tool
+    // shipped next to it ("…/MacOS/opencode-cli")
+    let app_itself = low.match_indices(".app/contents/macos/").any(|(i, m)| {
+        let bundle = low[..i].rsplit('/').next().unwrap_or("");
+        let exe = &low[i + m.len()..];
+        !bundle.is_empty() && exe.strip_prefix(bundle).is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+    });
+    let app_helper = low.contains(".app/contents/frameworks/");
+    let service = low.contains(" remote-control");
+    !(app_itself || app_helper || service)
+}
+
 /// The end of a log, where an open tool call would be.
 fn tail(log: &Path) -> Vec<u8> {
     use std::io::{Read, Seek, SeekFrom};
@@ -287,7 +341,7 @@ fn tail(log: &Path) -> Vec<u8> {
 /// Does Claude's log end asking for a tool whose result isn't logged yet?
 /// The last assistant or user entry decides.
 fn open_tool_call(text: &[u8]) -> bool {
-    let has = |l: &[u8], pat: &[u8]| l.windows(pat.len()).any(|w| w == pat);
+    let has = |l: &[u8], pat: &[u8]| crate::kit::ai::find(l, pat).is_some();
     for line in text.split(|b| *b == b'\n').rev() {
         if has(line, b"\"tool_result\"") {
             return false;
@@ -305,7 +359,7 @@ fn open_tool_call(text: &[u8]) -> bool {
 /// The same for a Codex rollout: the last call, its output, a message or
 /// the end of the turn decides. Token counts and reasoning don't.
 fn codex_open_call(text: &[u8]) -> bool {
-    let has = |l: &[u8], pat: &[u8]| l.windows(pat.len()).any(|w| w == pat);
+    let has = |l: &[u8], pat: &[u8]| crate::kit::ai::find(l, pat).is_some();
     for line in text.split(|b| *b == b'\n').rev() {
         if has(line, b"\"type\":\"function_call_output\"") || has(line, b"\"type\":\"custom_tool_call_output\"") {
             return false;
@@ -469,6 +523,51 @@ mod tests {
         assert!(!s.working(1000 + TOOL_CAP_SECS + 200), "an abandoned call stops counting");
         let quiet = Session { tool_running: false, ..s };
         assert!(!quiet.working(1000 + 1800));
+    }
+
+    #[test]
+    fn a_tool_call_counts_only_while_its_agent_runs() {
+        if !Path::new("/usr/bin/pgrep").exists() {
+            return;
+        }
+        let name = format!("cmbagent{}", std::process::id());
+        assert!(!process_running(&name));
+        // as a shell starts it: argv[0] is the bare name, whatever the file is
+        let mut child = std::process::Command::new("/bin/bash").args(["-c", &format!("exec -a {name} sleep 30")]).spawn().unwrap();
+        let seen = (0..50).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            process_running(&name)
+        });
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(seen, "a running agent is found by its name");
+        assert!(!process_running(&name), "and not once it has quit");
+        // a longer name is another program
+        assert!(!process_running(&name[..name.len() - 1]));
+    }
+
+    #[test]
+    fn an_open_app_or_waiting_service_is_not_a_session() {
+        for cmd in [
+            "412 /Applications/Claude.app/Contents/MacOS/Claude",
+            "413 /Applications/Claude.app/Contents/Frameworks/Claude Helper (Renderer).app/Contents/MacOS/Claude Helper (Renderer) --type=renderer",
+            "414 /Applications/Codex.app/Contents/MacOS/Codex --no-sandbox",
+            "500 claude remote-control",
+            "501 node /opt/homebrew/bin/claude remote-control --spawn same-dir",
+        ] {
+            assert!(!runs_sessions(cmd), "{cmd}");
+        }
+        for cmd in [
+            "600 claude",
+            "601 claude --remote-control",
+            "602 claude --print --sdk-url wss://example.com/session",
+            "603 node /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js",
+            "604 /Users/me/Library/Application Support/Claude/claude-code/2.1.0/claude --output-format stream-json",
+            "605 /Applications/Codex.app/Contents/Resources/codex app-server",
+            "606 /Applications/OpenCode.app/Contents/MacOS/opencode-cli serve",
+        ] {
+            assert!(runs_sessions(cmd), "{cmd}");
+        }
     }
 
     fn tmp(name: &str) -> PathBuf {
