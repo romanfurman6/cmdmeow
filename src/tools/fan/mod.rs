@@ -24,7 +24,6 @@ use std::time::Duration;
 
 pub const ID: ToolId = "fan";
 const CARD: &str = "fans";
-const SHEET: &str = "fans";
 
 pub type Shared = Arc<Mutex<Snapshot>>;
 
@@ -301,11 +300,6 @@ impl Tool for FanControl {
         let s = self.snap.lock_ok().clone();
         ui::widget(&s, size, ui, rect, cx);
     }
-    fn detail_ui(&mut self, _detail: &str, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-        let (s, l) = self.view();
-        let cmds = ui::sheet(&s, &l, ui, rect, cx);
-        self.run(cmds, ui.ctx());
-    }
     fn has_page(&self) -> bool {
         true
     }
@@ -320,8 +314,7 @@ impl Tool for FanControl {
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
         match view {
-            "fan" => Some(View::Page),
-            "fan-detail" => Some(View::Detail(SHEET)),
+            "fan" | "fan-detail" => Some(View::Page),
             "fan-curve" | "fan-fixed" | "fan-install" => {
                 let mut l = self.live.lock_ok();
                 l.settings.mode = match view {
@@ -339,7 +332,7 @@ impl Tool for FanControl {
             }
             "fan-air-detail" => {
                 *self.snap.lock_ok() = data::demo_fanless();
-                Some(View::Detail(SHEET))
+                Some(View::Page)
             }
             _ => None,
         }

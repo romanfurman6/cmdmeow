@@ -211,7 +211,7 @@ cargo run --release -- --screenshot out.png --view panel
 ```
 
 `--view` values: `panel`, `customize` (Settings › Widgets), `settings-tools`,
-`storage`, `memory`, `battery`, `cpu`, `network`, `devices`, `claude-detail`,
+`storage`, `memory`, `battery`, `cpu`, `network`, `devices` (Mac Health with that card's details), `claude-detail` (AI Usage with the limits popup),
 `cleanup`, `results`, `lens`, `lens-live`, `claude`, `clipboard`,
 `clipboard-settings`, `clipboard-quick`, `clipboard-list`.
 

@@ -10,7 +10,7 @@
 use crate::kit::aicheck::{self, ui::Event};
 use crate::kit::sync::LockExt;
 use super::monitor::{self, Level, Snapshot};
-use super::sheets::Action as SheetAction;
+use super::sheets::{Action as SheetAction, Sheet};
 use crate::core::tool::{Cx, Recommendation};
 use crate::kit::glass::*;
 use crate::kit::tile;
@@ -32,11 +32,21 @@ fn level_color(l: Level) -> Color32 {
     }
 }
 
-pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendation], ui: &mut Ui, r: Rect, cx: &mut Cx) {
+/// `route` is a card's widget id from a panel widget or a tip ("cpu"):
+/// the page opens on the overview with that card's details.
+pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendation], route: Option<String>, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let s = mon.lock_ok().clone();
     let p = ui.painter().clone();
     let settings_id = ui.scope_id().with("health-settings");
-    let show_settings = ui.ctx().data(|d| d.get_temp::<bool>(settings_id)).unwrap_or(false);
+    if let Some(route) = route {
+        ui.ctx().data_mut(|d| d.insert_temp(settings_id, false));
+        open_details(ui.ctx(), Sheet::from_id(&route));
+    }
+    if ui.ctx().data(|d| d.get_temp::<Sheet>(details_id())) == Some(Sheet::Network) {
+        super::traffic::want(mon, ui.ctx());
+    }
+    // screenshots: CMDMEOW_HEALTH_TAB=settings opens the Settings tab
+    let show_settings = ui.ctx().data(|d| d.get_temp::<bool>(settings_id)).unwrap_or(std::env::var("CMDMEOW_HEALTH_TAB").is_ok_and(|v| v == "settings"));
 
     // header: model, chip, uptime; the top recommendation and Overview / Settings on the right
     let mut sub: Vec<String> = Vec::new();
@@ -55,7 +65,9 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     };
     // AI Check: a chip after the title, on the overview
     let cw = if show_settings { 0.0 } else { aicheck::ui::chip_width(ai, ui, s.ready) };
-    let rec_w = recs.first().map(|rec| button_width(&p, &rec.action, BTN_PRIMARY) + sp::M).unwrap_or(0.0);
+    // a tip without a fix ("Up 14 days") has no button
+    let rec_btn = recs.first().filter(|rec| !rec.action.is_empty());
+    let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY) + sp::M).unwrap_or(0.0);
     let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - rec_w - sp::M;
     let (btns, chip_at) = page_header_room(&p, r, "Mac Health", &sub, sub_col, cw, sub_right);
     let mut right = btns.right();
@@ -64,10 +76,10 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
         ui.ctx().data_mut(|d| d.insert_temp(settings_id, i == 1));
     }
     right = tr.left() - sp::M;
-    if let Some(rec) = recs.first() {
+    if let Some(rec) = rec_btn {
         let bw = button_width(&p, &rec.action, BTN_PRIMARY);
         let br = Rect::from_min_max(Pos2::new(right - bw, btns.top()), Pos2::new(right, btns.bottom()));
-        if pill_button(ui, br, &rec.action, BTN_PRIMARY, true).on_hover_text(&rec.body).clicked() {
+        if pill_button(ui, br, &rec.action, BTN_PRIMARY, true).clicked() {
             cx.push(rec.go.clone());
         }
     }
@@ -101,11 +113,16 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     let mut dev_action = None;
     if show_settings {
         let w = inner.width().min(640.0);
-        let h = super::devices_ui::settings_height(&s);
+        let bh = battery_settings_height(&s);
+        let h = bh + super::devices_ui::settings_height(&s);
         let mut child = ui.new_child(UiBuilder::new().max_rect(body).id_salt("health-settings-page"));
         ScrollArea::vertical().id_salt("health-set-scroll").auto_shrink([false, false]).show(&mut child, |ui| {
             let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h + 2.0 * sp::L), Sense::hover());
-            let sr = Rect::from_min_size(Pos2::new(area.left() + sp::PAGE_EDGE, area.top() + sp::L), Vec2::new(w, h));
+            let br = Rect::from_min_size(Pos2::new(area.left() + sp::PAGE_EDGE, area.top() + sp::L), Vec2::new(w, bh));
+            if let Some(a) = battery_settings(ui, br, &s) {
+                action = a;
+            }
+            let sr = Rect::from_min_size(Pos2::new(br.left(), br.bottom()), Vec2::new(w, h - bh));
             let mut sui = ui.new_child(UiBuilder::new().max_rect(sr).id_salt("health-set-sec"));
             dev_action = super::devices_ui::settings(&mut sui, sr, &s);
         });
@@ -136,8 +153,18 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
                 std::array::from_fn(|i| Rect::from_min_size(Pos2::new(g.left(), g.top() + i as f32 * (250.0 + sp::L)), Vec2::new(g.width(), 250.0)))
             };
             let p = ui.painter().clone();
-            for rr in rects {
-                data_card(&p, rr);
+            // each card opens its details; the card's own buttons sit on top
+            const KINDS: [Sheet; 6] = [Sheet::Cpu, Sheet::Storage, Sheet::Memory, Sheet::Battery, Sheet::Network, Sheet::Devices];
+            for (rr, kind) in rects.iter().zip(KINDS) {
+                let resp = ui.interact(*rr, ui.scope_id().with(("health-card", kind as u8)), Sense::click());
+                data_card(&p, *rr);
+                if resp.hovered() {
+                    p.rect_filled(*rr, tile::R_TILE, white(6));
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if resp.clicked() {
+                    open_details(ui.ctx(), Some(kind));
+                }
             }
             // one ring size on the page: the disk and the battery ring match
             let ring_d = disk_ring_area(rects[1].shrink(sp::L), &s).size().min_elem().min(battery_ring_area(rects[3].shrink(sp::L), &s).size().min_elem()).min(DISK_RING_D);
@@ -161,8 +188,6 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             super::speed::open(ui.ctx());
         }
         SheetAction::MeasureFolders => monitor::measure_folders(mon.clone(), ui.ctx().clone()),
-        SheetAction::ToggleAlerts => monitor::change_bt_prefs(mon, |p| crate::kit::notify::flip(&mut p.alerts)),
-        SheetAction::ToggleMenuBar => monitor::change_bt_prefs(mon, |p| p.menu_bar = !p.menu_bar),
         SheetAction::OpenBluetooth => super::devices::open_bluetooth_settings(),
         SheetAction::SetLimit(l) => monitor::change_charge(mon, ui.ctx(), |p| p.limit = l),
         SheetAction::ToggleSailing => monitor::change_charge(mon, ui.ctx(), |p| p.sailing = !p.sailing),
@@ -186,6 +211,30 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             P::Forget(key) => monitor::forget_device(mon, &key),
         }
     }
+    if let Some(a) = details_popup(ui, &s) {
+        match a {
+            SheetAction::Close => open_details(ui.ctx(), None),
+            SheetAction::Open("health-settings") => {
+                open_details(ui.ctx(), None);
+                ui.ctx().data_mut(|d| d.insert_temp(settings_id, true));
+            }
+            SheetAction::Open(tool) => {
+                open_details(ui.ctx(), None);
+                cx.open_page(tool, "");
+            }
+            SheetAction::SpeedTest(mode) => {
+                open_details(ui.ctx(), None);
+                monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode);
+                super::speed::open(ui.ctx());
+            }
+            SheetAction::MeasureFolders => monitor::measure_folders(mon.clone(), ui.ctx().clone()),
+            SheetAction::OpenBluetooth => super::devices::open_bluetooth_settings(),
+            SheetAction::Quit(pid) => {
+                super::procs::quit(pid);
+            }
+            _ => {}
+        }
+    }
     match super::speed::modal(ui, &s.speed) {
         Some(super::speed::Ask::Run(mode)) => monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode),
         Some(super::speed::Ask::Stop) => monitor::stop_speed_test(mon, ui.ctx()),
@@ -193,7 +242,12 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     }
 }
 
-/// Card title (13/600), an optional status chip after it, and an optional
+/// The card title's font. Proto: CMDMEOW_CARD_TITLE=<pt> tries sizes.
+fn title_font() -> egui::FontId {
+    bold(std::env::var("CMDMEOW_CARD_TITLE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(15.0))
+}
+
+/// Card title (15/600), an optional status chip after it, and an optional
 /// big value on the right. Returns the y where the content starts.
 fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Color32)>, big: Option<&str>) -> f32 {
     let mut right = r.right();
@@ -204,10 +258,17 @@ fn card_title(p: &egui::Painter, r: Rect, title: &str, status: Option<(&str, Col
     }
     // the title sits on the big number's baseline in every card, so titles
     // in a row line up too
-    let t = text_fit(p, Pos2::new(r.left(), r.top() + 26.0), Align2::LEFT_BOTTOM, title, ty::title(), TEXT(), right - r.left());
+    // a long title in a narrow card steps down to 13 rather than cut (R10)
+    let mut f = title_font();
+    while f.size > 13.0 && p.layout_no_wrap(title.to_owned(), f.clone(), TEXT()).size().x + 14.0 > right - r.left() {
+        f.size -= 1.0;
+    }
+    let t = text_fit(p, Pos2::new(r.left(), r.top() + 26.0), Align2::LEFT_BOTTOM, title, f.clone(), TEXT(), right - r.left() - 14.0);
+    // the card opens its details: a chevron after the title says so
+    let ch = p.text(Pos2::new(t.right() + 4.0, t.bottom()), Align2::LEFT_BOTTOM, "›", f, TEXT_FAINT());
     if let Some((label, c)) = status {
-        if t.right() + 80.0 < right {
-            chip(p, Pos2::new(t.right() + sp::S, t.center().y), Align2::LEFT_CENTER, label, (with_alpha(c, 0.16), c));
+        if ch.right() + 80.0 < right {
+            chip(p, Pos2::new(ch.right() + sp::S, t.center().y), Align2::LEFT_CENTER, label, (with_alpha(c, 0.16), c));
         }
     }
     r.top() + 28.0 + sp::M
@@ -237,9 +298,9 @@ fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     // the history with its time span under it, as in the widgets (W5)
     let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), foot - sp::M));
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
-    tile::spark_span(p, gr, &s.cpu_history, level_color(s.thermal_level()), Some((peak * 1.15).max(25.0)));
+    tile::spark_span(p, gr, &s.cpu_history, level_color(s.thermal_level()), Some(peak.max(5.0)));
     let mut x = r.left();
-    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system), format!("Idle {:.0}%", (100.0 - s.cpu_load).max(0.0))] {
+    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system)] {
         x = p.text(Pos2::new(x, foot + 9.0), Align2::LEFT_CENTER, t, ty::label(), white(166)).right() + sp::L;
     }
 }
@@ -264,8 +325,9 @@ fn lines_at(p: &egui::Painter, left: f32, w: f32, top: f32, lh: f32, rows: &[Row
 }
 
 fn disk_rows(s: &Snapshot) -> Vec<Row> {
-    let mut rows: Vec<Row> = vec![(None, "Used".to_string(), human_bytes(s.disk_total.saturating_sub(s.disk_free)))];
-    if !s.smart_status.is_empty() {
+    // no Used: the ring says free of total (T2); drive health only when it isn't fine (T1)
+    let mut rows: Vec<Row> = Vec::new();
+    if !s.smart_status.is_empty() && !s.smart_status.eq_ignore_ascii_case("Verified") {
         rows.push((None, "Drive health".to_string(), s.smart_status.clone()));
     }
     rows.push((None, "Trash".to_string(), s.trash_bytes.map(human_bytes).unwrap_or_else(|| "—".into())));
@@ -363,6 +425,7 @@ fn battery_card(p: &egui::Painter, r: Rect, s: &Snapshot, ring_d: f32) {
     }
     // the same words as the battery sheet's header (C6)
     let state = super::sheets::battery_state(s);
+    let state = if state.starts_with("Held at") { "Held at limit".to_string() } else { state };
     let scol = if b.charging { GREEN() } else if !b.plugged && b.percent <= 20 { RED() } else { TEXT_DIM() };
     card_title(p, r, "Battery", Some((&state, scol)), None);
     let col = if b.percent <= 20 { RED() } else { GREEN() };
@@ -388,22 +451,26 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
     let mut rows: Vec<Row> = vec![(None, "Upload".to_string(), format!("↑ {}", human_rate(s.net_up)))];
     rows.push((None, "Today".to_string(), format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total))));
     if !s.wifi.signal.is_empty() {
-        rows.push((None, "Signal".to_string(), s.wifi.signal.clone()));
+        rows.push((None, "Signal".to_string(), s.wifi.signal.split(" / ").next().unwrap_or("").trim().to_string()));
     }
+    // the speed only once there is one: the buttons say a test can run (T3)
     let sp_ = &s.speed;
-    let speed = if sp_.running {
-        format!("Testing… {:.0}%", sp_.progress * 100.0)
+    if sp_.running {
+        rows.push((None, "Speed".to_string(), format!("Testing… {:.0}%", sp_.progress * 100.0)));
     } else if let (Some(d), Some(u)) = (sp_.down_mbps, sp_.up_mbps) {
-        format!("{d:.0} down · {u:.0} up Mbps")
-    } else {
-        "Not tested".to_string()
-    };
-    rows.push((None, "Speed".to_string(), speed));
+        rows.push((None, "Speed".to_string(), format!("{d:.0} down · {u:.0} up Mbps")));
+    }
     let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
     let lt = lines(p, bottom, &rows);
     let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), lt - sp::M));
     if gr.height() > 40.0 {
-        tile::spark_span(p, gr, &s.net_history, tint::HEALTH(), None);
+        // scale to the usual traffic, not to one burst: a burst stops at the top
+        let mut sorted = s.net_history.clone();
+        sorted.sort_by(|a, b| a.total_cmp(b));
+        let p75 = sorted.get(sorted.len() * 3 / 4).copied().unwrap_or(0.0);
+        let cap = (p75 * 3.0).max(sorted.last().copied().unwrap_or(0.0) * 0.25).max(1.0);
+        let clipped: Vec<f32> = s.net_history.iter().map(|v| v.min(cap)).collect();
+        tile::spark_span(p, gr, &clipped, tint::HEALTH(), Some(cap));
     }
     let mut out = None;
     // the two tests side by side; each opens the dial in its mode
@@ -412,7 +479,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
         let label = mode.label();
         let bw = button_width(p, label, BTN_SECONDARY);
         let br = Rect::from_min_size(Pos2::new(x, r.bottom() - BTN_H_ROW), Vec2::new(bw, BTN_H_ROW));
-        let tip = if mode == super::monitor::SpeedMode::Quick { "About 6 seconds" } else { "About 20 seconds, more streams" };
+        let tip = if mode == super::monitor::SpeedMode::Quick { "About 6 seconds" } else { "About 20 seconds" };
         if pill_button(ui, br, label, BTN_SECONDARY, !s.speed.running).on_hover_text(tip).clicked() {
             out = Some(SheetAction::SpeedTest(mode));
         }
@@ -491,4 +558,119 @@ mod tests {
         assert_eq!(quit_target(&live, "pid:11", "WindowServer"), None);
         assert_eq!(quit_target(&live, "10", "Chrome"), None);
     }
+}
+
+// ======================================================================= details popup
+
+fn details_id() -> egui::Id {
+    egui::Id::unique("health-details")
+}
+
+/// Open (or close, with None) a card's details popup.
+fn open_details(ctx: &egui::Context, kind: Option<Sheet>) {
+    ctx.data_mut(|d| match kind {
+        Some(k) => {
+            d.insert_temp(details_id(), k);
+        }
+        None => d.remove::<Sheet>(details_id()),
+    });
+}
+
+/// Width of the details popup.
+const DETAILS_W: f32 = 440.0;
+
+/// A card's details over the page: everything the panel sheet had, with the
+/// card's actions. Esc, the close button or a click outside closes it.
+fn details_popup(ui: &mut Ui, s: &Snapshot) -> Option<SheetAction> {
+    let ctx = ui.ctx().clone();
+    // screenshots: CMDMEOW_HEALTH_DETAILS=cpu|storage|memory|battery|network|devices
+    if let Ok(v) = std::env::var("CMDMEOW_HEALTH_DETAILS") {
+        if ctx.cumulative_pass_nr() < 3 {
+            open_details(&ctx, Some(Sheet::from_id(&v).unwrap_or(Sheet::Cpu)));
+        }
+    }
+    let kind = ctx.data(|d| d.get_temp::<Sheet>(details_id()))?;
+    let w = DETAILS_W.min(ctx.content_rect().width() - 32.0);
+    let h = super::sheets::details_height(ui, kind, s, w);
+    let (a, close) = crate::kit::modal::details(&ctx, details_id().with(kind as u8), w, h, |ui, m| super::sheets::details(ui, m, kind, s));
+    if close {
+        Some(SheetAction::Close)
+    } else if a != SheetAction::None {
+        Some(a)
+    } else {
+        None
+    }
+}
+
+// ======================================================================= battery settings
+
+const SET_ROW_H: f32 = sp::SETTINGS_ROW_H;
+/// A section title and the gap under it (R2), as the Bluetooth section.
+const SET_TITLE_H: f32 = 14.0 + sp::M;
+
+fn battery_settings_rows(s: &Snapshot) -> usize {
+    if !s.battery.present {
+        return 0;
+    }
+    let c = &s.charge;
+    1 + if c.needs_helper() || c.installing { 1 } else if c.policy.active() { 2 } else { 0 }
+}
+
+/// The battery section's height with the gap under it (0 on a Mac without one).
+fn battery_settings_height(s: &Snapshot) -> f32 {
+    let n = battery_settings_rows(s);
+    if n == 0 { 0.0 } else { SET_TITLE_H + n as f32 * SET_ROW_H + sp::XL }
+}
+
+/// Mac Health › Settings › Battery: the charge limit, then its two switches
+/// (or the helper it needs).
+fn battery_settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<SheetAction> {
+    let n = battery_settings_rows(s);
+    if n == 0 {
+        return None;
+    }
+    use crate::kit::charge;
+    let p = ui.painter().clone();
+    crate::kit::glass::card_title(&p, Pos2::new(r.left(), r.top()), "Battery");
+    let card = Rect::from_min_size(Pos2::new(r.left(), r.top() + SET_TITLE_H), Vec2::new(r.width(), n as f32 * SET_ROW_H));
+    glass_card(&p, card, R_CARD, 0.0, false);
+    let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * SET_ROW_H), Vec2::new(card.width(), SET_ROW_H));
+    let c = &s.charge;
+    let mut out = None;
+    // the limit
+    let rr = row(0);
+    let labels: Vec<String> = charge::LIMITS.iter().map(|l| if *l >= 100 { "Off".to_string() } else { format!("{l}%") }).collect();
+    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let sel = charge::LIMITS.iter().position(|l| *l == c.policy.limit).unwrap_or(0);
+    let seg = Rect::from_min_size(Pos2::new(rr.right() - sp::L - 200.0, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(200.0, sp::CONTROL_H));
+    if let Some(i) = segmented(ui, seg, ui.scope_id().with("health-set-limit"), &labels, sel) {
+        out = Some(SheetAction::SetLimit(charge::LIMITS[i]));
+    }
+    text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Charge limit", font(13.0), TEXT(), seg.left() - rr.left() - 2.0 * sp::L);
+    if c.needs_helper() || c.installing {
+        let rr = row(1);
+        hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
+        let label = if c.installing { "Installing…" } else { "Install" };
+        let bw = button_width(&p, label, BTN_SECONDARY);
+        let br = Rect::from_min_size(Pos2::new(rr.right() - sp::L - bw, rr.center().y - BTN_H_ROW / 2.0), Vec2::new(bw, BTN_H_ROW));
+        if pill_button(ui, br, label, BTN_SECONDARY, !c.installing).clicked() {
+            out = Some(SheetAction::InstallHelper);
+        }
+        text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Charging helper", font(13.0), TEXT(), br.left() - rr.left() - 2.0 * sp::L);
+    } else if c.policy.active() {
+        let sw = [
+            (format!("Charge again below {}%", c.policy.limit.saturating_sub(charge::SAIL_GAP)), c.policy.sailing, SheetAction::ToggleSailing),
+            (format!("Pause charging at {:.0} °C", charge::HEAT_C), c.policy.heat, SheetAction::ToggleHeat),
+        ];
+        for (k, (label, on, act)) in sw.iter().enumerate() {
+            let rr = row(k + 1);
+            hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
+            let sr = Rect::from_min_size(Pos2::new(rr.right() - 42.0, rr.center().y - 9.0), Vec2::new(30.0, 18.0));
+            if switch(ui, sr, ui.scope_id().with(("health-set-switch", k)), *on, true).clicked() {
+                out = Some(*act);
+            }
+            text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), sr.left() - rr.left() - 2.0 * sp::L);
+        }
+    }
+    out
 }

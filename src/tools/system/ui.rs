@@ -114,15 +114,14 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
 }
 
 
-/// A Mac Health widget at `size`; a click opens its sheet (the overview
-/// opens the Mac Health page).
+/// A Mac Health widget at `size`; a click opens the Mac Health page with
+/// that card's details.
 pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let s = mon.lock_ok().clone();
     let wid = ui.scope_id().with(("metric", id));
-    let sel = cx.is_detail_open(ID, id);
     if id == "devices" {
-        if devices_ui::widget(&s, size, ui, r, wid, sel).clicked() {
-            cx.toggle_detail(ID, id);
+        if devices_ui::widget(&s, size, ui, r, wid, false).clicked() {
+            cx.open_page(ID, id);
         }
         return;
     }
@@ -132,17 +131,17 @@ pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect,
     let resp = match size {
         // W4: the ring and the value; the name and the rest in the tip
         Size::S11 => match mt.bar {
-            Some((f, c)) => tile::small_ring(ui, r, wid, mt.glyph, f, c, &mt.value(), sel).on_hover_text(format!("{} · {}", mt.label, caption)),
-            None => tile::small(ui, r, wid, mt.glyph, col, &mt.value().replace("/sec", "/s"), &mt.label, sel),
+            Some((f, c)) => tile::small_ring(ui, r, wid, mt.glyph, f, c, &mt.value(), false).on_hover_text(format!("{} · {}", mt.label, caption)),
+            None => tile::small(ui, r, wid, mt.glyph, col, &mt.value().replace("/sec", "/s"), &mt.label, false),
         },
-        Size::S12 => tile::wide_full(ui, r, wid, mt.glyph, col, mt.bar, &mt.label, &mt.value(), &caption, ty::caption_color(), sel),
+        Size::S12 => tile::wide_full(ui, r, wid, mt.glyph, col, mt.bar, &mt.label, &mt.value(), &caption, ty::caption_color(), false),
         Size::S14 => {
-            let (resp, right) = tile::row_split_full(ui, r, wid, mt.glyph, col, mt.bar, &mt.label, &mt.value(), &caption, ty::caption_color(), sel);
+            let (resp, right) = tile::row_split_full(ui, r, wid, mt.glyph, col, mt.bar, &mt.label, &mt.value(), &caption, ty::caption_color(), false);
             row_body(&s, id, &mt, ui.painter(), right);
             resp
         }
         _ => {
-            let resp = tile::card(ui, r, wid, sel);
+            let resp = tile::card(ui, r, wid, false);
             let p = ui.painter();
             // W6: the caption on the right; Wi-Fi shows today's totals there
             let note = if id == "network" { format!("Today {} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total)) } else { caption.clone() };
@@ -152,7 +151,7 @@ pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect,
         }
     };
     if resp.clicked() {
-        cx.toggle_detail(ID, id);
+        cx.open_page(ID, id);
     }
 }
 
@@ -300,54 +299,6 @@ fn battery_status(s: &Snapshot) -> String {
         format!("{} remaining", human_duration(min as u64 * 60))
     } else {
         "Calculating…".into()
-    }
-}
-
-// ======================================================================= details
-
-/// The detail sheet for a widget id; the sheet draws its own header.
-pub fn detail(mon: &monitor::Shared, d: &str, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-    use super::sheets::{self, Action, Sheet};
-    let kind = match d {
-        "storage" => Sheet::Storage,
-        "memory" => Sheet::Memory,
-        "battery" => Sheet::Battery,
-        "cpu" => Sheet::Cpu,
-        "network" => Sheet::Network,
-        "devices" => Sheet::Devices,
-        _ => return,
-    };
-    if kind == Sheet::Network {
-        super::traffic::want(mon, ui.ctx());
-    }
-    let s = mon.lock_ok().clone();
-    match sheets::sheet(ui, rect, kind, &s) {
-        Action::Close => cx.close_detail(),
-        Action::Open(tool) => cx.open_page(tool, ""),
-        Action::SpeedTest(mode) => {
-            // the same modal as on the Mac Health page
-            monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode);
-            super::speed::open(ui.ctx());
-        }
-        Action::MeasureFolders => monitor::measure_folders(mon.clone(), ui.ctx().clone()),
-        Action::ToggleAlerts => monitor::change_bt_prefs(mon, |p| crate::kit::notify::flip(&mut p.alerts)),
-        Action::ToggleMenuBar => monitor::change_bt_prefs(mon, |p| p.menu_bar = !p.menu_bar),
-        Action::OpenBluetooth => devices::open_bluetooth_settings(),
-        Action::SetLimit(l) => monitor::change_charge(mon, ui.ctx(), |p| p.limit = l),
-        Action::ToggleSailing => monitor::change_charge(mon, ui.ctx(), |p| p.sailing = !p.sailing),
-        Action::ToggleHeat => monitor::change_charge(mon, ui.ctx(), |p| p.heat = !p.heat),
-        Action::InstallHelper => monitor::install_charge_helper(mon, ui.ctx()),
-        Action::Quit(pid) => {
-            super::procs::quit(pid);
-        }
-        Action::None => {}
-    }
-    if kind == Sheet::Network {
-        match super::speed::modal(ui, &s.speed) {
-            Some(super::speed::Ask::Run(mode)) => monitor::start_speed_test(mon.clone(), ui.ctx().clone(), mode),
-            Some(super::speed::Ask::Stop) => monitor::stop_speed_test(mon, ui.ctx()),
-            None => {}
-        }
     }
 }
 

@@ -112,6 +112,10 @@ fn read() -> Totals {
 
 /// Ask for fresh per-app readings; call each frame the Network sheet shows.
 pub fn want(shared: &Shared, ctx: &egui::Context) {
+    // nettop is macOS only (elsewhere: screenshots keep the demo apps)
+    if !cfg!(target_os = "macos") {
+        return;
+    }
     WANTED_AT.store(now_ms(), Ordering::Relaxed);
     if RUNNING.swap(true, Ordering::Relaxed) {
         return;

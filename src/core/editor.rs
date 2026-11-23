@@ -357,7 +357,7 @@ fn variants(app: &mut App, ui: &mut Ui, r: Rect, key: &str) -> Option<Size> {
     let area = Rect::from_min_max(Pos2::new(r.left(), y), r.max);
     let mut child = ui.new_child(UiBuilder::new().id_salt("gallery-sizes").max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(area);
-    let mut quiet = Cx::new(None);
+    let mut quiet = Cx::new();
     let mut out = None;
     let dragging = app.drag.is_some();
     ScrollArea::vertical().id_salt(("gallery-sizes", key)).auto_shrink([false, false]).show(&mut child, |ui| {
@@ -459,7 +459,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
     let at = |r: Rect| r.translate(origin.min.to_vec2());
     let dragged = app.drag.as_ref().map(|d| d.key.clone());
     // tools' widgets may ask for things (open a sheet…): ignore it here
-    let mut quiet = Cx::new(None);
+    let mut quiet = Cx::new();
     let mut hide = None;
     let mut pick = None;
     let mut keys: Vec<String> = Vec::with_capacity(placed.len());

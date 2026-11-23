@@ -111,11 +111,13 @@ pub mod keychain {
 pub struct Claude {
     all: backend::All,
     demo: bool,
+    /// What to open on the page: [`LIMITS`] opens the limits popup.
+    route: Option<String>,
 }
 
 impl Claude {
     pub fn new(env: &ToolEnv) -> Self {
-        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo }
+        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, route: None }
     }
 }
 
@@ -172,12 +174,9 @@ impl Tool for Claude {
         }
         let cl = self.info();
         let all = backend::enabled(&self.all);
-        if ui::widget(ui, rect, size, &cl, &all, cx.is_detail_open(ID, LIMITS)).clicked() {
-            cx.toggle_detail(ID, LIMITS);
+        if ui::widget(ui, rect, size, &cl, &all, false).clicked() {
+            cx.open_page(ID, "");
         }
-    }
-    fn detail_ui(&mut self, _detail: &str, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-        ui::detail(&self.all, ui, rect, cx);
     }
     fn set_on(&mut self, on: bool) {
         crate::kit::claude_code::set_tool_on(on);
@@ -189,7 +188,13 @@ impl Tool for Claude {
         true
     }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
+        if self.route.take().is_some_and(|r| r == LIMITS) {
+            page::open_limits(ui.ctx(), true);
+        }
         page::page(&self.all, self.demo, ui, rect, cx);
+    }
+    fn open_page(&mut self, route: &str) {
+        self.route = (!route.is_empty()).then(|| route.to_string());
     }
     fn recommendations(&self) -> Vec<Recommendation> {
         let info = self.info();
@@ -199,7 +204,7 @@ impl Tool for Claude {
             title: format!("Your {} session is almost used up", info.provider),
             body: format!("{:.0}% of the current 5-hour session is used. It resets {}.", l.pct, parts::reset_when(l)),
             action: "See Limits".into(),
-            go: Action::ShowDetail { tool: ID.into(), detail: LIMITS.into(), toggle: true },
+            go: Action::OpenPage { tool: ID.into(), route: LIMITS.into() },
         }]
     }
     fn tray_title(&self) -> Option<String> {
@@ -207,11 +212,17 @@ impl Tool for Claude {
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
         match view {
-            "claude-detail" => Some(View::Detail(LIMITS)),
+            "claude-detail" => {
+                self.route = Some(LIMITS.into());
+                Some(View::Page)
+            }
             "claude" => Some(View::Page),
             "codex" | "codex-detail" | "gemini" | "all" => {
                 backend::select(ai::index_of(view.trim_end_matches("-detail")), true);
-                Some(if view.ends_with("-detail") { View::Detail(LIMITS) } else { View::Page })
+                if view.ends_with("-detail") {
+                    self.route = Some(LIMITS.into());
+                }
+                Some(View::Page)
             }
             "claude-api" => {
                 let mut g = self.all[0].lock_ok();

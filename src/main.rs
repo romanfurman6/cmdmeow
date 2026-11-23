@@ -3,7 +3,8 @@
 //!
 //! `--screenshot <file.png>` draws ~120 frames with sample data, saves the
 //! window as a PNG and exits. `--view <name>` picks what it shows: panel,
-//! storage (default), memory, battery, cpu, network, devices, claude-detail,
+//! storage (default), memory, battery, cpu, network, devices (Mac Health with
+//! that card's details), claude-detail,
 //! cleanup, cleanup-no-claude, results, lens, lens-live, claude, claude-missing,
 //! health, customize, settings-tools, fan, fan-detail, fan-air, fan-air-detail,
 //! fan-curve, fan-fixed, fan-install, setup, setup-tools, setup-tools-all, setup-tools-preview, setup-ai, setup-signins, setup-perms,

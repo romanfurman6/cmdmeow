@@ -3,8 +3,7 @@
 //! scale and sparklines.
 
 use super::data::{heat, heat_text, rpm_text, Fan, Group, Snapshot};
-use super::control::Mode;
-use super::{Cmd, HelperState, Live, ID, SHEET};
+use super::ID;
 use crate::core::tool::{Cx, Size};
 use crate::kit::tile;
 use crate::kit::glass::*;
@@ -120,7 +119,6 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         return;
     }
     let id = ui.scope_id().with("w-fans");
-    let sel = cx.is_detail_open(ID, SHEET);
     let rpm = s.avg_rpm();
     let value = if !s.loaded {
         "…".to_string()
@@ -140,7 +138,7 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     };
     let resp = match size {
         Size::S11 => {
-            let resp = tile::card(ui, rect, id, sel);
+            let resp = tile::card(ui, rect, id, false);
             let p = ui.painter();
             let (c, rr) = tile::small_ring_at(rect);
             let w = (rr * 0.2).clamp(4.0, 6.0);
@@ -150,10 +148,10 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, &value, bold(13.0), TEXT(), rect.width() - 10.0);
             if hot.is_empty() { resp } else { resp.on_hover_text(hot.clone()) }
         }
-        Size::S12 => tile::wide_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, sel),
+        Size::S12 => tile::wide_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, false),
         _ => {
             // the hottest part is a line on the right; the left says how hard the fans work
-            let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, sel);
+            let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, false);
             // each fan; the hottest part is already the caption on the left
             let lines: Vec<(String, Option<(f32, Color32)>, String)> = s.fans.iter().take(3).enumerate().map(|(i, f)| (fan_name(i, s.fans.len()), Some((f.frac().max(0.02), LINE())), format!("{} rpm", rpm_text(f.rpm)))).collect();
             let empty = if !s.loaded { "Reading…" } else if s.has_smc { "No fans · cools passively" } else { "Fan speed unavailable" };
@@ -178,16 +176,16 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         }
     }
     if resp.clicked() {
-        cx.toggle_detail(ID, SHEET);
+        cx.open_page(ID, "");
     }
 }
 
 /// The full-width card: both fans with spinning dials, the hottest part
 /// on the heat scale and its last 10 minutes.
 pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-    let resp = card_resp(ui, rect, cx.is_detail_open(ID, SHEET));
+    let resp = card_resp(ui, rect, false);
     if resp.clicked() {
-        cx.toggle_detail(ID, SHEET);
+        cx.open_page(ID, "");
     }
     let p = ui.painter().clone();
     let t = ui.ctx().input(|i| i.time);
@@ -262,118 +260,6 @@ fn mini_fan(p: &egui::Painter, r: Rect, f: &Fan, name: &str) {
 }
 
 // ---------------------------------------------------------------- sheet
-
-/// The sheet beside the panel: fan speeds with their minimum, every part's
-/// temperature, thermal pressure and a way into the page.
-pub fn sheet(s: &Snapshot, l: &Live, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> Vec<Cmd> {
-    let mut cmds = Vec::new();
-    let p = ui.painter().clone();
-    let (title, sub) = if s.fans.is_empty() {
-        ("Temperatures".to_string(), s.chip.clone())
-    } else {
-        ("Fans".to_string(), format!("{} · mode {}", plural(s.fans.len(), "fan"), mode_word(l)))
-    };
-    if sheet_header(ui, rect, Icon::Fan, tint::FAN(), &title, &sub) {
-        cx.close_detail();
-    }
-    let x0 = rect.left() + 16.0;
-    let w = rect.width() - 32.0;
-    let mut y = rect.top() + SHEET_HEADER_H + 16.0;
-
-    if let (Some(avg), Some(frac)) = (s.avg_rpm(), s.avg_frac()) {
-        y += hero_number(&p, Pos2::new(x0, y), &rpm_text(avg), "rpm", &format!("{} · {:.0}% of max", if s.fans.len() > 1 { "average" } else { "now" }, frac * 100.0)) + 12.0;
-        for (i, f) in s.fans.iter().enumerate() {
-            p.text(Pos2::new(x0, y), Align2::LEFT_TOP, fan_name(i, s.fans.len()), font(12.0), TEXT_DIM());
-            p.text(Pos2::new(x0 + w, y), Align2::RIGHT_TOP, format!("{} of {}", rpm_text(f.rpm), rpm_text(f.max)), font(12.0), TEXT());
-            let br = Rect::from_min_size(Pos2::new(x0, y + 19.0), Vec2::new(w, 8.0));
-            p.rect_filled(br, 4.0, white(20));
-            let fr = Rect::from_min_size(br.min, Vec2::new((br.width() * f.frac()).max(8.0), br.height()));
-            p.rect_filled(fr, 4.0, LINE());
-            if f.max > 0.0 {
-                let mx = br.left() + br.width() * (f.min / f.max).clamp(0.0, 1.0);
-                p.rect_filled(Rect::from_center_size(Pos2::new(mx, br.center().y), Vec2::new(2.0, 12.0)), 1.0, white(140));
-            }
-            y += 36.0;
-        }
-        y += 4.0;
-        // quick mode switch; anything that needs more (helper, curve) opens the page
-        let labels: Vec<&str> = Mode::ALL.iter().map(|m| m.label()).collect();
-        if let Some(i) = segmented(ui, Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 28.0)), ui.scope_id().with("fan-mode"), &labels, l.settings.mode.index()) {
-            let mut st = l.settings.clone();
-            st.mode = Mode::ALL[i];
-            let open = st.mode == Mode::Curve || (st.mode != Mode::Auto && l.helper != HelperState::Ready);
-            cmds.push(Cmd::Set(st, true));
-            if open {
-                cx.open_page(ID, "");
-            }
-        }
-        y += 40.0;
-    } else {
-        let msg = if !s.loaded {
-            "Reading sensors…"
-        } else if s.has_smc {
-            "No fans. Cools passively"
-        } else {
-            "Fan speed isn't available on this Mac."
-        };
-        let ir = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 56.0));
-        p.rect_filled(ir, R_CARD, with_alpha(tint::FAN(), 0.14));
-        p.rect_stroke(ir, R_CARD, Stroke::new(1.0, with_alpha(tint::FAN(), 0.4)), egui::StrokeKind::Inside);
-        paragraph(&p, ir.min + Vec2::new(12.0, 10.0), msg, font(12.0), TEXT_SOFT(), w - 24.0);
-        y = ir.bottom() + 14.0;
-        if let Some((g, c)) = hottest_text(s) {
-            y += hero_number(&p, Pos2::new(x0, y), &format!("{c:.0}"), "°C", &format!("hottest · {g}")) + 14.0;
-        }
-    }
-
-    // temperatures by part
-    let groups = s.groups();
-    let rows = groups.len().min(8);
-    if rows > 0 {
-        let gr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, rows as f32 * SHEET_ROW_H + 8.0));
-        data_card(&p, gr);
-        for (i, g) in groups.iter().take(rows).enumerate() {
-            let cy = gr.top() + 4.0 + SHEET_ROW_H / 2.0 + i as f32 * SHEET_ROW_H;
-            p.rect_filled(Rect::from_center_size(Pos2::new(gr.left() + 16.5, cy), Vec2::splat(9.0)), 3.0, heat(g.max));
-            p.text(Pos2::new(gr.left() + 31.0, cy), Align2::LEFT_CENTER, g.group.label(), font(13.0), TEXT());
-            let vr = p.text(Pos2::new(gr.right() - 12.0, cy), Align2::RIGHT_CENTER, format!("{:.0} °C", g.max), font(13.0), heat_text(g.max));
-            let br = Rect::from_min_max(Pos2::new(vr.left() - 12.0 - 70.0, cy - 2.0), Pos2::new(vr.left() - 12.0, cy + 2.0));
-            bar(&p, br, heat_pos(g.max).max(0.03), heat(g.max));
-        }
-        y = gr.bottom() + 12.0;
-    }
-
-    // thermal pressure
-    let (hint, col) = thermal_hint(s.thermal);
-    let fr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 0.0));
-    let need = SHEET_ROW_H + 8.0;
-    let fr = Rect::from_min_size(fr.min, Vec2::new(w, need));
-    let by = rect.bottom() - 16.0 - BTN_H;
-    if fr.bottom() < by - 8.0 {
-        data_card(&p, fr);
-        let fr = fr.translate(Vec2::new(0.0, 4.0));
-        let _ = hint; // T1: the word says it
-        fact_row(&p, fr, "Thermal pressure", s.thermal_word(), col, "");
-    }
-
-    let label = "Fan Control";
-    let bw = button_width(&p, label, BTN_SECONDARY);
-    if pill_button(ui, Rect::from_min_size(Pos2::new(rect.right() - 16.0 - bw, by), Vec2::new(bw, BTN_H)), label, BTN_SECONDARY, true).clicked() {
-        cx.open_page(ID, "");
-    }
-    cmds
-}
-
-/// "Curve", or "Auto (hot)" while the 95 °C safety holds the fans.
-pub fn mode_word(l: &Live) -> String {
-    if l.settings.mode != Mode::Auto && l.guard.tripped {
-        "Auto (too hot)".into()
-    } else if l.needs_helper() {
-        format!("{} (needs helper)", l.settings.mode.label())
-    } else {
-        l.settings.mode.label().into()
-    }
-}
 
 /// Hint line and colour for a thermal pressure level.
 pub fn thermal_hint(level: u8) -> (&'static str, Color32) {

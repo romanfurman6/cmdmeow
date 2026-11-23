@@ -425,14 +425,3 @@ fn footer(app: &mut App, ui: &mut Ui, rect: Rect) {
         app.open_settings(&ctx, false);
     }
 }
-
-/// The sheet beside the panel; the tool draws all of it, header included.
-pub fn detail(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-    let Some((i, d)) = app.detail.clone() else { return };
-    let tid = app.tools[i].id();
-    let mut child = ui.new_child(UiBuilder::new().max_rect(rect).id_salt(("detail", tid, &d)));
-    let t = &mut app.tools[i];
-    if tool::guard(tid, || t.detail_ui(&d, &mut child, rect, cx)).is_none() {
-        app.detail = None;
-    }
-}

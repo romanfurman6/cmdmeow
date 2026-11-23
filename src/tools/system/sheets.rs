@@ -1,10 +1,9 @@
-//! Mac Health detail sheets (design A): one template for storage, memory,
-//! battery, CPU, network and devices. Header with a tint chip, a big number
+//! Mac Health card details (the popup over the page): one template for
+//! storage, memory, battery, CPU, network and devices. Header with a tint chip, a big number
 //! with a stacked bar (or a sparkline), a legend card, a facts card and
 //! buttons at the bottom right. The sheet reports what the user asked for
-//! instead of acting on the app, so any shell can host it.
+//! instead of acting on the app.
 
-use crate::kit::charge;
 use super::monitor::{self, Level, Snapshot};
 use crate::kit::glass::*;
 use crate::kit::mechanics as m;
@@ -20,6 +19,21 @@ pub enum Sheet {
     Devices,
 }
 
+impl Sheet {
+    /// The sheet for a widget id ("cpu").
+    pub fn from_id(id: &str) -> Option<Sheet> {
+        Some(match id {
+            "storage" => Sheet::Storage,
+            "memory" => Sheet::Memory,
+            "battery" => Sheet::Battery,
+            "cpu" => Sheet::Cpu,
+            "network" => Sheet::Network,
+            "devices" => Sheet::Devices,
+            _ => return None,
+        })
+    }
+}
+
 /// What the user clicked in a sheet.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
@@ -29,8 +43,6 @@ pub enum Action {
     Open(&'static str),
     SpeedTest(super::monitor::SpeedMode),
     MeasureFolders,
-    ToggleAlerts,
-    ToggleMenuBar,
     OpenBluetooth,
     /// Charge limit, a value from [`charge::LIMITS`].
     SetLimit(u8),
@@ -98,11 +110,6 @@ struct Spec {
     apps: Vec<Legend>,
     /// A refresh button in the header, beside close (tip, action).
     refresh: Option<(&'static str, Action)>,
-    /// On/off rows under the cards: label, hint, state, what a click does.
-    switches: Vec<(String, String, bool, Action)>,
-    /// The charge limit row above the switches: the selected index in
-    /// [`charge::LIMITS`].
-    limit: Option<usize>,
     /// Busiest processes (CPU sheet).
     procs: Vec<super::procs::Proc>,
     buttons: Vec<(&'static str, u8, Action)>,
@@ -110,7 +117,7 @@ struct Spec {
 
 impl Spec {
     fn new(icon: Icon, chip: Color32, title: impl Into<String>, sub: impl Into<String>) -> Self {
-        Spec { icon, chip, title: title.into(), sub: sub.into(), hero: None, segs: vec![], spark: vec![], legend: vec![], speed: false, facts: vec![], apps: vec![], refresh: None, switches: vec![], limit: None, procs: vec![], buttons: vec![] }
+        Spec { icon, chip, title: title.into(), sub: sub.into(), hero: None, segs: vec![], spark: vec![], legend: vec![], speed: false, facts: vec![], apps: vec![], refresh: None, procs: vec![], buttons: vec![] }
     }
 }
 
@@ -247,14 +254,9 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             if let Some((v, h)) = time {
                 sp.facts.push(fact(if b.plugged && !b.charging { "Why not charging" } else { "Time" }, v, TEXT(), h));
             }
-            sp.limit = Some(charge::LIMITS.iter().position(|l| *l == c.policy.limit).unwrap_or(0));
-            if c.policy.active() {
-                // named by what it does; off, charging starts again right under the limit
-                sp.switches.push((format!("Charge again below {}%", c.policy.limit.saturating_sub(charge::SAIL_GAP)), String::new(), c.policy.sailing, Action::ToggleSailing));
-                sp.switches.push(("Heat protection".into(), format!("Pause at {:.0} °C", charge::HEAT_C), c.policy.heat, Action::ToggleHeat));
-            }
-            if c.needs_helper() || c.installing {
-                sp.buttons = vec![("Install helper", BTN_PRIMARY, Action::InstallHelper)];
+            // the charge limit and its switches live in Mac Health › Settings
+            if b.present {
+                sp.buttons.push(("Charging settings", BTN_SECONDARY, Action::Open("health-settings")));
             }
             sp
         }
@@ -267,9 +269,13 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 // only the total load is drawn, so the rows carry no squares
                 leg_plain("User", format!("{:.0}%", s.cpu_user), TEXT()),
                 leg_plain("System", format!("{:.0}%", s.cpu_system), TEXT()),
-                leg_plain("Idle", format!("{:.0}%", (100.0 - s.cpu_load).max(0.0)), TEXT_DIM()),
             ];
             if let Some(pw) = &s.power {
+                // whole-Mac watts beside user / system, so the cores get a column of their own
+                let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
+                if let Some(total) = s.sys_watts.or(parts) {
+                    sp.legend.push(leg_plain("Power", watts(total), TEXT()));
+                }
                 for (label, u) in [("E-cores", pw.ecpu), ("P-cores", pw.pcpu), ("GPU", pw.gpu)] {
                     sp.legend.push(leg_plain(label, usage_text(u), TEXT()));
                 }
@@ -280,14 +286,6 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 _ => RED(),
             };
             sp.facts.push(fact("Thermal pressure", ["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], tc, ""));
-            if let Some(pw) = &s.power {
-                // the whole Mac; without that sensor, what the chip draws,
-                // unless its counters stopped (macOS 27)
-                let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
-                if let Some(total) = s.sys_watts.or(parts) {
-                    sp.facts.push(fact("Power", watts(total), TEXT(), ""));
-                }
-            }
             sp.procs = s.procs.clone();
             sp.facts.push(fact("Uptime", human_duration(s.uptime_secs), if s.uptime_warning() { AMBER() } else { TEXT() }, ""));
             sp
@@ -310,7 +308,7 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             }
             sp.facts.push(fact("Security", dash(&title_case(&s.wifi.security)), TEXT(), ""));
             sp.facts.push(fact("Channel", dash(&channel_text(&s.wifi.channel)), TEXT(), ""));
-            sp.facts.push(fact("Signal / noise", dash(&s.wifi.signal), TEXT(), ""));
+            sp.facts.push(fact("Signal", dash(s.wifi.signal.split(" / ").next().unwrap_or("").trim()), TEXT(), ""));
             use super::monitor::SpeedMode;
             sp.buttons = vec![("Full test", BTN_SECONDARY, Action::SpeedTest(SpeedMode::Full)), ("Quick test", BTN_PRIMARY, Action::SpeedTest(SpeedMode::Quick))];
             sp
@@ -329,8 +327,6 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                     None => sp.legend.push(Legend { color: TEXT_FAINT(), label: d.name.clone(), value: "–".into(), value_col: TEXT_FAINT() }),
                 }
             }
-            sp.switches.push(("Low battery alerts".into(), String::new(), crate::kit::notify::shown(s.bt_prefs.alerts), Action::ToggleAlerts));
-            sp.switches.push(("Show in menu bar".into(), String::new(), s.bt_prefs.menu_bar, Action::ToggleMenuBar));
             sp.buttons = vec![("Bluetooth Settings", BTN_SECONDARY, Action::OpenBluetooth)];
             sp
         }
@@ -338,17 +334,17 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
 }
 
 /// "WPA3 PERSONAL" -> "WPA3 Personal".
-fn title_case(s: &str) -> String {
+pub(super) fn title_case(s: &str) -> String {
     s.split(' ').map(|w| if w.chars().any(|c| c.is_ascii_digit()) || w.len() <= 3 { w.to_string() } else { let l = w.to_lowercase(); let mut c = l.chars(); c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default() }).collect::<Vec<_>>().join(" ")
 }
 
 /// "149 (5GHz, 80MHz)" -> "149 · 5 GHz · 80 MHz".
-fn channel_text(s: &str) -> String {
+pub(super) fn channel_text(s: &str) -> String {
     s.replace(" (", " · ").replace(", ", " · ").replace(')', "").replace("GHz", " GHz").replace("MHz", " MHz").replace("  ", " ")
 }
 
 /// "31% · 1.4 GHz" (no clock while idle).
-fn usage_text(u: crate::kit::ioreport::Usage) -> String {
+pub(super) fn usage_text(u: crate::kit::ioreport::Usage) -> String {
     let pct = format!("{:.0}%", u.busy * 100.0);
     if u.mhz <= 0.0 || u.busy < 0.005 {
         pct
@@ -360,7 +356,7 @@ fn usage_text(u: crate::kit::ioreport::Usage) -> String {
 }
 
 /// "3.4 W", "0.12 W".
-fn watts(w: f32) -> String {
+pub(super) fn watts(w: f32) -> String {
     if w < 1.0 {
         format!("{w:.2} W")
     } else {
@@ -382,8 +378,21 @@ fn busy_label(act: Action) -> &'static str {
     }
 }
 
-pub fn sheet(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
+/// Height the details popup needs at `w`: measured with a painter that
+/// draws nothing.
+pub fn details_height(ui: &Ui, kind: Sheet, s: &Snapshot, w: f32) -> f32 {
     let sp = spec(kind, s);
+    let p = ui.painter().with_clip_rect(Rect::NOTHING);
+    let body_h = body(&p, ui.ctx(), &sp, kind, s, 16.0, w - 32.0, 0.0);
+    let procs = procs_h(sp.procs.len().min(super::procs::TOP_N));
+    let btns = if sp.buttons.is_empty() { 0.0 } else { BTN_H + 16.0 };
+    SHEET_HEADER_H + 16.0 + body_h + procs + btns + 16.0
+}
+
+/// The details popup on the Mac Health page: the sheet's content in `rect`.
+pub fn details(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
+    let sp = spec(kind, s);
+
     let mut action = Action::None;
     if sheet_header(ui, rect, sp.icon, sp.chip, &sp.title, &sp.sub) {
         action = Action::Close;
@@ -403,12 +412,7 @@ pub fn sheet(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
     let x1 = rect.right() - 16.0;
     let top = rect.top() + SHEET_HEADER_H + 16.0;
     let h = body(&p, ui.ctx(), &sp, kind, s, x0, x1 - x0, top);
-    let sw = switches(ui, &sp, x0, x1 - x0, top + h + 14.0);
-    if sw != Action::None {
-        action = sw;
-    }
-    // the panel's sheet has room for fewer
-    let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(SHEET_PROCS)], x0, x1 - x0, top + h + switches_h(&sp) + 14.0);
+    let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(super::procs::TOP_N)], x0, x1 - x0, top + h + 14.0);
     if pa != Action::None {
         action = pa;
     }
@@ -554,67 +558,6 @@ fn facts_card(p: &egui::Painter, facts: &[Fact], x0: f32, w: f32, y: f32) -> f32
     h
 }
 
-/// Switch rows are settings rows (R3).
-const SWITCH_ROW_H: f32 = sp::SETTINGS_ROW_H;
-
-/// Rows in the switches card (the charge limit row counts as one).
-fn switch_rows(sp: &Spec) -> usize {
-    sp.switches.len() + sp.limit.is_some() as usize
-}
-
-/// Height of the switches card plus the gap above it (0 without switches).
-fn switches_h(sp: &Spec) -> f32 {
-    let n = switch_rows(sp);
-    if n == 0 { 0.0 } else { 14.0 + 8.0 + n as f32 * SWITCH_ROW_H }
-}
-
-/// The on/off rows of a sheet in one card starting at `y`, under the
-/// charge limit row when there is one.
-fn switches(ui: &mut Ui, sp: &Spec, x0: f32, w: f32, y: f32) -> Action {
-    let n = switch_rows(sp);
-    if n == 0 {
-        return Action::None;
-    }
-    let p = ui.painter().clone();
-    let card = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 8.0 + n as f32 * SWITCH_ROW_H));
-    data_card(&p, card);
-    let mut action = Action::None;
-    let first = sp.limit.is_some() as usize;
-    if let Some(sel) = sp.limit {
-        let rr = Rect::from_min_size(Pos2::new(x0, y + 4.0), Vec2::new(w, SWITCH_ROW_H));
-        let sw = (w * 0.55).clamp(160.0, 240.0);
-        let sr = Rect::from_min_size(Pos2::new(rr.right() - 12.0 - sw, rr.center().y - 14.0), Vec2::new(sw, 28.0));
-        let labels: Vec<String> = charge::LIMITS.iter().map(|l| if *l >= 100 { "Off".to_string() } else { format!("{l}%") }).collect();
-        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-        if let Some(i) = segmented(ui, sr, ui.scope_id().with("charge-limit"), &labels, sel) {
-            action = Action::SetLimit(charge::LIMITS[i]);
-        }
-        text_fit(&p, Pos2::new(rr.left() + 12.0, rr.center().y), Align2::LEFT_CENTER, "Charge limit", font(13.0), TEXT(), sr.left() - rr.left() - 24.0);
-    }
-    for (k, (label, hint, on, act)) in sp.switches.iter().enumerate() {
-        let k = k + first;
-        let rr = Rect::from_min_size(Pos2::new(x0, y + 4.0 + k as f32 * SWITCH_ROW_H), Vec2::new(w, SWITCH_ROW_H));
-        if k > 0 {
-            hairline(&p, Pos2::new(rr.left() + 12.0, rr.top()), Pos2::new(rr.right() - 12.0, rr.top()));
-        }
-        let sr = Rect::from_min_size(Pos2::new(rr.right() - 12.0 - 36.0, rr.center().y - 10.0), Vec2::new(36.0, 20.0));
-        if switch(ui, sr, ui.scope_id().with(("sheet-switch", k)), *on, true).clicked() {
-            action = *act;
-        }
-        let tw = sr.left() - rr.left() - 24.0;
-        if hint.is_empty() {
-            text_fit(&p, Pos2::new(rr.left() + 12.0, rr.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), tw);
-        } else {
-            let (ly1, ly2) = two_lines_y(&p, rr.center().y, &font(13.0), &font(12.0));
-            text_fit(&p, Pos2::new(rr.left() + 12.0, ly1), Align2::LEFT_CENTER, label, font(13.0), TEXT(), tw);
-            text_fit(&p, Pos2::new(rr.left() + 12.0, ly2), Align2::LEFT_CENTER, hint, font(12.0), TEXT_FAINT(), tw);
-        }
-    }
-    action
-}
-
-/// Processes the panel's sheet lists (the page lists all of them).
-const SHEET_PROCS: usize = 3;
 const PROC_ROW_H: f32 = SHEET_ROW_H;
 /// How long a first click on Quit waits for the second.
 const QUIT_ARM_SECS: f64 = 4.0;
