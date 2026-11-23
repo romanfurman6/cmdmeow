@@ -132,7 +132,24 @@ pub fn mark_done() {
     let _ = std::fs::write(m, b"");
 }
 
-/// Live permission state, polled about once a second while shown.
+/// How often macOS is asked again once every permission in view is allowed
+/// and none is being asked for: only a permission taken away in System
+/// Settings is left to notice, and each read is a thread and a round trip
+/// to macOS per permission.
+const SETTLED_EVERY: f64 = 5.0;
+
+/// Seconds between reads: every second while a permission is missing or
+/// awaited, so the screen flips the moment it is given.
+fn read_every(settled: bool) -> f64 {
+    if settled {
+        SETTLED_EVERY
+    } else {
+        1.0
+    }
+}
+
+/// Live permission state, read every second while shown and something is
+/// missing, now and then once all is allowed.
 #[derive(Default)]
 pub struct PermWatch {
     status: HashMap<Perm, Status>,
@@ -192,9 +209,10 @@ pub fn rows(app: &App) -> Vec<Row> {
 }
 
 impl PermWatch {
-    /// Start a background read of `perms` and Open at login (at most once a second).
-    fn kick(&mut self, perms: Vec<Perm>, now: f64) {
-        if now - self.polled < 1.0 && self.polled > 0.0 {
+    /// Start a background read of `perms` and Open at login (at most once
+    /// in `every` seconds).
+    fn kick(&mut self, perms: Vec<Perm>, now: f64, every: f64) {
+        if now - self.polled < every && self.polled > 0.0 {
             return;
         }
         {
@@ -207,12 +225,19 @@ impl PermWatch {
         self.polled = now;
         let bg = self.bg.clone();
         std::thread::spawn(move || {
+            // what macOS hands out for the answers is freed with the thread
+            let _pool = crate::kit::macos::pool();
             let v: Vec<(Perm, Status)> = perms.into_iter().map(|p| (p, p.status())).collect();
             let login = crate::kit::login::enabled();
             let mut b = bg.lock_ok();
             b.result = Some((v, login));
             b.running = false;
         });
+    }
+
+    /// Every permission of `rows` is allowed and none is being asked for.
+    fn settled(&self, rows: &[Row]) -> bool {
+        self.asked.is_empty() && rows.iter().all(|r| self.status.get(&r.perm) == Some(&Status::Allowed))
     }
 
     fn apply(&mut self, perm: Perm, s: Status, now: f64) {
@@ -229,8 +254,8 @@ impl PermWatch {
         }
     }
 
-    /// Refresh statuses for `rows`: system ones in the background, at most
-    /// once a second; a tool's own ones here (they're cheap).
+    /// Refresh statuses for `rows`: system ones in the background, a tool's
+    /// own ones here (they're cheap), both at most once in [`read_every`].
     pub fn poll(&mut self, app_tools: &[Box<dyn super::tool::Tool>], rows: &[Row], now: f64) {
         if let Some(d) = self.demo.clone() {
             for r in rows {
@@ -245,7 +270,8 @@ impl PermWatch {
                 self.apply(p, st, now);
             }
         }
-        let due = now - self.polled >= 1.0 || self.polled == 0.0;
+        let every = read_every(self.settled(rows));
+        let due = now - self.polled >= every || self.polled == 0.0;
         if due {
             for r in rows {
                 if let Perm::Own { id, .. } = r.perm {
@@ -265,7 +291,7 @@ impl PermWatch {
             }
         }
         let sys: Vec<Perm> = rows.iter().map(|r| r.perm).filter(|p| !matches!(p, Perm::Own { .. })).collect();
-        self.kick(sys, now);
+        self.kick(sys, now, every);
     }
 
     /// Open at login, read in the background (macOS is slow to answer).
@@ -276,7 +302,7 @@ impl PermWatch {
         if let Some((_, login)) = self.bg.lock_ok().result.as_ref() {
             self.login = Some(*login);
         }
-        self.kick(Vec::new(), now);
+        self.kick(Vec::new(), now, read_every(self.login.is_some()));
         self.login.unwrap_or(false)
     }
 
@@ -2730,6 +2756,25 @@ mod tests {
         w.asked.insert(Perm::FullDisk, 3.0);
         w.apply(Perm::FullDisk, Status::Allowed, 4.0);
         assert!(!w.take_refocus());
+    }
+
+    #[test]
+    fn allowed_permissions_are_read_less_often() {
+        let mut w = PermWatch::default();
+        let rows = [Row { perm: Perm::Screen, optional: false, tools: vec![] }, Row { perm: Perm::Accessibility, optional: true, tools: vec![] }];
+        // nothing read yet, then one still missing: every second
+        assert!(!w.settled(&rows));
+        w.apply(Perm::Screen, Status::Allowed, 0.0);
+        w.apply(Perm::Accessibility, Status::NotAsked, 0.0);
+        assert!(!w.settled(&rows));
+        assert_eq!(read_every(w.settled(&rows)), 1.0);
+        // all allowed: now and then
+        w.apply(Perm::Accessibility, Status::Allowed, 1.0);
+        assert!(w.settled(&rows));
+        assert_eq!(read_every(w.settled(&rows)), SETTLED_EVERY);
+        // one being asked for (its button pressed): every second again
+        w.asked.insert(Perm::Screen, 2.0);
+        assert!(!w.settled(&rows));
     }
 
     #[test]
