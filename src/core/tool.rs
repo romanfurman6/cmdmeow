@@ -1,6 +1,6 @@
 //! The contract between the shell and a tool. A tool is a self-contained
 //! module (Mac health, Claude limits, Cleanup, Disk Map, …) that offers any
-//! of: widgets for the menu-bar panel, detail sheets beside the panel, a page
+//! of: widgets for the menu-bar panel (a click opens the tool's page), a page
 //! in the full window, recommendations, menu entries and a tray title.
 //!
 //! Tools never import each other. To reach another tool they ask the shell
@@ -139,10 +139,6 @@ pub enum Action {
     /// Open the full window on a tool's page. `route` is defined by that tool
     /// ("" = its default view).
     OpenPage { tool: String, route: String },
-    /// Show a tool's detail sheet beside the panel. With `toggle`, a second
-    /// request for the open sheet closes it.
-    ShowDetail { tool: String, detail: String, toggle: bool },
-    CloseDetail,
     /// Hide the menu-bar panel (e.g. before a screenshot of the screen).
     HidePanel,
     Toast(String),
@@ -152,29 +148,21 @@ pub enum Action {
 /// What a `--view` name asks the shell to show (screenshots).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum View {
-    Detail(&'static str),
     Page,
 }
 
 /// Per-frame context handed to tools: what's open plus an outbox of [`Action`]s.
+#[derive(Default)]
 pub struct Cx {
-    open_detail: Option<(String, String)>,
     actions: Vec<Action>,
 }
 
 impl Cx {
-    pub fn new(open_detail: Option<(String, String)>) -> Self {
-        Cx { open_detail, actions: Vec::new() }
+    pub fn new() -> Self {
+        Cx::default()
     }
     pub fn open_page(&mut self, tool: &str, route: &str) {
         self.actions.push(Action::OpenPage { tool: tool.into(), route: route.into() });
-    }
-    /// Open or close (if already open) a detail sheet.
-    pub fn toggle_detail(&mut self, tool: &str, detail: &str) {
-        self.actions.push(Action::ShowDetail { tool: tool.into(), detail: detail.into(), toggle: true });
-    }
-    pub fn close_detail(&mut self) {
-        self.actions.push(Action::CloseDetail);
     }
     pub fn toast(&mut self, msg: impl Into<String>) {
         self.actions.push(Action::Toast(msg.into()));
@@ -184,10 +172,6 @@ impl Cx {
     }
     pub fn push(&mut self, a: Action) {
         self.actions.push(a);
-    }
-    /// Whether this tool's detail sheet `detail` is the one showing.
-    pub fn is_detail_open(&self, tool: &str, detail: &str) -> bool {
-        self.open_detail.as_ref().is_some_and(|(t, d)| t == tool && d == detail)
     }
     pub fn take_actions(&mut self) -> Vec<Action> {
         std::mem::take(&mut self.actions)
@@ -262,10 +246,6 @@ pub trait Tool {
     fn widget_loading(&self, _widget: &str) -> bool {
         false
     }
-
-    // ---- detail sheets beside the panel
-    /// Draws the whole sheet, header included (see `glass::sheet_header`).
-    fn detail_ui(&mut self, _detail: &str, _ui: &mut Ui, _rect: Rect, _cx: &mut Cx) {}
 
     // ---- full-window page
     fn has_page(&self) -> bool {
@@ -388,18 +368,15 @@ mod tests {
 
     #[test]
     fn cx_collects_actions_in_order() {
-        let mut cx = Cx::new(Some(("system".into(), "memory".into())));
-        assert!(cx.is_detail_open("system", "memory"));
-        assert!(!cx.is_detail_open("system", "cpu"));
-        assert!(!cx.is_detail_open("claude", "memory"));
+        let mut cx = Cx::new();
         cx.open_page("cleanup", "claude");
         cx.toast("hi");
-        cx.toggle_detail("system", "cpu");
+        cx.open_page("system", "cpu");
         let a = cx.take_actions();
         assert_eq!(a.len(), 3);
         assert_eq!(a[0], Action::OpenPage { tool: "cleanup".into(), route: "claude".into() });
         assert_eq!(a[1], Action::Toast("hi".into()));
-        assert_eq!(a[2], Action::ShowDetail { tool: "system".into(), detail: "cpu".into(), toggle: true });
+        assert_eq!(a[2], Action::OpenPage { tool: "system".into(), route: "cpu".into() });
         assert!(cx.take_actions().is_empty());
     }
 }

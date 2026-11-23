@@ -32,10 +32,19 @@ fn level_color(l: Level) -> Color32 {
     }
 }
 
-pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendation], ui: &mut Ui, r: Rect, cx: &mut Cx) {
+/// `route` is a card's widget id from a panel widget or a tip ("cpu"):
+/// the page opens on the overview with that card's details.
+pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendation], route: Option<String>, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let s = mon.lock_ok().clone();
     let p = ui.painter().clone();
     let settings_id = ui.scope_id().with("health-settings");
+    if let Some(route) = route {
+        ui.ctx().data_mut(|d| d.insert_temp(settings_id, false));
+        open_details(ui.ctx(), Sheet::from_id(&route));
+    }
+    if ui.ctx().data(|d| d.get_temp::<Sheet>(details_id())) == Some(Sheet::Network) {
+        super::traffic::want(mon, ui.ctx());
+    }
     // screenshots: CMDMEOW_HEALTH_TAB=settings opens the Settings tab
     let show_settings = ui.ctx().data(|d| d.get_temp::<bool>(settings_id)).unwrap_or(std::env::var("CMDMEOW_HEALTH_TAB").is_ok_and(|v| v == "settings"));
 
@@ -56,7 +65,9 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     };
     // AI Check: a chip after the title, on the overview
     let cw = if show_settings { 0.0 } else { aicheck::ui::chip_width(ai, ui, s.ready) };
-    let rec_w = recs.first().map(|rec| button_width(&p, &rec.action, BTN_PRIMARY) + sp::M).unwrap_or(0.0);
+    // a tip without a fix ("Up 14 days") has no button
+    let rec_btn = recs.first().filter(|rec| !rec.action.is_empty());
+    let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY) + sp::M).unwrap_or(0.0);
     let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - rec_w - sp::M;
     let (btns, chip_at) = page_header_room(&p, r, "Mac Health", &sub, sub_col, cw, sub_right);
     let mut right = btns.right();
@@ -65,10 +76,10 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
         ui.ctx().data_mut(|d| d.insert_temp(settings_id, i == 1));
     }
     right = tr.left() - sp::M;
-    if let Some(rec) = recs.first() {
+    if let Some(rec) = rec_btn {
         let bw = button_width(&p, &rec.action, BTN_PRIMARY);
         let br = Rect::from_min_max(Pos2::new(right - bw, btns.top()), Pos2::new(right, btns.bottom()));
-        if pill_button(ui, br, &rec.action, BTN_PRIMARY, true).on_hover_text(&rec.body).clicked() {
+        if pill_button(ui, br, &rec.action, BTN_PRIMARY, true).clicked() {
             cx.push(rec.go.clone());
         }
     }
@@ -177,8 +188,6 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             super::speed::open(ui.ctx());
         }
         SheetAction::MeasureFolders => monitor::measure_folders(mon.clone(), ui.ctx().clone()),
-        SheetAction::ToggleAlerts => monitor::change_bt_prefs(mon, |p| crate::kit::notify::flip(&mut p.alerts)),
-        SheetAction::ToggleMenuBar => monitor::change_bt_prefs(mon, |p| p.menu_bar = !p.menu_bar),
         SheetAction::OpenBluetooth => super::devices::open_bluetooth_settings(),
         SheetAction::SetLimit(l) => monitor::change_charge(mon, ui.ctx(), |p| p.limit = l),
         SheetAction::ToggleSailing => monitor::change_charge(mon, ui.ctx(), |p| p.sailing = !p.sailing),
@@ -219,8 +228,6 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
                 super::speed::open(ui.ctx());
             }
             SheetAction::MeasureFolders => monitor::measure_folders(mon.clone(), ui.ctx().clone()),
-            SheetAction::ToggleAlerts => monitor::change_bt_prefs(mon, |p| crate::kit::notify::flip(&mut p.alerts)),
-            SheetAction::ToggleMenuBar => monitor::change_bt_prefs(mon, |p| p.menu_bar = !p.menu_bar),
             SheetAction::OpenBluetooth => super::devices::open_bluetooth_settings(),
             SheetAction::Quit(pid) => {
                 super::procs::quit(pid);
@@ -556,7 +563,7 @@ mod tests {
 // ======================================================================= details popup
 
 fn details_id() -> egui::Id {
-    egui::Id::new("health-details")
+    egui::Id::unique("health-details")
 }
 
 /// Open (or close, with None) a card's details popup.
@@ -579,41 +586,20 @@ fn details_popup(ui: &mut Ui, s: &Snapshot) -> Option<SheetAction> {
     // screenshots: CMDMEOW_HEALTH_DETAILS=cpu|storage|memory|battery|network|devices
     if let Ok(v) = std::env::var("CMDMEOW_HEALTH_DETAILS") {
         if ctx.cumulative_pass_nr() < 3 {
-            let k = match v.as_str() { "storage" => Sheet::Storage, "memory" => Sheet::Memory, "battery" => Sheet::Battery, "network" => Sheet::Network, "devices" => Sheet::Devices, _ => Sheet::Cpu };
-            open_details(&ctx, Some(k));
+            open_details(&ctx, Some(Sheet::from_id(&v).unwrap_or(Sheet::Cpu)));
         }
     }
     let kind = ctx.data(|d| d.get_temp::<Sheet>(details_id()))?;
-    crate::kit::modal::shield(&ctx);
-    let full = ctx.content_rect();
-    let mut out = None;
-    egui::Area::new(details_id().with("area"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(full.min)
-        .constrain(false)
-        .movable(false)
-        .show(&ctx, |ui| {
-            ui.set_min_size(full.size());
-            let scrim = ui.interact(full, details_id().with("scrim"), Sense::click());
-            ui.painter().rect_filled(full, 12.0, SCRIM());
-            let w = DETAILS_W.min(full.width() - 32.0);
-            let h = super::sheets::details_height(ui, kind, s, w).min(full.height() - 48.0);
-            let m = Rect::from_center_size(full.center(), Vec2::new(w, h));
-            let card = ui.interact(m, details_id().with("card"), Sense::click());
-            float_shadow(ui.painter(), m, 16.0, 1.0);
-            ui.painter().rect_filled(m, 16.0, POPOVER());
-            ui.painter().rect_stroke(m, 16.0, egui::Stroke::new(1.0, POPOVER_EDGE()), egui::StrokeKind::Inside);
-            let mut child = ui.new_child(UiBuilder::new().max_rect(m).id_salt(("health-details", kind as u8)));
-            child.set_clip_rect(m);
-            let a = super::sheets::details(&mut child, m, kind, s);
-            let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-            if esc || (scrim.clicked() && !card.contains_pointer()) {
-                out = Some(SheetAction::Close);
-            } else if a != SheetAction::None {
-                out = Some(a);
-            }
-        });
-    out
+    let w = DETAILS_W.min(ctx.content_rect().width() - 32.0);
+    let h = super::sheets::details_height(ui, kind, s, w);
+    let (a, close) = crate::kit::modal::details(&ctx, details_id().with(kind as u8), w, h, |ui, m| super::sheets::details(ui, m, kind, s));
+    if close {
+        Some(SheetAction::Close)
+    } else if a != SheetAction::None {
+        Some(a)
+    } else {
+        None
+    }
 }
 
 // ======================================================================= battery settings

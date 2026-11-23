@@ -168,7 +168,17 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     } else if !cl.limits.is_empty() {
         let n = cl.limits.len().min(3);
         for (k, l) in cl.limits.iter().take(n).enumerate() {
-            limit_card(&p, slot(k, 1), l);
+            // a click on a limit opens the limits popup, as Mac Health's cards do
+            let lr = slot(k, 1);
+            let resp = ui.interact(lr, ui.scope_id().with(("ai-limit", k)), egui::Sense::click());
+            limit_card(&p, lr, l);
+            if resp.hovered() {
+                p.rect_filled(lr, crate::kit::tile::R_TILE, white(6));
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() {
+                open_limits(ui.ctx(), true);
+            }
         }
         let rest = Rect::from_min_max(slot(n, 1).min, Pos2::new(x1, y + ch));
         if show_usd && cl.billing == Billing::Subscription && cl.plan_usd().is_some() {
@@ -212,6 +222,38 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             empty_note(&p, list, &format!("No {} in the last 30 days", title.to_lowercase()));
         }
         parts::share_lines(&p, list, rows, show_usd, &home);
+    }
+    limits_popup(all, ui, cx);
+}
+
+fn limits_id() -> egui::Id {
+    egui::Id::unique("ai-limits-details")
+}
+
+/// Open or close the limits popup.
+pub fn open_limits(ctx: &egui::Context, open: bool) {
+    ctx.data_mut(|d| {
+        if open {
+            d.insert_temp(limits_id(), true);
+        } else {
+            d.remove::<bool>(limits_id());
+        }
+    });
+}
+
+/// The limits popup: every limit, what uses them, Clean Claude caches.
+/// Esc, its close button or a click outside closes it.
+fn limits_popup(all: &All, ui: &mut Ui, cx: &mut Cx) {
+    let ctx = ui.ctx().clone();
+    if !ctx.data(|d| d.get_temp::<bool>(limits_id())).unwrap_or(false) {
+        return;
+    }
+    let cl = backend::current(all).lock_ok().clone();
+    let w = 440.0f32.min(ctx.content_rect().width() - 32.0);
+    let h = super::ui::details_height(ui, &cl, w);
+    let (close_btn, close) = crate::kit::modal::details(&ctx, limits_id(), w, h, |ui, m| super::ui::details(all, ui, m, cx));
+    if close_btn || close {
+        open_limits(&ctx, false);
     }
 }
 
@@ -291,7 +333,8 @@ fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
 fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
     data_card(p, cr);
     let inner = cr.shrink(sp::L);
-    p.text(inner.left_top(), Align2::LEFT_TOP, backend::short_label(&l.label), ty::title(), TEXT());
+    let tr = p.text(inner.left_top(), Align2::LEFT_TOP, backend::short_label(&l.label), ty::title(), TEXT());
+    p.text(Pos2::new(tr.right() + sp::XS, tr.center().y), Align2::LEFT_CENTER, "›", ty::title(), TEXT_FAINT());
     let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 16.0 + sp::M), inner.max);
     let d = RING_D.min(body.height()).min(body.width() * 0.6);
     let c = Pos2::new(body.left() + d / 2.0, body.center().y);

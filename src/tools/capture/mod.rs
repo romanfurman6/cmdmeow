@@ -1345,7 +1345,7 @@ mod tests {
         let mut c = demo();
         c.queue.push((Command::History, 0));
         assert!(c.tick(&c.ctx.clone()), "queued work asks for a frame even while hidden");
-        let mut cx = Cx::new(None);
+        let mut cx = Cx::new();
         c.windows(&c.ctx.clone(), &mut cx);
         assert!(c.queue.is_empty());
         assert_eq!(cx.take_actions(), vec![Action::OpenPage { tool: ID.into(), route: "history".into() }]);

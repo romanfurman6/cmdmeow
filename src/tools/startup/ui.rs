@@ -1031,7 +1031,7 @@ mod tests {
         for v in ["startup", "startup-done", "startup-suggested"] {
             assert!(s.demo_view(v).is_some());
             ctx.run_ui(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 700.0))), ..Default::default() }, |ui| {
-                let mut cx = Cx::new(None);
+                let mut cx = Cx::new();
                 page(&mut s, ui, Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 700.0)), &mut cx);
                 for z in [Size::S11, Size::S12, Size::S24] {
                     widget(&mut s, z, ui, Rect::from_min_size(Pos2::ZERO, Vec2::new(356.0, 174.0)), &mut cx);

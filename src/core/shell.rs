@@ -1,5 +1,4 @@
-//! The app shell: a menu-bar icon that drops down the widget panel (with a
-//! detail sheet to its left), and a full window with a page per tool. It knows
+//! The app shell: a menu-bar icon that drops down the widget panel, and a full window with a page per tool. It knows
 //! tools only through the [`Tool`] trait.
 
 use super::settings::{widget_key, Avail, Entry, WidgetPrefs};
@@ -72,8 +71,6 @@ pub struct Options {
 pub struct App {
     pub tools: Vec<Box<dyn Tool>>,
     pub mode: Mode,
-    /// Open detail sheet: (tool index, detail id).
-    pub detail: Option<(usize, String)>,
     /// Tool whose page the full window shows.
     pub page: usize,
     pub demo: bool,
@@ -211,7 +208,6 @@ impl App {
         let mut app = App {
             tools,
             mode: Mode::Panel,
-            detail: None,
             page,
             demo,
             widgets: Vec::new(),
@@ -331,9 +327,6 @@ impl App {
         self.tools[i].set_on(on);
         if !on {
             self.tools_off.push(id);
-            if self.detail.as_ref().is_some_and(|(d, _)| *d == i) {
-                self.detail = None;
-            }
         }
     }
 
@@ -480,10 +473,6 @@ impl App {
         }
         for i in 0..self.tools.len() {
             match self.tools[i].demo_view(view) {
-                Some(View::Detail(d)) => {
-                    self.detail = Some((i, d.to_string()));
-                    return;
-                }
                 Some(View::Page) => {
                     self.mode = Mode::Window;
                     self.page = i;
@@ -505,7 +494,7 @@ impl App {
 
     /// A fresh per-frame context for tools.
     pub fn cx(&self) -> Cx {
-        Cx::new(self.detail.as_ref().map(|(i, d)| (self.tools[*i].id().to_string(), d.clone())))
+        Cx::new()
     }
 
     /// Carry out what tools asked for this frame.
@@ -519,17 +508,6 @@ impl App {
                         self.open_window(ctx, i);
                     }
                 }
-                Action::ShowDetail { tool, detail, toggle } => {
-                    if let Some(i) = self.tool_index(&tool) {
-                        let same = self.detail.as_ref() == Some(&(i, detail.clone()));
-                        self.detail = if same && toggle { None } else { Some((i, detail)) };
-                        self.reshape(ctx);
-                    }
-                }
-                Action::CloseDetail => {
-                    self.detail = None;
-                    self.reshape(ctx);
-                }
                 Action::HidePanel => {
                     if !super::panel::keep_open() && self.mode == Mode::Panel && self.visible && self.screenshot.is_none() {
                         self.hide(ctx);
@@ -541,20 +519,10 @@ impl App {
         }
     }
 
-    /// Whether a tool's detail sheet sits beside the panel.
-    pub fn sheet_open(&self) -> bool {
-        self.detail.is_some()
-    }
-
     /// The panel's height for its current widgets, before the screen limit.
     fn panel_height(&self) -> f32 {
         let content = super::panel::content_height(self);
-        let h = super::panel::HEADER + content + super::panel::banner_h() + super::panel::FOOTER;
-        if self.sheet_open() {
-            h.max(m::PANEL_HEIGHT)
-        } else {
-            h
-        }
+        super::panel::HEADER + content + super::panel::banner_h() + super::panel::FOOTER
     }
 
     pub fn max_panel_height(&self, ctx: &egui::Context) -> f32 {
@@ -565,8 +533,7 @@ impl App {
     pub fn window_size(&self, ctx: &egui::Context) -> Vec2 {
         match self.mode {
             Mode::Panel => {
-                let w = m::PANEL_WIDTH + if self.sheet_open() { m::DETAIL_WIDTH + 12.0 } else { 0.0 };
-                Vec2::new(w, self.panel_height().min(self.max_panel_height(ctx)))
+                Vec2::new(m::PANEL_WIDTH, self.panel_height().min(self.max_panel_height(ctx)))
             }
             // screenshots: CMDMEOW_SHOT_W=<pt> (or "min") checks narrow windows
             // (CMDMEOW_SHOT_H=<pt> checks tall windows)
@@ -863,9 +830,6 @@ impl eframe::App for App {
             if let Some(t) = self.tools.iter_mut().find(|t| t.id() == id) {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| t.set_on(false)));
             }
-            if self.detail.as_ref().is_some_and(|(d, _)| self.tools.get(*d).is_some_and(|t| t.id() == id)) {
-                self.detail = None;
-            }
         }
         // the app window is drawn inside the hidden root window's pass; once
         // it's on screen eframe runs that pass for it anyway. Asking again
@@ -1021,15 +985,8 @@ impl eframe::App for App {
             // it), but nobody sees the panel: don't build it
             Mode::Panel if !self.visible && self.screenshot.is_none() => {}
             Mode::Panel => {
-                // one glass sheet; the detail opens on its left behind a hairline
                 glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
-                if self.sheet_open() {
-                    let sheet = Rect::from_min_size(full.left_top(), Vec2::new(m::DETAIL_WIDTH, full.height()));
-                    let x = panel.left() - 6.0;
-                    ui.painter().line_segment([Pos2::new(x, full.top() + 18.0), Pos2::new(x, full.bottom() - 18.0)], egui::Stroke::new(1.0, white(30)));
-                    super::panel::detail(self, ui, sheet, &mut cx);
-                }
                 let before = self.widgets.clone();
                 super::panel::panel(self, ui, panel, &mut cx);
                 if self.widgets != before {

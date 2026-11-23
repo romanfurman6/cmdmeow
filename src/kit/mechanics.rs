@@ -123,7 +123,6 @@ pub const GOOD_FOR: [(&str, f64); 6] = [
 // Panel geometry (design A: 380 pt panel and sheets, 12 pt cards)
 pub const PANEL_WIDTH: f32 = 380.0;
 pub const PANEL_HEIGHT: f32 = 660.0;
-pub const DETAIL_WIDTH: f32 = 380.0;
 pub const CARD_RADIUS: f32 = 12.0;
 pub const APP_WIDTH: f32 = 1180.0;
 pub const APP_HEIGHT: f32 = 740.0;

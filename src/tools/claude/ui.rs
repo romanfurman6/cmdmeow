@@ -1,10 +1,8 @@
-//! The Claude card for the panel and the limits sheet beside it (also the
-//! left half of the Claude page).
+//! The Claude card for the panel and the limits popup on the AI Usage page.
 
 use crate::kit::sync::LockExt;
 use super::backend;
 use crate::kit::ai::UsageInfo;
-use super::ID;
 use crate::core::tool::{Cx, Size};
 use crate::kit::tile;
 use crate::kit::glass::*;
@@ -124,18 +122,49 @@ fn status(cl: &UsageInfo) -> String {
     }
 }
 
-/// The Claude sheet beside the panel: limits, local tokens, what uses the
-/// limits, and links to the page and to Cleanup.
-pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
+/// What the limits popup shows under the limits: "What uses your limits"
+/// (Claude's breakdown of the last day) or the provider's note on them.
+fn contrib_lines(cl: &UsageInfo) -> (&'static str, Vec<(String, Color32, f32)>) {
+    let mut lines: Vec<(String, Color32, f32)> = Vec::new();
+    match cl.contrib.first() {
+        Some(c) => {
+            lines.push((c.title.clone(), TEXT_FAINT(), 12.0));
+            for l in &c.lines {
+                lines.push((l.clone(), TEXT_SOFT(), 13.0));
+            }
+        }
+        None if !cl.note.is_empty() && cl.provider != crate::kit::ai::claude::NAME => lines.push((cl.note.clone(), TEXT_DIM(), 13.0)),
+        None => lines.push((format!("{} reports this once you've used it on this Mac.", cl.provider), TEXT_DIM(), 13.0)),
+    }
+    let title = if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { "About these limits" } else { "What uses your limits" };
+    (title, lines)
+}
+
+/// Height of one limit's rows in the popup.
+const LIMIT_ROW: f32 = 58.0;
+
+/// The limits popup's height for `w` wide: header, limits, what uses
+/// them, the button row.
+pub fn details_height(ui: &Ui, cl: &UsageInfo, w: f32) -> f32 {
+    let p = ui.painter().clone().with_clip_rect(Rect::NOTHING);
+    let n = cl.limits.len();
+    let lim_h = if n == 0 { 64.0 } else { n as f32 * LIMIT_ROW + 13.0 };
+    let (_, lines) = contrib_lines(cl);
+    let text: f32 = lines.iter().map(|(l, c, s)| p.layout(l.clone(), font(*s), *c, w - 56.0).size().y + 6.0).sum();
+    SHEET_HEADER_H + 16.0 + lim_h + GAP + CARD_TITLE_H + 12.0 + text + 6.0 + 16.0 + BTN_H + 16.0
+}
+
+/// The limits popup on the AI Usage page: every limit with its pace and
+/// forecast, what uses them, and a way to Claude's caches in Cleanup. True
+/// when its close button was clicked.
+pub fn details(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> bool {
     let ctx = ui.ctx().clone();
     let cl = backend::current(all).lock_ok().clone();
     let p = ui.painter().clone();
     let t = ctx.input(|i| i.time);
     let busy = cl.loading || !cl.scanned || backend::refreshing();
     let sub = if busy { "Updating…".to_string() } else { super::parts::fresh(&cl).0 };
-    if sheet_header(ui, rect, Icon::Gauge, tint::CLAUDE(), "AI Usage", &sub) {
-        cx.close_detail();
-    }
+    let close = sheet_header(ui, rect, Icon::Gauge, tint::CLAUDE(), "Limits", &sub);
     let rb = Rect::from_center_size(Pos2::new(rect.right() - 27.0 - 34.0, rect.top() + 29.0), Vec2::splat(26.0));
     if busy {
         spinner(&p, rb.center(), 6.0, t, TEXT_DIM());
@@ -150,7 +179,7 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
 
     // limits
     let n = cl.limits.len();
-    let lim_h = if n == 0 { 64.0 } else { n as f32 * 58.0 + 13.0 };
+    let lim_h = if n == 0 { 64.0 } else { n as f32 * LIMIT_ROW + 13.0 };
     let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, lim_h));
     data_card(&p, lr);
     if n == 0 {
@@ -158,54 +187,27 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         paragraph(&p, lr.min + Vec2::new(12.0, 12.0), &msg, font(13.0), TEXT_DIM(), w - 24.0);
     }
     for (i, l) in cl.limits.iter().enumerate() {
-        let yy = lr.top() + 12.0 + i as f32 * 58.0;
+        let yy = lr.top() + 12.0 + i as f32 * LIMIT_ROW;
         p.text(Pos2::new(lr.left() + 12.0, yy), Align2::LEFT_TOP, backend::short_label(&l.label), font(13.0), TEXT());
         p.text(Pos2::new(lr.right() - 12.0, yy), Align2::RIGHT_TOP, format!("{:.0}%", l.pct), bold(13.0), TEXT());
         super::parts::pace_bar(&p, Rect::from_min_size(Pos2::new(lr.left() + 12.0, yy + 20.0), Vec2::new(w - 24.0, 6.0)), l);
+        // no pace words (T9): the marker on the bar shows the pace
         let f = super::parts::forecast(l);
         let col = if f.starts_with("Runs out") { RED() } else { TEXT_FAINT() };
-        let fr = text_fit(&p, Pos2::new(lr.left() + 12.0, yy + 32.0), Align2::LEFT_TOP, &f, font(12.0), col, w - 24.0);
-        let _ = fr; // pace words go (T9): the marker on the bar shows the pace
+        text_fit(&p, Pos2::new(lr.left() + 12.0, yy + 32.0), Align2::LEFT_TOP, &f, font(12.0), col, w - 24.0);
     }
     y = lr.bottom() + GAP;
 
-    // on this Mac
-    card_title(&p, Pos2::new(x0, y), "On this Mac");
-    y += CARD_TITLE_H;
-    let ar = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, 160.0));
-    data_card(&p, ar);
-    let stats = [("last 5 hours", cl.local.tokens_5h), ("today", cl.local.tokens_today), ("7 days", cl.local.tokens_7d)];
-    for (i, (k, v)) in stats.iter().enumerate() {
-        let x = ar.left() + 12.0 + i as f32 * ((w - 24.0) / 3.0);
-        p.text(Pos2::new(x, ar.top() + 12.0), Align2::LEFT_TOP, backend::human_tokens(*v), ty::number(), TEXT());
-        p.text(Pos2::new(x, ar.top() + 38.0), Align2::LEFT_TOP, *k, ty::caption(), TEXT_DIM());
-    }
-    let week: Vec<crate::kit::ai::Day> = cl.local.days.iter().rev().take(7).rev().copied().collect();
-    super::parts::day_chart(ui, Rect::from_min_max(Pos2::new(ar.left() + 12.0, ar.top() + 56.0), Pos2::new(ar.right() - 12.0, ar.bottom() - 10.0)), &week, super::parts::Measure::Tokens, None, "detail");
-    y = ar.bottom() + GAP;
-
     // what uses your limits
     let by = rect.bottom() - 16.0 - BTN_H;
-    let ur_max = by - GAP;
-    let mut lines: Vec<(String, Color32, f32)> = Vec::new();
-    match cl.contrib.first() {
-        Some(c) => {
-            lines.push((c.title.clone(), TEXT_FAINT(), 12.0));
-            for l in &c.lines {
-                lines.push((l.clone(), TEXT_SOFT(), 13.0));
-            }
-        }
-        None if !cl.note.is_empty() && cl.provider != crate::kit::ai::claude::NAME => lines.push((cl.note.clone(), TEXT_DIM(), 13.0)),
-        None => lines.push((format!("{} reports this once you've used it on this Mac.", cl.provider), TEXT_DIM(), 13.0)),
-    }
-    let heights: Vec<f32> = lines.iter().map(|(l, c, s)| p.layout(l.clone(), font(*s), *c, w - 24.0).size().y).collect();
-    let title = if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { "About these limits" } else { "What uses your limits" };
+    let (title, lines) = contrib_lines(&cl);
     card_title(&p, Pos2::new(x0, y), title);
     y += CARD_TITLE_H;
+    let heights: Vec<f32> = lines.iter().map(|(l, c, s)| p.layout(l.clone(), font(*s), *c, w - 24.0).size().y).collect();
     let mut h = 12.0;
     let mut shown = 0;
     for hh in &heights {
-        if y + h + hh + 6.0 + 12.0 > ur_max {
+        if y + h + hh + 6.0 + 6.0 > by - 16.0 {
             break;
         }
         h += hh + 6.0;
@@ -219,20 +221,15 @@ pub fn detail(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ly += hh + 6.0;
     }
 
-    // buttons, bottom right (Cleanup knows Claude's caches only)
-    let primary = "Clean Claude caches";
-    let pw = button_width(&p, primary, BTN_PRIMARY);
-    let mut pr = Rect::from_min_size(Pos2::new(rect.right() - 16.0 - pw, by), Vec2::new(pw, BTN_H));
+    // Cleanup knows Claude's caches only
     if cl.provider == crate::kit::ai::claude::NAME {
+        let primary = "Clean Claude caches";
+        let pw = button_width(&p, primary, BTN_PRIMARY);
+        // right under what uses the limits, or on the bottom when that's cut
+        let pr = Rect::from_min_size(Pos2::new(rect.right() - 16.0 - pw, (ur.bottom() + 16.0).min(by)), Vec2::new(pw, BTN_H));
         if pill_button(ui, pr, primary, BTN_PRIMARY, true).clicked() {
             cx.open_page(CLEANUP, "claude");
         }
-    } else {
-        pr = Rect::from_min_size(Pos2::new(rect.right() - 8.0, by), Vec2::new(0.0, BTN_H));
     }
-    let sw = button_width(&p, "AI Usage", BTN_SECONDARY);
-    let sr = Rect::from_min_size(Pos2::new(pr.left() - 8.0 - sw, by), Vec2::new(sw, BTN_H));
-    if pill_button(ui, sr, "AI Usage", BTN_SECONDARY, true).clicked() {
-        cx.open_page(ID, "");
-    }
+    close
 }

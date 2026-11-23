@@ -2364,7 +2364,7 @@ mod tests {
         let mut pass = |app: &mut App, events: Vec<egui::Event>| {
             t += 0.1;
             let mut out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ui| {
-                let mut cx = Cx::new(None);
+                let mut cx = Cx::new();
                 page(app, ui, r, &mut cx);
             });
             out.textures_delta.clear();
