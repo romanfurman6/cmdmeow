@@ -269,7 +269,7 @@ html[data-app="light"] .foot .tm { color: rgba(20,24,26,.56); }
 /* light: a daytime photo of the same valley (Magnific, 2026-11-24), and the light macOS menu bar */
 html[data-app="light"] .desk {
   --ink: #14181A; --ink2: rgba(20,24,26,.66); --ik: 20,24,26; color: #14181A; }
-html[data-app="light"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(255,255,255,.6), rgba(255,255,255,.28) 55%, transparent 80%); }
+html[data-app="light"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(255,255,255,.3), rgba(255,255,255,.1) 55%, transparent 80%); }
 html[data-app="light"] .desk::after { background: linear-gradient(to bottom, rgba(234,242,223,0) 40%, rgba(234,242,223,.35) 60%, rgba(234,242,223,.8) 80%, #EAF2DF 97%); }
 html[data-app="light"] .desk { margin-bottom: -1px; }
 html[data-app="light"] h1 { text-shadow: 0 1px 24px rgba(255,255,255,.5); }
@@ -364,3 +364,6 @@ html[data-app="light"] .tseg i { box-shadow: inset 0 0 0 1px rgba(20,24,26,.18);
 html[data-app="light"] .tseg button[aria-checked="true"] { box-shadow: inset 0 0 0 1.5px rgba(20,24,26,.7); }
 html[data-app="miami"] .tseg { background: rgba(14,10,40,.62); }
 @media (max-width: 600px) { .tseg { right: 12px; bottom: 12px; } }
+
+html[data-app="light"] .dimg i { filter: saturate(1.45) contrast(1.14) brightness(.95); }
+html[data-app="light"] .dimg { -webkit-mask-image: linear-gradient(to bottom,#000 0,#000 55%,rgba(0,0,0,.7) 72%,rgba(0,0,0,.3) 86%,transparent 100%); mask-image: linear-gradient(to bottom,#000 0,#000 55%,rgba(0,0,0,.7) 72%,rgba(0,0,0,.3) 86%,transparent 100%); }
