@@ -26,6 +26,8 @@ checks/
 *.jpeg
 # onboarding theme card art ships with the app
 !assets/themes/*.jpg
+# DMG window background ships with every release
+!assets/dmg/*.png
 docs/screenshots/
 docs/reference/
 docs/feedback/

@@ -119,12 +119,9 @@ jobs:
 
       - name: Make dmg
         run: |
+          # Drag-to-Applications window: background, icon places, volume icon.
+          scripts/make-dmg.sh target/bundle/CmdMeow.app target/bundle/CmdMeow.dmg
           cd target/bundle
-          rm -rf dmg CmdMeow.dmg
-          mkdir dmg
-          cp -R CmdMeow.app dmg/
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname "Cmd+Meow" -srcfolder dmg -fs HFS+ -format UDZO -ov CmdMeow.dmg
           if [[ -n "${SIGN_ID:-}" ]]; then codesign --sign "$SIGN_ID" --keychain "$SIGN_KEYCHAIN" --timestamp CmdMeow.dmg; fi
 
       - name: Notarize and staple
