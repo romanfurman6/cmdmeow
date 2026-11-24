@@ -1,5 +1,5 @@
-//! The menu-bar panel (design A, "Control Center"): a title line with a
-//! "…" button that slides out open, hide and quit, the user's widgets on a
+//! The menu-bar panel (design A, "Control Center"): a title line with Quit
+//! (asks first, in place) and Open, the user's widgets on a
 //! 4-column grid of square cells (scrolling when they don't fit), an "Edit widgets…" link
 //! that opens the widget editor in the full window (see `editor.rs`), and
 //! the sheet that opens beside the panel.
@@ -214,84 +214,142 @@ pub fn title_line(app: &App, p: &egui::Painter, x0: f32, top: f32, width: f32) {
     }
 }
 
-/// How long the header buttons take to slide out or fold, s.
-const FOLD: f32 = 0.24;
+/// How long Quit takes to turn into its confirm, s.
+const ARM: f32 = 0.18;
+/// An armed Quit folds back after this long without the pointer on it, s.
+const ARM_IDLE: f32 = 3.0;
+/// An armed Quit takes a click only after this long, so a double click on
+/// ✕ doesn't quit, s.
+const ARM_GUARD: f32 = 0.35;
 
-/// Title and status from the first tool that offers one, then one round
-/// "…" button on the right; a click slides out Open, Hide and Quit to its
-/// left (▢ – ✕ …) as the dots turn into "›"; another click tucks them
-/// back. A button's action runs once they have folded, so the panel always
-/// opens folded.
+/// Which confirm the header draws (the canvas renders both; one ships).
+fn confirm_style() -> u8 {
+    match std::env::var("CMDMEOW_PANEL_QUIT").as_deref() {
+        Ok("b") => 1,
+        _ => 0,
+    }
+}
+
+/// Title and status from the first tool that offers one, then two round
+/// buttons on the right: Quit (✕) and Open (▢) at the corner. Quit asks
+/// first, right in the header: a click arms it, a second click quits. Esc,
+/// a click elsewhere, hiding the panel or 3 s without the pointer on it
+/// put it back.
 fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let size = BTN_H_ROW;
     let top = rect.top() + 31.0 - size / 2.0;
     let at = |k: f32| Rect::from_min_size(Pos2::new(rect.right() - 14.0 - size * (k + 1.0) - sp::S * k, top), Vec2::splat(size));
-    let id = Id::new("panel-more");
-    let mut open = ctx.data(|d| d.get_temp::<bool>(id).unwrap_or(false));
-    // the panel hid since the buttons came out: it comes back folded, with
-    // no animation (egui draws only on events, so a gap between frames
-    // says nothing)
-    let since = ctx.data(|d| d.get_temp::<std::time::Instant>(id.with("at")));
-    if open && since.is_some_and(|at| app.last_hide() > at) {
-        open = false;
-        ctx.data_mut(|d| d.insert_temp(id, false));
-        ctx.animate_bool_with_time(id.with("t"), false, 0.0);
+    let open_r = at(0.0);
+    let quit_r = at(1.0);
+    let id = Id::new("panel-quit");
+    // armed since (None = at rest)
+    let mut armed = ctx.data(|d| d.get_temp::<std::time::Instant>(id));
+    if app.demo && std::env::var("CMDMEOW_PANEL_CONFIRM").is_ok() {
+        armed = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
     }
-    let t = ctx.animate_bool_with_time(id.with("t"), open, FOLD);
-    // an action waiting for the buttons to fold: which one, since when
-    let pending = ctx.data(|d| d.get_temp::<(usize, std::time::Instant)>(id.with("do")));
-    let more = at(0.0);
-    let slots = [at(3.0), at(2.0), at(1.0)];
+    let disarm = |ctx: &egui::Context| ctx.data_mut(|d| d.remove::<std::time::Instant>(id));
+    if let Some(since) = armed {
+        let idle = ctx.data(|d| d.get_temp::<std::time::Instant>(id.with("idle"))).unwrap_or(since);
+        let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if app.last_hide() > since || esc || (!app.demo && idle.elapsed().as_secs_f32() > ARM_IDLE) {
+            disarm(&ctx);
+            armed = None;
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+    }
+    let t = ctx.animate_bool_with_time(id.with("t"), armed.is_some(), ARM);
     let x0 = rect.left() + 16.0;
-    // the title gives way as the buttons come out
-    let left = more.left() + (slots[0].left() - more.left()) * t;
-    title_line(app, &p, x0, rect.top(), left - x0 - 10.0);
-    let tip = if open { "Less" } else { "More" };
-    if round_button_with(ui, more, tip, |p, r, col| more_glyph(p, r, t, col)).clicked() {
-        ctx.data_mut(|d| {
-            d.insert_temp(id, !open);
-            d.insert_temp(id.with("at"), std::time::Instant::now());
-        });
-    }
-    let buttons = [(Icon::Window, "Open Cmd+Meow"), (Icon::Minus, "Hide"), (Icon::Close, "Quit Cmd+Meow")];
-    for (i, ((ic, tip), slot)) in buttons.into_iter().zip(slots).enumerate() {
-        // the nearest one leads, the far one trails; each eases out and grows in
-        let lag = (2 - i) as f32 * 0.15;
-        let k = ((t - lag) / 0.7).clamp(0.0, 1.0);
-        let e = 1.0 - (1.0 - k).powi(3);
-        if e <= 0.01 {
-            continue;
-        }
-        let r = Rect::from_center_size(more.center().lerp(slot.center(), e), Vec2::splat(size * (0.6 + 0.4 * e)));
-        let mut c = ui.new_child(UiBuilder::new().max_rect(r.expand(2.0)).id_salt(("panel-more", i)));
-        c.multiply_opacity(e);
-        // only a button that has arrived takes a click
-        // only a button that has arrived takes a click; the buttons fold
-        // first and the action runs when they're in, so the panel never
-        // shows them unfolded when it opens next
-        if round_button_in(&mut c, r, ic, tip).clicked() && e > 0.95 && pending.is_none() {
-            ctx.data_mut(|d| {
-                d.insert_temp(id, false);
-                d.insert_temp(id.with("do"), (i, std::time::Instant::now()));
-            });
-        }
-    }
-    if let Some((i, at)) = pending {
-        if app.last_hide() > at {
-            // the panel went away meanwhile: drop it rather than act on reopen
-            ctx.data_mut(|d| d.remove::<(usize, std::time::Instant)>(id.with("do")));
-        } else if at.elapsed().as_secs_f32() >= FOLD {
-            ctx.data_mut(|d| d.remove::<(usize, std::time::Instant)>(id.with("do")));
-            match i {
-                0 => open_app(app, &ctx),
-                1 => app.hide(&ctx),
-                _ if !app.demo => app.quit(&ctx),
-                _ => {}
+    let style = confirm_style();
+    let quit_w = button_width(&p, "Quit", BTN_DANGER).max(56.0);
+    let mut clicked_quit = false;
+    let mut hot = Rect::NOTHING;
+    if style == 0 {
+        // A: ✕ grows left into a red "Quit" pill; Open stays at the corner
+        let w = size + (quit_w - size) * t;
+        let r = Rect::from_min_size(Pos2::new(quit_r.right() - w, top), Vec2::new(w, size));
+        title_line(app, &p, x0, rect.top(), r.left() - x0 - 10.0);
+        if t < 0.01 {
+            if round_button_in(ui, r, Icon::Close, "Quit Cmd+Meow").clicked() {
+                ctx.data_mut(|d| d.insert_temp(id, std::time::Instant::now()));
             }
         } else {
-            ctx.request_repaint();
+            let k = crate::kit::key::press(ui, r, id.with("key"), true, Some(crate::kit::sound::Click::Danger));
+            let look = crate::kit::key::Look::danger().radius(size / 2.0);
+            // the fill turns red as it grows; the ✕ gives way to the word
+            let mut look = look;
+            let q = crate::kit::key::Look::quiet(0.08, 0.20);
+            look.fill = lerp_color(q.fill, look.fill, t);
+            look.fill_hover = lerp_color(q.fill_hover, look.fill_hover, t);
+            look.base = lerp_color(q.base, look.base, t);
+            look.glow = look.glow.map(|g| g.gamma_multiply(t));
+            let face = crate::kit::key::paint(&p, r, &look, &k);
+            if t < 0.5 {
+                icon(&p, Icon::Close, Rect::from_center_size(face.center(), Vec2::splat(size * 0.46)), TEXT_SOFT().gamma_multiply(1.0 - t * 2.0));
+            } else {
+                let col = on_color(DANGER());
+                p.text(face.center(), Align2::CENTER_CENTER, "Quit", bold(13.0), col.gamma_multiply((t - 0.5) * 2.0));
+            }
+            if k.resp.hovered() {
+                ctx.data_mut(|d| d.insert_temp(id.with("idle"), std::time::Instant::now()));
+            }
+            clicked_quit = k.resp.clicked();
+            hot = r;
+        }
+        if round_button_in(ui, open_r, Icon::Window, "Open Cmd+Meow").clicked() {
+            disarm(&ctx);
+            open_app(app, &ctx);
+        }
+    } else {
+        // B: the header asks: "Quit Cmd+Meow?" with Cancel at the corner and Quit beside it
+        let cancel_w = button_width(&p, "Cancel", BTN_SECONDARY);
+        let cancel_r = Rect::from_min_size(Pos2::new(open_r.right() - cancel_w, top), Vec2::new(cancel_w, size));
+        let yes_r = Rect::from_min_size(Pos2::new(cancel_r.left() - sp::S - quit_w, top), Vec2::new(quit_w, size));
+        if t < 0.99 {
+            let mut c = ui.new_child(UiBuilder::new().max_rect(rect).id_salt("panel-head-rest"));
+            c.multiply_opacity(1.0 - t);
+            title_line(app, c.painter(), x0, rect.top(), quit_r.left() - x0 - 10.0);
+            if t < 0.01 {
+                if round_button_in(&mut c, quit_r, Icon::Close, "Quit Cmd+Meow").clicked() {
+                    ctx.data_mut(|d| d.insert_temp(id, std::time::Instant::now()));
+                }
+                if round_button_in(&mut c, open_r, Icon::Window, "Open Cmd+Meow").clicked() {
+                    open_app(app, &ctx);
+                }
+            } else {
+                round_button_in(&mut c, quit_r, Icon::Close, "Quit Cmd+Meow");
+                round_button_in(&mut c, open_r, Icon::Window, "Open Cmd+Meow");
+            }
+        }
+        if t > 0.01 {
+            let mut c = ui.new_child(UiBuilder::new().max_rect(rect).id_salt("panel-head-ask"));
+            c.multiply_opacity(t);
+            text_fit(c.painter(), Pos2::new(x0, rect.top() + 31.0), Align2::LEFT_CENTER, "Quit Cmd+Meow?", ty::lead(), TEXT(), yes_r.left() - x0 - 10.0);
+            let yes = pill_button(&mut c, yes_r, "Quit", BTN_DANGER, true);
+            let no = pill_button(&mut c, cancel_r, "Cancel", BTN_SECONDARY, true);
+            if yes.hovered() || no.hovered() {
+                ctx.data_mut(|d| d.insert_temp(id.with("idle"), std::time::Instant::now()));
+            }
+            clicked_quit = yes.clicked();
+            if no.clicked() {
+                disarm(&ctx);
+            }
+            hot = yes_r.union(cancel_r);
+        }
+    }
+    if let Some(since) = armed {
+        if clicked_quit && since.elapsed().as_secs_f32() > ARM_GUARD {
+            disarm(&ctx);
+            if !app.demo {
+                app.quit(&ctx);
+            }
+        } else if !clicked_quit && ctx.input(|i| i.pointer.any_click()) && since.elapsed().as_secs_f32() > ARM_GUARD {
+            // a click anywhere else puts it back
+            if ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !hot.contains(pos)) {
+                disarm(&ctx);
+            }
         }
     }
 }
