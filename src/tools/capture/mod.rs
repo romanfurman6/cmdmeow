@@ -65,8 +65,10 @@ pub(crate) struct KeychainAsk {
 pub(crate) enum KeychainPending {
     Share(PathBuf),
     Delete(PathBuf, String),
-    /// A new key typed or imported, in place of an older item.
+    /// A new key typed, in place of an older item.
     Save(String),
+    /// A storage file and its key, in place of an older item.
+    Import(PathBuf, String),
 }
 
 /// What a grab is for.
@@ -378,13 +380,19 @@ impl Capture {
         }
         match share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key, false) {
             Ok(()) => {}
-            // an older key is in the way: the Keychain card asks first
-            Err(None) => self.need_keychain(KeychainPending::Save(st.secret_key.clone())),
+            // an older key is in the way: the Keychain card asks first, and
+            // nothing changes (the file stays) until the key is saved
+            Err(None) => return self.need_keychain(KeychainPending::Import(path.to_path_buf(), st.secret_key)),
             Err(Some(e)) => {
                 self.hud(format!("Couldn't save to the Keychain: {e}"));
                 return;
             }
         }
+        self.import_finish(path, st);
+    }
+
+    /// The key is in the Keychain: point sharing at the storage, trash the file.
+    fn import_finish(&mut self, path: &std::path::Path, st: share::import::Storage) {
         let s = &mut self.settings.share;
         s.endpoint = st.endpoint;
         s.bucket = st.bucket;
@@ -560,7 +568,10 @@ impl Capture {
         let Some(k) = self.keychain.as_mut() else { return };
         k.busy = true;
         k.denied = false;
-        let save = k.pending.iter().rev().find_map(|p| if let KeychainPending::Save(v) = p { Some(v.clone()) } else { None });
+        let save = k.pending.iter().rev().find_map(|p| match p {
+            KeychainPending::Save(v) | KeychainPending::Import(_, v) => Some(v.clone()),
+            _ => None,
+        });
         share::secret::ask(share::VIDEO_ACCOUNT, save, &self.ctx);
     }
 
@@ -587,6 +598,10 @@ impl Capture {
                         self.hud("Secret key saved in the Keychain");
                     }
                 }
+                KeychainPending::Import(path, _) => match share::import::read(&path) {
+                    Some(st) => self.import_finish(&path, st),
+                    None => self.hud("Not a Cmd+Meow sharing file"),
+                },
                 KeychainPending::Share(path) => self.share(path),
                 KeychainPending::Delete(path, key) => self.delete_shared(path, key),
             }
