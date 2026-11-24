@@ -24,13 +24,12 @@ trap 'rm -rf "$WORK"' EXIT
 # .DS_Store; with that record Finder on macOS 26.2+ shows no background
 # (dmgbuild#273, FB21405103). It needs Python 3.10+, and /usr/bin/python3 is 3.9.
 PY=""
-for c in python3.13 python3.12 python3.11 python3.10 python3; do
-  for dir in /opt/homebrew/bin /usr/local/bin ""; do
-    exe="${dir:+$dir/}$c"
-    if command -v "$exe" >/dev/null 2>&1 && "$exe" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
-      PY="$exe"; break 2
-    fi
-  done
+for exe in /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+           /opt/homebrew/opt/python@3.*/bin/python3.* \
+           $(compgen -c python3. | sort -t. -k2 -rn | uniq) python3; do
+  if command -v "$exe" >/dev/null 2>&1 && "$exe" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+    PY="$exe"; break
+  fi
 done
 [[ -n "$PY" ]] || { echo "need Python 3.10+ for dmgbuild (brew install python)" >&2; exit 1; }
 
