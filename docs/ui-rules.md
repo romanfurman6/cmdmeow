@@ -280,6 +280,9 @@ Read this before §2: every colour rule there holds in each theme.
 | TH8 | Every new screen and PR is checked in all three themes (C8 contrast, M1 test). Screenshots: `CMDMEOW_THEME=light|dark|miami`. |
 | TH9 | Widgets follow the theme: the panel widget cards, the widget editor and the gallery draw with the same tokens, so Dark Miami changes them too. Fixed-colour surfaces stay as they are (C13, C16, L5). |
 | TH10 | The desktop cat follows the theme. Its lime fur, stripes and shading take the theme's `ACTION()` (Dark Classic #C8F05A as drawn, Light Classic #A8D83A, Dark Miami #FF5FA2), with lightness kept relative to the pack's lime. Outline: Dark Miami ink #1A0B2E; Light and Dark keep the drawn #0A1009. Eyes, nose, mouth, tongue, bed, bowl and yarn keep their colours. Recoloured once per theme switch (no idle cost). The menu bar cat stays a template icon; the app icon stays lime. |
+| TH11 | **Onboarding step "Pick a theme"**: right after Welcome, before Goals (one step dot). Title "Pick a theme" (bold 22). Three cards in one row, `sp::M` gap, 2:3, r12, filled by the theme's picture (cover), name top left (bold 17, dark ink on Light Classic, white on the dark two), check top right. The picked card gets the 1.5 action ring (H4), hover lifts 1 pt, and the cards fade in one by one like the Goal cards. The default pick is the theme drawn now (Auto shows as Light or Dark Classic). A click sets Settings › Theme. |
+| TH12 | **Theme switch animation ("ripple through blur")**: the old theme is laid over the new one as a picture and blurs to 10 pt (0.48 s ease-out), then a soft round wave from the clicked card (feather 20% of its reach, 0.8 s ease-in-out) cuts it away. Core Animation only (R-anim), no egui frames. No animation with Reduce motion or in screenshots. Onboarding only for now; Settings switches at once. |
+| TH13 | **Theme pictures**: one flat series (same cat, size and place, empty top third). Light Classic: day rooftops with dark roofs. Dark Classic: night rooftops. Dark Miami: dusk beach. The cat is in the theme's action colour with a soft glow. Files `assets/themes/{light,dark,miami}.jpg`, 1024×1536. |
 
 Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glow pink. B6 `DANGER()`, P2 shadows and P4 `SCRIM()` use the dark values. C16 overlays and L5 HUD keep their fixed colours. L1–L8 are Light Classic rules.
 
@@ -354,3 +357,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-24, Roman: TH10 desktop cat per theme (canvas https://claude.ai/artifact/2UCHdgZAiUXjxCu2k1FzSd, L1 + M1).
 
 2026-11-24, Roman: themes renamed Light Classic, Dark Classic, Dark Miami (were Light Meow, Dark Meow, Miami).
+
+2026-11-24, Roman: onboarding theme picker TH11–TH13 (canvas https://claude.ai/artifact/Mc61YS2APhuPzWLE691Bm3; animation H, Light art L2, softest Dark Miami glow).
