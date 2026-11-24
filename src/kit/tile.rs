@@ -125,16 +125,16 @@ fn paint_face(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
 /// A widget whose tool stopped after an error: its glyph and name, dimmed,
 /// and "Stopped". A click restarts the app (the caller does it).
 pub fn stopped(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str) -> Response {
-    let resp = card(ui, rect, id, false).on_hover_text("Restart Cmd+Meow");
+    let resp = card(ui, rect, id, false).on_hover_text(ts!("app.restart_app"));
     let p = ui.painter();
     let inner = rect.shrink(PAD);
     icon(p, glyph, Rect::from_min_size(inner.min, Vec2::splat(18.0)), TEXT_FAINT());
     if rect.height() <= 130.0 && rect.width() <= 130.0 {
-        small_text(p, rect, title, "Stopped", AMBER());
+        small_text(p, rect, title, ts!("kit.stopped"), AMBER());
     } else {
         text_fit(p, Pos2::new(inner.left() + 26.0, inner.top() + 9.0), Align2::LEFT_CENTER, title, ty::title(), TEXT_DIM(), inner.width() - 26.0);
-        let st = p.text(Pos2::new(inner.left(), inner.bottom()), Align2::LEFT_BOTTOM, "Stopped", ty::label(), AMBER());
-        p.text(Pos2::new(st.right() + 8.0, inner.bottom()), Align2::LEFT_BOTTOM, "Restart", ty::label(), ACTION());
+        let st = p.text(Pos2::new(inner.left(), inner.bottom()), Align2::LEFT_BOTTOM, ts!("kit.stopped"), ty::label(), AMBER());
+        p.text(Pos2::new(st.right() + 8.0, inner.bottom()), Align2::LEFT_BOTTOM, ts!("kit.restart"), ty::label(), ACTION());
     }
     resp
 }
@@ -148,7 +148,7 @@ pub fn locked(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str, n
         let resp = card(ui, rect, id, false);
         let p = ui.painter();
         icon(p, glyph, Rect::from_min_size(rect.min + Vec2::new(SMALL_SIDE, PAD), Vec2::splat(20.0)), dim);
-        small_text(p, rect, title, "Needs access", TEXT_SOFT());
+        small_text(p, rect, title, ts!("kit.needs_access"), TEXT_SOFT());
         return resp;
     }
     let resp = card(ui, rect, id, false);
@@ -156,7 +156,7 @@ pub fn locked(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, title: &str, n
     let bx = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 20.0), Vec2::splat(40.0));
     icon(p, glyph, Rect::from_center_size(bx.center(), Vec2::splat(26.0)), dim);
     let x0 = bx.right() + PAD;
-    stack_lines(p, x0, rect.center().y, &[(title, ty::label(), ty::caption_color()), (needs, ty::lead(), TEXT()), ("Needs access", ty::caption(), TEXT_SOFT())], rect.right() - PAD - x0);
+    stack_lines(p, x0, rect.center().y, &[(title, ty::label(), ty::caption_color()), (needs, ty::lead(), TEXT()), (ts!("kit.needs_access"), ty::caption(), TEXT_SOFT())], rect.right() - PAD - x0);
     resp
 }
 
@@ -483,7 +483,7 @@ pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, to
     }
     let start = span_label(values.len() as u64 * crate::kit::mechanics::MONITOR_REFRESH_MS / 1000);
     p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
-    p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
+    p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, ts!("kit.now"), ty::caption(), ty::caption_color());
 }
 
 /// The time captions under a [`spark_span`] graph: 13 pt of text and the

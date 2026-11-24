@@ -85,10 +85,10 @@ impl ThemeChoice {
 
     pub fn label(self) -> &'static str {
         match self {
-            ThemeChoice::Auto => "Auto",
-            ThemeChoice::Light => "Light Classic",
-            ThemeChoice::Dark => "Dark Classic",
-            ThemeChoice::Miami => "Dark Miami",
+            ThemeChoice::Auto => ts!("kit.theme.auto"),
+            ThemeChoice::Light => ts!("kit.theme.light"),
+            ThemeChoice::Dark => ts!("kit.theme.dark"),
+            ThemeChoice::Miami => ts!("kit.theme.miami"),
         }
     }
 
@@ -1443,7 +1443,7 @@ pub fn perm_row(ui: &mut Ui, p: &Painter, card: Rect, y: f32, perm: crate::kit::
         right = br.left() - 10.0;
         ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
     }
-    p.text(Pos2::new(right, y), Align2::RIGHT_CENTER, if ok { "Allowed" } else { "Not allowed" }, font(12.0), TEXT_DIM());
+    p.text(Pos2::new(right, y), Align2::RIGHT_CENTER, if ok { ts!("kit.allowed") } else { ts!("kit.not_allowed") }, font(12.0), TEXT_DIM());
 }
 
 /// A dashed rounded outline: a drop zone, an empty slot or sample content
@@ -1544,7 +1544,7 @@ pub fn sheet_header(ui: &mut Ui, rect: Rect, glyph: Icon, color: Color32, title:
     }
     hairline(&p, Pos2::new(rect.left(), rect.top() + 57.0), Pos2::new(rect.right(), rect.top() + 57.0));
     let cr = Rect::from_center_size(Pos2::new(rect.right() - 27.0, rect.top() + 29.0), Vec2::splat(26.0));
-    round_button(ui, cr, Icon::Close, "Close").clicked()
+    round_button(ui, cr, Icon::Close, ts!("kit.close")).clicked()
 }
 
 // ---------------------------------------------------------------- panel widgets
@@ -1622,7 +1622,7 @@ pub fn sidebar_item(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: C
     }
     text_fit(p, Pos2::new(chip_r.right() + 9.0, rect.center().y), Align2::LEFT_CENTER, label, font(13.0), if planned { TEXT_FAINT() } else if selected { active_text } else { white(217) }, right - chip_r.right() - 9.0);
     if planned {
-        return resp.on_hover_text("Planned: not built yet");
+        return resp.on_hover_text(ts!("kit.planned"));
     }
     resp
 }
