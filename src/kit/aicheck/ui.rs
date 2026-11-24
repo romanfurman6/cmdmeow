@@ -41,26 +41,24 @@ fn agent_of(c: &Check) -> Agent {
 /// The chip's text for the current phase.
 fn chip_label(c: &Check) -> String {
     match c.phase() {
-        Phase::Idle => format!("Check with {}", agent_of(c).name()),
-        Phase::Running => "Checking…".into(),
-        Phase::Failed(_) => "Check failed".into(),
+        Phase::Idle => t!("kit.ac.check_with", agent = agent_of(c).name()).into_owned(),
+        Phase::Running => ts!("kit.ac.checking").into(),
+        Phase::Failed(_) => ts!("kit.ac.failed").into(),
         // the mark already says who checked
         Phase::Done if c.inline => match c.tips().len() {
-            0 => "All good".into(),
-            1 => "1 tip".into(),
-            n => format!("{n} tips"),
+            0 => ts!("kit.ac.all_good").into(),
+            n => tn!("kit.ac.tips", n = n).into_owned(),
         },
         Phase::Done => {
             let recs = c.recs();
             let a = recs.iter().filter(|r| c.is_answer(r)).count();
             let t = recs.len() - a;
-            let tips = |n: usize| if n == 1 { "1 tip".to_string() } else { format!("{n} tips") };
+            let tips = |n: usize| tn!("kit.ac.tips", n = n).into_owned();
             match (a, t) {
-                (0, 0) => "All good".into(),
+                (0, 0) => ts!("kit.ac.all_good").into(),
                 (0, t) => tips(t),
-                (1, 0) => "1 answer".into(),
-                (a, 0) => format!("{a} answers"),
-                (a, t) => format!("{a} answer{} · {}", if a == 1 { "" } else { "s" }, tips(t)),
+                (a, 0) => tn!("kit.ac.answers", n = a).into_owned(),
+                (a, t) => tn!("kit.ac.answers_tips", n = a, tips = tips(t)).into_owned(),
             }
         }
     }
@@ -75,7 +73,7 @@ pub fn chip_width(c: &Check, ui: &Ui, has_data: bool) -> f32 {
     let p = ui.painter();
     let mut w = 10.0 + 14.0 + 6.0 + p.layout_no_wrap(chip_label(c), bold(12.0), TEXT()).size().x + 12.0;
     if c.phase() == Phase::Running {
-        w += 8.0 + p.layout_no_wrap("Stop".into(), font(12.0), TEXT()).size().x;
+        w += 8.0 + p.layout_no_wrap(ts!("kit.ac.stop").into(), font(12.0), TEXT()).size().x;
     }
     w
 }
@@ -109,7 +107,7 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     }
     let t = p.text(Pos2::new(gx + 7.0 + 6.0, face.center().y), Align2::LEFT_CENTER, chip_label(c), bold(12.0), TEXT());
     if phase == Phase::Running {
-        p.text(Pos2::new(t.right() + 8.0, face.center().y), Align2::LEFT_CENTER, "Stop", font(12.0), if resp.hovered() { TEXT() } else { TEXT_DIM() });
+        p.text(Pos2::new(t.right() + 8.0, face.center().y), Align2::LEFT_CENTER, ts!("kit.ac.stop"), font(12.0), if resp.hovered() { TEXT() } else { TEXT_DIM() });
     }
     if resp.hovered() {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -160,7 +158,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         Phase::Failed(e) => (e.clone(), AMBER()),
         _ => {
             let hl = c.headline();
-            (if recs.is_empty() && hl.is_empty() { "Nothing to do here".to_string() } else { hl }, TEXT_DIM())
+            (if recs.is_empty() && hl.is_empty() { ts!("kit.ac.nothing").to_string() } else { hl }, TEXT_DIM())
         }
     };
     // the agent's words wrap, never cut (R10): rows grow to fit them
@@ -189,8 +187,8 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         // the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
         agent_mark(&p, Rect::from_center_size(Pos2::new(rr.left() + 14.0 + 7.0, cy), Vec2::splat(12.0)), agent_of(c), None);
-        p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, "AI Check", ty::title(), TEXT());
-        let again = if matches!(phase, Phase::Failed(_)) { "Try again" } else { "Check again" };
+        p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, ts!("kit.ac.title"), ty::title(), TEXT());
+        let again = if matches!(phase, Phase::Failed(_)) { ts!("kit.ac.try_again") } else { ts!("kit.ac.check_again") };
         let aw = p.layout_no_wrap(again.into(), ty::body(), TEXT()).size().x;
         let ar = Rect::from_min_size(Pos2::new(rr.right() - 14.0 - aw, cy - 10.0), Vec2::new(aw, 20.0));
         if ghost(ui, ar, again) {
@@ -201,7 +199,7 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         let mut y = rr.top() + head_h;
         let mut k = 0;
         // what waited on the user first, under its own label; then the rest
-        let groups: [(&str, &Vec<Rec>); 2] = [("Needs your OK", &answers), ("Also", &others)];
+        let groups: [(&str, &Vec<Rec>); 2] = [(ts!("kit.ac.needs_ok"), &answers), (ts!("kit.ac.also"), &others)];
         let n_rows = row_hs.len();
         for (label, list) in groups {
             if list.is_empty() {
@@ -324,7 +322,7 @@ fn rec_buttons(p: &egui::Painter, c: &Check, r: &Rec) -> (Option<(&'static str, 
     let alt = if c.is_answer(r) { c.actions.iter().find(|(id, _)| *id != r.action).copied() } else { None };
     let second = match alt {
         Some((_, label)) => button_width(p, label, BTN_SECONDARY),
-        None => p.layout_no_wrap("Skip".into(), ty::body(), TEXT()).size().x,
+        None => p.layout_no_wrap(ts!("kit.ac.skip").into(), ty::body(), TEXT()).size().x,
     };
     (alt, 14.0 + second + sp::M + button_width(p, &r.label, BTN_PRIMARY))
 }
@@ -378,9 +376,9 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool
         }
         ar
     } else {
-        let sw = p.layout_no_wrap("Skip".into(), ty::body(), TEXT()).size().x;
+        let sw = p.layout_no_wrap(ts!("kit.ac.skip").into(), ty::body(), TEXT()).size().x;
         let sr = Rect::from_min_size(Pos2::new(rr.right() - 14.0 - sw, cy - 10.0), Vec2::new(sw, 20.0));
-        if ghost(ui, sr, "Skip") {
+        if ghost(ui, sr, ts!("kit.ac.skip")) {
             c.skip(r);
         }
         sr

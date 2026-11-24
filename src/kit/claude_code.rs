@@ -37,18 +37,18 @@ impl Availability {
     pub fn how(self) -> &'static str {
         match self {
             Availability::Ready => "",
-            Availability::Off => "Turn Claude on in Settings → Tools.",
-            Availability::NotInstalled => "Install Claude Code from claude.com/claude-code, then run claude in Terminal once to sign in.",
-            Availability::SignedOut => "Run claude in Terminal and sign in with your Claude account.",
+            Availability::Off => ts!("kit.cc.how_off"),
+            Availability::NotInstalled => ts!("kit.cc.how_not_installed"),
+            Availability::SignedOut => ts!("kit.cc.how_signed_out"),
         }
     }
     /// A few words for a subtitle.
     pub fn short(self) -> &'static str {
         match self {
             Availability::Ready => "",
-            Availability::Off => "Claude is off",
-            Availability::NotInstalled => "Claude Code not installed",
-            Availability::SignedOut => "Claude Code signed out",
+            Availability::Off => ts!("kit.cc.short_off"),
+            Availability::NotInstalled => ts!("kit.cc.short_not_installed"),
+            Availability::SignedOut => ts!("kit.cc.short_signed_out"),
         }
     }
 }

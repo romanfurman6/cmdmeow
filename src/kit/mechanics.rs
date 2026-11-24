@@ -111,14 +111,16 @@ pub const SPEED_TEST_PING_TIMEOUT: std::time::Duration = std::time::Duration::fr
 /// Provider and city are extras: past this, the test goes on without them.
 pub const SPEED_TEST_META_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Legend "Good for:" (labels from the Menu strings, Mbps estimated)
-pub const GOOD_FOR: [(&str, f64); 6] = [
-    ("Messaging", 0.5),
-    ("Audio calls", 1.0),
-    ("Music streaming", 2.0),
-    ("Video calls", 4.0),
-    ("Video streaming", 10.0),
-    ("Online gaming", 25.0),
-];
+pub fn good_for() -> [(&'static str, f64); 6] {
+    [
+        (ts!("kit.good.messaging"), 0.5),
+        (ts!("kit.good.audio_calls"), 1.0),
+        (ts!("kit.good.music"), 2.0),
+        (ts!("kit.good.video_calls"), 4.0),
+        (ts!("kit.good.video_streaming"), 10.0),
+        (ts!("kit.good.gaming"), 25.0),
+    ]
+}
 
 // Panel geometry (design A: 380 pt panel and sheets, 12 pt cards)
 pub const PANEL_WIDTH: f32 = 380.0;

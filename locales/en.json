@@ -2020,6 +2020,54 @@
     "restart": "Restart",
     "needs_access": "Needs access",
     "now": "now",
-    "ask_perm": "%{ask} %{perm}"
+    "ask_perm": "%{ask} %{perm}",
+    "ac": {
+      "check_with": "Check with %{agent}",
+      "checking": "Checking…",
+      "failed": "Check failed",
+      "all_good": "All good",
+      "tips_one": "%{n} tip",
+      "tips_other": "%{n} tips",
+      "answers_one": "%{n} answer",
+      "answers_other": "%{n} answers",
+      "answers_tips_one": "%{n} answer · %{tips}",
+      "answers_tips_other": "%{n} answers · %{tips}",
+      "stop": "Stop",
+      "nothing": "Nothing to do here",
+      "title": "AI Check",
+      "try_again": "Try again",
+      "check_again": "Check again",
+      "needs_ok": "Needs your OK",
+      "also": "Also",
+      "skip": "Skip"
+    },
+    "wh": {
+      "accurate": "Accurate",
+      "fast": "Fast",
+      "about_accurate": "Whisper large-v3 turbo · best for most voices and languages",
+      "about_fast": "Whisper small · quicker, rougher"
+    },
+    "dl": {
+      "early": "The download ended early; try again to pick it up",
+      "not_model": "That wasn't a speech model; try again",
+      "not_the_model": "That wasn't the speech model; try again",
+      "missing": "The model archive is missing files; try again"
+    },
+    "cc": {
+      "how_off": "Turn Claude on in Settings → Tools.",
+      "how_not_installed": "Install Claude Code from claude.com/claude-code, then run claude in Terminal once to sign in.",
+      "how_signed_out": "Run claude in Terminal and sign in with your Claude account.",
+      "short_off": "Claude is off",
+      "short_not_installed": "Claude Code not installed",
+      "short_signed_out": "Claude Code signed out"
+    },
+    "good": {
+      "messaging": "Messaging",
+      "audio_calls": "Audio calls",
+      "music": "Music streaming",
+      "video_calls": "Video calls",
+      "video_streaming": "Video streaming",
+      "gaming": "Online gaming"
+    }
   }
 }

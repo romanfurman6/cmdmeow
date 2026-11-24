@@ -42,8 +42,8 @@ impl Model {
 
     pub fn name(self) -> &'static str {
         match self {
-            Model::Accurate => "Accurate",
-            Model::Fast => "Fast",
+            Model::Accurate => ts!("kit.wh.accurate"),
+            Model::Fast => ts!("kit.wh.fast"),
         }
     }
 
@@ -57,8 +57,8 @@ impl Model {
 
     pub fn about(self) -> &'static str {
         match self {
-            Model::Accurate => "Whisper large-v3 turbo · best for most voices and languages",
-            Model::Fast => "Whisper small · quicker, rougher",
+            Model::Accurate => ts!("kit.wh.about_accurate"),
+            Model::Fast => ts!("kit.wh.about_fast"),
         }
     }
 
@@ -171,14 +171,14 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
     file.flush().map_err(|e| e.to_string())?;
     drop(file);
     if len.is_some_and(|l| done < l + start) {
-        return Err("The download ended early; try again to pick it up".into());
+        return Err(ts!("kit.dl.early").into());
     }
     // a whisper.cpp model starts with "lmgg"
     let mut magic = [0u8; 4];
     std::fs::File::open(&part).and_then(|mut f| f.read_exact(&mut magic)).map_err(|e| e.to_string())?;
     if &magic != b"lmgg" {
         let _ = std::fs::remove_file(&part);
-        return Err("That wasn't a speech model; try again".into());
+        return Err(ts!("kit.dl.not_model").into());
     }
     std::fs::rename(&part, m.path()).map_err(|e| e.to_string())
 }

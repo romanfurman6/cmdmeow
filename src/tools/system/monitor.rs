@@ -1065,10 +1065,10 @@ pub fn stop_speed_test(shared: &Shared, ctx: &egui::Context) {
 
 /// "Good for" activities, by download speed in Mbps.
 pub fn good_for(mbps: f64) -> Vec<&'static str> {
-    m::GOOD_FOR
-        .iter()
+    m::good_for()
+        .into_iter()
         .filter(|(_, need)| mbps >= *need)
-        .map(|(name, _)| *name)
+        .map(|(name, _)| name)
         .collect()
 }
 
@@ -1319,7 +1319,7 @@ mod tests {
     fn good_for_by_speed() {
         assert!(good_for(0.1).is_empty());
         assert_eq!(good_for(4.0), vec!["Messaging", "Audio calls", "Music streaming", "Video calls"]);
-        assert_eq!(good_for(1000.0).len(), m::GOOD_FOR.len());
+        assert_eq!(good_for(1000.0).len(), m::good_for().len());
     }
 
 
