@@ -532,15 +532,9 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let cols = if infos.len() > 2 { 2 } else { infos.len().max(1) };
     let cw = (x1 - x0 - GAP * (cols as f32 - 1.0)) / cols as f32;
     let ch = 168.0;
-    // the chip only when the menu bar shows a number at all
-    let menu = match settings::get().menu_bar.as_str() {
-        "off" => None,
-        "closest" => ai::alerts::closest(&infos).map(|(i, _)| i.provider),
-        id => infos.iter().find(|i| ai::meta(i.provider).id == id).map(|i| i.provider),
-    };
     for (k, info) in infos.iter().enumerate() {
         let cr = Rect::from_min_size(Pos2::new(x0 + (k % cols) as f32 * (cw + GAP), y + (k / cols) as f32 * (ch + GAP)), Vec2::new(cw, ch));
-        provider_card(ui, cr, info, menu == Some(info.provider), show_usd);
+        provider_card(ui, cr, info, show_usd);
     }
     y += infos.len().div_ceil(cols) as f32 * (ch + GAP);
     // dollars of every provider per day
@@ -570,7 +564,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
 }
 
 /// One provider in the "All" view.
-fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: bool) {
+fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, show_usd: bool) {
     let p = ui.painter().clone();
     let resp = ui.interact(cr, ui.scope_id().with(("ai-all", info.provider)), egui::Sense::click());
     crate::kit::tile::paint_card(&p, cr, if resp.hovered() { 1.0 } else { 0.0 }, false);
@@ -581,15 +575,9 @@ fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, menu: bool, show_usd: 
     let (f, fc) = parts::fresh(info);
     let fr = p.text(i.right_top(), Align2::RIGHT_TOP, &f, ty::label(), fc);
     // the time keeps its width; the plan name gives way (and a chip's room)
-    let chips_w = if menu { 90.0 } else { 0.0 } + if info.incident.is_some() { 80.0 } else { 0.0 };
+    let chips_w = if info.incident.is_some() { 80.0 } else { 0.0 };
     let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &info.plan_title(), ty::title(), TEXT(), (fr.left() - sp::M - i.left() - chips_w).max(i.width() * 0.3));
-    let mut x = tr.right() + sp::S;
-    if menu {
-        // this one's limit is the number next to the icon in the menu bar
-        let cr = chip(&p, Pos2::new(x, tr.center().y), Align2::LEFT_CENTER, "In menu bar", (with_alpha(ACTION(), 0.16), ACCENT()));
-        ui.interact(cr, ui.scope_id().with(("ai-menu-chip", info.provider)), egui::Sense::hover()).on_hover_text("Its usage is the number shown next to the Cmd+Meow icon in the menu bar. Change it in Settings › AI Usage.");
-        x = cr.right() + sp::S;
-    }
+    let x = tr.right() + sp::S;
     incident(ui, Pos2::new(x, tr.center().y), Align2::LEFT_CENTER, info);
     let mut y = i.top() + 16.0 + sp::M;
     // the same words as the provider's own tab
