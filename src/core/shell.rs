@@ -165,6 +165,7 @@ impl App {
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
+        crate::kit::native::set_show_in_dock(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_DOCK_KEY)).unwrap_or(true));
         if !demo {
             glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::ThemeChoice::Auto));
         }
@@ -325,6 +326,7 @@ impl App {
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
             eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
+            eframe::set_value(storage, crate::kit::native::SHOW_IN_DOCK_KEY, &crate::kit::native::show_in_dock());
             eframe::set_value(storage, glass::THEME_KEY, &glass::theme_choice());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
@@ -1070,7 +1072,7 @@ impl eframe::App for App {
                 self.toast = None;
             }
         }
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1079,7 +1081,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice()) != (&off_before.0, off_before.1, off_before.2, off_before.3) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock()) != (&off_before.0, off_before.1, off_before.2, off_before.3, off_before.4) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
