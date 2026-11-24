@@ -427,7 +427,6 @@ impl Stage {
         self.live.set_area(frame.size.width, frame.size.height, ground);
     }
 
-    /// Draw a scene (one Core Animation transaction, no implicit animation).
     /// The parts' pictures in the current theme's colours; redone only on a
     /// theme switch (one atomic read a frame otherwise).
     fn follow_theme(&mut self) {
@@ -452,6 +451,7 @@ impl Stage {
         }
     }
 
+    /// Draw a scene (one Core Animation transaction, no implicit animation).
     pub fn draw(&mut self, scene: &Scene) {
         self.follow_theme();
         let h = self.frame.size.height;
