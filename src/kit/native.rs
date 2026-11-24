@@ -561,6 +561,11 @@ mod mac {
                     pressed.set(on_icon);
                     if on_icon {
                         f();
+                        // taken here: the icon's button would start its own
+                        // mouse tracking, which ate the release and held the
+                        // app's run loop (the panel opened late, or a second
+                        // click merged into the first)
+                        return std::ptr::null_mut();
                     }
                 } else if kind == NSEventType::LeftMouseUp {
                     if on_icon && !pressed.get() {
@@ -581,6 +586,23 @@ mod mac {
             std::mem::forget(block);
             ok
         }
+    }
+
+    /// Call `f` on every press that goes to another app (a click outside
+    /// our windows). The panel hides on it: it can't count on losing focus,
+    /// since macOS may not make the app active when the panel opens.
+    pub fn watch_clicks_elsewhere(f: impl Fn() + 'static) {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        let block = block2::RcBlock::new(move |_e: std::ptr::NonNull<AnyObject>| f());
+        unsafe {
+            // NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown
+            let mask: u64 = (1 << 1) | (1 << 3) | (1 << 25);
+            let token: Option<Retained<AnyObject>> = msg_send![class!(NSEvent), addGlobalMonitorForEventsMatchingMask: mask, handler: &*block];
+            // watched for the app's whole life
+            std::mem::forget(token);
+        }
+        std::mem::forget(block);
     }
 
     /// Debug (CMDMEOW_TRAY_LOG=1): log every left press/release our app
@@ -704,6 +726,7 @@ mod other {
     }
     pub fn panel_follows_spaces(_id: egui::ViewportId) {}
     pub fn log_left_clicks() {}
+    pub fn watch_clicks_elsewhere(_f: impl Fn() + 'static) {}
     pub fn watch_menu_icon_presses(_item: *mut std::ffi::c_void, _f: impl Fn() + 'static) -> bool {
         false
     }

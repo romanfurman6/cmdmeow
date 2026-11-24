@@ -98,6 +98,8 @@ pub struct App {
     /// `native::watch_menu_icon_presses`); when that watch runs, tray-icon's
     /// clicks are not used.
     icon_rx: Option<Receiver<()>>,
+    /// Presses that went to other apps (`native::watch_clicks_elsewhere`).
+    elsewhere_rx: Receiver<()>,
     tray_title: String,
     anchor: Option<Pos2>,
     /// The usable part of the menu bar icon's display (below the menu bar),
@@ -233,6 +235,14 @@ impl App {
             });
             on.then_some(rx)
         });
+        let (etx, elsewhere_rx) = std::sync::mpsc::channel::<()>();
+        if !demo {
+            let c4 = ctx.clone();
+            crate::kit::native::watch_clicks_elsewhere(move || {
+                let _ = etx.send(());
+                c4.request_repaint();
+            });
+        }
 
         // screenshots always use the default widgets
         let prefs: WidgetPrefs = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::STORAGE_KEY)) }.unwrap_or_default();
@@ -272,6 +282,7 @@ impl App {
             tray,
             tray_rx,
             icon_rx,
+            elsewhere_rx,
             tray_title: String::new(),
             anchor: None,
             menu_screen: None,
@@ -772,10 +783,21 @@ impl App {
                 presses += 1;
             }
         }
-        // one toggle per pass, however many presses queued
-        if presses > 0 {
+        // each press toggles (two quick clicks: open, then close)
+        for _ in 0..presses {
             self.read_menu_icon();
             self.icon_clicked(ctx);
+        }
+        // a press in another app: hide the panel, as a popover does
+        let mut elsewhere = false;
+        while self.elsewhere_rx.try_recv().is_ok() {
+            elsewhere = true;
+        }
+        if elsewhere && !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.screenshot.is_none() && self.panel_hide_after_open.is_none() {
+            if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {
+                eprintln!("[tray-log] click elsewhere: hide panel");
+            }
+            self.hide(ctx);
         }
     }
 
