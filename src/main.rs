@@ -25,6 +25,13 @@
 //! turns a recording (or the microphone) into text the way dictation does.
 //! `--fan-helper <uid>` is the helper itself (run by launchd as root).
 
+#[macro_use]
+extern crate rust_i18n;
+// every text the app shows: locales/*.json (see src/i18n.rs, docs/i18n.md)
+i18n!("locales", fallback = "en");
+
+#[macro_use]
+mod i18n;
 mod core;
 mod kit;
 mod tools;

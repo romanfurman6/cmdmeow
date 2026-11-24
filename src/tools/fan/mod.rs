@@ -247,10 +247,10 @@ impl Tool for FanControl {
         ID
     }
     fn name(&self) -> &'static str {
-        "Fan Control"
+        ts!("fan.name")
     }
     fn about(&self) -> &'static str {
-        "Chip temperatures and manual fan speed"
+        ts!("fan.about")
     }
     fn badge(&self) -> Badge {
         badge()
@@ -291,7 +291,7 @@ impl Tool for FanControl {
         String::new()
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Fans", about: "Fan speed and the hottest part, live.", sizes: UP_TO_MEDIUM, size: Size::S14, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("fan.widget_title"), about: ts!("fan.widget_about"), sizes: UP_TO_MEDIUM, size: Size::S14, default_on: true }]
     }
     fn widget_loading(&self, _widget: &str) -> bool {
         !self.snap.lock_ok().loaded

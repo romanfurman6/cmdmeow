@@ -35,6 +35,8 @@ chacha20poly1305 = "0.10"
 # unpacking the dictation model (a .tar.bz2)
 bzip2 = "0.4"
 tar = "0.4"
+# every text the app shows, from locales/*.json (src/i18n.rs)
+rust-i18n = "3"
 # crash reports, only in official release builds (DSN from release.yml, see src/kit/crash_report.rs)
 sentry = { version = "0.49", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "ureq", "rustls"] }
 

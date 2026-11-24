@@ -42,15 +42,15 @@ pub enum Group {
 impl Group {
     pub fn label(self) -> &'static str {
         match self {
-            Group::PCores => "P-cores",
-            Group::ECores => "E-cores",
-            Group::Cpu => "CPU",
-            Group::Gpu => "GPU",
-            Group::Soc => "Chip",
-            Group::Memory => "Memory",
-            Group::Ssd => "SSD",
-            Group::Battery => "Battery",
-            Group::Other => "Other",
+            Group::PCores => ts!("fan.part.p_cores"),
+            Group::ECores => ts!("fan.part.e_cores"),
+            Group::Cpu => ts!("fan.part.cpu"),
+            Group::Gpu => ts!("fan.part.gpu"),
+            Group::Soc => ts!("fan.part.chip"),
+            Group::Memory => ts!("fan.part.memory"),
+            Group::Ssd => ts!("fan.part.ssd"),
+            Group::Battery => ts!("fan.part.battery"),
+            Group::Other => ts!("fan.part.other"),
         }
     }
     /// Groups drawn as blocks of cells in the heat map; the rest are rows.
@@ -199,7 +199,7 @@ impl Snapshot {
     }
 
     pub fn thermal_word(&self) -> &'static str {
-        ["Nominal", "Fair", "Serious", "Critical"][self.thermal.min(3) as usize]
+        [ts!("fan.thermal.nominal"), ts!("fan.thermal.fair"), ts!("fan.thermal.serious"), ts!("fan.thermal.critical")][self.thermal.min(3) as usize]
     }
 }
 
