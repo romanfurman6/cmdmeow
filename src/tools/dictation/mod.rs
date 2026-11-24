@@ -326,7 +326,7 @@ impl Dictation {
             self.keys = Keys::new(self.ctx.clone());
         }
         let Some(keys) = self.keys.as_mut() else {
-            self.key_error = Some("Shortcuts are unavailable".into());
+            self.key_error = Some(ts!("dict.no_shortcuts").into());
             return;
         };
         self.key_error = None;
@@ -439,11 +439,11 @@ impl Dictation {
             Status::Allowed => {}
             Status::NotAsked => {
                 Perm::Microphone.ask();
-                return self.show(Note::Problem("Allow the microphone".into()), 2.5);
+                return self.show(Note::Problem(ts!("dict.allow_mic").into()), 2.5);
             }
             Status::Denied => {
                 crate::kit::perms::open_settings(Perm::Microphone);
-                return self.show(Note::Problem("Microphone is off for Cmd+Meow".into()), 3.0);
+                return self.show(Note::Problem(ts!("dict.mic_off").into()), 3.0);
             }
         }
         let engine = self.settings.engine;
@@ -461,7 +461,7 @@ impl Dictation {
             if self.download.is_none() {
                 self.start_download(engine);
             }
-            return self.show(Note::Problem("Getting the speech model".into()), 2.5);
+            return self.show(Note::Problem(ts!("dict.getting_model").into()), 2.5);
         }
         match Mic::start() {
             Ok(mic) => {
@@ -489,10 +489,10 @@ impl Dictation {
         // a real room is never exactly zero: macOS hands out digital silence
         // when it keeps the microphone from us
         if secs >= MIN_VOICE_SECS && peak == 0.0 {
-            return self.show(Note::Problem("The microphone gives only silence".into()), 2.5);
+            return self.show(Note::Problem(ts!("dict.only_silence").into()), 2.5);
         }
         if secs < MIN_VOICE_SECS || audio::silent(&pcm, MODEL_RATE) {
-            return self.show(Note::Problem("Didn't hear anything".into()), 1.4);
+            return self.show(Note::Problem(ts!("dict.heard_nothing").into()), 1.4);
         }
         // the quiet before and after isn't sent: faster, and models make
         // words up in silence
@@ -504,7 +504,7 @@ impl Dictation {
         let done = Arc::new(AtomicU32::new(0));
         let job = Job::Run { job: self.next_job, engine: self.settings.engine, lang: None, pcm, done: done.clone() };
         if self.jobs.send(job).is_err() {
-            return self.show(Note::Problem("Speech to text isn't running".into()), 2.5);
+            return self.show(Note::Problem(ts!("dict.not_running").into()), 2.5);
         }
         self.phase = Phase::Working { job: self.next_job, since: Instant::now(), expect, done };
     }
@@ -546,7 +546,7 @@ impl Dictation {
         }
         match h.text {
             Err(e) => self.show(Note::Problem(e), 3.0),
-            Ok(t) if t.is_empty() => self.show(Note::Problem("Didn't catch that".into()), 1.6),
+            Ok(t) if t.is_empty() => self.show(Note::Problem(ts!("dict.didnt_catch").into()), 1.6),
             Ok(t) => {
                 let t = words::apply(&t, &self.settings.words);
                 let said = Said { at: chrono::Local::now().timestamp(), text: t.clone(), app: self.target.name.clone(), secs: self.voice_secs };
@@ -793,7 +793,7 @@ fn worker(rx: Receiver<Job>, tx: Sender<Heard>, ctx: egui::Context) {
         let t0 = Instant::now();
         let text = match &loaded {
             Some((_, m)) => m.run(&pcm, lang, Some(&done)),
-            None => Err("The speech model didn't load".into()),
+            None => Err(ts!("dict.didnt_load").into()),
         };
         eprintln!("[dictation] {:.1} s of voice in {} ms", pcm.len() as f32 / MODEL_RATE as f32, t0.elapsed().as_millis());
         let _ = tx.send(Heard { job, text });
@@ -830,19 +830,19 @@ impl Tool for Dictation {
         ID
     }
     fn name(&self) -> &'static str {
-        "Dictation"
+        ts!("dict.name")
     }
     fn badge(&self) -> Badge {
         badge()
     }
     fn section(&self) -> &'static str {
-        "Create"
+        ts!("cap.section_create")
     }
     fn about(&self) -> &'static str {
-        "Speak, and the text is typed where the cursor is"
+        ts!("dict.about")
     }
     fn sidebar_meta(&self) -> String {
-        if self.listening() { "Listening".into() } else { self.shortcut_label() }
+        if self.listening() { ts!("dict.listening").into() } else { self.shortcut_label() }
     }
     fn needs(&self) -> Vec<Need> {
         // the speech model is a download, not a permission: setup has a step for it
@@ -854,7 +854,7 @@ impl Tool for Dictation {
         // sample data (screenshots) shows a download under way
         if self.dir.is_none() {
             let total = engine.bytes();
-            return vec![SetupModel { id: MODEL_NEED, what: "Speech to text", name: engine.name(), bytes: total, state: ModelState::Downloading { done: total * 42 / 100, total } }];
+            return vec![SetupModel { id: MODEL_NEED, what: ts!("dict.stt"), name: engine.name(), bytes: total, state: ModelState::Downloading { done: total * 42 / 100, total } }];
         }
         let state = match &self.download {
             Some(d) if d.unpacking.load(Ordering::Relaxed) => ModelState::Unpacking,
@@ -865,7 +865,7 @@ impl Tool for Dictation {
                 None => ModelState::Missing,
             },
         };
-        vec![SetupModel { id: MODEL_NEED, what: "Speech to text", name: engine.name(), bytes: engine.bytes(), state }]
+        vec![SetupModel { id: MODEL_NEED, what: ts!("dict.stt"), name: engine.name(), bytes: engine.bytes(), state }]
     }
     fn download_model(&mut self, id: &str) {
         if id == MODEL_NEED {
@@ -873,10 +873,10 @@ impl Tool for Dictation {
         }
     }
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
-        self.settings.shortcut.as_ref().map(|s| vec![("Dictate", s.display())]).unwrap_or_default()
+        self.settings.shortcut.as_ref().map(|s| vec![(ts!("dict.dictate"), s.display())]).unwrap_or_default()
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Dictation", about: "Your shortcut, words today and the latest dictations.", sizes: &[Size::S11, Size::S14, Size::S24], size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("dict.name"), about: ts!("dict.widget_about"), sizes: &[Size::S11, Size::S14, Size::S24], size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);

@@ -272,12 +272,12 @@ mod imp {
         pub fn start() -> Result<Mic, String> {
             unsafe {
                 let media = AVMediaTypeAudio.ok_or("no audio media type")?;
-                let dev = AVCaptureDevice::defaultDeviceWithMediaType(media).ok_or("No microphone")?;
+                let dev = AVCaptureDevice::defaultDeviceWithMediaType(media).ok_or(ts!("dict.no_mic"))?;
                 let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev).map_err(|e| e.localizedDescription().to_string())?;
                 let session = AVCaptureSession::new();
                 let output = AVCaptureAudioDataOutput::new();
                 if !session.canAddInput(&input) || !session.canAddOutput(&output) {
-                    return Err("The microphone is busy".into());
+                    return Err(ts!("dict.mic_busy").into());
                 }
                 session.addInput(&input);
                 session.addOutput(&output);

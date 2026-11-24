@@ -30,18 +30,18 @@ fn clock(secs: f32) -> String {
 fn ago(at: i64) -> String {
     let s = (chrono::Local::now().timestamp() - at).max(0);
     if s < 60 {
-        "now".into()
+        ts!("dict.now").into()
     } else if s < 3600 {
-        format!("{} min", s / 60)
+        t!("dict.mins", n = s / 60).into_owned()
     } else if s < 86_400 {
-        format!("{} h", s / 3600)
+        t!("dict.hours", n = s / 3600).into_owned()
     } else {
-        format!("{} d", s / 86_400)
+        t!("dict.days", n = s / 86_400).into_owned()
     }
 }
 
 fn words(n: usize) -> String {
-    format!("{n} word{}", if n == 1 { "" } else { "s" })
+    tn!("dict.words", n = n).into_owned()
 }
 
 // ---------------------------------------------------------------- the pill
@@ -49,7 +49,7 @@ fn words(n: usize) -> String {
 fn note_text(n: &Note) -> Option<String> {
     match n {
         Note::Pasted => None,
-        Note::Copied => Some("Copied · ⌘V to paste".into()),
+        Note::Copied => Some(ts!("dict.copied_paste").into()),
         Note::Problem(m) => Some(m.clone()),
     }
 }
@@ -185,15 +185,15 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
                 let p = ui.painter();
                 p.rect_stroke(rect, tile::R_TILE, Stroke::new(1.5, LIVE), StrokeKind::Inside);
                 icon(p, Icon::Mic, Rect::from_min_size(rect.min + Vec2::new(tile::SMALL_SIDE, tile::PAD), Vec2::splat(20.0)), LIVE);
-                tile::small_text(p, rect, "Listening", &key, TEXT_DIM());
+                tile::small_text(p, rect, ts!("dict.listening"), &key, TEXT_DIM());
                 resp
             } else {
-                tile::small(ui, rect, id, Icon::Mic, TINT(), "Dictation", &key, false)
+                tile::small(ui, rect, id, Icon::Mic, TINT(), ts!("dict.name"), &key, false)
             }
         }
         Size::S14 => {
             // W5: left like 1:1, the latest dictations on the right, one line each
-            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Mic, if listening { LIVE } else { TINT() }, "Dictation", &today, false);
+            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Mic, if listening { LIVE } else { TINT() }, ts!("dict.name"), &today, false);
             if listening {
                 ui.painter().rect_stroke(rect, tile::R_TILE, Stroke::new(1.5, LIVE), StrokeKind::Inside);
             }
@@ -203,12 +203,12 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
         _ => {
             let resp = tile::card(ui, rect, id, false);
             let p = ui.painter().clone();
-            let body = tile::head(&p, rect, Icon::Mic, TINT(), "Dictation", &format!("{key} · {today}"));
+            let body = tile::head(&p, rect, Icon::Mic, TINT(), ts!("dict.name"), &format!("{key} · {today}"));
             latest(d, ui, body, 4);
             resp
         }
     };
-    if resp.on_hover_text("Open Dictation").clicked() {
+    if resp.on_hover_text(ts!("dict.open")).clicked() {
         cx.open_page(ID, "history");
     }
 }
@@ -218,7 +218,7 @@ fn latest(d: &Dictation, ui: &mut Ui, r: Rect, n: usize) {
     let p = ui.painter();
     let items: Vec<_> = d.history.items.iter().take(n).collect();
     if items.is_empty() {
-        text_fit(p, r.center(), Align2::CENTER_CENTER, &format!("Hold {} and speak", d.shortcut_label()), font(11.0), TEXT_FAINT(), r.width());
+        text_fit(p, r.center(), Align2::CENTER_CENTER, &t!("dict.hold_speak", key = d.shortcut_label()), font(11.0), TEXT_FAINT(), r.width());
         return;
     }
     // one line per item, fading at the edge (W8: someone's words, not ours)
@@ -236,16 +236,16 @@ fn latest(d: &Dictation, ui: &mut Ui, r: Rect, n: usize) {
 pub fn page(d: &mut Dictation, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let (sub, col) = if d.listening() {
-        ("Listening".to_string(), LIVE)
+        (ts!("dict.listening").to_string(), LIVE)
     } else if !d.settings.engine.ready() {
-        ("Speech model not downloaded".to_string(), AMBER())
+        (ts!("dict.no_model").to_string(), AMBER())
     } else {
         (format!("{} · {} · {}", d.shortcut_label(), d.settings.engine.name(), words(d.words_today())), TEXT_DIM())
     };
-    let btns = page_header(&p, r, "Dictation", &sub, col);
+    let btns = page_header(&p, r, ts!("dict.name"), &sub, col);
     let tr = Rect::from_min_max(Pos2::new(btns.right() - 180.0, btns.top()), btns.max);
     let cur = (d.tab == Tab::Settings) as usize;
-    if let Some(i) = segmented(ui, tr, ui.scope_id().with("dict-tab"), &["History", "Settings"], cur) {
+    if let Some(i) = segmented(ui, tr, ui.scope_id().with("dict-tab"), &[ts!("dict.history"), ts!("dict.settings")], cur) {
         d.tab = if i == 1 { Tab::Settings } else { Tab::History };
         d.recording_key = false;
     }
@@ -324,7 +324,7 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
                 p.rect_filled(rr, R_CARD, with_alpha(TINT(), 0.10 * glow));
                 p.rect_stroke(rr, R_CARD, Stroke::new(1.0, with_alpha(TINT(), 0.5 * glow)), StrokeKind::Inside);
             }
-            let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
+            let meta = t!("dict.meta", ago = ago(s.at), app = if s.app.is_empty() { "—" } else { &s.app }, secs = format!("{:.0}", s.secs.max(1.0))).into_owned();
             p.text(Pos2::new(rr.left() + PAD, rr.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
             paragraph(&p, Pos2::new(rr.left() + PAD, rr.top() + PAD + META_H + GAP), &s.text, font(13.0), TEXT(), tw);
             let cr = Rect::from_min_size(Pos2::new(rr.right() - PAD - 64.0, rr.center().y - 13.0), Vec2::new(64.0, 26.0));
@@ -332,14 +332,14 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             if e < 1.0 {
                 // still fading in with its row: drawn, not yet a button
                 liquid_capsule(&p, cr, None, 0.0, 1.0);
-                p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
+                p.text(cr.center(), Align2::CENTER_CENTER, ts!("dict.copy"), font(13.0), TEXT());
                 y += heights[k];
                 continue;
             }
-            if h > 0.01 && icon_button(ui, xr, Icon::Trash, "Remove").clicked() {
+            if h > 0.01 && icon_button(ui, xr, Icon::Trash, ts!("dict.remove")).clicked() {
                 remove = Some(k);
             }
-            if pill_button(ui, cr, "Copy", BTN_SECONDARY, true).clicked() || resp.double_clicked() {
+            if pill_button(ui, cr, ts!("dict.copy"), BTN_SECONDARY, true).clicked() || resp.double_clicked() {
                 copy = Some(s.text.clone());
             }
             y += heights[k];
@@ -359,16 +359,16 @@ fn history(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             paragraph(&p, from.lerp(to, e), &s.text, font(15.0 + (13.0 - 15.0) * e), TEXT(), (f.width() - 2.0 * sp::L) + (tw - (f.width() - 2.0 * sp::L)) * e);
             // the entry's own bits ride on the moving card and come in as it lands
             p.multiply_opacity(((e - 0.6) / 0.4).clamp(0.0, 1.0));
-            let meta = format!("{} · {} · {:.0} s", ago(s.at), if s.app.is_empty() { "—" } else { &s.app }, s.secs.max(1.0));
+            let meta = t!("dict.meta", ago = ago(s.at), app = if s.app.is_empty() { "—" } else { &s.app }, secs = format!("{:.0}", s.secs.max(1.0))).into_owned();
             p.text(Pos2::new(at.left() + PAD, at.top() + PAD), Align2::LEFT_TOP, meta, font(11.0), TEXT_FAINT());
             let cr = Rect::from_min_size(Pos2::new(at.right() - PAD - 64.0, at.center().y - 13.0), Vec2::new(64.0, 26.0));
             liquid_capsule(&p, cr, None, 0.0, 1.0);
-            p.text(cr.center(), Align2::CENTER_CENTER, "Copy", font(13.0), TEXT());
+            p.text(cr.center(), Align2::CENTER_CENTER, ts!("dict.copy"), font(13.0), TEXT());
         }
     });
     if let Some(t) = copy {
         ui.ctx().copy_text(t);
-        cx.toast("Copied");
+        cx.toast(ts!("dict.copied"));
     }
     if let Some(k) = remove {
         d.history.items.remove(k);
@@ -510,14 +510,14 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         Shown::Idle | Shown::Listening { .. } | Shown::Working { .. } if armed => {
             caret(inner.left());
             if !talking {
-                p.text(Pos2::new(inner.left() + 6.0, line_y), Align2::LEFT_CENTER, "Say something", font(15.0), TEXT_MUTED());
+                p.text(Pos2::new(inner.left() + 6.0, line_y), Align2::LEFT_CENTER, ts!("dict.say_something"), font(15.0), TEXT_MUTED());
             }
         }
         Shown::Idle | Shown::Listening { .. } | Shown::Working { .. } => {
-            p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, "Click here", font(15.0), TEXT_MUTED());
+            p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, ts!("dict.click_here"), font(15.0), TEXT_MUTED());
         }
         Shown::NeedModel { .. } | Shown::Downloading { .. } => {
-            p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, "Say something", font(15.0), with_alpha(TEXT(), 0.24));
+            p.text(Pos2::new(inner.left(), line_y), Align2::LEFT_CENTER, ts!("dict.say_something"), font(15.0), with_alpha(TEXT(), 0.24));
         }
         Shown::Done(s) => {
             text_wrap(&p, Pos2::new(inner.left(), inner.top()), Align2::LEFT_TOP, &s.text, font(15.0), TEXT(), inner.width(), 4);
@@ -547,12 +547,12 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     if let Some(k) = keys {
         // (words before, keys, words after); "Enter or" goes before ⌥D
         let line: Option<(&str, String)> = match &state {
-            Shown::Idle | Shown::Problem(_) if armed => Some(("Press", "and talk".into())),
-            Shown::Idle | Shown::Problem(_) => Some(("Click the field, then press", String::new())),
-            Shown::Listening { tapped: false, .. } => Some(("Release", "to finish".into())),
-            Shown::Listening { tapped: true, .. } => Some(("Press Enter or", "to finish".into())),
+            Shown::Idle | Shown::Problem(_) if armed => Some((ts!("dict.press"), ts!("dict.and_talk").into())),
+            Shown::Idle | Shown::Problem(_) => Some((ts!("dict.click_then_press"), String::new())),
+            Shown::Listening { tapped: false, .. } => Some((ts!("dict.release"), ts!("dict.to_finish").into())),
+            Shown::Listening { tapped: true, .. } => Some((ts!("dict.enter_or"), ts!("dict.to_finish").into())),
             // the point of it: the same keys type into any app's field
-            Shown::Done(_) => Some(("Now press", "in any app".into())),
+            Shown::Done(_) => Some((ts!("dict.now_press"), ts!("dict.in_any_app").into())),
             _ => None,
         };
         if let Some((before, after)) = line {
@@ -574,7 +574,7 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
     let bc = Pos2::new(cx0, fr.bottom() + sp::L + hint_h + sp::XL + HERO_H / 2.0);
     match &state {
         Shown::NeedModel { failed } => {
-            let label = if failed.is_some() { "Try the download again".to_string() } else { format!("Get speech model · {}", human_bytes(d.settings.engine.bytes())) };
+            let label = if failed.is_some() { ts!("dict.try_again").to_string() } else { t!("dict.get_model", size = human_bytes(d.settings.engine.bytes())).into_owned() };
             if hero_button(ui, bc, id.with("get"), &label, None, Lead::Icon(Icon::Down), Some(ACTION()), true, 220.0).clicked() {
                 d.download_error = None;
                 d.start_download(d.settings.engine);
@@ -586,7 +586,7 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
             let f = if *unpacking { 1.0 } else { frac.clamp(0.0, 1.0) };
             p.with_clip_rect(Rect::from_min_max(r.min, Pos2::new(r.left() + r.width() * f, r.bottom()))).rect_filled(r, R_BUTTON, with_alpha(ACTION(), 0.30));
             p.rect_stroke(r, R_BUTTON, Stroke::new(1.0, with_alpha(ACTION(), 0.30)), StrokeKind::Inside);
-            let what = if *unpacking { "Unpacking…".to_string() } else { format!("{} of {}", human_bytes(*done), human_bytes(*total)) };
+            let what = if *unpacking { ts!("dict.unpacking").to_string() } else { t!("dict.of", done = human_bytes(*done), total = human_bytes(*total)).into_owned() };
             p.text(r.center(), Align2::CENTER_CENTER, what, bold(15.0), ACCENT());
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
@@ -594,9 +594,9 @@ fn try_it(d: &mut Dictation, ui: &mut Ui, body: Rect, cx: &mut Cx) {
         Shown::Done(s) => {
             let (bw, gap) = (120.0, sp::M);
             let off = (bw + gap) / 2.0;
-            if hero_button(ui, Pos2::new(cx0 - off, bc.y), id.with("copy"), "Copy", None, Lead::None, None, true, bw).clicked() {
+            if hero_button(ui, Pos2::new(cx0 - off, bc.y), id.with("copy"), ts!("dict.copy"), None, Lead::None, None, true, bw).clicked() {
                 ui.ctx().copy_text(s.text.clone());
-                cx.toast("Copied");
+                cx.toast(ts!("dict.copied"));
             }
             if hero_button(ui, Pos2::new(cx0 + off, bc.y), id.with("done"), "Done", None, Lead::None, Some(ACTION()), true, bw).clicked() && !d.demo {
                 d.finish_try(fr);
@@ -706,15 +706,15 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let id = ui.scope_id().with("dict-left");
     let mut changed = false;
     let x0 = col.left();
-    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Speaking");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), ts!("dict.speaking"));
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 4);
 
     // shortcut
-    label(p, card, 0, "Shortcut");
+    label(p, card, 0, ts!("dict.shortcut"));
     let y = row_y(card, 0);
     let rec = d.recording_key;
     let cur = d.settings.shortcut.clone();
-    let text = if rec { "Type a shortcut…".to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| "Record".into()) };
+    let text = if rec { ts!("dict.type_shortcut").to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| ts!("dict.record").into()) };
     let g = p.layout_no_wrap(text.clone(), font(12.0), TEXT());
     let bw = (g.size().x + 20.0).max(76.0);
     let br = Rect::from_min_max(Pos2::new(card.right() - 12.0 - bw, y - 12.0), Pos2::new(card.right() - 12.0, y + 12.0));
@@ -729,7 +729,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
         dashed_rect(p, br, 6.0, white(60));
     }
     p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
+    if resp.on_hover_text(ts!("dict.shortcut_tip")).clicked() {
         d.recording_key = !rec;
         // counts as drawn now, so the next tick doesn't take it for abandoned
         d.recording_seen = std::time::Instant::now();
@@ -739,7 +739,7 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     }
 
     // model
-    label(p, card, 1, "Model");
+    label(p, card, 1, ts!("dict.model"));
     let y = row_y(card, 1);
     let mr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 230.0, y - 13.0), Pos2::new(card.right() - 12.0, y + 13.0));
     let ci = Engine::ALL.iter().position(|e| *e == d.settings.engine).unwrap_or(0);
@@ -761,19 +761,19 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
             let unpacking = dl.unpacking.load(std::sync::atomic::Ordering::Relaxed);
             let frac = dl.progress.fraction();
             let sr = Rect::from_min_max(Pos2::new(right - 60.0, y - 12.0), Pos2::new(right, y + 12.0));
-            if pill_button(ui, sr, "Stop", BTN_SECONDARY, true).clicked() {
+            if pill_button(ui, sr, ts!("dict.stop"), BTN_SECONDARY, true).clicked() {
                 d.stop_download();
             }
-            let what = if unpacking { "Unpacking…".to_string() } else { format!("{}%", (frac * 100.0) as u32) };
+            let what = if unpacking { ts!("dict.unpacking").to_string() } else { format!("{}%", (frac * 100.0) as u32) };
             let tr = p.text(Pos2::new(sr.left() - 10.0, y), Align2::RIGHT_CENTER, what, font(12.0), TEXT_DIM());
             bar(p, Rect::from_min_max(Pos2::new(tr.left() - 120.0, y - 2.0), Pos2::new(tr.left() - 10.0, y + 2.0)), if unpacking { 1.0 } else { frac }, ACTION());
         }
         _ if engine.ready() => {
-            let rr = link(ui, Pos2::new(right, y), Align2::RIGHT_CENTER, "Remove", 12.0);
-            p.text(Pos2::new(rr.rect.left() - 12.0, y), Align2::RIGHT_CENTER, "Ready", font(12.0), GREEN());
+            let rr = link(ui, Pos2::new(right, y), Align2::RIGHT_CENTER, ts!("dict.remove"), 12.0);
+            p.text(Pos2::new(rr.rect.left() - 12.0, y), Align2::RIGHT_CENTER, ts!("dict.ready"), font(12.0), GREEN());
             let tip = match engine {
-                Engine::Parakeet => format!("Delete the model ({})", human_bytes(engine.bytes())),
-                Engine::Whisper => format!("Delete the model ({}); Capture's transcripts use it too", human_bytes(engine.bytes())),
+                Engine::Parakeet => t!("dict.delete_model", size = human_bytes(engine.bytes())).into_owned(),
+                Engine::Whisper => t!("dict.delete_whisper", size = human_bytes(engine.bytes())).into_owned(),
             };
             if rr.on_hover_text(tip).clicked() && d.removing.is_none() {
                 let (name, size) = (engine.name(), human_bytes(engine.bytes()));
@@ -781,17 +781,17 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
                     Engine::Parakeet => crate::kit::parakeet::dir(),
                     Engine::Whisper => crate::kit::whisper::Model::Accurate.path(),
                 };
-                d.removing = Some(crate::kit::loader::Task::spawn(ui.ctx(), "dictation-model", format!("Removing {name}…"), path.display().to_string(), move || {
+                d.removing = Some(crate::kit::loader::Task::spawn(ui.ctx(), "dictation-model", t!("dict.removing", name = name).into_owned(), path.display().to_string(), move || {
                     match engine {
                         Engine::Parakeet => crate::kit::parakeet::remove(),
                         Engine::Whisper => crate::kit::whisper::Model::Accurate.remove(),
                     }
-                    crate::kit::loader::Status::Finished { title: format!("Removed {name}"), sub: format!("{size} freed"), problem: None, put_back: false }
+                    crate::kit::loader::Status::Finished { title: t!("dict.removed", name = name).into_owned(), sub: t!("dict.freed", size = size).into_owned(), problem: None, put_back: false }
                 }));
             }
         }
         _ => {
-            let label = format!("Download {}", human_bytes(engine.bytes()));
+            let label = t!("dict.download", size = human_bytes(engine.bytes())).into_owned();
             let bw = button_width(p, &label, BTN_PRIMARY);
             let dr = Rect::from_min_max(Pos2::new(right - bw, y - 12.0), Pos2::new(right, y + 12.0));
             if pill_button(ui, dr, &label, BTN_PRIMARY, d.download.is_none()).clicked() {
@@ -804,11 +804,11 @@ fn left_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     }
 
     // hands-free stop
-    label(p, card, 3, "Stop after silence");
+    label(p, card, 3, ts!("dict.stop_silence"));
     let y = row_y(card, 3);
     let sr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 230.0, y - 13.0), Pos2::new(card.right() - 12.0, y + 13.0));
     let si = SILENCE_CHOICES.iter().position(|s| *s == d.settings.silence_secs).unwrap_or(2);
-    let names: Vec<String> = SILENCE_CHOICES.iter().map(|s| if *s == 0 { "Never".to_string() } else { format!("{s} s") }).collect();
+    let names: Vec<String> = SILENCE_CHOICES.iter().map(|s| if *s == 0 { ts!("dict.never").to_string() } else { t!("dict.secs", n = s).into_owned() }).collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     if let Some(i) = segmented(ui, sr, id.with("silence"), &names, si) {
         d.settings.silence_secs = SILENCE_CHOICES[i];
@@ -852,17 +852,17 @@ fn words_card_h(p: &egui::Painter, words: &[String], colw: f32) -> f32 {
 fn words_card(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, x0: f32, top: f32, w: f32) -> bool {
     let id = ui.scope_id().with("dict-words");
     let mut changed = false;
-    crate::kit::glass::card_title(p, Pos2::new(x0, top), "Words");
+    crate::kit::glass::card_title(p, Pos2::new(x0, top), ts!("dict.words_title"));
     let card = Rect::from_min_size(Pos2::new(x0, top + 28.0), Vec2::new(w, words_card_h(p, &d.settings.words, w)));
     glass_card(p, card, R_CARD, 0.0, false);
 
     let y = card.top() + 4.0 + ROW_H / 2.0;
     let ar = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 56.0, y - 12.0), Pos2::new(card.right() - 12.0, y + 12.0));
     let fr = Rect::from_min_max(Pos2::new(card.left() + 12.0, y - sp::CONTROL_H / 2.0), Pos2::new(ar.left() - 8.0, y + sp::CONTROL_H / 2.0));
-    let resp = text_input(ui, fr, id.with("field"), &mut d.word_draft, "Name, brand or term", FieldStyle::default());
+    let resp = text_input(ui, fr, id.with("field"), &mut d.word_draft, ts!("dict.word_hint"), FieldStyle::default());
     let entered = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let can_add = !d.word_draft.trim().is_empty();
-    if (pill_button(ui, ar, "Add", BTN_SECONDARY, can_add).clicked() || entered) && d.settings.add_word(&d.word_draft) {
+    if (pill_button(ui, ar, ts!("dict.add"), BTN_SECONDARY, can_add).clicked() || entered) && d.settings.add_word(&d.word_draft) {
         d.word_draft.clear();
         changed = true;
         if entered {
@@ -879,7 +879,7 @@ fn words_card(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, x0: f32, top: f
         p.rect_filled(r, CHIP_H / 2.0, white(if x.hovered() { 26 } else { 18 }));
         text_fit(p, Pos2::new(r.left() + 10.0, r.center().y), Align2::LEFT_CENTER, word, font(12.0), TEXT(), r.width() - 10.0 - CHIP_X);
         p.text(xr.center(), Align2::CENTER_CENTER, "×", font(13.0), if x.hovered() { TEXT() } else { TEXT_FAINT() });
-        if x.on_hover_text("Remove").clicked() {
+        if x.on_hover_text(ts!("dict.remove")).clicked() {
             remove = Some(k);
         }
     }
@@ -895,9 +895,9 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let id = ui.scope_id().with("dict-right");
     let mut changed = false;
     let x0 = col.left();
-    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "After");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), ts!("dict.after"));
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), 2);
-    let rows: [(&str, &mut bool); 2] = [("Restore clipboard", &mut d.settings.restore_clipboard), ("Keep history", &mut d.settings.keep_history)];
+    let rows: [(&str, &mut bool); 2] = [(ts!("dict.restore_clip"), &mut d.settings.restore_clipboard), (ts!("dict.keep_history"), &mut d.settings.keep_history)];
     for (k, (l, on)) in rows.into_iter().enumerate() {
         label(p, card, k, l);
         let y = row_y(card, k);
@@ -909,7 +909,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     }
     if !d.history.items.is_empty() {
         let y = row_y(card, 1);
-        let lr = link(ui, Pos2::new(card.right() - 12.0 - 40.0 - 14.0, y), Align2::RIGHT_CENTER, "Clear", 12.0);
+        let lr = link(ui, Pos2::new(card.right() - 12.0 - 40.0 - 14.0, y), Align2::RIGHT_CENTER, ts!("dict.clear"), 12.0);
         if lr.clicked() {
             d.history.items.clear();
             d.save_history();
@@ -917,7 +917,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     }
 
     let y0 = card.bottom() + 28.0;
-    crate::kit::glass::card_title(p, Pos2::new(x0, y0), "Permissions");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y0), ts!("dict.permissions"));
     let card = card_rows(p, x0, y0 + 28.0, col.width(), 2);
     for (k, perm) in [Perm::Microphone, Perm::Accessibility].into_iter().enumerate() {
         perm_row(ui, p, card, row_y(card, k), perm);
