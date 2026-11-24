@@ -266,14 +266,17 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     let gw = g.size().x;
     p.galley(Pos2::new(x0, y), g, TEXT());
     p.text(Pos2::new(x0 + gw + 10.0, y + 22.0), Align2::LEFT_BOTTOM, caption, font(13.0), TEXT_DIM());
-    if st.progress >= 0.0 {
-        p.text(Pos2::new(x1, y + 22.0), Align2::RIGHT_BOTTOM, format!("{:.0}%", st.progress.clamp(0.0, 1.0) * 100.0), font(13.0), TEXT_DIM());
+    // while the scan is still listing places the bar creeps (never still)
+    let progress = st.shown_progress();
+    if progress >= 0.0 {
+        p.text(Pos2::new(x1, y + 22.0), Align2::RIGHT_BOTTOM, format!("{:.0}%", progress.clamp(0.0, 1.0) * 100.0), font(13.0), TEXT_DIM());
     }
     y += 40.0;
-    // progress bar (an indeterminate sweep while the scan can't count)
+    // progress bar (an indeterminate sweep while the scan can't count); a
+    // native layer that eases between values, so the creep costs no frames
     let track = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(x1 - x0, 6.0));
-    if st.progress >= 0.0 {
-        bar(&p, track, st.progress, ACTION());
+    if progress >= 0.0 {
+        crate::kit::spin::bar(&p, "cleanup-progress", track, progress, ACTION());
     } else {
         p.rect_filled(track, 3.0, white(20));
         let w = track.width() * 0.25;
