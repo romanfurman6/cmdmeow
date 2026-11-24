@@ -343,7 +343,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let (total, pending, ai_error, selected) = {
         let g = app.clean.lock_ok();
-        (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_bytes())
+        (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_in(app.clean_group))
     };
     let mut sub = format!("{} found", human_bytes(total));
     if let Some(e) = &ai_error {
@@ -417,7 +417,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), body.max);
     result_list(app, ui, list);
 
-    // footer
+    // footer: on a group it cleans only that group (the rest stays ticked)
     let f = page_footer(&p, r, WIN_R);
     let fy = f.center().y;
     // the segmented control already says where it goes; only warn when it can't come back
@@ -426,7 +426,10 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     if app.delete_now {
         p.text(Pos2::new(f.left() + 24.0, fy + 10.0), Align2::LEFT_CENTER, "Can't be undone", font(12.0), AMBER());
     }
-    let clean_label = format!("Clean {}", human_bytes(selected));
+    let clean_label = match app.clean_group {
+        Some(g) => format!("Clean {}", g.title()),
+        None => format!("Clean {}", human_bytes(selected)),
+    };
     let cw = button_width(&p, &clean_label, BTN_PRIMARY).max(120.0);
     let cr = Rect::from_min_size(Pos2::new(f.right() - 24.0 - cw, fy - 16.0), Vec2::new(cw, 32.0));
     if pill_button(ui, cr, &clean_label, BTN_PRIMARY, selected > 0).clicked() {
@@ -1291,11 +1294,12 @@ fn belongs(app: &OpenApp, it: &Item) -> bool {
 }
 
 /// Open apps with selected files, largest first. Each item counts once.
-pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>) -> Vec<QuitRow> {
+/// With `only`, just that group's files count (the clean is limited to it).
+pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>, only: Option<Group>) -> Vec<QuitRow> {
     let mut taken = vec![false; items.len()];
     let mut rows: Vec<QuitRow> = Vec::new();
     for app in apps {
-        let idx: Vec<usize> = (0..items.len()).filter(|&i| !taken[i] && items[i].selected && quit_kind(items[i].kind) && belongs(&app, &items[i])).collect();
+        let idx: Vec<usize> = (0..items.len()).filter(|&i| !taken[i] && items[i].selected && cleanup::in_scope(&items[i], only) && quit_kind(items[i].kind) && belongs(&app, &items[i])).collect();
         if idx.is_empty() {
             continue;
         }
@@ -1312,7 +1316,7 @@ pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>) -> Vec<QuitRow> {
 /// Open the confirm sheet for the current selection.
 fn open_confirm(app: &mut App) {
     let apps = if app.demo { demo_apps() } else { crate::kit::native::open_apps() };
-    app.quit = quit_rows(&app.clean.lock_ok().items, apps);
+    app.quit = quit_rows(&app.clean.lock_ok().items, apps, app.clean_group);
     app.quit_then_clean = false;
     app.clean_confirm = true;
 }
@@ -1355,7 +1359,7 @@ fn start(app: &mut App, ctx: egui::Context) {
     app.quit.clear();
     app.clean_loading = true;
     crate::kit::loader::reset(&ctx, "cleanup");
-    cleanup::start_clean(app.clean.clone(), ctx, app.delete_now);
+    cleanup::start_clean(app.clean.clone(), ctx, app.delete_now, app.clean_group);
 }
 
 /// "1 item", "3 items".
@@ -1384,7 +1388,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, SCRIM());
     let (n, bytes, perm, trashed) = {
         let g = app.clean.lock_ok();
-        let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected).collect();
+        let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected && cleanup::in_scope(i, app.clean_group)).collect();
         let trashed = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).count();
         let perm = sel.iter().any(|i| i.permanent || i.group == Group::Trash || i.by_command());
         (sel.len(), sel.iter().map(|i| i.bytes).sum::<u64>(), perm, trashed)
@@ -1471,7 +1475,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
                         it.selected = false;
                     }
                 }
-                g.items.iter().any(|i| i.selected)
+                g.items.iter().any(|i| i.selected && cleanup::in_scope(i, app.clean_group))
             };
             if any_left {
                 start(app, ctx);
@@ -1625,8 +1629,10 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
         }
     }
     let db = Rect::from_min_size(Pos2::new(li.left(), li.bottom() - 34.0), Vec2::new(li.width(), 34.0));
-    if pill_button(ui, db, "Done", BTN_PRIMARY, true).clicked() {
-        app.clean.lock_ok().phase = Phase::Intro;
+    // after one group: the other groups are still waiting in the results
+    let back = st.clean_only.is_some() && st.total() > 0;
+    if pill_button(ui, db, if back { "Back to results" } else { "Done" }, BTN_PRIMARY, true).clicked() {
+        app.clean.lock_ok().phase = if back { Phase::Results } else { Phase::Intro };
         app.clean_log = false;
     }
 
@@ -1747,6 +1753,22 @@ pub fn demo_done() -> cleanup::State {
     st.cleaned = sel.iter().map(|i| (i.group, i.bytes)).collect();
     st.trashed_bytes = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).map(|i| i.bytes).sum();
     st.log = sel.iter().map(|i| format!("Moved to Trash: {}", i.path.display())).collect();
+    st
+}
+
+/// The Done screen after cleaning one group, others still waiting (screenshots).
+pub fn demo_done_group() -> cleanup::State {
+    let mut st = demo_results();
+    let g = Group::AppCaches;
+    st.phase = Phase::Done;
+    st.clean_only = Some(g);
+    let sel: Vec<Item> = st.items.iter().filter(|i| i.selected && i.group == g).cloned().collect();
+    st.cleaned_count = sel.len();
+    st.cleaned_bytes = sel.iter().map(|i| i.bytes).sum();
+    st.cleaned = sel.iter().map(|i| (i.group, i.bytes)).collect();
+    st.trashed_bytes = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).map(|i| i.bytes).sum();
+    st.log = sel.iter().map(|i| format!("Moved to Trash: {}", i.path.display())).collect();
+    st.items.retain(|i| !(i.selected && i.group == g));
     st
 }
 
@@ -1881,9 +1903,25 @@ mod tests {
     }
 
     #[test]
+    fn one_group_cleans_only_its_own_files() {
+        let st = demo_results();
+        let g = Some(Group::AppCaches);
+        let mine: u64 = st.items.iter().filter(|i| i.selected && i.group == Group::AppCaches).map(|i| i.bytes).sum();
+        assert_eq!(st.selected_in(g), mine);
+        assert!(st.selected_in(g) < st.selected_bytes());
+        // Claude's files are in AI Tools: Claude isn't asked to quit
+        let names: Vec<String> = quit_rows(&st.items, demo_apps(), g).into_iter().map(|r| r.app.name).collect();
+        assert_eq!(names, ["Spotify", "Google Chrome"]);
+        // the Done screen goes back to what's left
+        let done = demo_done_group();
+        assert!(done.items.iter().all(|i| !(i.selected && i.group == Group::AppCaches)));
+        assert!(done.total() > 0 && done.clean_only == g);
+    }
+
+    #[test]
     fn open_apps_claim_their_selected_files() {
         let mut st = demo_results();
-        let rows = quit_rows(&st.items, demo_apps());
+        let rows = quit_rows(&st.items, demo_apps(), None);
         let names: Vec<&str> = rows.iter().map(|r| r.app.name.as_str()).collect();
         assert_eq!(names, ["Spotify", "Google Chrome", "Claude"], "biggest first");
         let claude = &rows[2];
@@ -1892,7 +1930,7 @@ mod tests {
         for it in st.items.iter_mut().filter(|i| i.title == "Spotify") {
             it.selected = false;
         }
-        assert!(quit_rows(&st.items, demo_apps()).iter().all(|r| r.app.name != "Spotify"));
+        assert!(quit_rows(&st.items, demo_apps(), None).iter().all(|r| r.app.name != "Spotify"));
         // a name inside a word doesn't match
         let app = OpenApp { pid: 9, id: "com.example.music".into(), name: "Music".into(), bundle: None };
         let mut it = st.items[0].clone();

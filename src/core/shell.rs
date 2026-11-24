@@ -168,6 +168,7 @@ impl App {
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
+        crate::kit::native::set_show_in_dock(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_DOCK_KEY)).unwrap_or(true));
         if !demo {
             glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::ThemeChoice::Auto));
         }
@@ -329,6 +330,7 @@ impl App {
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
             eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
+            eframe::set_value(storage, crate::kit::native::SHOW_IN_DOCK_KEY, &crate::kit::native::show_in_dock());
             eframe::set_value(storage, glass::THEME_KEY, &glass::theme_choice());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
@@ -564,11 +566,14 @@ impl App {
     /// Ask the menu bar icon where it is now (the displays may have moved,
     /// or the icon moved to another display). False while it can't say.
     fn read_menu_icon(&mut self) -> bool {
+        // the item stays alive (held here) while its pointer is read
         #[cfg(target_os = "macos")]
-        let Some(ptr) = self.tray.as_ref().and_then(|t| t.ns_status_item()).map(|i| objc2::rc::Retained::as_ptr(i) as *mut std::ffi::c_void) else { return false };
+        let Some(item) = self.tray.as_ref().and_then(|t| t.ns_status_item()) else { return false };
+        #[cfg(target_os = "macos")]
+        let place = crate::kit::native::menu_icon_place(objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void);
         #[cfg(not(target_os = "macos"))]
-        let ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-        let Some(place) = crate::kit::native::menu_icon_place(ptr) else { return false };
+        let place = crate::kit::native::menu_icon_place(std::ptr::null_mut());
+        let Some(place) = place else { return false };
         self.anchor = Some(Pos2::new(place.icon.center().x, place.icon.max.y));
         self.menu_screen = Some(place.visible);
         true
@@ -1089,7 +1094,7 @@ impl eframe::App for App {
                 self.toast = None;
             }
         }
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1098,7 +1103,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice()) != (&off_before.0, off_before.1, off_before.2, off_before.3) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock()) != (&off_before.0, off_before.1, off_before.2, off_before.3, off_before.4) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
