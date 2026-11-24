@@ -163,7 +163,7 @@ fn ink(a: f32) -> Color32 {
 
 /// Solid window colour (the middle of the backdrop gradient).
 #[allow(non_snake_case)]
-pub fn BG() -> Color32 { pick3(hex(0x0E1B0D), hex(0xE6F0DA), hex(0x0C0D26)) }
+pub fn BG() -> Color32 { pick3(hex(0x0E1B0D), hex(0xE6F0DA), hex(0x1A1248)) }
 /// Card surface.
 #[allow(non_snake_case)]
 pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
@@ -380,7 +380,7 @@ pub mod tint {
     #[allow(non_snake_case)]
     pub fn DISPLAYS() -> Color32 { HEALTH() }
     #[allow(non_snake_case)]
-    pub fn CAPTURE() -> Color32 { pick3(hex(0xF7B267), hex(0xA65A0E), hex(0xFFA05A)) }
+    pub fn CAPTURE() -> Color32 { pick3(hex(0xF7B267), hex(0xA65A0E), hex(0xFF9A4D)) }
     #[allow(non_snake_case)]
     pub fn KEEP_AWAKE() -> Color32 { pick3(hex(0xE8E1FF), hex(0x6A5AC8), hex(0xC3B0FF)) }
     #[allow(non_snake_case)]
@@ -697,7 +697,9 @@ pub fn backdrop_stops(theme: Theme) -> &'static [(f32, Color32)] {
     const DARK: &[(f32, Color32)] = &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))];
     // a sunset over the sea at night: warm rose at the top, violet, then
     // deep indigo at the sides
-    const MIAMI: &[(f32, Color32)] = &[(0.0, hex(0x6E2A43)), (0.3, hex(0x351747)), (0.65, hex(0x13123A)), (1.0, hex(0x060B1E))];
+    // Miami is a dusk sky, read top to bottom (see glow_color): cobalt
+    // night, violet, magenta, a burnt-orange horizon
+    const MIAMI: &[(f32, Color32)] = &[(0.0, hex(0x0B1240)), (0.45, hex(0x2A1452)), (0.78, hex(0x5E1D57)), (1.0, hex(0x8E3442))];
     match theme {
         Theme::Dark => DARK,
         Theme::Light => LIGHT,
@@ -735,7 +737,11 @@ fn glow_color(rect: Rect, light: Theme, alpha: f32, tall: bool) -> impl Fn(Pos2)
     let glow = Pos2::new(rect.center().x, rect.top());
     let (rx, ry) = backdrop_glow(rect.size(), tall);
     move |q: Pos2| {
-        let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
+        let d = if light == Theme::Miami {
+            ((q.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0)
+        } else {
+            (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0)
+        };
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
