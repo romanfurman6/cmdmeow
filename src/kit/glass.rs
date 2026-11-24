@@ -1444,7 +1444,9 @@ pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) ->
     k.resp
 }
 
-/// A dashed rounded outline: the "planned, not built yet" look.
+/// A dashed rounded outline: a drop zone, an empty slot or sample content
+/// (S7: an example card has no fill, this edge and an "Example" tag), never
+/// real data.
 pub fn dashed_rect(p: &Painter, rect: Rect, r: f32, color: Color32) {
     let pts = rounded_points(rect.shrink(0.5), r);
     let mut path = pts.clone();
