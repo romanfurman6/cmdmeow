@@ -38,6 +38,7 @@ mod slap;
 mod stage;
 #[cfg(target_os = "macos")]
 mod props;
+mod tint;
 mod toys;
 
 use serde::{Deserialize, Serialize};
