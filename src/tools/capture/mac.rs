@@ -152,9 +152,9 @@ static OCR_WARMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// process loads Vision's model, which takes a few seconds.
 pub fn ocr_status() -> &'static str {
     if OCR_READY.load(std::sync::atomic::Ordering::Relaxed) {
-        "Recognizing text…"
+        ts!("cap.ocr")
     } else {
-        "Preparing text recognition (first time only)…"
+        ts!("cap.ocr_first")
     }
 }
 

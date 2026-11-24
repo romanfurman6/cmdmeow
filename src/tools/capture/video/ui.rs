@@ -532,7 +532,7 @@ fn frame_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let cy = r.top() + rad + 4.0;
     for k in 0..n {
         let c = Pos2::new(r.left() + step * (k as f32 + 0.5), cy);
-        let name = if k == 0 { "None" } else { BACKDROPS[k - 1].0 };
+        let name = crate::tools::capture::render::backdrop_name(k);
         let resp = ui.interact(Rect::from_center_size(c, Vec2::splat(rad * 2.0 + 8.0)), id.with(("bg", k)), Sense::click()).on_hover_text(name);
         let on = match cur {
             None => k == 0,

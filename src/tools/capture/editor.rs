@@ -59,19 +59,19 @@ impl Tool {
     /// Tooltip with the one-key shortcut.
     fn tip(self) -> &'static str {
         match self {
-            Tool::Select => "Select, or drag an area to crop or copy text (V)",
-            Tool::Arrow => "Arrow (A)",
-            Tool::Rect => "Box (R)",
-            Tool::Ellipse => "Circle (L)",
-            Tool::Pen => "Pen (P)",
-            Tool::Text => "Label (T)",
-            Tool::Highlight => "Highlighter (H)",
-            Tool::Blur => "Blur (B)",
-            Tool::Eraser => "Eraser: removes text (E)",
-            Tool::Steps => "Numbered steps (N)",
-            Tool::Picker => "Pick a color (I)",
-            Tool::Ruler => "Ruler (M)",
-            Tool::Frame => "Frame (F)",
+            Tool::Select => ts!("cap.tool.select"),
+            Tool::Arrow => ts!("cap.tool.arrow"),
+            Tool::Rect => ts!("cap.tool.rect"),
+            Tool::Ellipse => ts!("cap.tool.ellipse"),
+            Tool::Pen => ts!("cap.tool.pen"),
+            Tool::Text => ts!("cap.tool.text"),
+            Tool::Highlight => ts!("cap.tool.highlight"),
+            Tool::Blur => ts!("cap.tool.blur"),
+            Tool::Eraser => ts!("cap.tool.eraser"),
+            Tool::Steps => ts!("cap.tool.steps"),
+            Tool::Picker => ts!("cap.tool.picker"),
+            Tool::Ruler => ts!("cap.tool.ruler"),
+            Tool::Frame => ts!("cap.tool.frame"),
         }
     }
 
@@ -707,7 +707,7 @@ impl Editor {
         let mut style = cur.unwrap_or(self.frame_style);
         for k in 0..=render::BACKDROPS.len() {
             let r = Rect::from_center_size(Pos2::new(x + FRAME_SWATCH / 2.0 - 4.0, y), Vec2::splat(18.0));
-            let name = if k == 0 { "None" } else { render::BACKDROPS[k - 1].0 };
+            let name = render::backdrop_name(k);
             let resp = ui.interact(r.expand(3.0), ui.scope_id().with(("bg", k)), Sense::click()).on_hover_text(name);
             let on = match cur {
                 None => k == 0,

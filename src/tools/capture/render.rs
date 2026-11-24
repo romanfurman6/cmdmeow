@@ -195,6 +195,19 @@ impl Default for Doc {
 
 // ---------------------------------------------------------------- frame
 
+/// A frame backdrop's name as shown: 0 is no backdrop, then [`BACKDROPS`].
+pub fn backdrop_name(k: usize) -> &'static str {
+    match k {
+        0 => ts!("cap.bg.none"),
+        1 => ts!("cap.bg.moss"),
+        2 => ts!("cap.bg.lime"),
+        3 => ts!("cap.bg.apricot"),
+        4 => ts!("cap.bg.sky"),
+        5 => ts!("cap.bg.lavender"),
+        _ => ts!("cap.bg.graphite"),
+    }
+}
+
 /// Backdrops for the frame: name, top-left color, bottom-right color.
 pub const BACKDROPS: [(&str, Rgba8, Rgba8); 6] = [
     ("Moss", [0x3A, 0x6B, 0x2F, 255], [0x0B, 0x17, 0x0A, 255]),
@@ -219,7 +232,7 @@ impl Ratio {
 
     pub fn label(self) -> &'static str {
         match self {
-            Ratio::Auto => "Auto",
+            Ratio::Auto => ts!("cap.auto"),
             Ratio::Wide => "16:9",
             Ratio::Classic => "4:3",
             Ratio::Square => "1:1",
