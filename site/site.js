@@ -17,9 +17,34 @@
 
 
   // App pictures follow the visitor's theme, like the app does
-  const lightQ = matchMedia('(prefers-color-scheme: light)');
-  const theme = () => { if (!document.documentElement.dataset.pin) document.documentElement.dataset.app = lightQ.matches ? 'light' : 'dark'; };
+  // The visitor's macOS theme, unless they picked one with the sun/moon in the menu bar (kept in localStorage)
+  const root = document.documentElement, lightQ = matchMedia('(prefers-color-scheme: light)');
+  const saved = () => { try { const t = localStorage.getItem('theme'); return t === 'light' || t === 'dark' ? t : null; } catch { return null; } };
+  const thm = $('thm');
+  const theme = () => {
+    const t = saved() || (lightQ.matches ? 'light' : 'dark');
+    root.dataset.app = t;
+    if (thm) { const to = t === 'light' ? 'dark' : 'light'; thm.setAttribute('aria-label', `Switch to ${to} theme`); thm.title = to === 'light' ? 'Light theme' : 'Dark theme'; }
+    photo(t);
+  };
+  // First-screen photo: a blurred inline copy paints first, the real file fades in once loaded
+  const dimg = document.querySelector('.dimg i');
+  const photo = t => {
+    if (!dimg) return;
+    const big = window.innerWidth * (window.devicePixelRatio || 1) > 1500;
+    const src = (t === 'light' ? 'desk-day' : 'desk') + (big ? '' : '-1376') + '.jpg';
+    if (dimg.dataset.src === src) return;
+    dimg.dataset.src = src; dimg.classList.remove('in');
+    const im = new Image();
+    im.onload = () => { if (dimg.dataset.src !== src) return; dimg.style.backgroundImage = `url(${src})`; requestAnimationFrame(() => dimg.classList.add('in')); };
+    im.src = src;
+  };
   theme(); lightQ.addEventListener('change', theme);
+  if (thm) thm.addEventListener('click', () => {
+    const to = root.dataset.app === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('theme', to); } catch {}
+    theme();
+  });
 
   // Panel header: the round "…" slides out Open, Hide and Quit, and tucks them back
   document.querySelectorAll('.swh .more').forEach(b => b.addEventListener('click', e => {

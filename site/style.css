@@ -9,7 +9,7 @@ a { color: inherit; }
 .num { font-variant-numeric: tabular-nums; }
 .ph { fill: currentColor; flex: none; }
 
-.desk { position: relative; background: #0A150A image-set(url(desk-1376.jpg) 1x, url(desk.jpg) 2x) center 60% / cover no-repeat; overflow: hidden; }
+.desk { position: relative; overflow: hidden; }
 .desk::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 70%, var(--bg)); pointer-events: none; }
 /* Soft shade under the headline so the subhead stays readable over the lighter mountains */
 .desk::before { content: ""; position: absolute; z-index: 1; inset: 0; background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(4,9,4,.55), rgba(4,9,4,.25) 55%, transparent 80%); pointer-events: none; }
@@ -267,7 +267,7 @@ html[data-app="light"] .btn.pri { box-shadow: 0 1px 0 rgba(20,24,26,.25), 0 10px
 html[data-app="light"] .foot .tm { color: rgba(20,24,26,.56); }
 
 /* light: a daytime photo of the same valley (Magnific, 2026-11-24), and the light macOS menu bar */
-html[data-app="light"] .desk { background-color: #E4ECDD; background-image: image-set(url(desk-day-1376.jpg) 1x, url(desk-day.jpg) 2x);
+html[data-app="light"] .desk {
   --ink: #14181A; --ink2: rgba(20,24,26,.66); --ik: 20,24,26; color: #14181A; }
 html[data-app="light"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(255,255,255,.6), rgba(255,255,255,.28) 55%, transparent 80%); }
 html[data-app="light"] .desk::after { background: linear-gradient(to bottom, rgba(234,242,223,0) 40%, rgba(234,242,223,.35) 60%, rgba(234,242,223,.8) 80%, #EAF2DF 97%); }
@@ -290,3 +290,29 @@ html[data-app="light"] .mbx .mi2.bat i { box-shadow: inset 0 0 0 1.4px rgba(20,2
 html[data-app="light"] .bars:not(.b-one) .mi2.ap { background: rgba(91,138,20,.16); color: #2F5208; }
 html[data-app="light"] .mbx .cat { color: #2F5208; background: rgba(91,138,20,.16); }
 html[data-app="light"] .replay { background: rgba(255,255,255,.8); color: #14181A; }
+
+/* ---- 2026-11-24: the first-screen photo loads without holding anything up.
+   The page paints at once on a 40×22 blurred copy inlined here (~1 KB); the
+   real photo for the current theme loads in the background (preload with a
+   media query, so only that theme's file is fetched) and fades in over it.
+   Text is HTML, so search engines and the first paint never wait for it.
+   The photo layer itself fades to transparent at the bottom (mask), so the
+   page colour behind it shows through and there is no seam in either theme. */
+.desk { background: none; }
+.desk::after { display: none; }
+.dimg { position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 22' preserveAspectRatio='none'%3E%3Cfilter id='b' x='0' y='0' width='1' height='1'%3E%3CfeGaussianBlur stdDeviation='1.2' edgeMode='duplicate'/%3E%3C/filter%3E%3Cimage width='40' height='22' preserveAspectRatio='none' filter='url(%23b)' href='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAWACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDg44c1ZjtC3QVXtpnPUY+mKvxXUiDiQL7mPpRcgdHpkj9ENSyaaIFDXDpEp4BdsZqvLe3ODtvXYn+FPlxVCXzpfml8x/ctn+dK7AnuLm0iX9yTM3sCB+dFVHtx1DECigNCspORUvnOBtyaKKCgaXgfKAc9aR5WGOT+dFFAiMyMe/fNFFFAz//Z'/%3E%3C/svg%3E") center 60% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 38%, rgba(0,0,0,.85) 55%, rgba(0,0,0,.5) 72%, rgba(0,0,0,.18) 86%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 0, #000 38%, rgba(0,0,0,.85) 55%, rgba(0,0,0,.5) 72%, rgba(0,0,0,.18) 86%, transparent 100%); }
+html[data-app="light"] .dimg { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 22' preserveAspectRatio='none'%3E%3Cfilter id='b' x='0' y='0' width='1' height='1'%3E%3CfeGaussianBlur stdDeviation='1.2' edgeMode='duplicate'/%3E%3C/filter%3E%3Cimage width='40' height='22' preserveAspectRatio='none' filter='url(%23b)' href='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAWACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDv1iHbFOEeO9c9p+vy3CDzoo0Y9CpBz36E1cOqSbT+/RPrDjH5mtOYzsjV8qklaC3TfcSpEvq5xXN3OpXJVxHftK56JGu3FY8/226GbmK4deo+bgfgeaTkB0V74osIEP2VWuH6dCqj8TRXOPpau29Lh1QcFTg4NFLmFZnIQ3Um6EE7gB0JPpWm2szpH5QLHAGCT2oorJblBc6mFjRhCokLkFhxxTLvVLiMwfO3Dbsbu3pRRTEZcuq3Lbl3ttLByM9+f8aKKKLAf//Z'/%3E%3C/svg%3E"); }
+.dimg i { position: absolute; inset: 0; background: center 60% / cover no-repeat; opacity: 0; transition: opacity .6s ease; }
+.dimg i.in { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .dimg i { transition: none; } }
+/* theme switch: a menu bar item, the sun shows in dark (switches to light), the moon in light */
+.mbar .thm { display: grid; place-items: center; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: none; color: inherit; cursor: pointer; }
+.mbar .thm:hover { background: rgba(var(--ik),.16); }
+.mbar .thm:focus-visible { outline: 2px solid #C8F05A; outline-offset: 1px; }
+.mbar .thm svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mbar .thm .moon { display: none; }
+html[data-app="light"] .mbar .thm .sun { display: none; }
+html[data-app="light"] .mbar .thm .moon { display: block; }
