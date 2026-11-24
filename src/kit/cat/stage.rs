@@ -9,6 +9,8 @@ use super::grid::{self, Spot};
 use super::live::{Live, Scene};
 use super::props::Props;
 use super::rig::Rig;
+use super::tint::{self, Tint};
+use crate::kit::glass::Theme;
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
@@ -125,6 +127,28 @@ unsafe fn flatten(image: *mut c_void) -> Option<Image> {
     let flat = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
     (!flat.is_null()).then_some(Image(flat))
+}
+
+/// A part's picture in the theme's colours (TH10): drawn into plain
+/// premultiplied pixels, recoloured, made a picture again.
+fn tinted(img: &Image, t: &Tint) -> Option<Image> {
+    unsafe {
+        let (w, h) = (CGImageGetWidth(img.0), CGImageGetHeight(img.0));
+        let space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        let ctx = CGBitmapContextCreate(std::ptr::null_mut(), w, h, 8, w * 4, space, 1);
+        CGColorSpaceRelease(space);
+        if ctx.is_null() {
+            return None;
+        }
+        CGContextDrawImage(ctx, NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(w as f64, h as f64)), img.0);
+        let data = CGBitmapContextGetData(ctx);
+        if !data.is_null() {
+            tint::pixels(std::slice::from_raw_parts_mut(data, w * h * 4), t);
+        }
+        let out = CGBitmapContextCreateImage(ctx);
+        CGContextRelease(ctx);
+        (!out.is_null()).then_some(Image(out))
+    }
 }
 
 /// The cat's brain and its parts' pictures by file.
@@ -274,7 +298,11 @@ pub struct Stage {
     claws: Retained<AnyObject>,
     claws_on: Option<usize>,
     claws_k: f64,
+    /// the parts' pictures as drawn (lime), and in the theme's colours
+    plain: HashMap<[u16; 2], Image>,
     images: HashMap<[u16; 2], Image>,
+    /// the theme `images` are in (empty for Dark Meow: `plain` is drawn)
+    theme: Option<Theme>,
     pub live: Live,
     /// the first screen, AppKit points
     frame: NSRect,
@@ -380,7 +408,7 @@ impl Stage {
         // the desk window lies under the cat's, both see-through
         desk.orderFrontRegardless();
         window.orderFrontRegardless();
-        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, images, live, frame, proxies: HashMap::new(), kept: HashMap::new(), at: HashMap::new(), parked: HashSet::new(), desktop: None, through: true })
+        Some(Stage { window, desk, patches, moved, mouth, body, shadow, props, parts: Vec::new(), claws, claws_on: None, claws_k: 0.0, plain: images, images: HashMap::new(), theme: None, live, frame, proxies: HashMap::new(), kept: HashMap::new(), at: HashMap::new(), parked: HashSet::new(), desktop: None, through: true })
     }
 
     /// The first screen's size, points.
@@ -400,7 +428,32 @@ impl Stage {
     }
 
     /// Draw a scene (one Core Animation transaction, no implicit animation).
+    /// The parts' pictures in the current theme's colours; redone only on a
+    /// theme switch (one atomic read a frame otherwise).
+    fn follow_theme(&mut self) {
+        let (theme, t) = tint::current();
+        if self.theme == Some(theme) {
+            return;
+        }
+        self.theme = Some(theme);
+        self.images = match t {
+            Some(t) => self.plain.iter().filter_map(|(k, img)| Some((*k, tinted(img, &t)?))).collect(),
+            None => HashMap::new(),
+        };
+        // every part layer takes its picture again
+        for (_, shown) in &mut self.parts {
+            *shown = None;
+        }
+        let ink = if theme == Theme::Miami { [0.102, 0.043, 0.18] } else { [0.04, 0.06, 0.035] };
+        unsafe {
+            let c = CGColorCreateSRGB(ink[0], ink[1], ink[2], 1.0);
+            let _: () = msg_send![&*self.claws, setStrokeColor: c];
+            CGColorRelease(c);
+        }
+    }
+
     pub fn draw(&mut self, scene: &Scene) {
+        self.follow_theme();
         let h = self.frame.size.height;
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
@@ -412,7 +465,7 @@ impl Stage {
             }
             let mut claws_at = None;
             for (i, p) in scene.parts.iter().enumerate() {
-                let Some(img) = self.images.get(&p.file) else { continue };
+                let Some(img) = self.images.get(&p.file).or_else(|| self.plain.get(&p.file)) else { continue };
                 let (layer, shown) = &mut self.parts[i];
                 let ih = CGImageGetHeight(img.0) as f64;
                 if *shown != Some(p.file) {
