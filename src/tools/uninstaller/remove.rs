@@ -85,7 +85,7 @@ impl Report {
             (0, 1) => t!("un.sum.one_stayed", app = self.apps[0], size = size).into_owned(),
             (0, _) => t!("un.sum.none_removed", size = size).into_owned(),
             (g, n) if g == n => t!("un.sum.all", who = who, size = size).into_owned(),
-            (g, n) => t!("un.sum.some", g = g, n = n, size = size).into_owned(),
+            (g, n) => tn!("un.sum.some", n = n, g = g, size = size).into_owned(),
         };
         let detail = match (gone, stayed) {
             (0, _) => self.failed.first().map(|(_, why)| why.clone()),

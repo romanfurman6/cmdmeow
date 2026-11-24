@@ -886,7 +886,7 @@ fn bubbles(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node, here: &str, free: 
             match kid {
                 Some(kd) => {
                     out.hover = Some((kd.path.clone(), kd.bytes));
-                    tip = Some((kd.name.clone(), t!("lens.tip_share", size = human_bytes(kd.bytes), items = group_digits(kd.items), pct = pct(kd.bytes, node.bytes), here = here).into_owned()));
+                    tip = Some((kd.name.clone(), tn!("lens.tip_share", n = kd.items, size = human_bytes(kd.bytes), items = group_digits(kd.items), pct = pct(kd.bytes, node.bytes), here = here).into_owned()));
                     if !kd.children.is_empty() {
                         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                         if resp.clicked() {
