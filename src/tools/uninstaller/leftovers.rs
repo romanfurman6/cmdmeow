@@ -41,19 +41,19 @@ pub enum Kind {
 impl Kind {
     pub fn label(self) -> &'static str {
         match self {
-            Kind::App => "App",
-            Kind::Support => "Application Support",
-            Kind::Caches => "Caches",
-            Kind::Preferences => "Preferences",
-            Kind::Containers => "Containers",
-            Kind::GroupContainers => "Group Containers",
-            Kind::SavedState => "Saved State",
-            Kind::Logs => "Logs",
-            Kind::WebData => "Web data",
-            Kind::Extension => "Plug-in",
-            Kind::Launch => "Launch agent",
-            Kind::Installed => "Installed files",
-            Kind::Other => "Other",
+            Kind::App => ts!("un.kind.app"),
+            Kind::Support => ts!("un.kind.support"),
+            Kind::Caches => ts!("un.kind.caches"),
+            Kind::Preferences => ts!("un.kind.preferences"),
+            Kind::Containers => ts!("un.kind.containers"),
+            Kind::GroupContainers => ts!("un.kind.group_containers"),
+            Kind::SavedState => ts!("un.kind.saved_state"),
+            Kind::Logs => ts!("un.kind.logs"),
+            Kind::WebData => ts!("un.kind.web_data"),
+            Kind::Extension => ts!("un.kind.extension"),
+            Kind::Launch => ts!("un.kind.launch"),
+            Kind::Installed => ts!("un.kind.installed"),
+            Kind::Other => ts!("un.kind.other"),
         }
     }
 

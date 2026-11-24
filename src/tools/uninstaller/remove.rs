@@ -64,28 +64,28 @@ impl Report {
     pub fn summary(&self) -> (String, Option<String>) {
         let size = human_bytes(self.bytes());
         let who = match self.names.len() {
-            0 => "Nothing".to_string(),
+            0 => ts!("un.nothing").to_string(),
             1 => self.names[0].clone(),
-            n => format!("{n} apps"),
+            n => t!("un.n_apps", n = n).into_owned(),
         };
-        let items = |n: usize| format!("{n} item{} couldn't be moved", if n == 1 { "" } else { "s" });
+        let items = |n: usize| tn!("un.not_moved", n = n).into_owned();
         let failed = (!self.failed.is_empty()).then(|| items(self.failed.len()));
         if self.moved.is_empty() {
-            return (format!("{who} couldn't be removed"), failed);
+            return (t!("un.sum.cant", who = who).into_owned(), failed);
         }
         if self.reset {
-            return (format!("{who} is reset · {size} to the Trash"), failed);
+            return (t!("un.sum.reset", who = who, size = size).into_owned(), failed);
         }
         if self.apps.is_empty() {
-            return (format!("{size} of {who}'s files moved to the Trash"), failed);
+            return (t!("un.sum.files", size = size, who = who).into_owned(), failed);
         }
         let gone = self.apps.len() - self.kept.len();
-        let stayed = (!self.kept.is_empty()).then(|| format!("{} stayed", list_names(&self.kept)));
+        let stayed = (!self.kept.is_empty()).then(|| t!("un.sum.stayed", names = list_names(&self.kept)).into_owned());
         let title = match (gone, self.apps.len()) {
-            (0, 1) => format!("{} stayed · {size} of its files moved", self.apps[0]),
-            (0, _) => format!("No app removed · {size} of their files moved"),
-            (g, n) if g == n => format!("{who} moved to the Trash · {size}"),
-            (g, n) => format!("{g} of {n} apps moved to the Trash · {size}"),
+            (0, 1) => t!("un.sum.one_stayed", app = self.apps[0], size = size).into_owned(),
+            (0, _) => t!("un.sum.none_removed", size = size).into_owned(),
+            (g, n) if g == n => t!("un.sum.all", who = who, size = size).into_owned(),
+            (g, n) => t!("un.sum.some", g = g, n = n, size = size).into_owned(),
         };
         let detail = match (gone, stayed) {
             (0, _) => self.failed.first().map(|(_, why)| why.clone()),
@@ -209,7 +209,7 @@ const SYSTEM_PARENTS: &[(&str, usize)] = &[
 ];
 
 fn progress_name(name: &str) -> String {
-    format!("Stopping {name}…")
+    t!("un.stopping", name = name).into_owned()
 }
 
 /// Stop what still runs from inside `app` (helpers, login items): ours are
@@ -275,14 +275,14 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std:
             rep.apps.push(t.name.clone());
         }
         if t.app.is_some() && mac::is_running(&t.id) {
-            progress(format!("Asking {} to quit…", t.name));
+            progress(t!("un.asking_quit", name = t.name).into_owned());
             mac::ask_to_quit(&t.id);
             let start = Instant::now();
             while mac::is_running(&t.id) && start.elapsed() < QUIT_WAIT {
                 std::thread::sleep(Duration::from_millis(250));
             }
             if mac::is_running(&t.id) {
-                rep.failed.push((t.name.clone(), "It is still open. Quit it, then try again.".into()));
+                rep.failed.push((t.name.clone(), ts!("un.err.still_open").into()));
                 retry[k] = t.items.iter().filter(|i| i.selected).cloned().collect();
                 tick(retry[k].iter().map(|i| i.bytes).sum());
                 continue;
@@ -297,7 +297,7 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std:
             }
             root_pids.extend(stop_inside(app, &progress_name(&t.name), &mut progress).into_iter().filter(|_| !t.reset));
         }
-        progress(format!("Moving {} to the Trash…", t.name));
+        progress(t!("un.moving", name = t.name).into_owned());
         let mut prefs = false;
         for it in t.items.iter().filter(|i| i.selected) {
             if t.reset && it.kind.is_part() {
@@ -310,7 +310,7 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std:
                 continue;
             }
             if !movable(&it.path, roots, app_roots) {
-                rep.failed.push((it.path.display().to_string(), "Not a place apps keep their files; left alone".into()));
+                rep.failed.push((it.path.display().to_string(), ts!("un.err.not_place").into()));
                 continue;
             }
             if it.admin || needs_root(&it.path) {
@@ -343,7 +343,7 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std:
         }
     }
     if !admin.is_empty() {
-        progress("Waiting for your password…".into());
+        progress(ts!("un.waiting_password").into());
         let mut cmd = String::new();
         if !root_pids.is_empty() {
             let pids: Vec<String> = root_pids.iter().map(|p| p.to_string()).collect();
@@ -381,7 +381,7 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std:
             }
         }
         cmd.push_str("true");
-        let res = mac::run_admin(&cmd, "Cmd+Meow wants to move apps and their files to your Trash.");
+        let res = mac::run_admin(&cmd, ts!("un.admin.move"));
         tick(admin.iter().map(|(_, it)| it.bytes).sum());
         for (k, it, m) in planned {
             let why = match &res {
@@ -389,8 +389,8 @@ pub fn run(targets: &[Target], roots: &Roots, app_roots: &[PathBuf], done: &std:
                     rep.moved.push(m);
                     continue;
                 }
-                Ok(_) => "macOS didn't let it move".to_string(),
-                Err(e) if e.contains("-128") || e.to_lowercase().contains("cancel") => "Password not given".to_string(),
+                Ok(_) => ts!("un.err.no_move").to_string(),
+                Err(e) if e.contains("-128") || e.to_lowercase().contains("cancel") => ts!("un.err.no_password").to_string(),
                 Err(e) => e.clone(),
             };
             rep.failed.push((m.from.display().to_string(), why));
@@ -422,11 +422,11 @@ pub fn undo(rep: &Report) -> (usize, Vec<(String, String)>) {
     let mut admin_items = Vec::new();
     for m in rep.moved.iter().rev() {
         if m.from.symlink_metadata().is_ok() {
-            failed.push((m.from.display().to_string(), "Something new is already there".into()));
+            failed.push((m.from.display().to_string(), ts!("un.err.taken").into()));
             continue;
         }
         if m.to.symlink_metadata().is_err() {
-            failed.push((m.from.display().to_string(), "No longer in the Trash".into()));
+            failed.push((m.from.display().to_string(), ts!("un.err.not_in_trash").into()));
             continue;
         }
         if m.admin {
@@ -445,13 +445,13 @@ pub fn undo(rep: &Report) -> (usize, Vec<(String, String)>) {
     }
     if !admin_items.is_empty() {
         admin_cmd.push_str("true");
-        match mac::run_admin(&admin_cmd, "Cmd+Meow wants to put system app files back.") {
+        match mac::run_admin(&admin_cmd, ts!("un.admin.put_back")) {
             Ok(_) => {
                 for m in admin_items {
                     if m.from.symlink_metadata().is_ok() {
                         ok += 1;
                     } else {
-                        failed.push((m.from.display().to_string(), "Couldn't be put back".into()));
+                        failed.push((m.from.display().to_string(), ts!("un.err.not_back").into()));
                     }
                 }
             }
