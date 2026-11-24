@@ -204,6 +204,13 @@ impl App {
         let stored_off: Option<Vec<String>> = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::TOOLS_KEY)) };
         // a fresh install shows setup and starts with a few tools off
         let first_run = !demo && !super::onboard::done_marker().exists();
+        if first_run {
+            std::thread::spawn(|| {
+                // after the first frames, so setup opens without competing
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                crate::tools::capture::warm_ocr();
+            });
+        }
         let tools_off: Vec<String> = match stored_off {
             Some(v) => v,
             None if first_run => super::onboard::off_at_first(tools.iter().map(|t| t.id())),
