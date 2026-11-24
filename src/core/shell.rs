@@ -105,6 +105,10 @@ pub struct App {
     menu_screen: Option<Rect>,
     visible: bool,
     had_focus: bool,
+    /// The panel opened from a press on the icon: take the keyboard (and
+    /// make the app active) until then. macOS turns activation down while
+    /// the press is still on the menu bar, so it's asked again each pass.
+    want_focus: Option<Instant>,
     last_hide: Instant,
     pub app_open: bool,
     /// When the window was asked for (dev log: how long the first frame took).
@@ -273,6 +277,7 @@ impl App {
             menu_screen: None,
             visible: true,
             had_focus: false,
+            want_focus: None,
             last_hide: Instant::now(),
             app_open: false,
             app_asked: None,
@@ -787,6 +792,7 @@ impl App {
             self.hide(ctx);
         } else if !just_hid || self.mode == Mode::Window {
             self.open_panel(ctx);
+            self.want_focus = Some(Instant::now());
         }
     }
 
@@ -977,6 +983,15 @@ impl eframe::App for App {
         let focused = ctx.input(|i| i.viewport().focused);
         if focused == Some(true) {
             self.had_focus = true;
+        }
+        if let Some(at) = self.want_focus {
+            if !self.visible || self.mode != Mode::Panel || focused == Some(true) || at.elapsed().as_millis() > 1500 {
+                self.want_focus = None;
+            } else {
+                ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Focus);
+                crate::kit::native::activate();
+                ctx.request_repaint_after(std::time::Duration::from_millis(30));
+            }
         }
         if let Some(at) = self.hold_panel {
             if at.elapsed().as_millis() > 1500 {
