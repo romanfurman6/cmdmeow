@@ -39,6 +39,7 @@
     const c = choice(), t = c === 'auto' ? (lightQ.matches ? 'light' : 'dark') : c;
     root.dataset.app = t;
     if (menu) menu.querySelectorAll('button').forEach(b => { const on = b.dataset.t === c; b.setAttribute('aria-checked', on); b.firstChild.textContent = on ? '✓' : ''; });
+    document.querySelectorAll('.tseg button').forEach(b => b.setAttribute('aria-checked', b.dataset.t === t));
     photo(t);
   };
   const open = on => { if (!menu || !thm) return; menu.hidden = !on; thm.setAttribute('aria-expanded', on); if (on) menu.querySelector('[aria-checked="true"]')?.focus(); };
@@ -49,6 +50,10 @@
     try { if (b.dataset.t === 'auto') localStorage.removeItem('theme'); else localStorage.setItem('theme', b.dataset.t); } catch {}
     theme(); open(false); thm.focus();
   });
+  document.querySelectorAll('.tseg button').forEach(b => b.addEventListener('click', () => {
+    try { localStorage.setItem('theme', b.dataset.t); } catch {}
+    theme();
+  }));
   document.addEventListener('click', e => { if (menu && !menu.hidden && !e.target.closest('.tm')) open(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && menu && !menu.hidden) { open(false); thm.focus(); } });
 
