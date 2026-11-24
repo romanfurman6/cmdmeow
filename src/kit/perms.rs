@@ -61,14 +61,14 @@ impl Perm {
 
     pub fn name(self) -> &'static str {
         match self {
-            Perm::Screen => "Screen Recording",
-            Perm::Accessibility => "Accessibility",
-            Perm::FullDisk => "Full Disk Access",
-            Perm::SystemEvents => "System Events",
-            Perm::Microphone => "Microphone",
-            Perm::Camera => "Camera",
-            Perm::Bluetooth => "Bluetooth",
-            Perm::Notifications => "Notifications",
+            Perm::Screen => ts!("kit.perm.screen"),
+            Perm::Accessibility => ts!("kit.perm.access"),
+            Perm::FullDisk => ts!("kit.perm.full_disk"),
+            Perm::SystemEvents => ts!("kit.perm.system_events"),
+            Perm::Microphone => ts!("kit.perm.mic"),
+            Perm::Camera => ts!("kit.perm.camera"),
+            Perm::Bluetooth => ts!("kit.perm.bluetooth"),
+            Perm::Notifications => ts!("kit.perm.notifications"),
             Perm::Own { name, .. } => name,
         }
     }
@@ -90,14 +90,14 @@ impl Perm {
     /// Why the app asks, in a few words (the permission rows).
     pub fn why(self) -> &'static str {
         match self {
-            Perm::Screen => "Screenshots and recordings",
-            Perm::Accessibility => "Shortcuts and typing dictation",
-            Perm::FullDisk => "Finding files to clean up",
-            Perm::SystemEvents => "Reading your login items",
-            Perm::Microphone => "Dictation and recording voice",
-            Perm::Camera => "Camera in recordings",
-            Perm::Bluetooth => "AirPods and device batteries",
-            Perm::Notifications => "Alerts from your tools",
+            Perm::Screen => ts!("kit.why.screen"),
+            Perm::Accessibility => ts!("kit.why.access"),
+            Perm::FullDisk => ts!("kit.why.full_disk"),
+            Perm::SystemEvents => ts!("kit.why.system_events"),
+            Perm::Microphone => ts!("kit.why.mic"),
+            Perm::Camera => ts!("kit.why.camera"),
+            Perm::Bluetooth => ts!("kit.why.bluetooth"),
+            Perm::Notifications => ts!("kit.why.notifications"),
             Perm::Own { .. } => "",
         }
     }
@@ -105,9 +105,9 @@ impl Perm {
     /// What the button says before anything was asked.
     pub fn ask_label(self) -> &'static str {
         match self {
-            Perm::FullDisk => "Open Settings",
-            Perm::Own { .. } => "Install",
-            _ => "Allow",
+            Perm::FullDisk => ts!("kit.open_settings"),
+            Perm::Own { .. } => ts!("kit.install"),
+            _ => ts!("kit.allow"),
         }
     }
 

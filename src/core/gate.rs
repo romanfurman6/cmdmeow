@@ -109,7 +109,7 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
                     icon(p, perm.icon(), g, TEXT_DIM());
                 }
             });
-            if !done && r.on_hover_text(format!("{} {}", perm.ask_label(), perm.name())).clicked() {
+            if !done && r.on_hover_text(t!("kit.ask_perm", ask = perm.ask_label(), perm = perm.name())).clicked() {
                 ask = Some(perm);
             }
             x += w + sp::S;

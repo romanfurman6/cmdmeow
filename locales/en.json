@@ -1981,5 +1981,45 @@
     "widget_about": "Brightness and volume of your monitors.",
     "builtin": "Built-in Display",
     "display": "Display"
+  },
+  "kit": {
+    "perm": {
+      "screen": "Screen Recording",
+      "access": "Accessibility",
+      "full_disk": "Full Disk Access",
+      "system_events": "System Events",
+      "mic": "Microphone",
+      "camera": "Camera",
+      "bluetooth": "Bluetooth",
+      "notifications": "Notifications"
+    },
+    "why": {
+      "screen": "Screenshots and recordings",
+      "access": "Shortcuts and typing dictation",
+      "full_disk": "Finding files to clean up",
+      "system_events": "Reading your login items",
+      "mic": "Dictation and recording voice",
+      "camera": "Camera in recordings",
+      "bluetooth": "AirPods and device batteries",
+      "notifications": "Alerts from your tools"
+    },
+    "open_settings": "Open Settings",
+    "install": "Install",
+    "allow": "Allow",
+    "theme": {
+      "auto": "Auto",
+      "light": "Light Classic",
+      "dark": "Dark Classic",
+      "miami": "Dark Miami"
+    },
+    "allowed": "Allowed",
+    "not_allowed": "Not allowed",
+    "close": "Close",
+    "planned": "Planned: not built yet",
+    "stopped": "Stopped",
+    "restart": "Restart",
+    "needs_access": "Needs access",
+    "now": "now",
+    "ask_perm": "%{ask} %{perm}"
   }
 }
