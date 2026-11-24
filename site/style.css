@@ -265,3 +265,27 @@ html[data-app="light"] main .btn.ghost, html[data-app="light"] .human .btn.ghost
 html[data-app="light"] main .btn.ghost:hover, html[data-app="light"] .human .btn.ghost:hover { background: #fff; }
 html[data-app="light"] .btn.pri { box-shadow: 0 1px 0 rgba(20,24,26,.25), 0 10px 20px -10px rgba(91,138,20,.55); }
 html[data-app="light"] .foot .tm { color: rgba(20,24,26,.56); }
+
+/* light: a daytime photo of the same valley (Magnific, 2026-11-24), and the light macOS menu bar */
+html[data-app="light"] .desk { background-color: #E4ECDD; background-image: image-set(url(desk-day-1376.jpg) 1x, url(desk-day.jpg) 2x);
+  --ink: #14181A; --ink2: rgba(20,24,26,.66); --ik: 20,24,26; color: #14181A; }
+html[data-app="light"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(255,255,255,.6), rgba(255,255,255,.28) 55%, transparent 80%); }
+html[data-app="light"] .desk::after { background: linear-gradient(to bottom, transparent 70%, var(--bg)); }
+html[data-app="light"] h1 { text-shadow: 0 1px 24px rgba(255,255,255,.5); }
+html[data-app="light"] .hero .sub { color: #14181A; text-shadow: 0 1px 18px rgba(255,255,255,.7); }
+html[data-app="light"] .facts { color: #14181A; }
+html[data-app="light"] .facts > span, html[data-app="light"] .facts .ver { background: rgba(255,255,255,.72); box-shadow: inset 0 0 0 1px rgba(20,24,26,.09); }
+html[data-app="light"] .facts .ver, html[data-app="light"] .facts > span::before { color: #4E7A10; } html[data-app="light"] .facts > span::before { background: #5B8A14; }
+html[data-app="light"] .desk .btn.ghost { background: rgba(255,255,255,.72); color: #14181A; box-shadow: inset 0 0 0 1px rgba(20,24,26,.1); }
+html[data-app="light"] .desk .btn.ghost:hover { background: rgba(255,255,255,.92); }
+html[data-app="light"] .mbar { background: rgba(255,255,255,.5); color: #14181A; }
+html[data-app="light"] .mbar .mi { color: rgba(20,24,26,.85); }
+html[data-app="light"] .mbar .cup .ph { color: #4E7A10; }
+html[data-app="light"] .mbar .cat.on { background: rgba(20,24,26,.12); }
+html[data-app="light"] .mbx { background-image: url(desk-day.jpg); --ink: #14181A; --ik: 20,24,26; color: #14181A; }
+html[data-app="light"] .mbx::before { background: rgba(255,255,255,.5); }
+html[data-app="light"] .mbx .mn, html[data-app="light"] .mbx .clk, html[data-app="light"] .mbx .mi2 { color: rgba(20,24,26,.88); }
+html[data-app="light"] .mbx .mi2.bat i { box-shadow: inset 0 0 0 1.4px rgba(20,24,26,.8); background: linear-gradient(90deg, #14181A 0 62%, transparent 62%); }
+html[data-app="light"] .bars:not(.b-one) .mi2.ap { background: rgba(91,138,20,.16); color: #2F5208; }
+html[data-app="light"] .mbx .cat { color: #2F5208; background: rgba(91,138,20,.16); }
+html[data-app="light"] .replay { background: rgba(255,255,255,.8); color: #14181A; }
