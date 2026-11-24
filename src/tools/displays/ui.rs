@@ -85,7 +85,7 @@ fn control(d: &mut Displays, ui: &mut Ui, r: Rect, id: egui::Id, s: &Screen, c: 
         let resp = ui.interact(ir.expand(4.0), id.with("mute"), Sense::click());
         let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
         icon(&p, glyph, ir, col);
-        if resp.on_hover_text(if s.muted { "Unmute" } else { "Mute" }).clicked() {
+        if resp.on_hover_text(if s.muted { ts!("disp.unmute") } else { ts!("disp.mute") }).clicked() {
             d.set(Cmd::Mute(s.id, !s.muted));
         }
     } else {
@@ -116,19 +116,18 @@ pub fn widget(d: &mut Displays, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx
     let ours: Vec<Screen> = screens.iter().filter(|s| s.adjustable()).cloned().collect();
     if size == Size::S14 {
         // W5: the Row template; each display's bar is its brightness slider
-        let value = ours.first().map(|s| pct(s.brightness)).unwrap_or_else(|| "None".into());
+        let value = ours.first().map(|s| pct(s.brightness)).unwrap_or_else(|| ts!("disp.none").into());
         let cap = match ours.len() {
             0 => String::new(),
-            1 => "1 connected".to_string(),
-            n => format!("{n} connected"),
+            n => tn!("disp.connected", n = n).into_owned(),
         };
-        let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Sun, color, None, "Displays", &value, &cap, ty::caption_color(), false);
+        let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Sun, color, None, ts!("disp.name"), &value, &cap, ty::caption_color(), false);
         if resp.clicked() {
             cx.open_page(ID, "");
         }
         let p = ui.painter().clone();
         if ours.is_empty() {
-            text_fit(&p, right.center(), Align2::CENTER_CENTER, "No external display", font(12.0), TEXT_FAINT(), right.width());
+            text_fit(&p, right.center(), Align2::CENTER_CENTER, ts!("disp.no_external"), font(12.0), TEXT_FAINT(), right.width());
             return;
         }
         let n = ours.len().min(3);
@@ -152,7 +151,7 @@ pub fn widget(d: &mut Displays, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx
     }
     let p = ui.painter().clone();
     if ours.is_empty() {
-        tile::empty_note(&p, rect, "No external display");
+        tile::empty_note(&p, rect, ts!("disp.no_external"));
         return;
     }
     let inner = rect.shrink(PAD);
@@ -176,7 +175,7 @@ pub fn page(d: &mut Displays, ui: &mut Ui, r: Rect) {
     let x0 = r.left() + 24.0;
     let x1 = r.right() - 24.0;
     // a title like every other page
-    page_header(&p, r, "Displays", "", TEXT_DIM());
+    page_header(&p, r, ts!("disp.name"), "", TEXT_DIM());
     let mut y = r.top() + PAGE_HEADER_H + 20.0;
     let screens = d.screens();
     let ours: Vec<Screen> = screens.iter().filter(|s| s.adjustable()).cloned().collect();
@@ -219,7 +218,7 @@ pub fn page(d: &mut Displays, ui: &mut Ui, r: Rect) {
     // the keys
     let kr = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, y + 56.0));
     glass_card(&p, kr, R_CARD, 0.0, false);
-    p.text(Pos2::new(kr.left() + 18.0, kr.center().y), Align2::LEFT_CENTER, "Use keyboard keys for these displays", ty::body(), TEXT());
+    p.text(Pos2::new(kr.left() + 18.0, kr.center().y), Align2::LEFT_CENTER, ts!("disp.use_keys"), ty::body(), TEXT());
     let mut st = d.settings();
     let sw = Rect::from_min_size(Pos2::new(kr.right() - 18.0 - 38.0, kr.center().y - 11.0), Vec2::new(38.0, 22.0));
     if switch(ui, sw, id.with("keys"), st.keys, true).clicked() {
@@ -233,8 +232,8 @@ fn empty(ui: &mut Ui, p: &egui::Painter, r: Rect, color: Color32) {
     let c = Pos2::new(r.center().x, r.top() + r.height() * 0.38);
     p.circle_filled(c, 34.0, white(12));
     icon(p, Icon::Display, Rect::from_center_size(c, Vec2::splat(30.0)), lift(color));
-    p.text(c + Vec2::new(0.0, 56.0), Align2::CENTER_CENTER, "No external display", bold(15.0), TEXT());
-    let label = "Display Settings";
+    p.text(c + Vec2::new(0.0, 56.0), Align2::CENTER_CENTER, ts!("disp.no_external"), bold(15.0), TEXT());
+    let label = ts!("disp.settings");
     let bw = button_width(p, label, BTN_SECONDARY);
     let br = Rect::from_center_size(Pos2::new(c.x, c.y + 56.0 + 40.0), Vec2::new(bw, 30.0));
     if pill_button(ui, br, label, BTN_SECONDARY, true).clicked() {

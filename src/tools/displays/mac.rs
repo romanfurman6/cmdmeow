@@ -430,7 +430,7 @@ mod imp {
                     keys.push(key.clone());
                     let b = unsafe { CGDisplayBounds(id) };
                     let frame = Rect::from_min_size(Pos2::new(b.origin.x as f32, b.origin.y as f32), Vec2::new(b.w as f32, b.h as f32));
-                    let name = localized(dict_get(info.0, "DisplayProductName")).unwrap_or_else(|| if builtin { "Built-in Display".into() } else { "Display".into() });
+                    let name = localized(dict_get(info.0, "DisplayProductName")).unwrap_or_else(|| if builtin { ts!("disp.builtin").into() } else { ts!("disp.display").into() });
                     let native = builtin || (vendor == APPLE_VENDOR && native_brightness(id).is_some());
                     Found { id, key, name, builtin, native, ddc: self.lines.contains_key(&id), frame }
                 })
