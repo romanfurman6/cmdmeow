@@ -27,9 +27,7 @@ Fourteen Mac tools in one menu bar app. Open source, no account, runs locally.</
 ## Install
 
 1. Download [CmdMeow.dmg](https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg) and drag Cmd+Meow to Applications.
-2. The app is signed but not notarized yet, so the first launch is blocked. Open it once, then click **Open Anyway** in System Settings › Privacy & Security.
-   Or run `xattr -dr com.apple.quarantine /Applications/CmdMeow.app`.
-3. First-run setup asks only for the permissions of the tools you turn on.
+2. First-run setup asks only for the permissions of the tools you turn on.
 
 Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, but it is not tested there yet, and Displays (external monitor brightness) and the power readings in Mac Health work on Apple silicon only.
 
@@ -44,7 +42,7 @@ Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, 
 | **Mac Health** | CPU, memory, disk, battery, Wi-Fi speed test, Bluetooth batteries |
 | **AI Usage** | Claude, Codex, Gemini and OpenCode limits, pace and cost |
 | **Fan Control** | Fan speeds, chip heat map, fixed speed or your own curve |
-| **Screenshot** | Area, window or screen, an editor with arrows, blur and text |
+| **Screenshot** | Area, window or screen, an editor with arrows, blur, text and zoom |
 | **Video** | Screen recording with camera, mic and system audio |
 | **Sharing** | Upload a shot or a recording to your own S3 and copy a link |
 | **Dictation** | ⌥D types what you say at the caret; speech stays on the Mac |
@@ -53,7 +51,8 @@ Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, 
 | **Displays** | Brightness and volume of external monitors from your keys |
 
 Every tool can be turned off, and the panel is a grid of widgets you arrange
-yourself.
+yourself. Three themes: Light Classic, Dark Classic and Dark Miami (pick one
+during setup or in Settings › Theme).
 
 ![Disk Map](docs/images/app-disk-map.png)
 
@@ -180,10 +179,10 @@ users must right-click › Open.
 The signed app runs with the hardened runtime and `assets/CmdMeow.entitlements`
 (microphone, camera, Apple Events).
 
-Current releases (0.1.0, 0.1.1) are Developer ID signed but not notarized:
-Apple hasn't finished setting up the developer account yet, and
-`release.yml` publishes without notarization (the release name says so) until
-it can. See [Install](#install) for the first launch.
+Releases from 0.2.0 on are notarized. If notarization fails (it did for 0.1.0
+and 0.1.1 while Apple set up the developer account), `release.yml` still
+publishes the Developer ID signed build and the release name says
+"(not notarized)".
 
 Coming from CleanMeBro (the old name; bundle id is now
 `com.romanfurman6.cmdmeow`): the new bundle id makes it a new app to macOS. Grant

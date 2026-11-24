@@ -150,6 +150,13 @@ pub fn set_allowed(on: bool) {
     ALLOWED.with(|a| a.set(on));
 }
 
+/// Native layers may be used now (off for screenshots, demo views and
+/// `CMDMEOW_NATIVE_SPIN=0`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn native_allowed() -> bool {
+    native_wanted()
+}
+
 fn native_wanted() -> bool {
     static ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     ALLOWED.with(|a| a.get()) && *ENV.get_or_init(|| std::env::var("CMDMEOW_NATIVE_SPIN").map(|v| v != "0").unwrap_or(true))

@@ -865,7 +865,8 @@ impl WgpuWinitRunning<'_> {
                         true
                     }
                 });
-                painter.paint_and_update_textures(
+                let shot = !screenshot_commands.is_empty();
+                let secs = painter.paint_and_update_textures(
                     viewport_id,
                     pixels_per_point,
                     app.clear_color(&egui_ctx.global_style().visuals),
@@ -873,7 +874,15 @@ impl WgpuWinitRunning<'_> {
                     pending_deltas,
                     screenshot_commands,
                     window,
-                )
+                );
+                // CmdMeow: a screenshot reaches its callback only when the
+                // device is polled, and frame pacing above may skip every
+                // following paint (and with it the poll inside submit), so
+                // the callback would never run. Wait for this frame here.
+                if shot {
+                    wait_for_capture(painter);
+                }
+                secs
             };
 
             for action in viewport.actions_requested.drain(..) {
@@ -1240,6 +1249,18 @@ fn is_viewport_or_descendant_visible(viewports: &Viewports, viewport_id: Viewpor
     })
 }
 
+/// CmdMeow: a screenshot reaches its callback only when the device is
+/// polled; frame pacing may skip the paints (and their submit-time polls)
+/// that would do it, so wait for the capture frame right away.
+fn wait_for_capture(painter: &egui_wgpu::winit::Painter) {
+    if let Some(rs) = painter.render_state() {
+        let _ = rs.device.poll(egui_wgpu::wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_millis(250)),
+        });
+    }
+}
+
 fn render_immediate_viewport(
     beginning: Instant,
     shared: &RefCell<SharedState>,
@@ -1353,19 +1374,34 @@ fn render_immediate_viewport(
     // Cmd+Meow patch: a pass that changes nothing on screen isn't painted
     let size = window.inner_size();
     viewport.last_paint.on_screen(viewport.info.visible().unwrap_or(true) && !winit_integration::is_invisible_or_minimized(window));
-    let skip = viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty());
+    // CmdMeow: screenshots asked of an immediate viewport are served too
+    // (upstream drops them), from the next paint after the ask
+    let mut shots = vec![];
+    viewport.actions_requested.retain(|a| {
+        if let ActionRequested::Screenshot(cb) = a {
+            shots.push(cb.clone());
+            false
+        } else {
+            true
+        }
+    });
+    let skip = shots.is_empty() && viewport.last_paint.same(&shapes, pixels_per_point, [size.width, size.height], viewport.pending_delta.is_empty());
     viewport.last_paint.pace(skip, || window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m / 1000));
     if !skip {
         let clipped_primitives = egui_ctx.tessellate(shapes, pixels_per_point);
+        let shot = !shots.is_empty();
         painter.paint_and_update_textures(
             ids.this,
             pixels_per_point,
             [0.0, 0.0, 0.0, 0.0],
             &clipped_primitives,
             &mut viewport.pending_delta,
-            vec![],
+            shots,
             window,
         );
+        if shot {
+            wait_for_capture(painter);
+        }
     }
 
     egui_winit.handle_platform_output(window, platform_output);
