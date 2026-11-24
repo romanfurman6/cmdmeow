@@ -469,13 +469,14 @@ pub fn spark_to(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top:
 
 /// A history graph with its time span under it ("2 min ago" … "now", W5),
 /// for widgets and the Mac Health page alike. `top` is the top of the scale
-/// (None: the highest value). The captions take the bottom 13 pt of `r`.
+/// (None: the highest value). The captions take the bottom 13 pt of `r`,
+/// `sp::S` under the bars (the same gap as the Fan Control chart).
 pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, top: Option<f32>) {
     // no history yet, or no room for a graph above the captions
-    if values.is_empty() || r.height() < 13.0 + 8.0 {
+    if values.is_empty() || r.height() < SPAN_CAPTION_H + 8.0 {
         return;
     }
-    let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 13.0));
+    let gr = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - SPAN_CAPTION_H));
     match top {
         Some(t) => spark_to(p, gr, values, color, t),
         None => spark(p, gr, values, color, None),
@@ -484,6 +485,10 @@ pub fn spark_span(p: &egui::Painter, r: Rect, values: &[f32], color: Color32, to
     p.text(Pos2::new(r.left(), r.bottom()), Align2::LEFT_BOTTOM, start, ty::caption(), ty::caption_color());
     p.text(Pos2::new(r.right(), r.bottom()), Align2::RIGHT_BOTTOM, "now", ty::caption(), ty::caption_color());
 }
+
+/// The time captions under a [`spark_span`] graph: 13 pt of text and the
+/// `sp::S` gap above it.
+pub const SPAN_CAPTION_H: f32 = 13.0 + sp::S;
 
 /// How far back a graph of `secs` reaches: "45 s ago", "2 min ago".
 fn span_label(secs: u64) -> String {
