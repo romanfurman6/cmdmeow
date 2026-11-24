@@ -228,7 +228,7 @@ fn keychain(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
     crate::kit::viewport::show(ctx, ViewportId::from_hash_of(title), floating(title, pos, size).with_active(true), |ui, _| {
         let r = ui.max_rect();
         let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, BG());
+        p.rect_filled(r, 14.0, POPOVER());
         p.rect_stroke(r, 14.0, Stroke::new(1.0, POPOVER_EDGE()), StrokeKind::Inside);
         let x = r.left() + 16.0;
         let w = r.width() - 32.0;
@@ -292,23 +292,24 @@ fn permission(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
     } else {
         ("Capture needs Screen Recording".to_string(), format!("Turn on {} in System Settings", crate::kit::perms::app_name()), "Open System Settings")
     };
-    let size = Vec2::new(400.0, 140.0);
+    let size = Vec2::new(400.0, 152.0);
     let pos = Pos2::new((screen.x - size.x) / 2.0, screen.y * 0.3);
     let title = &plain("capture-permission");
     let mut choice = None;
     crate::kit::viewport::show(ctx, ViewportId::from_hash_of(title), floating(title, pos, size).with_active(true), |ui, _| {
         let r = ui.max_rect();
         let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, BG());
-        p.rect_stroke(r, 14.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
-        tool_chip(&p, Rect::from_min_size(r.min + Vec2::new(18.0, 18.0), Vec2::splat(32.0)), Icon::Crop, tint::CAPTURE());
-        p.text(r.min + Vec2::new(62.0, 20.0), Align2::LEFT_TOP, &title_text, bold(15.0), TEXT());
-        paragraph(&p, r.min + Vec2::new(62.0, 44.0), &body, font(13.0), TEXT_DIM(), r.width() - 80.0);
-        let y = r.bottom() - 46.0;
+        // a permission card (docs/ui-rules.md P9)
+        p.rect_filled(r, 14.0, POPOVER());
+        p.rect_stroke(r, 14.0, Stroke::new(1.0, POPOVER_EDGE()), StrokeKind::Inside);
+        tool_chip(&p, Rect::from_min_size(r.min + Vec2::new(16.0, 16.0), Vec2::splat(42.0)), Icon::Crop, tint::CAPTURE());
+        p.text(r.min + Vec2::new(70.0, 18.0), Align2::LEFT_TOP, &title_text, bold(15.0), TEXT());
+        paragraph(&p, r.min + Vec2::new(70.0, 42.0), &body, font(13.0), TEXT_DIM(), r.width() - 86.0);
+        let y = r.bottom() - 16.0 - 32.0;
         let ow = button_width(&p, action, BTN_PRIMARY);
-        let or = Rect::from_min_size(Pos2::new(r.right() - 18.0 - ow, y), Vec2::new(ow, 30.0));
+        let or = Rect::from_min_size(Pos2::new(r.right() - 16.0 - ow, y), Vec2::new(ow, 32.0));
         let nw = button_width(&p, "Not now", BTN_SECONDARY);
-        let nr = Rect::from_min_size(Pos2::new(or.left() - 10.0 - nw, y), Vec2::new(nw, 30.0));
+        let nr = Rect::from_min_size(Pos2::new(or.left() - 8.0 - nw, y), Vec2::new(nw, 32.0));
         if pill_button(ui, nr, "Not now", BTN_SECONDARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             choice = Some(false);
         }
