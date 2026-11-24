@@ -1108,7 +1108,7 @@ impl Editor {
             let target = match cmd {
                 ZoomCmd::In => Some((self.zoom * 2.0, None)),
                 ZoomCmd::Out => Some((self.zoom / 2.0, None)),
-                ZoomCmd::Fit => Some((1.0, None)),
+                ZoomCmd::Fit => Some((1.0, Some(Vec2::ZERO))),
                 ZoomCmd::Actual => Some((actual, None)),
                 ZoomCmd::Selection => sel.map(|b| {
                     // the shape's centre, from the picture's centre, in fit points
@@ -1977,10 +1977,13 @@ fn zoom_at(zoom: f32, pan: Vec2, by: f32, at: Vec2, max: f32) -> (f32, Vec2) {
     (z, at - (at - pan) * k)
 }
 
-/// Keep a zoomed picture over the canvas: no gap at an edge while it is larger,
-/// centred on an axis where it fits.
+/// How much of the picture stays on the canvas, at least, however far it pans (points).
+const PAN_KEEP: f32 = 64.0;
+
+/// Pan freely, as in Figma, past the canvas edges on both axes, until only a
+/// `PAN_KEEP` strip of the picture is left in view.
 fn clamp_pan(pan: Vec2, size: Vec2, avail: Vec2) -> Vec2 {
-    let room = ((size - avail) / 2.0).max(Vec2::ZERO);
+    let room = ((size + avail) / 2.0 - Vec2::splat(PAN_KEEP)).max(Vec2::ZERO);
     Vec2::new(pan.x.clamp(-room.x, room.x), pan.y.clamp(-room.y, room.y))
 }
 
@@ -2313,12 +2316,15 @@ mod tests {
     }
 
     #[test]
-    fn zoomed_picture_stays_over_the_canvas() {
+    fn picture_pans_past_the_edges_but_stays_in_view() {
         let avail = Vec2::new(400.0, 300.0);
-        // fits: centred
-        assert_eq!(clamp_pan(Vec2::new(50.0, 50.0), Vec2::new(300.0, 200.0), avail), Vec2::ZERO);
-        // 800 wide: at most 200 either way; 250 tall still fits
-        assert_eq!(clamp_pan(Vec2::new(500.0, 30.0), Vec2::new(800.0, 250.0), avail), Vec2::new(200.0, 0.0));
+        // smaller than the canvas: still moves on both axes, as in Figma
+        assert_eq!(clamp_pan(Vec2::new(50.0, -40.0), Vec2::new(300.0, 200.0), avail), Vec2::new(50.0, -40.0));
+        // far off: a PAN_KEEP strip stays on the canvas
+        let pan = clamp_pan(Vec2::new(5000.0, -5000.0), Vec2::new(800.0, 250.0), avail);
+        assert_eq!(pan, Vec2::new(600.0 - PAN_KEEP, -(275.0 - PAN_KEEP)));
+        // that strip: the picture's left edge sits PAN_KEEP inside the canvas's right edge
+        assert_eq!(avail.x / 2.0 - (pan.x - 400.0), PAN_KEEP);
     }
 
     fn key_event(key: Key, physical: Key, modifiers: egui::Modifiers) -> egui::Event {
