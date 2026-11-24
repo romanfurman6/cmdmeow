@@ -83,7 +83,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         if app.tools[i].section() != section {
             section = app.tools[i].section();
             y += gap;
-            group_header(&p, Pos2::new(x + 8.0, y), super::tool::section_label(section));
+            group_header(&p, Pos2::new(x + 8.0, y), section, super::tool::section_label(section));
             y += head;
         }
         // a required permission is missing: a lock where the shortcut sits
@@ -280,6 +280,15 @@ mod meta_tests {
         let tools = crate::tools::all(&crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true });
         for t in &tools {
             assert!(crate::core::tool::SECTIONS.contains(&t.section()), "{}: {}", t.id(), t.section());
+        }
+    }
+
+    #[test]
+    fn section_dots_are_coloured_by_id() {
+        use crate::kit::glass::{group_color, TEXT_FAINT};
+        for id in ["Clean", "Monitor", "Create", "Utilities"] {
+            assert!(crate::core::tool::SECTIONS.contains(&id), "{id}");
+            assert_ne!(group_color(id), TEXT_FAINT(), "{id}");
         }
     }
 
