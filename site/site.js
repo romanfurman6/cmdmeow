@@ -15,6 +15,56 @@
   const tick = () => { if (clock) clock.textContent = new Date().toLocaleString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', ''); };
   tick(); setInterval(tick, 15000);
 
+
+  // App pictures follow the visitor's theme, like the app does
+  // The visitor's macOS theme, unless they picked one in the menu bar's theme menu (kept in localStorage)
+  const root = document.documentElement, lightQ = matchMedia('(prefers-color-scheme: light)');
+  const THEMES = ['light', 'dark', 'miami'];
+  const choice = () => { try { const t = localStorage.getItem('theme'); return THEMES.includes(t) ? t : 'auto'; } catch { return 'auto'; } };
+  const thm = $('thm'), menu = $('tmenu');
+  // First-screen photo: a blurred inline copy paints first, the real file fades in once loaded
+  const dimg = document.querySelector('.dimg i');
+  const PHOTO = { dark: 'desk', light: 'desk-day', miami: 'desk-miami' };
+  const photo = t => {
+    if (!dimg) return;
+    const big = window.innerWidth * (window.devicePixelRatio || 1) > 1500;
+    const src = PHOTO[t] + (big ? '' : '-1376') + '.jpg';
+    if (dimg.dataset.src === src) return;
+    dimg.dataset.src = src; dimg.classList.remove('in');
+    const im = new Image();
+    im.onload = () => { if (dimg.dataset.src !== src) return; dimg.style.backgroundImage = `url(${src})`; requestAnimationFrame(() => dimg.classList.add('in')); };
+    im.src = src;
+  };
+  const theme = () => {
+    const c = choice(), t = c === 'auto' ? (lightQ.matches ? 'light' : 'dark') : c;
+    root.dataset.app = t;
+    if (menu) menu.querySelectorAll('button').forEach(b => { const on = b.dataset.t === c; b.setAttribute('aria-checked', on); b.firstChild.textContent = on ? '✓' : ''; });
+    document.querySelectorAll('.tseg button').forEach(b => b.setAttribute('aria-checked', b.dataset.t === t));
+    photo(t);
+  };
+  const open = on => { if (!menu || !thm) return; menu.hidden = !on; thm.setAttribute('aria-expanded', on); if (on) menu.querySelector('[aria-checked="true"]')?.focus(); };
+  theme(); lightQ.addEventListener('change', theme);
+  if (thm) thm.addEventListener('click', e => { e.stopPropagation(); open(menu.hidden); });
+  if (menu) menu.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    try { if (b.dataset.t === 'auto') localStorage.removeItem('theme'); else localStorage.setItem('theme', b.dataset.t); } catch {}
+    theme(); open(false); thm.focus();
+  });
+  // the dots pill sits on <html> so no wrapper's transform can unpin it
+  const seg = document.querySelector('.tseg'); if (seg) document.documentElement.appendChild(seg);
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.tseg button'); if (!b) return;
+    try { localStorage.setItem('theme', b.dataset.t); } catch {}
+    theme();
+  });
+  document.addEventListener('click', e => { if (menu && !menu.hidden && !e.target.closest('.tm')) open(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && menu && !menu.hidden) { open(false); thm.focus(); } });
+
+  // Panel header: the round "…" slides out Open, Hide and Quit, and tucks them back
+  document.querySelectorAll('.swh .more').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation(); const hb = b.parentElement; hb.classList.toggle('open'); b.title = hb.classList.contains('open') ? 'Less' : 'More';
+  }));
+
   // Phones can't install a Mac app: send the link to the Mac instead
   if (matchMedia('(hover: none) and (pointer: coarse)').matches) document.querySelectorAll('.get').forEach(get => {
     const url = 'https://cmdmeow.com/';

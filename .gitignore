@@ -24,6 +24,8 @@ checks/
 *.png
 *.jpg
 *.jpeg
+# onboarding theme card art ships with the app
+!assets/themes/*.jpg
 docs/screenshots/
 docs/reference/
 docs/feedback/
