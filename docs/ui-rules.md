@@ -279,6 +279,7 @@ Read this before §2: every colour rule there holds in each theme.
 | TH7 | Nothing from the game it is inspired by: no names, logos, fonts or art. The name is "Miami". |
 | TH8 | Every new screen and PR is checked in all three themes (C8 contrast, M1 test). Screenshots: `CMDMEOW_THEME=light|dark|miami`. |
 | TH9 | Widgets follow the theme: the panel widget cards, the widget editor and the gallery draw with the same tokens, so Miami changes them too. Fixed-colour surfaces stay as they are (C13, C16, L5). |
+| TH10 | The desktop cat follows the theme. Its lime fur, stripes and shading take the theme's `ACTION()` (Dark Meow #C8F05A as drawn, Light Meow #A8D83A, Miami #FF5FA2), with lightness kept relative to the pack's lime. Outline: Miami ink #1A0B2E; Light and Dark keep the drawn #0A1009. Eyes, nose, mouth, tongue, bed, bowl and yarn keep their colours. Recoloured once per theme switch (no idle cost). The menu bar cat stays a template icon; the app icon stays lime. |
 
 Other rules in Miami: B5 glow tint stays `ACTION()`, so Miami keys glow pink. B6 `DANGER()`, P2 shadows and P4 `SCRIM()` use the dark values. C16 overlays and L5 HUD keep their fixed colours. L1–L8 are Light Meow rules.
 
@@ -349,3 +350,5 @@ Other rules in Miami: B5 glow tint stays `ACTION()`, so Miami keys glow pink. B6
 2026-11-23, Roman: details popup content has no inner boxes (P8, PR #295).
 
 2026-11-24, Roman: three themes Light Meow, Dark Meow, Miami (canvas https://claude.ai/artifact/EfWjmLd5axdU3BGKNzKRmB): §13 TH1–TH9, C1/C2/C3/C8/S1 wording.
+
+2026-11-24, Roman: TH10 desktop cat per theme (canvas https://claude.ai/artifact/2UCHdgZAiUXjxCu2k1FzSd, L1 + M1).
