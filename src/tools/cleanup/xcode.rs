@@ -20,24 +20,24 @@ pub(super) fn scan(c: &mut Ctx) {
         let name = ws.as_ref().and_then(|w| w.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| derived_data_name(&super::engine::fname(&p)));
         let gone = ws.as_ref().is_some_and(|w| !w.exists());
         let (v, why) = if xcode_open {
-            (Verdict::Ask, "Xcode is open — quit it first or allow anyway".to_string())
+            (Verdict::Ask, ts!("cleanup.why.xcode_open").to_string())
         } else if gone {
-            (Verdict::Safe, "Its project no longer exists".to_string())
+            (Verdict::Safe, ts!("cleanup.why.project_gone").to_string())
         } else {
-            (Verdict::Safe, "Build products and index; Xcode rebuilds them".to_string())
+            (Verdict::Safe, ts!("cleanup.why.derived").to_string())
         };
-        c.add(Group::Developer, &format!("Derived Data · {name}"), p, "Build Data", v, &why);
+        c.add(Group::Developer, &t!("cleanup.it.derived", name = name), p, "Build Data", v, &why);
         if xcode_open {
             if let Some(it) = c.items.last_mut() {
                 it.app_running = true;
             }
         }
     }
-    c.add(Group::Developer, "Xcode Caches", x.join("Xcode/DocumentationCache"), "Caches", Verdict::Safe, "Documentation cache");
-    c.add(Group::Developer, "Swift module cache", x.join("Xcode/ModuleCache.noindex"), "Caches", Verdict::Safe, "Precompiled module cache");
-    c.add(Group::Developer, "SwiftUI Previews", x.join("Xcode/UserData/Previews"), "Caches", Verdict::Safe, "Preview simulator data");
-    c.add(Group::Developer, "iOS Device Logs", x.join("Xcode/iOS Device Logs"), "Logs", Verdict::Safe, "Device logs collected by Xcode");
-    c.add(Group::Developer, "Simulator caches", x.join("CoreSimulator/Caches"), "Caches", Verdict::Safe, "Simulator dyld caches; rebuilt on boot");
+    c.add(Group::Developer, ts!("cleanup.it.xcode_caches"), x.join("Xcode/DocumentationCache"), "Caches", Verdict::Safe, ts!("cleanup.why.doc_cache"));
+    c.add(Group::Developer, ts!("cleanup.it.swift_modules"), x.join("Xcode/ModuleCache.noindex"), "Caches", Verdict::Safe, ts!("cleanup.why.module_cache"));
+    c.add(Group::Developer, ts!("cleanup.it.previews"), x.join("Xcode/UserData/Previews"), "Caches", Verdict::Safe, ts!("cleanup.why.previews"));
+    c.add(Group::Developer, ts!("cleanup.it.device_logs"), x.join("Xcode/iOS Device Logs"), "Logs", Verdict::Safe, ts!("cleanup.why.device_logs"));
+    c.add(Group::Developer, ts!("cleanup.it.sim_caches"), x.join("CoreSimulator/Caches"), "Caches", Verdict::Safe, ts!("cleanup.why.sim_caches"));
     // device support: the newest version of each OS stays on offer as a question
     for os in ["iOS DeviceSupport", "watchOS DeviceSupport", "macOS DeviceSupport", "tvOS DeviceSupport", "visionOS DeviceSupport"] {
         let label = os.replace(" DeviceSupport", "");
@@ -45,9 +45,9 @@ pub(super) fn scan(c: &mut Ctx) {
         let newest = found.iter().filter_map(|(_, v)| v.as_ref()).max().cloned();
         for (p, v) in found {
             let (verdict, why) = match &v {
-                None => (Verdict::Ask, "Couldn't tell which OS version this is for"),
-                Some(v) if Some(v) == newest.as_ref() => (Verdict::Ask, "Newest device support — needed to debug on that device"),
-                Some(_) => (Verdict::Safe, "Support files for an older OS version; recreated when you connect that device"),
+                None => (Verdict::Ask, ts!("cleanup.why.ds_unknown")),
+                Some(v) if Some(v) == newest.as_ref() => (Verdict::Ask, ts!("cleanup.why.ds_newest")),
+                Some(_) => (Verdict::Safe, ts!("cleanup.why.ds_old")),
             };
             c.add(Group::Developer, &format!("{label} {}", super::engine::fname(&p)), p, "Device Support", verdict, why);
         }
@@ -137,7 +137,7 @@ fn read_archive(p: &Path) -> Archive {
 
 fn scan_archives(c: &mut Ctx, root: &Path) {
     for (a, v, why) in archive_plan(root) {
-        c.add(Group::Developer, &format!("Archive · {}", a.label), a.path, "Archives", v, why);
+        c.add(Group::Developer, &t!("cleanup.it.archive", name = a.label), a.path, "Archives", v, why);
     }
 }
 
@@ -155,7 +155,7 @@ fn archive_plan(root: &Path) -> Vec<(Archive, Verdict, &'static str)> {
     for (_, mut list) in by_app {
         list.sort_by_key(|a| std::cmp::Reverse(a.when));
         for (i, a) in list.into_iter().enumerate() {
-            let (v, why) = if i == 0 { (Verdict::Keep, "Latest archive of this app — keeps the debug symbols of what you shipped") } else { (Verdict::Ask, "Older archive; the latest one of this app is kept") };
+            let (v, why) = if i == 0 { (Verdict::Keep, ts!("cleanup.why.archive_latest")) } else { (Verdict::Ask, ts!("cleanup.why.archive_old")) };
             out.push((a, v, why));
         }
     }
@@ -178,8 +178,8 @@ pub(super) fn scan_simulators(c: &mut Ctx) {
     if let Some(o) = run::output(std::process::Command::new(&xcrun).args(["simctl", "list", "devices", "-j"]), Duration::from_secs(20)) {
         for d in unavailable_devices(&o.stdout) {
             let dir = home().join("Library/Developer/CoreSimulator/Devices").join(&d.udid);
-            let why = if d.why.is_empty() { "Its runtime is gone, so it can't start".to_string() } else { format!("Can't start: {}", d.why) };
-            c.add(Group::Developer, &format!("Simulator · {}", d.name), dir, "Simulators", Verdict::Safe, &why);
+            let why = if d.why.is_empty() { ts!("cleanup.why.sim_gone").to_string() } else { t!("cleanup.why.sim_cant", why = d.why).into_owned() };
+            c.add(Group::Developer, &t!("cleanup.it.simulator", name = d.name), dir, "Simulators", Verdict::Safe, &why);
             if let Some(it) = c.items.last_mut().filter(|i| i.kind == "Simulators") {
                 it.action = Action::SimDevice(d.udid.clone());
             }
@@ -188,7 +188,7 @@ pub(super) fn scan_simulators(c: &mut Ctx) {
     if let Some(o) = run::output(std::process::Command::new(&xcrun).args(["simctl", "runtime", "list", "-j"]), Duration::from_secs(20)) {
         for r in old_runtimes(&o.stdout) {
             let path = PathBuf::from(format!("/Library/Developer/CoreSimulator/Volumes/{}", r.id));
-            c.add_action(Group::Developer, &format!("Simulator runtime · {} {}", r.platform, r.version), path, "Simulators", Verdict::Ask, &format!("Older {} runtime; Xcode downloads it again if a project needs it", r.platform), Action::SimRuntime(r.id.clone()), r.bytes);
+            c.add_action(Group::Developer, &t!("cleanup.it.sim_runtime", platform = r.platform, version = r.version), path, "Simulators", Verdict::Ask, &t!("cleanup.why.sim_runtime", platform = r.platform), Action::SimRuntime(r.id.clone()), r.bytes);
         }
     }
 }

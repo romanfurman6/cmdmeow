@@ -186,7 +186,10 @@ pub struct State {
     /// Group and size of each item removed (they leave `items`).
     pub cleaned: Vec<(Group, u64)>,
     pub failed: Vec<(String, String)>,
-    pub log: Vec<String>,
+    /// A skip was caused by an app that's open.
+    pub in_way: bool,
+    /// Log lines; `true` marks a problem.
+    pub log: Vec<(String, bool)>,
     /// Set to stop this run (Stop, Skip, a new scan); each run has its own.
     pub cancel: Arc<AtomicBool>,
     /// Which scan this is (counts up per run): AI Check checks once per scan.
@@ -377,7 +380,7 @@ impl Ctx {
                 _ if title.contains(' ') && title.len() > 18 => pretty(&name),
                 _ => title.to_string(),
             };
-            it.reason = format!("{} is open right now — quit it first or allow anyway", if app.is_empty() { title.to_string() } else { app });
+            it.reason = t!("cleanup.why.app_open", app = if app.is_empty() { title.to_string() } else { app }).into_owned();
         }
         self.items.push(it);
     }
@@ -388,7 +391,7 @@ impl Ctx {
 /// judged by its own rules (it sits in folders that are otherwise personal).
 pub(super) fn guard(group: Group, p: &Path) -> Option<&'static str> {
     if !p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir)) || !p.starts_with(home()) {
-        return Some("Outside your home folder");
+        return Some(ts!("cleanup.why.outside_home"));
     }
     if group == Group::Projects {
         return super::projects::still_build_output(p);
@@ -730,7 +733,7 @@ pub fn skip_ai(shared: &Shared) {
     g.cancel.store(true, Ordering::SeqCst);
     let name = g.agent.map(|a| a.name()).unwrap_or("AI");
     if !g.ai_used {
-        g.ai_error = Some(format!("{name} check skipped; the built-in rules were used."));
+        g.ai_error = Some(t!("cleanup.aistat.skipped", agent = name).into_owned());
     }
     finish_results(&mut g);
 }
@@ -742,18 +745,18 @@ fn scan_claude(c: &mut Ctx) {
     let cl = h.join(".claude");
     let claude_running = c.running_names.iter().any(|n| n == "claude") || process_running("claude");
     // AIToolScanning sub_7118: Claude Code catalog
-    c.add(Group::AiTools, "Claude Code debug logs", cl.join("debug"), "Logs", Verdict::Safe, "Debug logs; Claude Code writes new ones as needed");
-    c.add(Group::AiTools, "Claude Code cache", cl.join("cache"), "Caches", Verdict::Safe, "Cache; rebuilt automatically");
-    c.add(Group::AiTools, "Claude Code telemetry", cl.join("telemetry"), "Caches", Verdict::Safe, "Usage telemetry waiting to be sent");
-    c.add(Group::AiTools, "Stats cache", cl.join("stats-cache.json"), "Caches", Verdict::Safe, "Cached statistics; recalculated");
-    c.add(Group::AiTools, "MCP sign-in cache", cl.join("mcp-needs-auth-cache.json"), "Caches", Verdict::Safe, "Cached MCP sign-in state");
-    c.add(Group::AiTools, "Plugin install counts", cl.join("plugins/install-counts-cache.json"), "Caches", Verdict::Safe, "Cached plugin popularity counts");
+    c.add(Group::AiTools, ts!("cleanup.it.cc_debug"), cl.join("debug"), "Logs", Verdict::Safe, ts!("cleanup.why.cc_debug"));
+    c.add(Group::AiTools, ts!("cleanup.it.cc_cache"), cl.join("cache"), "Caches", Verdict::Safe, ts!("cleanup.why.cache_rebuilt"));
+    c.add(Group::AiTools, ts!("cleanup.it.cc_telemetry"), cl.join("telemetry"), "Caches", Verdict::Safe, ts!("cleanup.why.telemetry"));
+    c.add(Group::AiTools, ts!("cleanup.it.stats_cache"), cl.join("stats-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.stats"));
+    c.add(Group::AiTools, ts!("cleanup.it.mcp_signin"), cl.join("mcp-needs-auth-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.mcp_signin"));
+    c.add(Group::AiTools, ts!("cleanup.it.plugin_counts"), cl.join("plugins/install-counts-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.plugin_counts"));
     // shell snapshots: only the old ones (a running session uses the newest)
     let snaps = cl.join("shell-snapshots");
     for f in children(&snaps) {
         let age = age_days(&f);
         if age >= m::SHELL_SNAPSHOT_MIN_AGE_DAYS {
-            c.add(Group::AiTools, "Old shell snapshot", f, "Temp Files", Verdict::Safe, "Temporary shell snapshot from a finished session");
+            c.add(Group::AiTools, ts!("cleanup.it.old_shell"), f, "Temp Files", Verdict::Safe, ts!("cleanup.why.old_shell"));
         }
     }
     // stale versions: keep the one ~/.local/bin/claude points to (ActiveVersionResolver)
@@ -762,45 +765,45 @@ fn scan_claude(c: &mut Ctx) {
     for v in children(&versions) {
         let is_active = active.as_ref().map(|a| a.starts_with(&v) || a == &v).unwrap_or(false);
         if !is_active {
-            c.add(Group::AiTools, &format!("Claude Code {}", fname(&v)), v, "Stale Versions", Verdict::Safe, "Old Claude Code version; the one you run is kept");
+            c.add(Group::AiTools, &t!("cleanup.it.cc_version", v = fname(&v)), v, "Stale Versions", Verdict::Safe, ts!("cleanup.why.cc_version"));
         }
     }
-    c.add(Group::AiTools, "Claude CLI logs", h.join("Library/Caches/claude-cli-nodejs"), "Logs", Verdict::Safe, "Claude Code's own error/MCP logs");
+    c.add(Group::AiTools, ts!("cleanup.it.cli_logs"), h.join("Library/Caches/claude-cli-nodejs"), "Logs", Verdict::Safe, ts!("cleanup.why.cli_logs"));
     // AIToolScanning sub_7308: Claude Desktop
-    c.add(Group::AiTools, "Claude Desktop logs", h.join("Library/Logs/Claude"), "Logs", Verdict::Safe, "Claude Desktop logs");
-    c.add(Group::AiTools, "Claude Desktop cache", h.join("Library/Caches/com.anthropic.claudefordesktop"), "Caches", Verdict::Safe, "App cache; rebuilt automatically");
-    c.add(Group::AiTools, "Claude updater cache", h.join("Library/Caches/com.anthropic.claudefordesktop.ShipIt"), "Caches", Verdict::Safe, "Leftover update download");
+    c.add(Group::AiTools, ts!("cleanup.it.desk_logs"), h.join("Library/Logs/Claude"), "Logs", Verdict::Safe, ts!("cleanup.why.desk_logs"));
+    c.add(Group::AiTools, ts!("cleanup.it.desk_cache"), h.join("Library/Caches/com.anthropic.claudefordesktop"), "Caches", Verdict::Safe, ts!("cleanup.why.app_cache_rebuilt"));
+    c.add(Group::AiTools, ts!("cleanup.it.updater"), h.join("Library/Caches/com.anthropic.claudefordesktop.ShipIt"), "Caches", Verdict::Safe, ts!("cleanup.why.updater"));
     let desk = h.join("Library/Application Support/Claude");
     let desktop_running = c.running_ids.contains("com.anthropic.claudefordesktop");
     for sub in CHROMIUM_CACHES {
         let p = desk.join(sub);
-        let (v, r) = if desktop_running { (Verdict::Ask, "Claude Desktop is open — its web cache is in use") } else { (Verdict::Safe, "Web view cache; rebuilt automatically") };
-        c.add(Group::AiTools, &format!("Claude Desktop {}", sub), p, "Caches", v, r);
+        let (v, r) = if desktop_running { (Verdict::Ask, ts!("cleanup.why.desk_open")) } else { (Verdict::Safe, ts!("cleanup.why.webview")) };
+        c.add(Group::AiTools, &t!("cleanup.it.desk_sub", sub = sub), p, "Caches", v, r);
     }
-    c.add(Group::AiTools, "Claude Desktop VM image", desk.join("vm_bundles"), "Downloads", Verdict::Ask, "Sandbox VM image for agent mode; downloaded again if removed");
-    c.add(Group::AiTools, "Claude Desktop Code VM", desk.join("claude-code-vm"), "Downloads", Verdict::Ask, "Runtime for Claude Code inside the desktop app; re-downloaded if removed");
+    c.add(Group::AiTools, ts!("cleanup.it.vm_image"), desk.join("vm_bundles"), "Downloads", Verdict::Ask, ts!("cleanup.why.vm_image"));
+    c.add(Group::AiTools, ts!("cleanup.it.code_vm"), desk.join("claude-code-vm"), "Downloads", Verdict::Ask, ts!("cleanup.why.code_vm"));
     // projects: the ones you use are kept, old ones are offered for review
     for p in claude_code::scan_projects() {
         let idle = p.days_idle();
         let name = p.display_name();
         if p.in_use() {
-            c.add(Group::AiTools, &format!("Project · {name}"), p.folder.clone(), "Projects", Verdict::Keep, &format!("You used this project {} — kept", ago(idle)));
+            c.add(Group::AiTools, &t!("cleanup.it.project", name = name), p.folder.clone(), "Projects", Verdict::Keep, &t!("cleanup.why.project_used", when = ago(idle)));
             if let Some(it) = c.items.last_mut() {
                 if it.path == p.folder {
                     it.hard_keep = true;
                 }
             }
         } else if !p.cwd_exists {
-            c.add(Group::AiTools, &format!("Project · {name}"), p.folder.clone(), "Old Sessions", Verdict::Ask, &format!("Chat history for a folder that no longer exists; last used {}", ago(idle)));
+            c.add(Group::AiTools, &t!("cleanup.it.project", name = name), p.folder.clone(), "Old Sessions", Verdict::Ask, &t!("cleanup.why.chat_gone", when = ago(idle)));
         } else {
-            c.add(Group::AiTools, &format!("Project · {name}"), p.folder.clone(), "Old Sessions", Verdict::Ask, &format!("Chat history not used for {} days (the project folder itself is never touched)", idle as u64));
+            c.add(Group::AiTools, &t!("cleanup.it.project", name = name), p.folder.clone(), "Old Sessions", Verdict::Ask, &t!("cleanup.why.chat_idle", days = idle as u64));
         }
     }
     // old file-history snapshots and uploads
-    for (sub, label, kind) in [("file-history", "Edit history", "Old Sessions"), ("uploads", "Uploaded files", "Temp Files")] {
+    for (sub, label, kind) in [("file-history", ts!("cleanup.it.edit_history"), "Old Sessions"), ("uploads", ts!("cleanup.it.uploads"), "Temp Files")] {
         for f in children(&cl.join(sub)) {
             if age_days(&f) > m::CLAUDE_OLD_DATA_DAYS as f64 {
-                c.add(Group::AiTools, &format!("{label} · {}", short_id(&fname(&f))), f, kind, Verdict::Ask, &format!("{label} older than {} days", m::CLAUDE_OLD_DATA_DAYS));
+                c.add(Group::AiTools, &format!("{label} · {}", short_id(&fname(&f))), f, kind, Verdict::Ask, &t!("cleanup.why.older_than", label = label, days = m::CLAUDE_OLD_DATA_DAYS));
             }
         }
     }
@@ -809,7 +812,7 @@ fn scan_claude(c: &mut Ctx) {
         for it in c.items.iter_mut().filter(|i| i.group == Group::AiTools && i.kind == "Temp Files" && i.verdict == Verdict::Safe) {
             if it.age_days < 1.0 {
                 it.verdict = Verdict::Ask;
-                it.reason = "Claude is running — this may belong to an open session".into();
+                it.reason = ts!("cleanup.why.claude_running").into();
             }
         }
     }
@@ -825,11 +828,11 @@ fn short_id(s: &str) -> String {
 
 fn ago(days: f64) -> String {
     if days < 1.0 {
-        "today".into()
+        ts!("cleanup.ago.today").into()
     } else if days < 2.0 {
-        "yesterday".into()
+        ts!("cleanup.ago.yesterday").into()
     } else {
-        format!("{} days ago", days as u64)
+        t!("cleanup.ago.days", n = days as u64).into_owned()
     }
 }
 
@@ -842,26 +845,26 @@ fn process_running(name: &str) -> bool {
 fn scan_ai_tools(c: &mut Ctx) {
     let h = home();
     for sub in ["codex_apps_server_info", "codex_apps_tools"] {
-        c.add(Group::AiTools, "Codex cache", h.join(".codex/cache").join(sub), "Caches", Verdict::Safe, "Codex app cache");
+        c.add(Group::AiTools, ts!("cleanup.it.codex"), h.join(".codex/cache").join(sub), "Caches", Verdict::Safe, ts!("cleanup.why.codex"));
     }
     let gem = h.join(".gemini/antigravity-browser-profile");
     for sub in ["Default/Cache", "Default/Code Cache", "Default/DawnGraphiteCache", "Default/DawnWebGPUCache", "Default/GPUCache", "Default/Service Worker/CacheStorage", "GraphiteDawnCache", "component_crx_cache", "extensions_crx_cache"] {
-        c.add(Group::AiTools, "Gemini / Antigravity browser cache", gem.join(sub), "Caches", Verdict::Safe, "Browser cache of the agent profile");
+        c.add(Group::AiTools, ts!("cleanup.it.gemini"), gem.join(sub), "Caches", Verdict::Safe, ts!("cleanup.why.agent_profile"));
     }
     let mcp = h.join(".cache/chrome-devtools-mcp/chrome-profile");
     for sub in ["Default/Cache", "Default/Code Cache", "Default/DawnCache", "Default/GPUCache", "Default/GrShaderCache", "Default/GraphiteDawnCache", "Default/Service Worker/CacheStorage", "GraphiteDawnCache", "component_crx_cache", "extensions_crx_cache"] {
-        c.add(Group::AiTools, "Chrome DevTools MCP cache", mcp.join(sub), "Caches", Verdict::Safe, "Browser cache of the MCP profile");
+        c.add(Group::AiTools, ts!("cleanup.it.devtools_mcp"), mcp.join(sub), "Caches", Verdict::Safe, ts!("cleanup.why.mcp_profile"));
     }
     for f in children(&h.join(".local/share/cursor-agent")) {
         if f.extension().map(|e| e == "log").unwrap_or(false) {
-            c.add(Group::AiTools, "Cursor agent log", f, "Logs", Verdict::Safe, "Cursor agent log file");
+            c.add(Group::AiTools, ts!("cleanup.it.cursor"), f, "Logs", Verdict::Safe, ts!("cleanup.why.cursor"));
         }
     }
-    c.add(Group::AiTools, "OpenCode logs", h.join(".local/share/opencode/log"), "Logs", Verdict::Safe, "OpenCode logs");
+    c.add(Group::AiTools, ts!("cleanup.it.opencode"), h.join(".local/share/opencode/log"), "Logs", Verdict::Safe, ts!("cleanup.why.opencode"));
     // local models are big and costly to get back: always ask
-    c.add(Group::AiTools, "Ollama models", h.join(".ollama/models"), "Local Models", Verdict::Ask, "Downloaded models may still be used by your projects");
-    c.add(Group::AiTools, "LM Studio models", h.join(".lmstudio/models"), "Local Models", Verdict::Ask, "Downloaded models may still be used by your projects");
-    c.add(Group::AiTools, "Hugging Face cache", h.join(".cache/huggingface"), "Local Models", Verdict::Ask, "Downloaded models and datasets; large to download again");
+    c.add(Group::AiTools, ts!("cleanup.it.ollama"), h.join(".ollama/models"), "Local Models", Verdict::Ask, ts!("cleanup.why.models"));
+    c.add(Group::AiTools, ts!("cleanup.it.lmstudio"), h.join(".lmstudio/models"), "Local Models", Verdict::Ask, ts!("cleanup.why.models"));
+    c.add(Group::AiTools, ts!("cleanup.it.hf"), h.join(".cache/huggingface"), "Local Models", Verdict::Ask, ts!("cleanup.why.hf"));
 }
 
 // ---- System Junk: user caches (CMUserCachesScanTask)
@@ -888,11 +891,11 @@ fn scan_user_caches(c: &mut Ctx) {
             continue;
         }
         let (v, why) = if n.starts_with("com.apple.") {
-            (Verdict::Ask, "macOS system cache — usually safe, rebuilt by macOS")
+            (Verdict::Ask, ts!("cleanup.why.macos_cache"))
         } else if n == "Homebrew" {
-            (Verdict::Safe, "Downloaded installers; Homebrew fetches them again")
+            (Verdict::Safe, ts!("cleanup.why.brew_dl"))
         } else {
-            (Verdict::Safe, "App cache; the app rebuilds it")
+            (Verdict::Safe, ts!("cleanup.why.app_cache"))
         };
         c.add(Group::AppCaches, &pretty(&n), p, "Caches", v, why);
     }
@@ -918,7 +921,7 @@ fn scan_app_caches(c: &mut Ctx) {
             for sub in CHROMIUM_CACHES {
                 let p = base.join(sub);
                 if p.is_dir() {
-                    c.add(Group::AppCaches, &format!("{} · {}", pretty(&n), sub), p, "Caches", Verdict::Safe, "Web view cache; rebuilt automatically");
+                    c.add(Group::AppCaches, &format!("{} · {}", pretty(&n), sub), p, "Caches", Verdict::Safe, ts!("cleanup.why.webview"));
                 }
             }
         }
@@ -932,7 +935,7 @@ fn scan_app_caches(c: &mut Ctx) {
         let p = ct.join("Data/Library/Caches");
         if p.is_dir() {
             let v = if n.starts_with("com.apple.") { Verdict::Ask } else { Verdict::Safe };
-            c.add(Group::AppCaches, &format!("{} (sandboxed)", pretty(&n)), p, "Caches", v, "Sandboxed app cache; rebuilt automatically");
+            c.add(Group::AppCaches, &t!("cleanup.it.sandboxed", name = pretty(&n)), p, "Caches", v, ts!("cleanup.why.sandboxed_cache"));
         }
     }
 }
@@ -946,13 +949,13 @@ fn scan_logs(c: &mut Ctx) {
         if n == "Claude" || n.starts_with('.') {
             continue;
         }
-        let title = if n == "DiagnosticReports" { "Crash reports".to_string() } else { format!("{} logs", pretty(&n)) };
-        c.add(Group::Logs, &title, p, "Logs", Verdict::Safe, "Log files; only useful for debugging");
+        let title = if n == "DiagnosticReports" { ts!("cleanup.it.crash_reports").to_string() } else { t!("cleanup.it.app_logs", name = pretty(&n)).into_owned() };
+        c.add(Group::Logs, &title, p, "Logs", Verdict::Safe, ts!("cleanup.why.logs"));
     }
     for ct in children(&h.join("Library/Containers")) {
         let p = ct.join("Data/Library/Logs");
         if p.is_dir() {
-            c.add(Group::Logs, &format!("{} logs (sandboxed)", pretty(&fname(&ct))), p, "Logs", Verdict::Safe, "Log files of a sandboxed app");
+            c.add(Group::Logs, &t!("cleanup.it.sandboxed_logs", name = pretty(&fname(&ct))), p, "Logs", Verdict::Safe, ts!("cleanup.why.sandboxed_logs"));
         }
     }
 }
@@ -993,13 +996,13 @@ fn join_brew(c: &mut Ctx, job: std::thread::JoinHandle<Option<u64>>, brew: &Path
     match freed {
         Some(bytes) if bytes >= m::MIN_ITEM_BYTES => {
             let prefix = brew.parent().and_then(|b| b.parent()).map(Path::to_path_buf).unwrap_or_default();
-            c.add_action(Group::Developer, "Homebrew old versions", prefix.join("Cellar"), "Caches", Verdict::Safe, "Old versions and downloads; brew gets them again", Action::BrewCleanup, bytes);
+            c.add_action(Group::Developer, ts!("cleanup.it.brew_old"), prefix.join("Cellar"), "Caches", Verdict::Safe, ts!("cleanup.why.brew_old"), Action::BrewCleanup, bytes);
         }
         Some(_) => {}
         None => {
             let p = home().join("Library/Caches/Homebrew");
             if p.is_dir() {
-                c.add(Group::AppCaches, "Homebrew", p, "Caches", Verdict::Safe, "Downloaded installers; Homebrew fetches them again");
+                c.add(Group::AppCaches, "Homebrew", p, "Caches", Verdict::Safe, ts!("cleanup.why.brew_dl"));
                 if c.items.len() > before {
                     let it = c.items.last_mut().expect("just added");
                     it.bytes = dir_size(&it.path);
@@ -1046,16 +1049,16 @@ fn brew_freed(out: &str) -> u64 {
     (n * mul) as u64
 }
 fn run_brew_cleanup() -> Result<(), String> {
-    let brew = super::run::find_tool(&["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]).ok_or("Homebrew isn't installed any more")?;
+    let brew = super::run::find_tool(&["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]).ok_or(ts!("cleanup.err.no_brew"))?;
     let o = super::run::output(
         std::process::Command::new(brew).args(["cleanup", "--prune=all"]).env("HOMEBREW_NO_AUTO_UPDATE", "1").env("HOMEBREW_NO_ENV_HINTS", "1").env("HOMEBREW_NO_ANALYTICS", "1"),
         std::time::Duration::from_secs(600),
     )
-    .ok_or("brew cleanup didn't finish")?;
+    .ok_or(ts!("cleanup.err.brew_unfinished"))?;
     if o.status.success() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("brew cleanup failed").to_string())
+        Err(String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or(ts!("cleanup.err.brew_failed")).to_string())
     }
 }
 // ---- old installers in Downloads
@@ -1063,7 +1066,7 @@ fn scan_installers(c: &mut Ctx) {
     let rules = &super::rules::catalog().installers;
     for (p, age) in installers(&home().join("Downloads"), &rules.extensions, rules.min_age_days as f64) {
         let name = fname(&p);
-        c.add(Group::Installers, &name, p, "Installers", Verdict::Ask, &format!("Installer downloaded {} days ago; the app it installed stays", age as u64));
+        c.add(Group::Installers, &name, p, "Installers", Verdict::Ask, &t!("cleanup.why.installer", days = age as u64));
     }
 }
 /// Installer files (by extension) in `dir` and one level down, older than `min_days`.
@@ -1095,7 +1098,7 @@ pub(super) fn installers(dir: &Path, exts: &[String], min_days: f64) -> Vec<(Pat
 fn scan_trash(c: &mut Ctx) {
     let t = home().join(".Trash");
     if std::fs::read_dir(&t).is_ok() {
-        c.add(Group::Trash, "Trash", t, "Trash", Verdict::Safe, "Already deleted items; emptying can't be undone");
+        c.add(Group::Trash, ts!("cleanup.group.trash"), t, "Trash", Verdict::Safe, ts!("cleanup.why.trash"));
         if let Some(it) = c.items.last_mut() {
             if it.group == Group::Trash {
                 it.permanent = true;
@@ -1110,7 +1113,7 @@ fn judge(shared: &Shared, ctx: &egui::Context, agent: super::agent::Agent, cance
     let name = agent.name();
     if !agent.ready() {
         let mut g = shared.lock_ok();
-        g.ai_error = Some(format!("{}, so only the built-in rules were used.", agent.why_not()));
+        g.ai_error = Some(t!("cleanup.aistat.not_ready", why = agent.why_not()).into_owned());
         return;
     }
     let h = home().display().to_string();
@@ -1158,7 +1161,7 @@ fn judge(shared: &Shared, ctx: &egui::Context, agent: super::agent::Agent, cance
             if cancel.load(Ordering::SeqCst) {
                 return;
             }
-            g.ai_status = format!("{name} is reviewing {} paths (batch {} of {})…", batch.len(), bi + 1, n);
+            g.ai_status = t!("cleanup.aistat.reviewing", agent = name, count = batch.len(), batch = bi + 1, total = n).into_owned();
             g.progress = bi as f32 / n as f32;
         }
         ctx.request_repaint();
@@ -1174,13 +1177,13 @@ fn judge(shared: &Shared, ctx: &egui::Context, agent: super::agent::Agent, cance
         let text = match answer {
             Ok(t) => t,
             Err(err) => {
-                g.ai_error = Some(if err.is_empty() { format!("{name} couldn't review the paths; the built-in rules were used.") } else { format!("{name} couldn't review the paths ({err}); the built-in rules were used.") });
+                g.ai_error = Some(if err.is_empty() { t!("cleanup.aistat.failed", agent = name).into_owned() } else { t!("cleanup.aistat.failed_err", agent = name, err = err).into_owned() });
                 return;
             }
         };
         let verdicts = parse_verdicts(&text);
         if verdicts.is_empty() {
-            g.ai_error = Some(format!("{name}'s answer couldn't be read; the built-in rules were used for some items."));
+            g.ai_error = Some(t!("cleanup.aistat.unreadable", agent = name).into_owned());
             continue;
         }
         g.ai_used = true;
@@ -1309,11 +1312,36 @@ pub enum How {
 impl How {
     pub fn verb(self) -> &'static str {
         match self {
-            How::Trash => "Moved to Trash",
-            How::Deleted => "Deleted",
-            How::Emptied => "Emptied",
-            How::Command => "Removed",
+            How::Trash => ts!("cleanup.how.trash"),
+            How::Deleted => ts!("cleanup.how.deleted"),
+            How::Emptied => ts!("cleanup.how.emptied"),
+            How::Command => ts!("cleanup.how.command"),
         }
+    }
+}
+
+/// An item's kind as the page shows it (the kind itself stays an id).
+pub fn kind_label(kind: &str) -> &str {
+    match kind {
+        "Caches" => ts!("cleanup.kind.caches"),
+        "Logs" => ts!("cleanup.kind.logs"),
+        "Temp Files" => ts!("cleanup.kind.temp"),
+        "Stale Versions" => ts!("cleanup.kind.stale"),
+        "Downloads" => ts!("cleanup.kind.downloads"),
+        "Projects" => ts!("cleanup.kind.projects"),
+        "Old Sessions" => ts!("cleanup.kind.old_sessions"),
+        "Local Models" => ts!("cleanup.kind.models"),
+        "Build Data" => ts!("cleanup.kind.build"),
+        "Device Support" => ts!("cleanup.kind.device_support"),
+        "Simulators" => ts!("cleanup.kind.simulators"),
+        "Archives" => ts!("cleanup.kind.archives"),
+        "Installers" => ts!("cleanup.kind.installers"),
+        "Trash" => ts!("cleanup.kind.trash"),
+        "Screenshots" => ts!("cleanup.kind.screenshots"),
+        "Recordings" => ts!("cleanup.kind.recordings"),
+        "Capture History" => ts!("cleanup.kind.capture_history"),
+        "Uploads" => ts!("cleanup.kind.uploads"),
+        k => k,
     }
 }
 
@@ -1349,6 +1377,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
         g.cleaned_bytes = 0;
         g.cleaned_count = 0;
         g.failed.clear();
+        g.in_way = false;
         g.log.clear();
         g.trashed_bytes = 0;
         g.cleaned.clear();
@@ -1390,7 +1419,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
             ctx.request_repaint();
             let skip = |why: String, shared: &Shared, journal: &mut super::journal::Entry| {
                 let mut g = shared.lock_ok();
-                g.log.push(format!("Skipped {}: {why}", it.path.display()));
+                g.log.push((t!("cleanup.line.skipped", path = it.path.display(), why = why).into_owned(), true));
                 journal.failed.push((it.path.display().to_string(), why.clone()));
                 g.failed.push((it.title.clone(), why));
             };
@@ -1401,13 +1430,15 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                     continue;
                 }
                 if it.kind == "Caches" && !it.app_running && it.by != Who::You && app_open(&running_ids, &running_names, &it.path, &it.title) {
-                    skip("its app was opened after the scan".into(), &shared, &mut journal);
+                    skip(ts!("cleanup.why.opened_after").into(), &shared, &mut journal);
+                    shared.lock_ok().in_way = true;
                     continue;
                 }
                 // even with the person's OK: an open database would be written to after it's gone
                 if live_kind(it.kind) {
                     if let Some(why) = super::inuse::blocked(&it.path, open.as_ref()) {
                         skip(why.to_string(), &shared, &mut journal);
+                        shared.lock_ok().in_way = true;
                         continue;
                     }
                 }
@@ -1438,7 +1469,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                 g.stopped = true;
                 g.cleaned_bytes += gone;
                 g.cleaned.push((it.group, gone));
-                g.log.push(format!("Stopped in {} ({} removed)", it.path.display(), crate::kit::glass::human_bytes(gone)));
+                g.log.push((t!("cleanup.line.stopped", path = it.path.display(), size = crate::kit::glass::human_bytes(gone)).into_owned(), false));
                 if let Some(x) = g.items.iter_mut().find(|x| x.path == it.path) {
                     x.bytes = x.bytes.saturating_sub(gone);
                 }
@@ -1453,7 +1484,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                     g.cleaned_bytes += it.bytes;
                     g.cleaned_count += 1;
                     g.cleaned.push((it.group, it.bytes));
-                    g.log.push(format!("{}: {} ({})", how.verb(), it.path.display(), crate::kit::glass::human_bytes(it.bytes)));
+                    g.log.push((t!("cleanup.line.done", how = how.verb(), path = it.path.display(), size = crate::kit::glass::human_bytes(it.bytes)).into_owned(), false));
                     g.items.retain(|x| x.path != it.path);
                     journal.items.push(super::journal::Removed { title: it.title.clone(), path: it.path.display().to_string(), bytes: it.bytes, how: *how });
                     if it.kind == super::captures::HISTORY {
@@ -1469,7 +1500,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                     }
                 }
                 Err(e) => {
-                    g.log.push(format!("Couldn't remove {}: {e}", it.path.display()));
+                    g.log.push((t!("cleanup.line.failed", path = it.path.display(), err = e).into_owned(), true));
                     journal.failed.push((it.path.display().to_string(), e.clone()));
                     g.failed.push((it.title.clone(), e));
                 }

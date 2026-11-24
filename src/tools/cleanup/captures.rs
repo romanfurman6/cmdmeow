@@ -19,9 +19,9 @@ pub(super) fn scan(c: &mut Ctx) {
     for f in (src.local)(m::CAPTURE_MIN_AGE_DAYS) {
         let days = f.age_days as u64;
         let (kind, verdict, reason) = match f.kind {
-            Kind::Screenshot => (SCREENSHOTS, Verdict::Ask, format!("Taken {days} days ago")),
-            Kind::Recording => (RECORDINGS, Verdict::Ask, format!("Recorded {days} days ago")),
-            Kind::History => (HISTORY, Verdict::Safe, format!("History copy from {days} days ago")),
+            Kind::Screenshot => (SCREENSHOTS, Verdict::Ask, t!("cleanup.why.taken", days = days).into_owned()),
+            Kind::Recording => (RECORDINGS, Verdict::Ask, t!("cleanup.why.recorded", days = days).into_owned()),
+            Kind::History => (HISTORY, Verdict::Safe, t!("cleanup.why.history_copy", days = days).into_owned()),
         };
         let title = if f.kind == Kind::History { history_title(&f.path) } else { super::engine::fname(&f.path) };
         c.add(Group::Captures, &title, f.path, kind, verdict, &reason);
@@ -30,8 +30,8 @@ pub(super) fn scan(c: &mut Ctx) {
         return;
     }
     for u in (src.uploads)(m::CAPTURE_MIN_AGE_DAYS) {
-        let title = format!("Link · {}", super::engine::fname(&u.local));
-        let reason = format!("Shared {} days ago; the link stops working", u.age_days as u64);
+        let title = t!("cleanup.it.link", name = super::engine::fname(&u.local)).into_owned();
+        let reason = t!("cleanup.why.shared", days = u.age_days as u64).into_owned();
         c.add_action(Group::Captures, &title, upload_path(&u.link, &u.key), UPLOADS, Verdict::Ask, &reason, Action::Upload { key: u.key, local: u.local }, u.bytes);
     }
 }
@@ -42,7 +42,7 @@ fn history_title(p: &Path) -> String {
     use chrono::TimeZone;
     let ms = p.file_stem().and_then(|s| s.to_string_lossy().parse::<i64>().ok()).unwrap_or(0);
     match chrono::Local.timestamp_millis_opt(ms).single() {
-        Some(t) => format!("Capture {}", t.format("%Y-%m-%d at %H.%M.%S")),
+        Some(t) => t!("cleanup.it.capture", when = t.format("%Y-%m-%d at %H.%M.%S")).into_owned(),
         None => super::engine::fname(p),
     }
 }
@@ -57,12 +57,12 @@ fn upload_path(link: &str, key: &str) -> PathBuf {
 pub(super) fn guard(p: &Path) -> Option<&'static str> {
     match old::source() {
         Some(s) => (s.keep_why)(p),
-        None => Some("Capture isn't running"),
+        None => Some(ts!("cleanup.err.capture_off")),
     }
 }
 
 pub(super) fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
-    let s = old::source().ok_or("Capture isn't running")?;
+    let s = old::source().ok_or(ts!("cleanup.err.capture_off"))?;
     (s.delete_upload)(local, key)
 }
 
