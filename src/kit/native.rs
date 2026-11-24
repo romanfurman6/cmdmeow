@@ -319,9 +319,9 @@ mod mac {
         Some(super::MenuIconPlace { icon, visible })
     }
 
-    /// The menu bar panel shows on whatever Space is in front, a full-screen
-    /// app's too. Without this macOS kept it on the Space it last showed on,
-    /// or behind a full-screen app, so a click on the icon showed nothing.
+    /// The menu bar panel shows on whatever Space is on screen, a full-screen
+    /// app's too. Without this macOS kept it on the Space it last showed on
+    /// (a full-screen Space gone since), so a click on the icon showed nothing.
     pub fn panel_follows_spaces(id: egui::ViewportId) {
         use objc2::msg_send;
         use objc2::runtime::AnyObject;
@@ -331,9 +331,21 @@ mod mac {
         let Some(view) = (unsafe { (view as *const AnyObject).as_ref() }) else { return };
         let window: Option<Retained<NSWindow>> = unsafe { msg_send![view, window] };
         let Some(window) = window else { return };
-        let want = NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        // on every Space, not "move to the active one": after full-screen
+        // sweeps macOS can keep a dead full-screen tile Space as the
+        // "active" one while Desktop 1 is on screen, and a window moved
+        // there never shows (seen on the M1)
+        let want = NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary
+            | NSWindowCollectionBehavior::Stationary
+            | NSWindowCollectionBehavior::IgnoresCycle;
         if window.collectionBehavior() != want {
             window.setCollectionBehavior(want);
+            // a window already ordered in takes the new Spaces on its next
+            // order-in
+            if window.isVisible() {
+                window.orderFrontRegardless();
+            }
         }
     }
 
