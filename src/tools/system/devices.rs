@@ -764,6 +764,8 @@ impl Prefs {
 
 /// The menu bar text: the emptiest connected device while it is below its
 /// alert line and not charging ("Mouse 14%"), nothing otherwise.
+// not shown for now (Roman 2026-11-24): only the cat in the menu bar
+#[allow(dead_code)]
 pub fn tray_title(devs: &[Device], prefs: &Prefs) -> Option<String> {
     if !prefs.menu_bar {
         return None;

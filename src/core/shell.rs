@@ -114,6 +114,9 @@ pub struct App {
     /// the press is still on the menu bar, so it's asked again each pass.
     want_focus: Option<Instant>,
     last_hide: Instant,
+    /// When a click on the icon last stopped a recording: the same click's
+    /// release (or a quick second click) doesn't open the panel.
+    tray_stopped: Option<Instant>,
     pub app_open: bool,
     /// When the window was asked for (dev log: how long the first frame took).
     pub app_asked: Option<Instant>,
@@ -293,6 +296,7 @@ impl App {
             had_focus: false,
             want_focus: None,
             last_hide: Instant::now(),
+            tray_stopped: None,
             app_open: false,
             app_asked: None,
             open_cover: None,
@@ -823,6 +827,19 @@ impl App {
     fn icon_clicked(&mut self, ctx: &egui::Context) {
         if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {
             eprintln!("[tray-log] icon clicked: visible {} mode {:?} since hide {} ms setup {}", self.visible, self.mode, self.last_hide.elapsed().as_millis(), self.setup.is_some());
+        }
+        // while recording, the click stops it (the clock is in the menu
+        // bar) and the panel stays as it was
+        if self.tray_stopped.is_some_and(|t| t.elapsed().as_millis() < 400) {
+            return;
+        }
+        if self.setup.is_none() {
+            for i in 0..self.tools.len() {
+                if self.tool_on(i) && self.tools[i].tray_clicked() {
+                    self.tray_stopped = Some(Instant::now());
+                    return;
+                }
+            }
         }
         let just_hid = self.last_hide.elapsed().as_millis() < 350;
         if self.setup.is_some() && self.mode == Mode::Panel {

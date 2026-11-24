@@ -402,6 +402,16 @@ impl Recorder {
         }));
     }
 
+    /// A click on the menu bar clock: stop and save, as the bar's stop
+    /// does. False when nothing is recording (the panel opens then).
+    pub fn stop_from_menu_bar(&mut self) -> bool {
+        if self.live().is_none() {
+            return false;
+        }
+        self.stop();
+        true
+    }
+
     /// Throw the recording away; `again` starts over from the countdown.
     pub fn discard(&mut self, again: bool, s: &RecSettings) {
         let Phase::Live(live) = std::mem::replace(&mut self.phase, Phase::Idle) else { return };

@@ -204,7 +204,6 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             P::ToggleAlerts => monitor::change_bt_prefs(mon, |p| crate::kit::notify::flip(&mut p.alerts)),
             P::ToggleCharged => monitor::change_bt_prefs(mon, |p| crate::kit::notify::flip(&mut p.charged)),
             P::ChargedAt(v) => monitor::change_bt_prefs(mon, |p| p.charged_at = v),
-            P::ToggleMenuBar => monitor::change_bt_prefs(mon, |p| p.menu_bar = !p.menu_bar),
             P::OpenBluetooth => super::devices::open_bluetooth_settings(),
             P::AlertBelow(key, v) => monitor::change_bt_prefs(mon, |p| p.set_device(&key, |d| d.alert_below = Some(v))),
             P::Hide(key, h) => monitor::change_bt_prefs(mon, |p| p.set_device(&key, |d| d.hidden = h)),

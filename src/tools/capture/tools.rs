@@ -169,6 +169,10 @@ impl Tool for Video {
     fn tray_title(&self) -> Option<String> {
         self.0.borrow().rec.tray()
     }
+    /// A click on the recording clock stops and saves, as the bar's stop does.
+    fn tray_clicked(&mut self) -> bool {
+        self.0.borrow_mut().rec.stop_from_menu_bar()
+    }
     fn tick(&mut self, ctx: &egui::Context) -> bool {
         let mut c = self.0.borrow_mut();
         !c.shot_on && c.video_on && Tool::tick(&mut *c, ctx)

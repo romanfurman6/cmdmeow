@@ -132,12 +132,6 @@ impl Tool for System {
         v
     }
 
-    /// The emptiest Bluetooth device while it is low ("Mouse 14%").
-    fn tray_title(&self) -> Option<String> {
-        let s = self.mon.lock_ok();
-        devices::tray_title(&s.devices, &s.bt_prefs)
-    }
-
     fn demo_view(&mut self, view: &str) -> Option<View> {
         if view == "health-checking" {
             self.ai.set_demo_running();
