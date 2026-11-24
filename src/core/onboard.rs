@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 pub const SETUP_W: f32 = 820.0;
 /// Most steps setup can have (with the crash reports step).
-const MAX_STEPS: usize = 7;
+const MAX_STEPS: usize = 8;
 const TOP_H: f32 = 44.0;
 const BOTTOM_H: f32 = 64.0;
 /// The centred column of the AI agents and Download models steps.
@@ -21,6 +21,8 @@ const COL_W: f32 = 640.0;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
     Welcome,
+    /// Light Meow, Dark Meow or Miami: a click switches the app live.
+    Theme,
     Tools,
     Agents,
     /// 3a, right after Agents (no dot of its own): the picked agents whose
@@ -35,7 +37,7 @@ enum Kind {
 /// The steps in order. The crash reports question only exists in official
 /// builds (screenshots show it too).
 fn kinds(app: &App) -> Vec<Kind> {
-    let mut v = vec![Kind::Welcome, Kind::Tools, Kind::Agents];
+    let mut v = vec![Kind::Welcome, Kind::Theme, Kind::Tools, Kind::Agents];
     if has_sign_ins(app) {
         v.push(Kind::SignIns);
     }
@@ -55,6 +57,7 @@ fn kinds(app: &App) -> Vec<Kind> {
 /// The step a screenshot view (`setup-perms`…) shows.
 pub fn view_step(app: &App, view: &str) -> usize {
     let k = match view {
+        "setup-theme" => Kind::Theme,
         "setup-tools" | "setup-tools-all" | "setup-tools-preview" => Kind::Tools,
         "setup-ai" => Kind::Agents,
         "setup-signins" => Kind::SignIns,
@@ -485,6 +488,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let mut restart_now = false;
     match kind {
         Kind::Welcome => next = welcome(app, ui, body, t),
+        Kind::Theme => theme_step(app, ui, body, t),
         Kind::Tools => tools(app, ui, body, t),
         Kind::Agents => agents(app, ui, body, t),
         Kind::SignIns => sign_ins(app, ui, body, t),
@@ -507,7 +511,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let label = match kind {
         // these steps have their own buttons
         Kind::Welcome | Kind::Crash => None,
-        Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some("Continue"),
+        Kind::Theme | Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some("Continue"),
         Kind::Ready if needs_restart(app) => Some("Restart and open"),
         Kind::Ready => Some("Open panel"),
     };
@@ -842,6 +846,105 @@ fn appear(ctx: &egui::Context, id: egui::Id, now: f64, dur: f32, demo: bool) -> 
         ctx.request_repaint();
     }
     ease(k)
+}
+
+/// The theme cards' pictures, in [`THEMES`] order.
+const THEME_ART: [&[u8]; 3] = [
+    include_bytes!("../../assets/themes/light.jpg"),
+    include_bytes!("../../assets/themes/dark.jpg"),
+    include_bytes!("../../assets/themes/miami.jpg"),
+];
+
+/// The Theme step's cards: the choice, the name on the card, and whether
+/// the name is drawn in dark ink (on the light picture).
+const THEMES: [(ThemeChoice, &str, bool); 3] = [(ThemeChoice::Light, "Light Meow", true), (ThemeChoice::Dark, "Dark Meow", false), (ThemeChoice::Miami, "Miami", false)];
+
+/// A theme card's picture (decoded once, on the step's first frame).
+fn theme_art(ctx: &egui::Context, k: usize) -> Option<egui::TextureHandle> {
+    let id = egui::Id::NULL.with(("setup-theme-art", k));
+    if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return Some(t);
+    }
+    let img = image::load_from_memory(THEME_ART[k]).ok()?.to_rgba8();
+    let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw());
+    let t = ctx.load_texture(format!("setup-theme-art-{k}"), ci, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, t.clone()));
+    Some(t)
+}
+
+/// The theme being drawn, as a card's choice (Auto shows as the one it
+/// resolved to).
+fn shown_theme() -> ThemeChoice {
+    match theme() {
+        Theme::Light => ThemeChoice::Light,
+        Theme::Dark => ThemeChoice::Dark,
+        Theme::Miami => ThemeChoice::Miami,
+    }
+}
+
+/// Step 1: three theme cards, name over a picture. A click switches the
+/// whole app to that theme right away.
+fn theme_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
+    let p = ui.painter().clone();
+    let gap = sp::M;
+    let cw = (body.width() - 2.0 * gap) / 3.0;
+    // title and cards as one block in the middle of the step; the cards
+    // are 2:3 (the 3:4 pictures crop a little at the sides) as far as the
+    // step allows
+    let title_h = 30.0 + 20.0;
+    let ch = (cw * 1.5).min(body.height() - title_h - sp::L);
+    let head = body.center().y - (title_h + ch) / 2.0;
+    let g = p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "Pick a theme", bold(22.0), TEXT());
+    let top = head + title_h;
+    let cur = shown_theme();
+    let mut pick_it = None;
+    for (k, &(choice, name, dark_ink)) in THEMES.iter().enumerate() {
+        let a = ease((t - 0.06 * k as f32) / 0.4);
+        let r = Rect::from_min_size(Pos2::new(body.left() + k as f32 * (cw + gap), top + (1.0 - a) * 8.0), Vec2::new(cw, ch));
+        let id = ui.scope_id().with(("setup-theme", k));
+        let resp = ui.interact(r, id, Sense::click());
+        let on = choice == cur;
+        let s = ui.ctx().animate_bool_with_time(id.with("on"), on, 0.18);
+        let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
+        let r = r.translate(Vec2::new(0.0, -hov));
+        let rad = CornerRadius::same(12);
+        if let Some(tex) = theme_art(ui.ctx(), k) {
+            // cover: fill the card, crop what's left over evenly
+            let (iw, ih) = (tex.size()[0] as f32, tex.size()[1] as f32);
+            let sc = (r.width() / iw).max(r.height() / ih);
+            let (u, v) = (r.width() / (iw * sc), r.height() / (ih * sc));
+            let uv = Rect::from_min_max(Pos2::new((1.0 - u) / 2.0, (1.0 - v) / 2.0), Pos2::new((1.0 + u) / 2.0, (1.0 + v) / 2.0));
+            let tint = Color32::from_white_alpha((255.0 * a) as u8);
+            p.add(egui::epaint::RectShape::filled(r, rad, tint).with_texture(tex.id(), uv));
+        } else {
+            p.rect_filled(r, rad, CARD().gamma_multiply(a));
+        }
+        // H4: the picked card gets the 1.5 action ring
+        p.rect_stroke(r, rad, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
+        let inner = r.shrink(16.0);
+        let ink = if dark_ink { Color32::from_rgb(0x14, 0x1A, 0x12) } else { Color32::WHITE };
+        text_fit(&p, Pos2::new(inner.left(), inner.top() + 10.0), Align2::LEFT_CENTER, name, bold(17.0), ink.gamma_multiply(a), inner.width() - 28.0);
+        // the check, top right
+        let cc = Pos2::new(inner.right() - 9.0, inner.top() + 10.0);
+        p.circle_stroke(cc, 8.5, Stroke::new(1.5, lerp_color(with_alpha(ink, 0.55), ACTION(), s).gamma_multiply(a)));
+        if s > 0.01 {
+            let z = pop(s);
+            p.circle_filled(cc, 9.0 * z, ACTION());
+            check(&p, cc, 7.0 * z, ON_ACTION);
+        }
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if resp.clicked() && !on {
+            pick_it = Some(choice);
+        }
+    }
+    if let Some(c) = pick_it {
+        if !app.demo {
+            set_theme_choice(c);
+        }
+        ui.ctx().request_repaint();
+    }
 }
 
 const PANEL_W: f32 = 300.0;

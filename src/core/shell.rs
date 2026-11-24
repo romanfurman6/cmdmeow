@@ -437,7 +437,7 @@ impl App {
                 return;
             }
             // first-run setup, one step each
-            "setup" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
+            "setup" | "setup-theme" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
@@ -458,7 +458,7 @@ impl App {
                 let step = super::onboard::view_step(self, view);
                 self.setup = Some(super::onboard::Setup::new(step));
                 if all || view == "setup-tools-preview" {
-                    let mut s = super::onboard::Setup::new(1);
+                    let mut s = super::onboard::Setup::new(super::onboard::view_step(self, "setup-tools"));
                     s.all_tools = all;
                     self.setup = Some(s);
                 }
