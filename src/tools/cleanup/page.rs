@@ -56,16 +56,16 @@ fn clean_status(g: &cleanup::State) -> crate::kit::loader::Status {
     if g.phase == Phase::Cleaning {
         // Stop pressed: a deletion stops at the next file, a Trash move or command finishes first
         let stopping = g.cancel.load(std::sync::atomic::Ordering::SeqCst);
-        let title = if stopping { "Stopping…" } else { "Cleaning…" };
+        let title = if stopping { ts!("cleanup.stopping") } else { ts!("cleanup.cleaning") };
         return Status::Working { title: title.into(), count: Count::Bytes { done: g.clean_done, total: g.clean_total }, current: g.current.clone(), can_stop: !stopping };
     }
     let freed = g.cleaned_bytes.saturating_sub(g.trashed_bytes);
     let what = if g.trashed_bytes == 0 {
-        format!("Deleted {}", human_bytes(g.cleaned_bytes))
+        t!("cleanup.deleted", size = human_bytes(g.cleaned_bytes)).into_owned()
     } else if freed == 0 {
-        format!("Moved {} to the Trash", human_bytes(g.trashed_bytes))
+        t!("cleanup.moved_trash", size = human_bytes(g.trashed_bytes)).into_owned()
     } else {
-        format!("Cleaned {}", human_bytes(g.cleaned_bytes))
+        t!("cleanup.cleaned", size = human_bytes(g.cleaned_bytes)).into_owned()
     };
     if g.stopped {
         return Status::Stopped { sub: what };
@@ -73,11 +73,11 @@ fn clean_status(g: &cleanup::State) -> crate::kit::loader::Status {
     let n = g.failed.len();
     // nothing went: no ✓, and why
     if g.cleaned_count == 0 && n > 0 {
-        let problem = if n == 1 { g.failed[0].1.clone() } else { format!("{n} items couldn't be removed") };
-        return Status::Failed { title: "Nothing was removed".into(), problem };
+        let problem = if n == 1 { g.failed[0].1.clone() } else { tn!("cleanup.failed", n = n).into_owned() };
+        return Status::Failed { title: ts!("cleanup.nothing_removed").into(), problem };
     }
-    let problem = (n > 0).then(|| format!("{n} item{} couldn't be removed", if n == 1 { "" } else { "s" }));
-    let items = format!("{} item{}", crate::kit::loader::grouped(g.cleaned_count), if g.cleaned_count == 1 { "" } else { "s" });
+    let problem = (n > 0).then(|| tn!("cleanup.failed", n = n).into_owned());
+    let items = tn!("cleanup.items", n = g.cleaned_count, count = crate::kit::loader::grouped(g.cleaned_count)).into_owned();
     Status::Finished { title: what, sub: items, problem, put_back: false }
 }
 
@@ -115,7 +115,7 @@ fn short_path(p: &std::path::Path) -> String {
 fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    page_header(&p, r, "Cleanup", "", TEXT_DIM());
+    page_header(&p, r, ts!("cleanup.name"), "", TEXT_DIM());
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
     let (total, free) = crate::kit::fs::volume_space("/");
     let last = if app.demo && !app.demo_fresh { Some(super::engine::LastScan { when: chrono::Utc::now().timestamp() - 2 * 86400, groups: vec![14_200_000_000, 9_800_000_000, 21_600_000_000, 6_100_000_000, 2_200_000_000, 6_400_000_000, 1_300_000_000, 3_400_000_000] }) } else { super::engine::last_scan() };
@@ -136,7 +136,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     // left: the disk and Scan
     let lc = block.left() + LEFT_W / 2.0;
     let ly = block.top() + (block_h - left_h) / 2.0;
-    disk_ring(&p, Pos2::new(lc, ly), "Macintosh HD", total, free, tint::CLEANUP());
+    disk_ring(&p, Pos2::new(lc, ly), ts!("health.macintosh_hd"), total, free, tint::CLEANUP());
     let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
     if scan_button(ui, br) {
         cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
@@ -151,13 +151,13 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let x1 = block.right();
     let mut y = block.top() + (block_h - rows_h) / 2.0;
     if let (Some(l), Some(s)) = (&last, &sizes) {
-        let cy = section_title(&p, x0, y, &format!("Last scan {}", super::engine::days_ago(l.when)));
+        let cy = section_title(&p, x0, y, &t!("cleanup.last_scan", when = super::engine::days_ago(l.when)));
         crate::kit::glass::section_value(&p, x1, cy, &human_bytes(s.iter().sum()));
         y += head_h;
     }
     let max = sizes.as_ref().and_then(|s| s.iter().copied().max()).unwrap_or(0).max(1) as f32;
     // the name column fits the longest group name: app text is never cut (R10)
-    let name_w = Group::ALL.iter().map(|g| p.layout_no_wrap(g.title().to_string(), ty::body(), TEXT()).size().x).fold(96.0, f32::max);
+    let name_w = Group::ALL.iter().map(|g| p.layout_no_wrap(g.label().to_string(), ty::body(), TEXT()).size().x).fold(96.0, f32::max);
     for (k, g) in Group::ALL.into_iter().enumerate() {
         let rr = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + sp::ROW_H));
         let resp = ui.interact(rr, ui.scope_id().with(("cleanup-group", k)), Sense::hover());
@@ -175,7 +175,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         p.circle_filled(ic, 14.0, with_alpha(col, 0.14));
         group_icon(&p, g, Rect::from_center_size(ic, Vec2::splat(16.0)), col);
         let nx = x0 + 28.0 + sp::M;
-        p.text(Pos2::new(nx, cy), Align2::LEFT_CENTER, g.title(), ty::body(), TEXT());
+        p.text(Pos2::new(nx, cy), Align2::LEFT_CENTER, g.label(), ty::body(), TEXT());
         if let Some(s) = &sizes {
             let sz = p.text(Pos2::new(x1, cy), Align2::RIGHT_CENTER, human_bytes(s[k]), ty::title(), TEXT());
             let bar_r = Rect::from_min_max(Pos2::new(nx + name_w + sp::M, cy - 2.0), Pos2::new(sz.left().min(x1 - 72.0) - sp::M, cy + 2.0));
@@ -210,7 +210,7 @@ fn group_icon(p: &egui::Painter, g: Group, r: Rect, col: Color32) {
 /// The big lime Scan of the start screen. True when clicked.
 fn scan_button(ui: &mut Ui, br: Rect) -> bool {
     let id = ui.scope_id().with("fresh-scan");
-    let resp = crate::kit::empty::hero_button(ui, br.center(), id, "Scan", None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
+    let resp = crate::kit::empty::hero_button(ui, br.center(), id, ts!("cleanup.scan"), None, crate::kit::empty::Lead::None, Some(ACTION()), true, br.width());
     resp.clicked()
 }
 
@@ -223,15 +223,15 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     let t = ctx.input(|i| i.time);
     let who = st.agent.map(|a| a.name()).unwrap_or("AI");
     let sub = match phase {
-        Phase::Judging => format!("Checking with {who}…"),
-        Phase::Cleaning => "Cleaning…".into(),
-        _ => "Scanning…".into(),
+        Phase::Judging => t!("cleanup.checking_with", who = who).into_owned(),
+        Phase::Cleaning => ts!("cleanup.cleaning").into(),
+        _ => ts!("cleanup.scanning").into(),
     };
-    let btns = page_header(&p, r, "Cleanup", &sub, TEXT_DIM());
+    let btns = page_header(&p, r, ts!("cleanup.name"), &sub, TEXT_DIM());
     // Stop: back to the start; Skip: the results now, by the built-in rules
     let stop = match phase {
-        Phase::Scanning => Some("Stop"),
-        Phase::Judging => Some("Skip"),
+        Phase::Scanning => Some(ts!("cleanup.stop")),
+        Phase::Judging => Some(ts!("cleanup.skip")),
         _ => None,
     };
     if let Some(label) = stop {
@@ -253,14 +253,14 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     let mut y = r.top() + PAGE_HEADER_H + 20.0;
     // headline number
     let (big, caption) = if phase == Phase::Cleaning {
-        (human_bytes(st.cleaned_bytes), format!("cleaned so far · {}", items_n(st.cleaned_count)))
+        (human_bytes(st.cleaned_bytes), t!("cleanup.cleaned_so_far", items = items_n(st.cleaned_count)).into_owned())
     } else if phase == Phase::Scanning {
         // the items arrive at the end; the live tallies grow as each place is measured
         let bytes: u64 = st.live.iter().map(|l| l.bytes).sum();
         let n: usize = st.live.iter().map(|l| l.items).sum();
-        (human_bytes(bytes), format!("found so far · {}", items_n(n)))
+        (human_bytes(bytes), t!("cleanup.found_so_far", items = items_n(n)).into_owned())
     } else {
-        (human_bytes(st.items.iter().filter(|i| i.verdict != Verdict::Keep).map(|i| i.bytes).sum()), format!("found so far · {}", items_n(st.items.len())))
+        (human_bytes(st.items.iter().filter(|i| i.verdict != Verdict::Keep).map(|i| i.bytes).sum()), t!("cleanup.found_so_far", items = items_n(st.items.len())).into_owned())
     };
     let g = p.layout_no_wrap(big, bold(28.0), TEXT());
     let gw = g.size().x;
@@ -290,7 +290,7 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
     // what it's doing right now
     match phase {
         Phase::Judging => {
-            let line = if st.ai_status.is_empty() { format!("Asking {who}…") } else { st.ai_status.clone() };
+            let line = if st.ai_status.is_empty() { t!("cleanup.asking", who = who).into_owned() } else { st.ai_status.clone() };
             text_fit(&p, Pos2::new(x0, y + 7.0), Align2::LEFT_CENTER, &line, font(12.0), TEXT_FAINT(), x1 - x0);
         }
         _ => {
@@ -302,9 +302,9 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
 
     // per-group table
     let cols = [x0 + 12.0, x0 + 48.0, x1 - 250.0, x1 - 12.0];
-    section_header(&p, Pos2::new(cols[1], y), Align2::LEFT_TOP, "Group");
-    section_header(&p, Pos2::new(cols[2], y), Align2::LEFT_TOP, "Items");
-    section_header(&p, Pos2::new(cols[3], y), Align2::RIGHT_TOP, if phase == Phase::Cleaning { "Selected" } else { "Found" });
+    section_header(&p, Pos2::new(cols[1], y), Align2::LEFT_TOP, ts!("cleanup.col.group"));
+    section_header(&p, Pos2::new(cols[2], y), Align2::LEFT_TOP, ts!("cleanup.col.items"));
+    section_header(&p, Pos2::new(cols[3], y), Align2::RIGHT_TOP, if phase == Phase::Cleaning { ts!("cleanup.col.selected") } else { ts!("cleanup.col.found") });
     y += 22.0;
     for grp in Group::ALL {
         let row = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 38.0));
@@ -327,8 +327,8 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
         } else {
             crate::kit::glass::stroke_circle(&p, mark, 7.5, Stroke::new(1.5, white(64)));
         }
-        p.text(Pos2::new(cols[1], row.center().y), Align2::LEFT_CENTER, grp.title(), font(13.0), TEXT());
-        let (status, sc) = if n > 0 { (format!("{n} found"), GREEN()) } else { ("—".to_string(), TEXT_FAINT()) };
+        p.text(Pos2::new(cols[1], row.center().y), Align2::LEFT_CENTER, grp.label(), font(13.0), TEXT());
+        let (status, sc) = if n > 0 { (t!("cleanup.n_found", n = n).into_owned(), GREEN()) } else { ("—".to_string(), TEXT_FAINT()) };
         p.text(Pos2::new(cols[2], row.center().y), Align2::LEFT_CENTER, status, font(12.0), sc);
         p.text(Pos2::new(cols[3], row.center().y), Align2::RIGHT_CENTER, if n > 0 { human_bytes(bytes) } else { "—".into() }, font(13.0), if n > 0 { TEXT() } else { TEXT_FAINT() });
         y += 40.0;
@@ -345,17 +345,17 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let g = app.clean.lock_ok();
         (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_in(app.clean_group))
     };
-    let mut sub = format!("{} found", human_bytes(total));
+    let mut sub = t!("cleanup.n_found", n = human_bytes(total)).into_owned();
     if let Some(e) = &ai_error {
         sub = format!("{sub} · {e}");
     }
     // AI Check: a chip after the title
     let ai_n = app.clean.lock_ok().items.iter().filter(|i| i.verdict != Verdict::Keep).count();
     let cw = aicheck::ui::chip_width(&app.ai, ui, ai_n > 0);
-    let (btns, chip_at) = page_header_room(&p, r, "Cleanup", &sub, if ai_error.is_some() { AMBER() } else { TEXT_DIM() }, cw, r.right() - 260.0);
-    let w = button_width(&p, "Scan again", BTN_SECONDARY);
+    let (btns, chip_at) = page_header_room(&p, r, ts!("cleanup.name"), &sub, if ai_error.is_some() { AMBER() } else { TEXT_DIM() }, cw, r.right() - 260.0);
+    let w = button_width(&p, ts!("cleanup.scan_again"), BTN_SECONDARY);
     let sr = Rect::from_min_max(Pos2::new(btns.right() - w, btns.top()), btns.max);
-    if pill_button(ui, sr, "Scan again", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, sr, ts!("cleanup.scan_again"), BTN_SECONDARY, true).clicked() {
         // back to the start screen, where the scan can be set up and started
         cleanup::stop_scan(&app.clean);
         app.ai.reset();
@@ -363,10 +363,10 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     }
     let hidden = app.clean.lock_ok().hidden_kept;
     if hidden > 0 {
-        let label = format!("Show {hidden} kept");
+        let label = t!("cleanup.show_kept", n = hidden);
         let kw = button_width(&p, &label, BTN_SECONDARY);
         let kr = Rect::from_min_max(Pos2::new(sr.left() - 8.0 - kw, btns.top()), Pos2::new(sr.left() - 8.0, btns.bottom()));
-        if pill_button(ui, kr, &label, BTN_SECONDARY, true).on_hover_text("You chose to keep these before, so they are hidden. Show them again and scan.").clicked() {
+        if pill_button(ui, kr, &label, BTN_SECONDARY, true).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
             cleanup::forget_kept();
             cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
             return;
@@ -377,10 +377,10 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let c = Pos2::new(r.center().x, r.top() + PAGE_HEADER_H + 150.0);
         p.circle_filled(c, 28.0, tint::HEALTH());
         icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(28.0)), ON_ACTION);
-        p.text(c + Vec2::new(0.0, 56.0), Align2::CENTER_CENTER, "Nothing to clean", bold(22.0), TEXT());
-        p.text(c + Vec2::new(0.0, 84.0), Align2::CENTER_CENTER, "No caches, logs or leftovers worth removing were found.", font(13.0), TEXT_DIM());
+        p.text(c + Vec2::new(0.0, 56.0), Align2::CENTER_CENTER, ts!("cleanup.nothing_to_clean"), bold(22.0), TEXT());
+        p.text(c + Vec2::new(0.0, 84.0), Align2::CENTER_CENTER, ts!("cleanup.nothing_found"), font(13.0), TEXT_DIM());
         let dr = Rect::from_center_size(c + Vec2::new(0.0, 130.0), Vec2::new(96.0, 32.0));
-        if pill_button(ui, dr, "Done", BTN_PRIMARY, true).clicked() {
+        if pill_button(ui, dr, ts!("cleanup.done"), BTN_PRIMARY, true).clicked() {
             app.clean.lock_ok().phase = Phase::Intro;
         }
         return;
@@ -422,13 +422,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let fy = f.center().y;
     // the segmented control already says where it goes; only warn when it can't come back
     let ty_ = if app.delete_now { fy - 9.0 } else { fy };
-    p.text(Pos2::new(f.left() + 24.0, ty_), Align2::LEFT_CENTER, format!("{} selected", human_bytes(selected)), bold(13.0), TEXT());
+    p.text(Pos2::new(f.left() + 24.0, ty_), Align2::LEFT_CENTER, t!("cleanup.selected", size = human_bytes(selected)), bold(13.0), TEXT());
     if app.delete_now {
-        p.text(Pos2::new(f.left() + 24.0, fy + 10.0), Align2::LEFT_CENTER, "Can't be undone", font(12.0), AMBER());
+        p.text(Pos2::new(f.left() + 24.0, fy + 10.0), Align2::LEFT_CENTER, ts!("cleanup.cant_undo"), font(12.0), AMBER());
     }
     let clean_label = match app.clean_group {
-        Some(g) => format!("Clean {}", g.title()),
-        None => format!("Clean {}", human_bytes(selected)),
+        Some(g) => t!("cleanup.clean_x", what = g.label()).into_owned(),
+        None => t!("cleanup.clean_x", what = human_bytes(selected)).into_owned(),
     };
     let cw = button_width(&p, &clean_label, BTN_PRIMARY).max(120.0);
     let cr = Rect::from_min_size(Pos2::new(f.right() - 24.0 - cw, fy - 16.0), Vec2::new(cw, 32.0));
@@ -468,11 +468,11 @@ fn is_question(it: &Item) -> bool {
 fn bundle_of(it: &Item) -> Option<&'static str> {
     let apple = it.path.components().any(|c| c.as_os_str().to_string_lossy().starts_with("com.apple."));
     match it.group {
-        Group::AppCaches if apple => Some("macOS caches"),
-        Group::AiTools if it.title.starts_with("Edit history · ") => Some("Claude Code edit history"),
-        Group::AiTools if it.title.starts_with("Uploaded files · ") => Some("Claude Code uploads"),
-        Group::AiTools if it.kind == "Old Sessions" && it.title.starts_with("Project · ") => Some("Old Claude Code chats"),
-        Group::Projects if it.rule_verdict == Verdict::Ask => Some("Recent build output"),
+        Group::AppCaches if apple => Some(ts!("cleanup.bundle.macos")),
+        Group::AiTools if it.title.starts_with("Edit history · ") => Some(ts!("cleanup.bundle.edit_history")),
+        Group::AiTools if it.title.starts_with("Uploaded files · ") => Some(ts!("cleanup.bundle.claude_uploads")),
+        Group::AiTools if it.kind == "Old Sessions" && it.title.starts_with("Project · ") => Some(ts!("cleanup.bundle.old_chats")),
+        Group::Projects if it.rule_verdict == Verdict::Ask => Some(ts!("cleanup.bundle.recent_builds")),
         Group::Captures => super::captures::bundle(it.kind),
         _ => None,
     }
@@ -518,7 +518,7 @@ fn entries(items: &[Item], idx: &[usize]) -> Vec<Entry> {
 /// all (system caches macOS rebuilds). Other bundles hold the person's own
 /// files (chats, uploads, project builds) and are answered item by item.
 fn one_answer(name: &str) -> bool {
-    name == "macOS caches"
+    name == ts!("cleanup.bundle.macos")
 }
 
 /// The open questions an answer about `key` covers: the whole bundle when
@@ -545,10 +545,10 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
     {
         let g = app.clean.lock_ok();
         let asks = |f: &dyn Fn(&Item) -> bool| g.items.iter().filter(|i| f(i) && is_question(i)).count();
-        rows.push((None, "All", g.total(), asks(&|_| true), TEXT_DIM()));
+        rows.push((None, ts!("cleanup.all"), g.total(), asks(&|_| true), TEXT_DIM()));
         for (k, grp) in Group::ALL.iter().enumerate() {
             if g.items.iter().any(|i| i.group == *grp) {
-                rows.push((Some(*grp), grp.title(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
+                rows.push((Some(*grp), grp.label(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
             }
         }
     }
@@ -667,9 +667,9 @@ fn fold_key(sec: Sec, e: &Entry) -> String {
 
 /// "Claude: keep. Large to download again…", wrapped to `w`.
 fn answer_job(agent: &str, a: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
-    let verdict = if a.action == "keep" { "keep" } else { "clean" };
+    let head = if a.action == "keep" { t!("cleanup.ans_keep", agent = agent) } else { t!("cleanup.ans_clean", agent = agent) };
     let mut job = egui::text::LayoutJob::default();
-    job.append(&format!("{agent}: {verdict}. "), 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
+    job.append(&head, 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
     job.append(&a.why, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT(), ..Default::default() });
     job.wrap.max_width = w.max(1.0);
     job
@@ -683,7 +683,7 @@ fn row_answer(app: &App, items: &[Item], e: &Entry) -> Option<aicheck::Rec> {
 
 /// Room for a question's text in a row `w` wide.
 fn ask_text_w(p: &egui::Painter, w: f32, bundle: bool) -> f32 {
-    let btns = button_width(p, "Clean", BTN_PRIMARY) + sp::S + button_width(p, "Keep", BTN_PRIMARY);
+    let btns = button_width(p, ts!("cleanup.clean"), BTN_PRIMARY) + sp::S + button_width(p, ts!("cleanup.keep"), BTN_PRIMARY);
     w - 2.0 * sp::L - if bundle { 20.0 } else { 0.0 } - SIZE_W - 2.0 * sp::COL_GAP - btns
 }
 
@@ -717,14 +717,14 @@ fn safe_height(p: &egui::Painter, tip: Option<&aicheck::Rec>, agent: &str, w: f3
 }
 
 fn safe_tip_w(p: &egui::Painter, w: f32) -> f32 {
-    w - 2.0 * sp::L - 16.0 - sp::M - SIZE_W - sp::COL_GAP - p.layout_no_wrap("Keep".into(), bold(12.0), TEXT()).size().x - sp::COL_GAP
+    w - 2.0 * sp::L - 16.0 - sp::M - SIZE_W - sp::COL_GAP - p.layout_no_wrap(ts!("cleanup.keep").into(), bold(12.0), TEXT()).size().x - sp::COL_GAP
 }
 
 /// "Claude: keep. You built MyApp today", wrapped to `w`.
 fn tip_job(agent: &str, t: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
-    let verdict = if t.action == "keep" { "keep" } else { "clean" };
+    let head = if t.action == "keep" { t!("cleanup.ans_keep", agent = agent) } else { t!("cleanup.ans_clean", agent = agent) };
     let mut job = egui::text::LayoutJob::default();
-    job.append(&format!("{agent}: {verdict}. "), 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
+    job.append(&head, 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
     job.append(&t.why, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT_SOFT(), ..Default::default() });
     job.wrap.max_width = w.max(1.0);
     job
@@ -854,20 +854,20 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
             }
             let act = match l {
                 Line::Label(Sec::Ask) => {
-                    let lab = section_label(&p, rr.left_top(), "Needs your OK", AMBER(), asks.len(), asks.iter().map(|&i| items[i].bytes).sum());
-                    let a = link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, "Keep all", 12.0);
+                    let lab = section_label(&p, rr.left_top(), ts!("cleanup.needs_ok"), AMBER(), asks.len(), asks.iter().map(|&i| items[i].bytes).sum());
+                    let a = link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.keep_all"), 12.0);
                     if a.clicked() {
                         Some(Act::Answer(asks.clone(), Verdict::Keep))
-                    } else if link(ui, Pos2::new(a.rect.left() - sp::M, lab.center().y), Align2::RIGHT_CENTER, "Clean all", 12.0).clicked() {
+                    } else if link(ui, Pos2::new(a.rect.left() - sp::M, lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.clean_all"), 12.0).clicked() {
                         Some(Act::Answer(asks.clone(), Verdict::Safe))
                     } else {
                         None
                     }
                 }
                 Line::Label(_) => {
-                    let lab = section_label(&p, rr.left_top(), "Safe", ACCENT(), safe.len(), safe.iter().map(|&i| items[i].bytes).sum());
+                    let lab = section_label(&p, rr.left_top(), ts!("cleanup.safe"), ACCENT(), safe.len(), safe.iter().map(|&i| items[i].bytes).sum());
                     let all_on = safe.iter().all(|&i| items[i].selected || items[i].hard_keep);
-                    link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, if all_on { "None" } else { "Select all" }, 12.0).clicked().then(|| Act::Select(safe.clone(), !all_on, false))
+                    link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, if all_on { ts!("cleanup.none") } else { ts!("cleanup.select_all") }, 12.0).clicked().then(|| Act::Select(safe.clone(), !all_on, false))
                 }
                 Line::Gap(_) => None,
                 Line::Entry(Sec::Ask, e) => ask_row(app, ui, rr, &items, &es[0][e], answers[e].as_ref(), agent, running, open.contains(&fold_key(Sec::Ask, &es[0][e]))),
@@ -947,14 +947,14 @@ fn clean_keep(ui: &mut Ui, rr: Rect, ans: Option<&aicheck::Rec>) -> Option<Verdi
     let clean_lit = ans.is_some_and(|a| a.action != "keep");
     let style = |lit: bool| if lit { BTN_PRIMARY } else { BTN_SECONDARY };
     let cy = rr.center().y;
-    let kw = button_width(&p, "Keep", style(keep_lit));
-    let cw = button_width(&p, "Clean", style(clean_lit));
+    let kw = button_width(&p, ts!("cleanup.keep"), style(keep_lit));
+    let cw = button_width(&p, ts!("cleanup.clean"), style(clean_lit));
     let kr = Rect::from_min_size(Pos2::new(rr.right() - sp::L - kw, cy - sp::CONTROL_H / 2.0), Vec2::new(kw, sp::CONTROL_H));
     let cr = Rect::from_min_size(Pos2::new(kr.left() - sp::S - cw, kr.top()), Vec2::new(cw, sp::CONTROL_H));
-    if pill_button(ui, cr, "Clean", style(clean_lit), true).clicked() {
+    if pill_button(ui, cr, ts!("cleanup.clean"), style(clean_lit), true).clicked() {
         return Some(Verdict::Safe);
     }
-    if pill_button(ui, kr, "Keep", style(keep_lit), true).clicked() {
+    if pill_button(ui, kr, ts!("cleanup.keep"), style(keep_lit), true).clicked() {
         return Some(Verdict::Keep);
     }
     None
@@ -962,7 +962,7 @@ fn clean_keep(ui: &mut Ui, rr: Rect, ans: Option<&aicheck::Rec>) -> Option<Verdi
 
 /// The right edge of a question's size column.
 fn ask_size_right(p: &egui::Painter, rr: Rect) -> f32 {
-    rr.right() - sp::L - button_width(p, "Keep", BTN_PRIMARY) - sp::S - button_width(p, "Clean", BTN_PRIMARY) - sp::COL_GAP
+    rr.right() - sp::L - button_width(p, ts!("cleanup.keep"), BTN_PRIMARY) - sp::S - button_width(p, ts!("cleanup.clean"), BTN_PRIMARY) - sp::COL_GAP
 }
 
 /// One question: name, what it is, the agent's answer once it came, the
@@ -1002,7 +1002,7 @@ fn ask_row(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], e: &Entry, ans: Opt
     let mut right = x + tw;
     let perm = e.idx.iter().any(|&i| items[i].permanent);
     if perm {
-        right -= p.layout_no_wrap("Permanent".into(), bold(11.0), TEXT()).size().x + 16.0 + sp::S;
+        right -= p.layout_no_wrap(ts!("cleanup.permanent").into(), bold(11.0), TEXT()).size().x + 16.0 + sp::S;
     }
     let waiting = running && ans.is_none() && app.ai.answer.contains(&key);
     if waiting {
@@ -1011,7 +1011,7 @@ fn ask_row(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], e: &Entry, ans: Opt
     let t = text_fit(&p, Pos2::new(x, ty0), Align2::LEFT_CENTER, e.name.unwrap_or(&first.title), ty::title(), TEXT(), right - x);
     let mut after = t.right() + sp::S;
     if perm {
-        after = chip(&p, Pos2::new(after, ty0), Align2::LEFT_CENTER, "Permanent", CHIP_RISK()).right() + sp::S;
+        after = chip(&p, Pos2::new(after, ty0), Align2::LEFT_CENTER, ts!("cleanup.permanent"), CHIP_RISK()).right() + sp::S;
     }
     if waiting {
         spinner(&p, Pos2::new(after + 5.0, ty0), 5.0, ui.input(|i| i.time), AI());
@@ -1040,7 +1040,7 @@ fn ask_member(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], i: usize, agent:
     let key = it.path.display().to_string();
     let ans = app.ai.answer_for(&key);
     let tip = match &ans {
-        Some(a) => format!("{}\n{agent}: {}. {}", short_path(&it.path), if a.action == "keep" { "keep" } else { "clean" }, a.why),
+        Some(a) => format!("{}\n{}{}", short_path(&it.path), if a.action == "keep" { t!("cleanup.ans_keep", agent = agent) } else { t!("cleanup.ans_clean", agent = agent) }, a.why),
         None => short_path(&it.path),
     };
     // its own id: the bundle row above is keyed on the same (first) path
@@ -1107,16 +1107,16 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
     }
     let perm = e.name.is_none() && first.permanent;
     if perm {
-        right = chip(&p, Pos2::new(right, cy), Align2::RIGHT_CENTER, "Permanent", CHIP_RISK()).left() - sp::S;
+        right = chip(&p, Pos2::new(right, cy), Align2::RIGHT_CENTER, ts!("cleanup.permanent"), CHIP_RISK()).left() - sp::S;
     }
     let undo = e.name.is_none() && undoable(first);
-    let undo_w = if undo { p.layout_no_wrap("Undo".into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
+    let undo_w = if undo { p.layout_no_wrap(ts!("cleanup.undo").into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
     let title = e.name.unwrap_or(&first.title);
     let t = text_fit(&p, Pos2::new(x, cy), Align2::LEFT_CENTER, title, ty::body(), if dim { TEXT_DIM() } else { TEXT() }, right - undo_w - x);
     if e.name.is_some() {
         p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, items_n(e.idx.len()), ty::label(), TEXT_DIM());
     }
-    if undo && link(ui, Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
+    if undo && link(ui, Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, ts!("cleanup.undo"), 12.0).clicked() {
         act = Some(Act::Undo(vec![e.idx[0]]));
     }
     if let Some(t) = tip {
@@ -1147,9 +1147,9 @@ fn list_member(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, i: usize) -> Opt
     let x = x0 + 16.0 + sp::M;
     let s = p.text(Pos2::new(rr.right() - sp::L, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::body(), TEXT_DIM());
     let undo = undoable(it);
-    let undo_w = if undo { p.layout_no_wrap("Undo".into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
+    let undo_w = if undo { p.layout_no_wrap(ts!("cleanup.undo").into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
     let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT_SOFT(), s.left() - sp::COL_GAP - undo_w - x);
-    if undo && link(ui, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, "Undo", 12.0).clicked() {
+    if undo && link(ui, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, ts!("cleanup.undo"), 12.0).clicked() {
         act = Some(Act::Undo(vec![i]));
     }
     act
@@ -1164,7 +1164,7 @@ fn kept_head(ui: &mut Ui, rr: Rect, n: usize, bytes: u64, open: bool) -> Option<
     }
     let cy = rr.center().y;
     icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(rr.left() + sp::L + 8.0, cy), Vec2::splat(14.0)), TEXT_FAINT());
-    let t = p.text(Pos2::new(rr.left() + sp::L + 16.0 + sp::M, cy), Align2::LEFT_CENTER, "Kept", ty::title(), TEXT_DIM());
+    let t = p.text(Pos2::new(rr.left() + sp::L + 16.0 + sp::M, cy), Align2::LEFT_CENTER, ts!("cleanup.kept"), ty::title(), TEXT_DIM());
     p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, n.to_string(), ty::label(), TEXT_DIM());
     let ax = rr.right() - sp::L - 12.0;
     fold_arrow(&p, ax, cy, open);
@@ -1192,7 +1192,7 @@ fn answer_items(app: &mut App, idx: &[usize], v: Verdict) {
             it.verdict = v;
             it.by = Who::You;
             it.selected = v == Verdict::Safe;
-            it.reason = if v == Verdict::Safe { "You said clean".into() } else { "You said keep".into() };
+            it.reason = if v == Verdict::Safe { ts!("cleanup.you_said_clean").into() } else { ts!("cleanup.you_said_keep").into() };
         }
     }
     if !kept.is_empty() {
@@ -1203,7 +1203,7 @@ fn answer_items(app: &mut App, idx: &[usize], v: Verdict) {
 /// "Tip: title. why" wrapped, with its action as a link on the right.
 fn tip_text(t: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
-    job.append("Tip: ", 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
+    job.append(ts!("cleanup.tip"), 0.0, egui::TextFormat { font_id: bold(12.0), color: AI(), ..Default::default() });
     let title = t.title.trim_end_matches('.');
     let body = if t.why.is_empty() { format!("{title}.") } else { format!("{title}. {}", t.why) };
     job.append(&body, 0.0, egui::TextFormat { font_id: ty::label(), color: TEXT_SOFT(), ..Default::default() });
@@ -1364,7 +1364,7 @@ fn start(app: &mut App, ctx: egui::Context) {
 
 /// "1 item", "3 items".
 fn items_n(n: usize) -> String {
-    if n == 1 { "1 item".into() } else { format!("{n} items") }
+    tn!("cleanup.items", n = n, count = n).into_owned()
 }
 
 fn confirm(app: &mut App, ui: &mut Ui, r: Rect) {
@@ -1394,9 +1394,9 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
         (sel.len(), sel.iter().map(|i| i.bytes).sum::<u64>(), perm, trashed)
     };
     let warn = if app.delete_now {
-        Some("Can't be undone")
+        Some(ts!("cleanup.cant_undo"))
     } else if perm {
-        Some("Some items can't be put back")
+        Some(ts!("cleanup.some_permanent"))
     } else {
         None
     };
@@ -1409,7 +1409,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     p.rect_filled(m, 14.0, POPOVER());
     p.rect_stroke(m, 14.0, Stroke::new(1.0, POPOVER_EDGE()), StrokeKind::Inside);
     let inner = m.shrink(SHEET_PAD);
-    p.text(Pos2::new(inner.left(), inner.top() + 10.0), Align2::LEFT_CENTER, format!("Clean {} ({})?", items_n(n), human_bytes(bytes)), bold(15.0), TEXT());
+    p.text(Pos2::new(inner.left(), inner.top() + 10.0), Align2::LEFT_CENTER, t!("cleanup.confirm_title", items = items_n(n), size = human_bytes(bytes)), bold(15.0), TEXT());
     let mut y = inner.top() + 20.0;
     let mut act: Option<usize> = None;
     if !app.quit.is_empty() {
@@ -1440,32 +1440,32 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     // buttons, right to left
     let by = inner.bottom() - sp::CONTROL_H;
     let danger = app.delete_now || perm;
-    let done_label = if app.delete_now { "Delete now" } else if trashed == 0 { "Clean" } else { "Move to Trash" };
-    let ok_label = if open_left > 0 { "Quit all and clean" } else { done_label };
+    let done_label = if app.delete_now { ts!("cleanup.delete_now") } else if trashed == 0 { ts!("cleanup.clean") } else { ts!("cleanup.move_to_trash") };
+    let ok_label = if open_left > 0 { ts!("cleanup.quit_all_clean") } else { done_label };
     let okw = button_width(&p, ok_label, BTN_PRIMARY);
     let ok = Rect::from_min_size(Pos2::new(inner.right() - okw, by), Vec2::new(okw, sp::CONTROL_H));
     let mut left = ok.left();
     let rest = if open_left > 0 {
-        let w = button_width(&p, "Clean the rest", BTN_SECONDARY);
+        let w = button_width(&p, ts!("cleanup.clean_rest"), BTN_SECONDARY);
         let b = Rect::from_min_size(Pos2::new(left - sp::S - w, by), Vec2::new(w, sp::CONTROL_H));
         left = b.left();
         Some(b)
     } else {
         None
     };
-    let cw = button_width(&p, "Cancel", BTN_SECONDARY);
+    let cw = button_width(&p, ts!("cleanup.cancel"), BTN_SECONDARY);
     let cancel = Rect::from_min_size(Pos2::new(left - sp::S - cw, by), Vec2::new(cw, sp::CONTROL_H));
     // P4: Esc closes unless apps are quitting; a click on the dim closes unless destructive
     let outside = dim.interact_pointer_pos().is_some_and(|q| !m.contains(q));
     let dim_closes = dim.clicked() && outside && !danger && !busy && !app.quit_then_clean;
-    if pill_button(ui, cancel, "Cancel", BTN_SECONDARY, true).clicked() || dim_closes || (!busy && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
+    if pill_button(ui, cancel, ts!("cleanup.cancel"), BTN_SECONDARY, true).clicked() || dim_closes || (!busy && ui.input(|i| i.key_pressed(egui::Key::Escape))) {
         app.clean_confirm = false;
         app.quit_then_clean = false;
         app.quit.clear();
         return;
     }
     if let Some(b) = rest {
-        if pill_button(ui, b, "Clean the rest", BTN_SECONDARY, !busy).clicked() {
+        if pill_button(ui, b, ts!("cleanup.clean_rest"), BTN_SECONDARY, !busy).clicked() {
             // leave the open apps' files alone (and the apps open)
             let keep: Vec<usize> = app.quit.iter().filter(|q| q.state != Quit::Closed).flat_map(|q| q.idx.clone()).collect();
             let any_left = {
@@ -1517,9 +1517,9 @@ fn quit_row(app: &mut App, ui: &mut Ui, rr: Rect, k: usize) -> bool {
     p.text(Pos2::new(x + nw + sp::M, rr.center().y), Align2::LEFT_CENTER, human_bytes(row.bytes), font(13.0), with_alpha(TEXT_DIM(), a));
     let right = rr.right() - sp::L;
     let quit_btn = |ui: &mut Ui, right: f32| {
-        let w = button_width(&p, "Quit", BTN_SECONDARY);
+        let w = button_width(&p, ts!("cleanup.quit"), BTN_SECONDARY);
         let b = Rect::from_min_size(Pos2::new(right - w, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(w, sp::CONTROL_H));
-        (pill_button(ui, b, "Quit", BTN_SECONDARY, true).clicked(), b.left())
+        (pill_button(ui, b, ts!("cleanup.quit"), BTN_SECONDARY, true).clicked(), b.left())
     };
     match row.state {
         Quit::Open => quit_btn(ui, right).0,
@@ -1529,7 +1529,7 @@ fn quit_row(app: &mut App, ui: &mut Ui, rr: Rect, k: usize) -> bool {
         }
         Quit::Stuck => {
             let (hit, l) = quit_btn(ui, right);
-            p.text(Pos2::new(l - sp::S, rr.center().y), Align2::RIGHT_CENTER, "Still open", font(12.0), AMBER());
+            p.text(Pos2::new(l - sp::S, rr.center().y), Align2::RIGHT_CENTER, ts!("cleanup.still_open"), font(12.0), AMBER());
             hit
         }
         Quit::Closed => {
@@ -1567,7 +1567,7 @@ pub(crate) fn demo_apps() -> Vec<OpenApp> {
 fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let st = app.clean.lock_ok().clone();
-    page_header(&p, r, "Cleanup", "Finished", TEXT_DIM());
+    page_header(&p, r, ts!("cleanup.name"), ts!("cleanup.finished"), TEXT_DIM());
     let ok = st.failed.is_empty();
     // removed items leave the list; the engine keeps what each one was
     let mut rows: Vec<(Group, usize, u64)> = Group::ALL
@@ -1598,26 +1598,26 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let tx = c.x + 22.0 + sp::M;
     let total = st.cleaned_count + st.failed.len();
     let (ly1, ly2) = two_lines_y(&p, c.y, &ty::title(), &ty::caption());
-    p.text(Pos2::new(tx, ly1), Align2::LEFT_CENTER, "Cleanup finished", ty::title(), TEXT());
-    p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, format!("{} of {}", st.cleaned_count, items_n(total)), ty::caption(), ty::caption_color());
+    p.text(Pos2::new(tx, ly1), Align2::LEFT_CENTER, ts!("cleanup.cleanup_finished"), ty::title(), TEXT());
+    p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, t!("cleanup.n_of", n = st.cleaned_count, items = items_n(total)), ty::caption(), ty::caption_color());
     let mut y = li.top() + 44.0 + sp::L;
     let freed = st.cleaned_bytes.saturating_sub(st.trashed_bytes);
     let g = p.layout_no_wrap(human_bytes(if freed > 0 { freed } else { st.cleaned_bytes }), ty::hero(), TEXT());
     let gw = g.size().x;
     p.galley(Pos2::new(li.left(), y), g, TEXT());
     let what = if st.trashed_bytes == 0 {
-        "freed".to_string()
+        ts!("cleanup.freed").to_string()
     } else if freed == 0 {
-        "to the Trash".to_string()
+        ts!("cleanup.to_trash").to_string()
     } else {
-        format!("freed · {} to the Trash", human_bytes(st.trashed_bytes))
+        t!("cleanup.freed_trash", size = human_bytes(st.trashed_bytes)).into_owned()
     };
     p.text(Pos2::new(li.left() + gw + 6.0, y + 26.0), Align2::LEFT_BOTTOM, what, ty::body(), ty::caption_color());
     y += 34.0 + sp::XS;
     y += sp::L;
     if !ok {
         let n = st.failed.len();
-        p.text(Pos2::new(li.left(), y), Align2::LEFT_TOP, format!("{n} item{} couldn't be removed", if n == 1 { "" } else { "s" }), ty::title(), AMBER());
+        p.text(Pos2::new(li.left(), y), Align2::LEFT_TOP, tn!("cleanup.failed", n = n), ty::title(), AMBER());
         y += 16.0 + sp::S;
         for (name, err) in st.failed.iter().take(4) {
             text_fit(&p, Pos2::new(li.left(), y), Align2::LEFT_TOP, &format!("{name}: {err}"), mono(11.0), TEXT_SOFT(), li.width());
@@ -1625,20 +1625,20 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
         }
         // only when an open app was in the way
         if st.failed.iter().any(|(_, e)| e.contains("open") || e.contains("in use")) {
-            text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, "Quit the apps and scan again", ty::caption(), ty::caption_color(), li.width());
+            text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, ts!("cleanup.quit_and_rescan"), ty::caption(), ty::caption_color(), li.width());
         }
     }
     let db = Rect::from_min_size(Pos2::new(li.left(), li.bottom() - 34.0), Vec2::new(li.width(), 34.0));
     // after one group: the other groups are still waiting in the results
     let back = st.clean_only.is_some() && st.total() > 0;
-    if pill_button(ui, db, if back { "Back to results" } else { "Done" }, BTN_PRIMARY, true).clicked() {
+    if pill_button(ui, db, if back { ts!("cleanup.back_to_results") } else { ts!("cleanup.done") }, BTN_PRIMARY, true).clicked() {
         app.clean.lock_ok().phase = if back { Phase::Results } else { Phase::Intro };
         app.clean_log = false;
     }
 
     // right: what was cleaned, or the log
     let ri = right.shrink(sp::L);
-    let log_label = if app.clean_log { "Hide log" } else { "Show log" };
+    let log_label = if app.clean_log { ts!("cleanup.hide_log") } else { ts!("cleanup.show_log") };
     let lw = button_width(&p, log_label, BTN_SECONDARY);
     let lb = Rect::from_min_size(Pos2::new(ri.right() - lw, ri.top() - 4.0), Vec2::new(lw, 26.0));
     if pill_button(ui, lb, log_label, BTN_SECONDARY, true).clicked() {
@@ -1646,7 +1646,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     }
     let list = Rect::from_min_max(Pos2::new(ri.left(), ri.top() + 16.0 + sp::M), ri.max);
     if app.clean_log {
-        p.text(ri.left_top(), Align2::LEFT_TOP, "Cleanup log", ty::title(), TEXT());
+        p.text(ri.left_top(), Align2::LEFT_TOP, ts!("cleanup.log"), ty::title(), TEXT());
         let mut child = ui.new_child(UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
         child.set_clip_rect(list);
         ScrollArea::vertical().id_salt("log").auto_shrink([false, false]).show(&mut child, |ui| {
@@ -1657,7 +1657,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
         });
         return;
     }
-    p.text(ri.left_top(), Align2::LEFT_TOP, "What was cleaned", ty::title(), TEXT());
+    p.text(ri.left_top(), Align2::LEFT_TOP, ts!("cleanup.what_cleaned"), ty::title(), TEXT());
     for (k, (g, n, b)) in rows.iter().enumerate() {
         let row = Rect::from_min_size(Pos2::new(list.left(), list.top() + k as f32 * sp::ROW2_H), Vec2::new(list.width(), sp::ROW2_H));
         if row.bottom() > list.bottom() {
@@ -1670,11 +1670,11 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
         let vr = p.text(Pos2::new(row.right(), row.center().y), Align2::RIGHT_CENTER, human_bytes(*b), ty::body(), white(166));
         let x = row.left() + 14.0 + sp::M;
         let (ly1, ly2) = two_lines_y(&p, row.center().y, &ty::body(), &ty::caption());
-        text_fit(&p, Pos2::new(x, ly1), Align2::LEFT_CENTER, g.title(), ty::body(), TEXT(), vr.left() - x - sp::S);
-        text_fit(&p, Pos2::new(x, ly2), Align2::LEFT_CENTER, &format!("{n} item{}", if *n == 1 { "" } else { "s" }), ty::caption(), ty::caption_color(), vr.left() - x - sp::S);
+        text_fit(&p, Pos2::new(x, ly1), Align2::LEFT_CENTER, g.label(), ty::body(), TEXT(), vr.left() - x - sp::S);
+        text_fit(&p, Pos2::new(x, ly2), Align2::LEFT_CENTER, &tn!("cleanup.items", n = *n, count = n), ty::caption(), ty::caption_color(), vr.left() - x - sp::S);
     }
     if rows.is_empty() {
-        text_fit(&p, Pos2::new(list.left(), list.top() + sp::M), Align2::LEFT_TOP, "Nothing selected", ty::body(), TEXT_DIM(), list.width());
+        text_fit(&p, Pos2::new(list.left(), list.top() + sp::M), Align2::LEFT_TOP, ts!("cleanup.nothing_selected"), ty::body(), TEXT_DIM(), list.width());
     }
 }
 
@@ -1821,8 +1821,8 @@ fn check_ask(clean: &cleanup::Shared) -> aicheck::Ask {
     aicheck::Ask {
         task: "This is Cleanup's results: caches, logs and leftovers found on this Mac. Some items need the user's OK: say for each whether to clean it (select) or keep it. Then point out anything ticked for cleaning that the user would likely miss (documents, settings, data that cannot be downloaded again), or a big clearly safe win.".into(),
         actions: vec![
-            ("select", "clean it: tick it for cleaning (the user still presses Clean and confirms)", "Clean"),
-            ("keep", "untick it and remember it as kept", "Keep"),
+            ("select", "clean it: tick it for cleaning (the user still presses Clean and confirms)", ts!("cleanup.ai.clean")),
+            ("keep", "untick it and remember it as kept", ts!("cleanup.ai.keep")),
         ],
         items,
         facts: Vec::new(),

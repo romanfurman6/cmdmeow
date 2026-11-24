@@ -41,16 +41,29 @@ impl Group {
             Group::Trash => "Trash",
         }
     }
+    /// The group's name on screen; `title` is the English one the AI reads.
+    pub fn label(self) -> &'static str {
+        match self {
+            Group::AiTools => ts!("cleanup.group.ai_tools"),
+            Group::AppCaches => ts!("cleanup.group.app_caches"),
+            Group::Developer => ts!("cleanup.group.developer"),
+            Group::Projects => ts!("cleanup.group.projects"),
+            Group::Installers => ts!("cleanup.group.installers"),
+            Group::Captures => ts!("cleanup.group.captures"),
+            Group::Logs => ts!("cleanup.group.logs"),
+            Group::Trash => ts!("cleanup.group.trash"),
+        }
+    }
     pub fn blurb(self) -> &'static str {
         match self {
-            Group::AiTools => "Caches, logs and old versions of Claude, Codex, Gemini, Cursor",
-            Group::AppCaches => "Files apps rebuild when needed",
-            Group::Developer => "Xcode build data, simulator caches, package downloads",
-            Group::Projects => "node_modules, target and other build output of idle projects",
-            Group::Installers => "Old installers in Downloads",
-            Group::Captures => "Screenshots, recordings and uploads older than 30 days",
-            Group::Logs => "Logs from apps and macOS",
-            Group::Trash => "Items in the Trash",
+            Group::AiTools => ts!("cleanup.blurb.ai_tools"),
+            Group::AppCaches => ts!("cleanup.blurb.app_caches"),
+            Group::Developer => ts!("cleanup.blurb.developer"),
+            Group::Projects => ts!("cleanup.blurb.projects"),
+            Group::Installers => ts!("cleanup.blurb.installers"),
+            Group::Captures => ts!("cleanup.blurb.captures"),
+            Group::Logs => ts!("cleanup.blurb.logs"),
+            Group::Trash => ts!("cleanup.blurb.trash"),
         }
     }
 }
@@ -1533,9 +1546,9 @@ fn record_clean(bytes: u64) {
 /// "today", "yesterday", "3 days ago".
 pub fn days_ago(when: i64) -> String {
     match (chrono::Utc::now().timestamp() - when).max(0) / 86400 {
-        0 => "today".into(),
-        1 => "yesterday".into(),
-        d => format!("{d} days ago"),
+        0 => ts!("cleanup.ago.today").into(),
+        1 => ts!("cleanup.ago.yesterday").into(),
+        d => t!("cleanup.ago.days", n = d).into_owned(),
     }
 }
 
