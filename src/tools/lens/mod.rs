@@ -148,10 +148,10 @@ impl Tool for Lens {
         ID
     }
     fn name(&self) -> &'static str {
-        "Disk Map"
+        ts!("lens.name")
     }
     fn about(&self) -> &'static str {
-        "Shows which folders and files take up your disk"
+        ts!("lens.about")
     }
     fn busy(&self) -> bool {
         self.lens.running.load(std::sync::atomic::Ordering::SeqCst) || self.ai.phase() == crate::kit::aicheck::Phase::Running
@@ -165,7 +165,7 @@ impl Tool for Lens {
     }
 
     fn section(&self) -> &'static str {
-        "Clean"
+        ts!("cleanup.short")
     }
     fn has_page(&self) -> bool {
         true
