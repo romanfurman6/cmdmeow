@@ -143,6 +143,10 @@ pub enum Action {
     HidePanel,
     Toast(String),
     Quit,
+    /// Ask macOS to restart (it shows its own confirm).
+    Restart,
+    /// Empty the Trash after a confirm.
+    EmptyTrash,
 }
 
 /// What a `--view` name asks the shell to show (screenshots).

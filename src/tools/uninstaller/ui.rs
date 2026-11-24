@@ -169,17 +169,16 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     // AI Check: a chip after the title, on Leftovers
     let ai_data = u.tab == Tab::Leftovers && orphan_bytes > 0;
     let cw = if u.tab == Tab::Leftovers { aicheck::ui::chip_width(&u.ai, ui, ai_data) } else { 0.0 };
-    // the status ends before Rescan (once a scan is done) and the tabs
-    let rescan_room = if phase == Phase::Ready { 60.0 } else { 0.0 };
-    let sub_right = r.right() - sp::PAGE_EDGE - 260.0 - 16.0 - rescan_room;
+    // the status ends before the tabs and Rescan (SP16)
+    let rw = icon_pill_width(&p, "Rescan", BTN_SECONDARY);
+    let sub_right = r.right() - sp::PAGE_EDGE - rw - sp::M - 260.0 - sp::M;
     let (btns, chip_at) = page_header_room(&p, r, "Uninstaller", &sub, TEXT_DIM(), cw, sub_right);
     let labels_owned = [
         "Apps".to_string(),
         if orphan_bytes > 0 { format!("Leftovers · {}", human_bytes(orphan_bytes)) } else { "Leftovers".into() },
     ];
     let labels: Vec<&str> = labels_owned.iter().map(|s| s.as_str()).collect();
-    let tw = 260.0;
-    let tr = Rect::from_min_max(Pos2::new(btns.right() - tw, btns.top()), btns.max);
+    let (tr, rr) = header_controls(btns, 260.0, rw);
     let cur = match u.tab {
         Tab::Apps => 0,
         Tab::Leftovers => 1,
@@ -187,8 +186,8 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("un-tab"), &labels, cur) {
         u.tab = [Tab::Apps, Tab::Leftovers][i];
     }
-    // scan again (apps and leftovers), once the last scan is done
-    if phase == Phase::Ready && link(ui, Pos2::new(tr.left() - 16.0, tr.center().y), Align2::RIGHT_CENTER, "Rescan", 12.0).on_hover_text("Look for apps and leftovers again").clicked() {
+    // scan again (apps and leftovers): always there, dimmed until the last scan is done
+    if icon_pill(ui, rr, Icon::Refresh, "Rescan", BTN_SECONDARY, phase == Phase::Ready).on_hover_text("Look for apps and leftovers again").clicked() {
         u.rescan();
     }
     let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H + 1.0), r.max);

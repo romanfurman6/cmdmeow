@@ -123,11 +123,11 @@ impl Tool for System {
             v.push(rec(15, "Memory pressure high".into(), "Memory details", card("memory")));
         }
         if s.uptime_warning() {
-            // no button: a restart is the fix, and the app doesn't do it
-            v.push(rec(10, format!("Up {} days", s.uptime_days()), "", card("cpu")));
+            // macOS asks before it restarts
+            v.push(rec(10, format!("Restart recommended · up {} days", s.uptime_days()), "Restart…", Action::Restart));
         }
         if s.trash_overfill() {
-            v.push(rec(m::PRIORITY_TRASH_OVERFILL, format!("Trash holds {}", human_bytes(s.trash_bytes.unwrap_or(0))), "Open Cleanup", page("cleanup")));
+            v.push(rec(m::PRIORITY_TRASH_OVERFILL, format!("Trash is full · {}", human_bytes(s.trash_bytes.unwrap_or(0))), "Empty Trash", Action::EmptyTrash));
         }
         v
     }

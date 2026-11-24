@@ -94,13 +94,13 @@ pub fn usd(v: f64) -> String {
     if v >= 100.0 { format!("${v:.0}") } else { format!("${v:.2}") }
 }
 
-/// "14:20" when the limits were last checked, or "As of 13:52" (amber)
+/// "Updated 14:20" when the limits were last checked, or "Couldn't update · 13:52" (amber)
 /// when the last check failed and these are the last ones known.
 pub fn fresh(i: &UsageInfo) -> (String, Color32) {
     let Some(f) = i.fetched else { return (String::new(), TEXT_FAINT()) };
     let t = f.format("%H:%M");
     if i.stale {
-        (format!("As of {t}"), AMBER())
+        (format!("Couldn't update · {t}"), AMBER())
     } else {
         (format!("Updated {t}"), TEXT_FAINT())
     }
@@ -109,8 +109,9 @@ pub fn fresh(i: &UsageInfo) -> (String, Color32) {
 /// A small chip for an outage: "Degraded" (amber) or "Outage" (red).
 pub fn incident_chip(p: &egui::Painter, pos: Pos2, align: Align2, i: &UsageInfo) -> Option<Rect> {
     let s = i.incident.as_deref()?;
-    let c = if s == "Outage" { RED() } else { AMBER() };
-    Some(chip(p, pos, align, s, (with_alpha(c, 0.16), c)))
+    let name = crate::kit::ai::meta(i.provider).name;
+    let (label, c) = if s == "Outage" { (format!("{name} is down"), RED()) } else { (format!("{name} has problems"), AMBER()) };
+    Some(chip(p, pos, align, &label, (with_alpha(c, 0.16), c)))
 }
 
 /// The caption's top under a stat's number in the day chart's readout.

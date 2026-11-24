@@ -1449,15 +1449,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         (Some(w), _, _) => format!("Mapped {}", ago(w)),
         (None, _, _) => String::new(),
     };
-    // the map's state sits right against its action: a stopped map is an
-    // amber "Partial map" chip next to Map again
-    let hint = if partial && !busy {
-        let cr = chip(&p, Pos2::new(new_r.left() - 8.0, hr.center().y), Align2::RIGHT_CENTER, "Partial map", (with_alpha(AMBER(), 0.16), AMBER()));
-        ui.interact(cr, ui.scope_id().with("lens-partial-why"), Sense::hover()).on_hover_text("The scan was stopped before it finished");
-        cr
-    } else {
-        p.text(Pos2::new(new_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, when, font(12.0), TEXT_DIM())
-    };
+    // the map's state sits right against its action (a stopped map says so
+    // in the header status)
+    let hint = p.text(Pos2::new(new_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, when, font(12.0), TEXT_DIM());
     if updating || peek.is_some() {
         spinner(&p, Pos2::new(hint.left() - 12.0, hr.center().y), 5.0, ctx.input(|i| i.time), tint::DISK_MAP());
         crate::kit::glass::poll(&ctx);
