@@ -488,7 +488,10 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let mut restart_now = false;
     match kind {
         Kind::Welcome => next = welcome(app, ui, body, t),
-        Kind::Theme => theme_step(app, ui, body, t),
+        Kind::Theme => {
+            crate::kit::theme_fade::poll(&ctx);
+            theme_step(app, ui, body, t)
+        }
         Kind::Tools => tools(app, ui, body, t),
         Kind::Agents => agents(app, ui, body, t),
         Kind::SignIns => sign_ins(app, ui, body, t),
@@ -898,7 +901,8 @@ fn theme_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let head = body.center().y - (title_h + ch) / 2.0;
     let g = p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "Pick a theme", bold(22.0), TEXT());
     let top = head + title_h;
-    let cur = shown_theme();
+    // a switch waiting for its picture already shows the new card picked
+    let cur = crate::kit::theme_fade::pending_choice().unwrap_or_else(shown_theme);
     let mut pick_it = None;
     for (k, &(choice, name, dark_ink)) in THEMES.iter().enumerate() {
         let a = ease((t - 0.06 * k as f32) / 0.4);
@@ -938,12 +942,13 @@ fn theme_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if resp.clicked() && !on {
-            pick_it = Some(choice);
+            pick_it = Some((choice, r.center()));
         }
     }
-    if let Some(c) = pick_it {
+    if let Some((c, at)) = pick_it {
         if !app.demo {
-            set_theme_choice(c);
+            // the old theme blurs and a soft wave from the card clears it
+            crate::kit::theme_fade::begin(ui.ctx(), at, c);
         }
         ui.ctx().request_repaint();
     }
