@@ -222,14 +222,6 @@ const ARM_IDLE: f32 = 3.0;
 /// ✕ doesn't quit, s.
 const ARM_GUARD: f32 = 0.35;
 
-/// Which confirm the header draws (the canvas renders both; one ships).
-fn confirm_style() -> u8 {
-    match std::env::var("CMDMEOW_PANEL_QUIT").as_deref() {
-        Ok("b") => 1,
-        _ => 0,
-    }
-}
-
 /// Title and status from the first tool that offers one, then two round
 /// buttons on the right: Quit (✕) and Open (▢) at the corner. Quit asks
 /// first, right in the header: a click arms it, a second click quits. Esc,
@@ -262,12 +254,11 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     }
     let t = ctx.animate_bool_with_time(id.with("t"), armed.is_some(), ARM);
     let x0 = rect.left() + 16.0;
-    let style = confirm_style();
     let quit_w = button_width(&p, "Quit", BTN_DANGER).max(56.0);
     let mut clicked_quit = false;
     let mut hot = Rect::NOTHING;
-    if style == 0 {
-        // A: ✕ grows left into a red "Quit" pill; Open stays at the corner
+    {
+        // ✕ grows left into a red "Quit" pill; Open stays at the corner
         let w = size + (quit_w - size) * t;
         let r = Rect::from_min_size(Pos2::new(quit_r.right() - w, top), Vec2::new(w, size));
         title_line(app, &p, x0, rect.top(), r.left() - x0 - 10.0);
@@ -277,9 +268,8 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
             }
         } else {
             let k = crate::kit::key::press(ui, r, id.with("key"), true, Some(crate::kit::sound::Click::Danger));
-            let look = crate::kit::key::Look::danger().radius(size / 2.0);
             // the fill turns red as it grows; the ✕ gives way to the word
-            let mut look = look;
+            let mut look = crate::kit::key::Look::danger().radius(size / 2.0);
             let q = crate::kit::key::Look::quiet(0.08, 0.20);
             look.fill = lerp_color(q.fill, look.fill, t);
             look.fill_hover = lerp_color(q.fill_hover, look.fill_hover, t);
@@ -301,42 +291,6 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         if round_button_in(ui, open_r, Icon::Window, "Open Cmd+Meow").clicked() {
             disarm(&ctx);
             open_app(app, &ctx);
-        }
-    } else {
-        // B: the header asks: "Quit Cmd+Meow?" with Cancel at the corner and Quit beside it
-        let cancel_w = button_width(&p, "Cancel", BTN_SECONDARY);
-        let cancel_r = Rect::from_min_size(Pos2::new(open_r.right() - cancel_w, top), Vec2::new(cancel_w, size));
-        let yes_r = Rect::from_min_size(Pos2::new(cancel_r.left() - sp::S - quit_w, top), Vec2::new(quit_w, size));
-        if t < 0.99 {
-            let mut c = ui.new_child(UiBuilder::new().max_rect(rect).id_salt("panel-head-rest"));
-            c.multiply_opacity(1.0 - t);
-            title_line(app, c.painter(), x0, rect.top(), quit_r.left() - x0 - 10.0);
-            if t < 0.01 {
-                if round_button_in(&mut c, quit_r, Icon::Close, "Quit Cmd+Meow").clicked() {
-                    ctx.data_mut(|d| d.insert_temp(id, std::time::Instant::now()));
-                }
-                if round_button_in(&mut c, open_r, Icon::Window, "Open Cmd+Meow").clicked() {
-                    open_app(app, &ctx);
-                }
-            } else {
-                round_button_in(&mut c, quit_r, Icon::Close, "Quit Cmd+Meow");
-                round_button_in(&mut c, open_r, Icon::Window, "Open Cmd+Meow");
-            }
-        }
-        if t > 0.01 {
-            let mut c = ui.new_child(UiBuilder::new().max_rect(rect).id_salt("panel-head-ask"));
-            c.multiply_opacity(t);
-            text_fit(c.painter(), Pos2::new(x0, rect.top() + 31.0), Align2::LEFT_CENTER, "Quit Cmd+Meow?", ty::lead(), TEXT(), yes_r.left() - x0 - 10.0);
-            let yes = pill_button(&mut c, yes_r, "Quit", BTN_DANGER, true);
-            let no = pill_button(&mut c, cancel_r, "Cancel", BTN_SECONDARY, true);
-            if yes.hovered() || no.hovered() {
-                ctx.data_mut(|d| d.insert_temp(id.with("idle"), std::time::Instant::now()));
-            }
-            clicked_quit = yes.clicked();
-            if no.clicked() {
-                disarm(&ctx);
-            }
-            hot = yes_r.union(cancel_r);
         }
     }
     if let Some(since) = armed {
