@@ -64,7 +64,7 @@ pub fn read_with_finder(list: &[Win], settings_pid: Option<i32>, finder_pid: Opt
     // a dialog in front of Settings: smaller, its middle on Settings (a sheet
     // of Settings itself counts too, e.g. "Quit & Reopen")
     let on_top = main.is_some_and(|(at, s)| {
-        others.iter().any(|&(i, w)| i < at && (w.pid == s.pid || !apps.contains(&w.pid)) && (0..DOCK_LAYER).contains(&w.layer) && w.frame.width() < s.frame.width() && w.frame.height() < s.frame.height() && s.frame.contains(w.frame.center()))
+        others.iter().any(|&(i, w)| i < at && !before.contains(w) && (w.pid == s.pid || !apps.contains(&w.pid)) && (0..DOCK_LAYER).contains(&w.layer) && w.frame.width() < s.frame.width() && w.frame.height() < s.frame.height() && s.frame.contains(w.frame.center()))
     });
     // the front one: the list runs front to back; the desktop's own
     // full-screen Finder window is left out by its size
@@ -306,6 +306,10 @@ mod tests {
         // for the whole setup
         let alert = win(55, "UserNotificationCenter", 0, 1100.0, 40.0, 260.0, 300.0);
         let list = vec![alert.clone(), settings()];
+        assert!(!read_with_finder(&list, Some(SET), None, ME, &[SET], &prompts(&list)).prompt);
+        // nor when it sits in the middle of Settings
+        let over = win(55, "UserNotificationCenter", 0, 420.0, 350.0, 260.0, 200.0);
+        let list = vec![over, settings()];
         assert!(!read_with_finder(&list, Some(SET), None, ME, &[SET], &prompts(&list)).prompt);
         // a new one that comes up while asking still does
         let ours = win(56, "UserNotificationCenter", 0, 600.0, 300.0, 260.0, 300.0);
