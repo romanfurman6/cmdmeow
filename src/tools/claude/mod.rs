@@ -93,8 +93,8 @@ pub mod keychain {
             eprintln!("[ai] claude keychain: {r:?}");
             *ERROR.lock_ok() = match r {
                 Connect::Ok | Connect::Denied => String::new(),
-                Connect::Missing => "Sign in to Claude Code first".into(),
-                Connect::Failed => "Keychain didn't answer".into(),
+                Connect::Missing => ts!("ai.err.sign_in_first").into(),
+                Connect::Failed => ts!("ai.err.keychain").into(),
             };
             if r == Connect::Ok {
                 super::backend::request_refresh();
@@ -137,10 +137,10 @@ impl Tool for Claude {
         ID
     }
     fn name(&self) -> &'static str {
-        "AI Usage"
+        ts!("ai.name")
     }
     fn about(&self) -> &'static str {
-        "Limits, pace and token use of Claude, Codex, Gemini and OpenCode"
+        ts!("ai.about")
     }
     fn badge(&self) -> Badge {
         badge()
@@ -149,7 +149,7 @@ impl Tool for Claude {
         "Monitor"
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: LIMITS, title: "AI limits", about: "Session and weekly limits of Claude or Codex, tokens today.", sizes: UP_TO_MEDIUM, size: Size::S14, default_on: true }]
+        vec![WidgetSpec { id: LIMITS, title: ts!("ai.widget_title"), about: ts!("ai.widget_about"), sizes: UP_TO_MEDIUM, size: Size::S14, default_on: true }]
     }
     fn widget_ui(&mut self, widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         if widget != LIMITS {
@@ -184,9 +184,9 @@ impl Tool for Claude {
         let Some(l) = info.session().filter(|l| l.pct >= 80.0) else { return Vec::new() };
         vec![Recommendation {
             priority: 60,
-            title: format!("Your {} session is almost used up", info.provider),
-            body: format!("{:.0}% of the current 5-hour session is used. It resets {}.", l.pct, parts::reset_when(l)),
-            action: "See Limits".into(),
+            title: t!("ai.rec.title", provider = info.provider).into_owned(),
+            body: t!("ai.rec.body", pct = l.pct : {:.0}, when = parts::reset_when(l)).into_owned(),
+            action: ts!("ai.rec.action").into(),
             go: Action::OpenPage { tool: ID.into(), route: LIMITS.into() },
         }]
     }

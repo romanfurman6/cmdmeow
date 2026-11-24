@@ -34,9 +34,14 @@ pub fn limit_color(l: &Limit) -> Color32 {
 pub fn forecast(l: &Limit) -> String {
     let now = now();
     match pace::of_limit(l, now).and_then(|p| p.out_at) {
-        Some(at) => format!("Runs out {}", alerts::when(at, now)),
-        None => l.resets_at.map(|r| format!("Resets {}", alerts::when(r, now))).unwrap_or_else(|| reset_short(&l.resets)),
+        Some(at) => t!("ai.runs_out", when = alerts::when(at, now)).into_owned(),
+        None => l.resets_at.map(|r| t!("ai.resets", when = alerts::when(r, now)).into_owned()).unwrap_or_else(|| reset_short(&l.resets)),
     }
+}
+
+/// The current rate runs the limit out before it resets (the forecast is red).
+pub fn runs_out(l: &Limit) -> bool {
+    pace::of_limit(l, now()).and_then(|p| p.out_at).is_some()
 }
 
 /// "21:10" / "Mon 05:00": when a limit resets.
@@ -46,7 +51,7 @@ pub fn reset_when(l: &Limit) -> String {
 
 fn reset_short(s: &str) -> String {
     let s = s.split(" (").next().unwrap_or(s);
-    if s.is_empty() { String::new() } else { format!("Resets {s}") }
+    if s.is_empty() { String::new() } else { t!("ai.resets", when = s).into_owned() }
 }
 
 /// The faint arc of a limit's ring (SP2 `stat_ring_paced`): where even use
@@ -68,14 +73,14 @@ pub fn pace_arc(l: &Limit) -> Option<(f32, Color32)> {
 pub fn limit_lines(l: &Limit) -> Vec<(String, Color32)> {
     let reset = reset_when(l);
     if l.pct <= 0.0 && reset.is_empty() {
-        return vec![("Not started".into(), TEXT_DIM())];
+        return vec![(ts!("ai.not_started").into(), TEXT_DIM())];
     }
     let mut out = Vec::new();
     if let Some(at) = pace::of_limit(l, now()).and_then(|p| p.out_at) {
-        out.push((format!("Runs out\n{}", alerts::when(at, now())), RED()));
+        out.push((t!("ai.runs_out_2", when = alerts::when(at, now())).into_owned(), RED()));
     }
     if !reset.is_empty() {
-        out.push((format!("Resets\n{reset}"), TEXT_DIM()));
+        out.push((t!("ai.resets_2", when = reset).into_owned(), TEXT_DIM()));
     }
     out
 }
@@ -100,9 +105,9 @@ pub fn fresh(i: &UsageInfo) -> (String, Color32) {
     let Some(f) = i.fetched else { return (String::new(), TEXT_FAINT()) };
     let t = f.format("%H:%M");
     if i.stale {
-        (format!("Couldn't update · {t}"), AMBER())
+        (t!("ai.couldnt_update", time = t).into_owned(), AMBER())
     } else {
-        (format!("Updated {t}"), TEXT_FAINT())
+        (t!("ai.updated", time = t).into_owned(), TEXT_FAINT())
     }
 }
 
@@ -110,7 +115,7 @@ pub fn fresh(i: &UsageInfo) -> (String, Color32) {
 pub fn incident_chip(p: &egui::Painter, pos: Pos2, align: Align2, i: &UsageInfo) -> Option<Rect> {
     let s = i.incident.as_deref()?;
     let name = crate::kit::ai::meta(i.provider).name;
-    let (label, c) = if s == "Outage" { (format!("{name} is down"), RED()) } else { (format!("{name} has problems"), AMBER()) };
+    let (label, c) = if s == "Outage" { (t!("ai.is_down", name = name).into_owned(), RED()) } else { (t!("ai.has_problems", name = name).into_owned(), AMBER()) };
     Some(chip(p, pos, align, &label, (with_alpha(c, 0.16), c)))
 }
 
@@ -168,7 +173,7 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     // readout
     let d = &days[sel];
     let today = days.last().map(|l| l.date) == Some(d.date);
-    let date = if today { "Today".to_string() } else { d.date.format("%a %b %-d").to_string() };
+    let date = if today { ts!("ai.today").to_string() } else { d.date.format("%a %b %-d").to_string() };
     // three stats, number over caption (Roman 2026-11-24, variant A): the
     // date names the dollars, so no line of mixed sizes sits over the bars
     let mut x = r.left();
@@ -176,9 +181,9 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     // (0 on an empty day) so the readout keeps its width while hovering
     let tokens = crate::kit::ai::human_tokens(d.tokens);
     let stats = if show_usd {
-        vec![(usd(d.usd), date), (tokens, "tokens".to_string()), (d.requests.to_string(), "requests".to_string())]
+        vec![(usd(d.usd), date), (tokens, ts!("ai.cap_tokens").to_string()), (d.requests.to_string(), ts!("ai.cap_requests").to_string())]
     } else {
-        vec![(format!("{tokens} tok"), date), (d.requests.to_string(), "requests".to_string())]
+        vec![(t!("ai.n_tok", n = tokens).into_owned(), date), (d.requests.to_string(), ts!("ai.cap_requests").to_string())]
     };
     for (v, cap) in stats {
         let vr = p.text(Pos2::new(x, r.top()), Align2::LEFT_TOP, v, ty::lead(), TEXT());
@@ -188,7 +193,7 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     // first and last day under the bars
     let lab = |d: &Day| d.date.format("%b %-d").to_string();
     p.text(Pos2::new(plot.left(), r.bottom()), Align2::LEFT_BOTTOM, lab(&days[0]), ty::caption(), ty::caption_color());
-    p.text(Pos2::new(plot.right(), r.bottom()), Align2::RIGHT_BOTTOM, "Today", ty::caption(), ty::caption_color());
+    p.text(Pos2::new(plot.right(), r.bottom()), Align2::RIGHT_BOTTOM, ts!("ai.today"), ty::caption(), ty::caption_color());
 }
 
 
@@ -239,7 +244,7 @@ pub fn share_lines(p: &egui::Painter, r: Rect, rows: &[crate::kit::ai::Share], s
             crate::kit::tile::bar_line_pair(p, line(k), &names[k], frac(s), (&toks[k], &dollars[k]), cols);
         }
     } else {
-        let values: Vec<String> = toks.iter().map(|t| format!("{t} tok")).collect();
+        let values: Vec<String> = toks.iter().map(|t| t!("ai.n_tok", n = t).into_owned()).collect();
         let (lw, vw) = crate::kit::tile::bar_cols(p, &names.iter().zip(&values).map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
         let cols = (lw.min(r.width() * 0.4), vw);
         for (k, s) in rows.iter().take(n).enumerate() {

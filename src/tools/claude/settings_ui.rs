@@ -37,7 +37,7 @@ fn label(p: &egui::Painter, r: Rect, s: &str) {
 /// The plan as people call it: "Max", "Plus", "API key", or nothing.
 fn plan_name(i: &UsageInfo) -> String {
     if i.is_api() {
-        return "API key".into();
+        return ts!("ai.api_key").into();
     }
     let mut p = i.plan.trim().to_string();
     if let Some(f) = p.get_mut(0..1) {
@@ -59,12 +59,12 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     let found: Vec<bool> = (0..ai::PROVIDERS.len()).map(|k| demo || ai::make(k).data_dir().is_some_and(|d| d.exists())).collect();
     let mut order: Vec<usize> = (0..ai::PROVIDERS.len()).collect();
     order.sort_by_key(|k| !found[*k]);
-    let card = section(&p, x, w, &mut y, "Providers", ai::PROVIDERS.len());
+    let card = section(&p, x, w, &mut y, ts!("ai.set.providers"), ai::PROVIDERS.len());
     // column heads on the title's line: the radio picks the main agent, the
     // switch tracks its usage (the same words as setup)
     let head_y = card.top() - 28.0 + 9.0;
-    p.text(Pos2::new(card.right() - 66.0, head_y), Align2::CENTER_CENTER, "Main", ty::label(), TEXT_DIM());
-    p.text(Pos2::new(card.right() - 27.0, head_y), Align2::CENTER_CENTER, "Track", ty::label(), TEXT_DIM());
+    p.text(Pos2::new(card.right() - 66.0, head_y), Align2::CENTER_CENTER, ts!("ai.set.main"), ty::label(), TEXT_DIM());
+    p.text(Pos2::new(card.right() - 27.0, head_y), Align2::CENTER_CENTER, ts!("ai.set.track"), ty::label(), TEXT_DIM());
     for (n, &k) in order.iter().enumerate() {
         let m = &ai::PROVIDERS[k];
         let r = row(card, n);
@@ -82,7 +82,7 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
         p.circle_filled(Pos2::new(r.left() + 20.0, r.center().y), 4.0, dot);
         p.text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, m.name, font(13.0), if found[k] { TEXT() } else { TEXT_FAINT() });
         let rr = Rect::from_center_size(Pos2::new(r.right() - 58.0 - 8.0, r.center().y), Vec2::splat(16.0));
-        let resp = radio(ui, rr, ui.scope_id().with(("ai-main", m.id)), main, true).on_hover_text("Main agent");
+        let resp = radio(ui, rr, ui.scope_id().with(("ai-main", m.id)), main, true).on_hover_text(ts!("ai.set.main_agent"));
         if resp.clicked() && !main {
             let id = m.id.to_string();
             change = Some(Box::new(move |s| {
@@ -97,9 +97,9 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
         }
         if m.id == "claude" && found[k] && set.claude_keychain != "ok" && !demo && super::keychain::wanted(false) {
             let busy = super::keychain::busy();
-            let bw = button_width(&p, "Connect", BTN_SECONDARY);
+            let bw = button_width(&p, ts!("ai.set.connect"), BTN_SECONDARY);
             let br = Rect::from_min_size(Pos2::new(rr.left() - sp::M - bw, r.center().y - 14.0), Vec2::new(bw, 28.0));
-            if pill_button(ui, br, "Connect", BTN_SECONDARY, !busy).on_hover_text("Claude limits from your account").clicked() {
+            if pill_button(ui, br, ts!("ai.set.connect"), BTN_SECONDARY, !busy).on_hover_text(ts!("ai.set.connect_tip")).clicked() {
                 super::keychain::connect(Some(ui.ctx().clone()));
             }
             let err = super::keychain::error();
@@ -111,7 +111,7 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
         }
         let sw = switch(ui, switch_at(r), ui.scope_id().with(("ai-on", m.id)), on || main, true);
         // the main agent (Cleanup checks with it) is always on
-        let sw = if main { sw.on_hover_text("The main agent is always tracked") } else { sw };
+        let sw = if main { sw.on_hover_text(ts!("ai.set.main_tip")) } else { sw };
         if sw.clicked() && !main {
             let id = m.id.to_string();
             change = Some(Box::new(move |s| {
@@ -124,9 +124,9 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     }
 
     // notifications
-    let card = section(&p, x, w, &mut y, "Notifications", 3);
+    let card = section(&p, x, w, &mut y, ts!("ai.set.notifications"), 3);
     let r0 = row(card, 0);
-    label(&p, r0, "Limit reaches");
+    label(&p, r0, ts!("ai.set.limit_reaches"));
     let cw = 56.0;
     for (k, t) in THRESHOLDS.iter().enumerate() {
         let cr = Rect::from_min_size(Pos2::new(r0.right() - 16.0 - (THRESHOLDS.len() - k) as f32 * (cw + 6.0) + 6.0, r0.center().y - 13.0), Vec2::new(cw, 26.0));
@@ -147,8 +147,8 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
         }
     }
     for (k, (name, on, f)) in [
-        ("Limit reset", set.notify_reset, (|s: &mut settings::Settings| s.notify_reset = !s.notify_reset) as fn(&mut settings::Settings)),
-        ("Weekly unused, day before reset", set.notify_unused, |s: &mut settings::Settings| s.notify_unused = !s.notify_unused),
+        (ts!("ai.set.limit_reset"), set.notify_reset, (|s: &mut settings::Settings| s.notify_reset = !s.notify_reset) as fn(&mut settings::Settings)),
+        (ts!("ai.set.weekly_unused"), set.notify_unused, |s: &mut settings::Settings| s.notify_unused = !s.notify_unused),
     ]
     .into_iter()
     .enumerate()
@@ -161,10 +161,10 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     }
 
     // display
-    let card = section(&p, x, w, &mut y, "Display", 2);
+    let card = section(&p, x, w, &mut y, ts!("ai.set.display"), 2);
     for (k, (name, on, f)) in [
-        ("Cost in $", set.show_cost, (|s: &mut settings::Settings| s.show_cost = !s.show_cost) as fn(&mut settings::Settings)),
-        ("Provider outages", set.show_outages, |s: &mut settings::Settings| s.show_outages = !s.show_outages),
+        (ts!("ai.set.cost"), set.show_cost, (|s: &mut settings::Settings| s.show_cost = !s.show_cost) as fn(&mut settings::Settings)),
+        (ts!("ai.set.outages"), set.show_outages, |s: &mut settings::Settings| s.show_outages = !s.show_outages),
     ]
     .into_iter()
     .enumerate()
