@@ -575,6 +575,9 @@ impl App {
 
     /// Carry out what tools asked for this frame.
     pub fn run_actions(&mut self, ctx: &egui::Context, cx: &mut Cx) {
+        if let Some(msg) = LATER_TOAST.lock().ok().and_then(|mut t| t.take()) {
+            self.toast = Some((msg, Instant::now()));
+        }
         for a in cx.take_actions() {
             match a {
                 Action::OpenPage { tool, route } => {
@@ -592,17 +595,28 @@ impl App {
                 Action::Toast(msg) => self.toast = Some((msg, Instant::now())),
                 Action::Quit => self.quit(ctx),
                 Action::Restart => {
-                    // the system's own "Restart now?" dialog
-                    std::thread::spawn(|| {
-                        let _ = crate::kit::macos::osascript("tell application \"loginwindow\" to «event aevtrrst»");
+                    // the system's own "Restart now?" dialog; macOS may refuse
+                    // the Apple event (Automation off), so say so
+                    let ctx = ctx.clone();
+                    std::thread::spawn(move || {
+                        // -128: the person pressed Cancel in that dialog
+                        if let Err(e) = crate::kit::macos::osascript("tell application \"loginwindow\" to «event aevtrrst»") {
+                            if e != "Cancelled" {
+                                later_toast(&ctx, "Couldn't restart. Allow CmdMeow in Privacy & Security › Automation");
+                            }
+                        }
                     });
                 }
                 Action::EmptyTrash => {
                     if crate::kit::native::confirm("Empty the Trash?", "Items in the Trash are deleted for good.", "Empty Trash") {
-                        std::thread::spawn(|| {
-                            let _ = crate::kit::macos::osascript("tell application \"Finder\" to empty trash");
+                        let ctx = ctx.clone();
+                        std::thread::spawn(move || {
+                            let msg = match crate::kit::macos::osascript("tell application \"Finder\" to empty trash") {
+                                Ok(_) => "Trash emptied",
+                                Err(_) => "Couldn't empty the Trash. Allow CmdMeow to control Finder in Privacy & Security › Automation",
+                            };
+                            later_toast(&ctx, msg);
                         });
-                        self.toast = Some(("Emptying the Trash…".into(), Instant::now()));
                     }
                 }
             }
@@ -1729,4 +1743,14 @@ mod tests {
         let p = panel_place(Some(Pos2::new(3000.0, 2000.0)), built_in, Vec2::new(w, 400.0));
         assert!(built_in.contains(p) && p.y + 400.0 <= 1117.0, "{p:?}");
     }
+}
+
+/// A toast from a worker thread, shown on the next frame.
+static LATER_TOAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn later_toast(ctx: &egui::Context, msg: &str) {
+    if let Ok(mut t) = LATER_TOAST.lock() {
+        *t = Some(msg.to_string());
+    }
+    ctx.request_repaint();
 }
