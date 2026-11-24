@@ -52,10 +52,11 @@
   });
   // the dots pill sits on <html> so no wrapper's transform can unpin it
   const seg = document.querySelector('.tseg'); if (seg) document.documentElement.appendChild(seg);
-  document.querySelectorAll('.tseg button').forEach(b => b.addEventListener('click', () => {
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.tseg button'); if (!b) return;
     try { localStorage.setItem('theme', b.dataset.t); } catch {}
     theme();
-  }));
+  });
   document.addEventListener('click', e => { if (menu && !menu.hidden && !e.target.closest('.tm')) open(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && menu && !menu.hidden) { open(false); thm.focus(); } });
 
