@@ -28,7 +28,7 @@ a { color: inherit; }
 h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2px 30px rgba(0,0,0,.35); }
 .cta { display: flex; gap: 12px; margin-top: 32px; flex-wrap: wrap; }
 .btn { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: 12px; font-weight: 500; text-decoration: none; transition: background-color .15s, transform .15s; }
-.btn.pri { background: var(--lime); color: var(--on-lime); box-shadow: 0 6px 18px rgba(200,240,90,.25), inset 0 -2px 0 rgba(0,0,0,.18); }
+.btn.pri { background: var(--lime); color: var(--on-lime); box-shadow: 0 6px 18px rgba(var(--lime-rgb),.25), inset 0 -2px 0 rgba(0,0,0,.18); }
 .btn.pri:hover { background: #D4F576; }
 .btn.ghost { background: rgba(255,255,255,.1); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); color: #fff; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 .btn.ghost:hover { background: rgba(255,255,255,.2); }
@@ -98,11 +98,11 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .mk { --w: #0F1C0D; --blue: #C8F05A; --orange: #C8F05A; --green: #C8F05A; }
 .mk.win { background: radial-gradient(120% 90% at 50% 0%, #1A3216, #0C180B 70%); }
 .mk .ck { background: var(--lime); } .mk .ck::after { border-color: var(--on-lime); }
-.mk .cp.cur { background: rgba(200,240,90,.16); box-shadow: inset 0 0 0 1px rgba(200,240,90,.4); color: #D9F78A; }
-.mk .cp.cur kbd { color: #D9F78A; }
-.mk .trk { background: rgba(200,240,90,.12); }
+.mk .cp.cur { background: rgba(var(--lime-rgb),.16); box-shadow: inset 0 0 0 1px rgba(var(--lime-rgb),.4); color: var(--acc-tx); }
+.mk .cp.cur kbd { color: var(--acc-tx); }
+.mk .trk { background: rgba(var(--lime-rgb),.12); }
 .awm .aw-ring, #aw-ring { stroke: var(--lime); }
-.snap { box-shadow: inset 0 0 0 1px var(--lime); } .snap.on { background: rgba(200,240,90,.06); }
+.snap { box-shadow: inset 0 0 0 1px var(--lime); } .snap.on { background: rgba(var(--lime-rgb),.06); }
 .toast { background: rgba(15,28,13,.94); }
 
 /* Message: subline and facts under the headline */
@@ -127,10 +127,10 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .mbx .mn span { font-weight: 400; }
 .mbx .icons { position: absolute; left: 260px; right: 14px; top: 0; height: 32px; display: flex; justify-content: flex-end; align-items: center; gap: 4px; }
 .mbx .clk { flex: none; margin-left: 8px; color: rgba(255,255,255,.95); white-space: nowrap; }
-.mbx .cat { color: var(--lime); background: rgba(200,240,90,.16); width: 0; opacity: 0; transform: scale(.2); overflow: hidden; transition: width .35s ease, opacity .2s ease, transform .55s cubic-bezier(.34,1.8,.5,1); }
+.mbx .cat { color: var(--lime); background: rgba(var(--lime-rgb),.16); width: 0; opacity: 0; transform: scale(.2); overflow: hidden; transition: width .35s ease, opacity .2s ease, transform .55s cubic-bezier(.34,1.8,.5,1); }
 .bars.b-one .mbx .cat { width: 26px; opacity: 1; transform: none; }
 .bars.b-eat .mbx .cat { animation: glow 1s ease-in-out infinite; }
-@keyframes glow { 50% { box-shadow: 0 0 0 5px rgba(200,240,90,.16), 0 0 14px rgba(200,240,90,.35); } }
+@keyframes glow { 50% { box-shadow: 0 0 0 5px rgba(var(--lime-rgb),.16), 0 0 14px rgba(var(--lime-rgb),.35); } }
 .mi2.ap { transition: width .45s cubic-bezier(.5,0,.2,1), opacity .2s ease, transform .3s ease; overflow: hidden; }
 .mi2.ap.out { width: 0; opacity: 0; transform: scale(.3); }
 .bars.b-wig .mi2.ap { animation: wig .32s ease-in-out infinite alternate; animation-delay: calc(var(--k) * -53ms); }
@@ -179,7 +179,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .aib i { display: block; height: 100%; width: 0; border-radius: 3px; background: #6FD6E8; transition: width 1s cubic-bezier(.3,0,.2,1) .2s; }
 .wg.on .aib i { width: var(--w); }
 /* Before: the 14 separate apps stand out in the menu bar */
-.bars:not(.b-one) .mi2.ap { background: rgba(200,240,90,.16); color: #D9F78A; }
+.bars:not(.b-one) .mi2.ap { background: rgba(var(--lime-rgb),.16); color: var(--acc-tx); }
 .mbx .icons .mi2.ap + .mi2.ap { margin-left: 2px; }
 .wi:not(.wr) > .i { width: 15px; height: 15px; }
 .wg.s2 .wt { flex: 1; }
@@ -253,7 +253,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 /* ---- 2026-11-24: the page follows the visitor's macOS theme, like the app (site.js sets html[data-app]).
    Light = the app's light backdrop (#FFFFFF → #EAF2DF → #D9E8C8), ink #14181A, darker tints for text (C9/L8).
    The first screen and the menu bar picture are photos of a desktop, so they keep white text in both. */
-:root { --ik: 255,255,255; --lime-tx: var(--lime); }
+:root { --ik: 255,255,255; --lime-tx: var(--lime); --lime-rgb: 200,240,90; --acc-tx: #D9F78A; }
 html[data-app="light"] { --bg: #EAF2DF; --ink: #14181A; --ink2: rgba(20,24,26,.66); --hair: rgba(20,24,26,.1); --ik: 20,24,26; --lime-tx: #4E7A10; color-scheme: light; }
 html[data-app="light"] body { background: linear-gradient(to bottom, #EAF2DF 0, #EAF2DF 1000px, #E2EDD5 2400px, #D9E8C8 100%) var(--bg); }
 .desk, .mbx { --ink: #FFFFFF; --ink2: rgba(255,255,255,.64); --hair: rgba(255,255,255,.08); --ik: 255,255,255; color: #fff; }
@@ -316,3 +316,35 @@ html[data-app="light"] .dimg { background-image: url("data:image/svg+xml,%3Csvg 
 .mbar .thm .moon { display: none; }
 html[data-app="light"] .mbar .thm .sun { display: none; }
 html[data-app="light"] .mbar .thm .moon { display: block; }
+
+/* ---- 2026-11-24: Miami, the app's third theme (TH1–TH9): a dusk sky read top to bottom
+   (cobalt #0B1240 → violet #2A1452 → magenta #5E1D57 → #70283C horizon), hot pink action
+   #FF5FA2 with dark text, pink accent text #FF9DC6, white ink like Dark. */
+html[data-app="miami"] { --bg: #1A1248; --lime: #FF5FA2; --on-lime: #0E1405; --lime-rgb: 255,95,162; --acc-tx: #FF9DC6; --lime-tx: #FF9DC6;
+  --ink2: rgba(255,255,255,.66); --hair: rgba(255,255,255,.1); }
+html[data-app="miami"] body { background: linear-gradient(to bottom, #0B1240 0, #0B1240 900px, #2A1452 2000px, #5E1D57 3000px, #70283C 100%) var(--bg); }
+html[data-app="miami"] .btn.pri:hover { background: #FF7DB4; }
+html[data-app="miami"] .btn.pri { box-shadow: 0 1px 0 rgba(0,0,0,.35), 0 10px 22px -10px rgba(255,95,162,.6); }
+html[data-app="miami"] .mbx { background-image: url(desk-miami.jpg); }
+html[data-app="miami"] .mbar { background: rgba(8,6,28,.45); }
+html[data-app="miami"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(10,8,36,.5), rgba(10,8,36,.22) 55%, transparent 80%); }
+html[data-app="miami"] .facts > span, html[data-app="miami"] .facts .ver { background: rgba(14,10,40,.62); }
+.mbar .thm:focus-visible { outline-color: var(--lime); }
+
+/* theme menu: a menu bar item that opens a small macOS-style menu (Auto, Light, Dark, Miami) */
+.mbar .tm { position: relative; display: inline-flex; }
+.mbar .thm .mia { display: none; }
+html[data-app="miami"] .mbar .thm .sun { display: none; }
+html[data-app="miami"] .mbar .thm .mia { display: block; }
+.mbar .tmenu { position: absolute; z-index: 20; top: 26px; right: -6px; display: flex; flex-direction: column; min-width: 150px; padding: 5px; border-radius: 10px;
+  background: rgba(30,32,30,.86); backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 12px 32px rgba(0,0,0,.4); font: 400 13px/1 -apple-system, var(--sans); color: #fff; }
+.mbar .tmenu { gap: 0; align-items: stretch; white-space: nowrap; }
+.mbar .tmenu[hidden] { display: none; }
+.tmenu button { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 10px 0 6px; border: 0; border-radius: 5px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tmenu button:hover, .tmenu button:focus-visible { background: color-mix(in srgb, var(--lime) 85%, transparent); color: var(--on-lime); outline: none; }
+.tmenu button i { width: 14px; font-style: normal; text-align: center; }
+.tmenu hr { height: 1px; margin: 4px 6px; border: 0; background: rgba(255,255,255,.14); }
+html[data-app="light"] .tmenu { background: rgba(246,248,244,.9); color: #14181A; box-shadow: inset 0 0 0 1px rgba(20,24,26,.1), 0 12px 32px rgba(0,0,0,.18); }
+html[data-app="light"] .tmenu hr { background: rgba(20,24,26,.12); }
+html[data-app="miami"] .dimg { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 22' preserveAspectRatio='none'%3E%3Cfilter id='b' x='0' y='0' width='1' height='1'%3E%3CfeGaussianBlur stdDeviation='1.2' edgeMode='duplicate'/%3E%3C/filter%3E%3Cimage width='40' height='22' preserveAspectRatio='none' filter='url(%23b)' href='data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAWACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDCtrEMBxV+LSy3Ray9Ju2m4kkZD2K4P6E1sRzTAHbqIT/ehwB9cmup4iaLp4Wm1cmTRWb+CkuNOgs0D3cscKk4BkbbmsrUtQvIdwTWJJWP8MWUArAnknnO6dpZD6sxP86ca03uKUKcdEjavNY0+BMWoNw/0KqPxNFYDQjqDgUU/aSM7IrKxyKnF1Mq7RI2AOOaKK5yhrSk8kc56015GGOTRRTuIiMjHv3zRRRU3Gf/2Q=='/%3E%3C/svg%3E"); }
