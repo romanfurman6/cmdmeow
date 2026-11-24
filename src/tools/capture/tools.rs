@@ -26,16 +26,16 @@ impl Tool for Sharing {
         SHARING_ID
     }
     fn name(&self) -> &'static str {
-        "Sharing"
+        ts!("cap.sharing")
     }
     fn badge(&self) -> Badge {
         Badge { icon: Icon::Link, color: tint::CAPTURE() }
     }
     fn section(&self) -> &'static str {
-        "Create"
+        ts!("cap.section_create")
     }
     fn about(&self) -> &'static str {
-        "Uploads screenshots and recordings to your own storage and copies a link"
+        ts!("cap.sharing_about")
     }
     fn has_page(&self) -> bool {
         true
@@ -57,16 +57,16 @@ impl Tool for Screenshot {
         ID
     }
     fn name(&self) -> &'static str {
-        "Screenshot"
+        ts!("cap.screenshot")
     }
     fn badge(&self) -> Badge {
         Badge { icon: Icon::Crop, color: tint::CAPTURE() }
     }
     fn section(&self) -> &'static str {
-        "Create"
+        ts!("cap.section_create")
     }
     fn about(&self) -> &'static str {
-        "Screenshots of an area or window, markup, and text copied from the screen"
+        ts!("cap.shot_about")
     }
     fn needs(&self) -> Vec<crate::kit::perms::Need> {
         use crate::kit::perms::{Need, Perm};
@@ -74,7 +74,7 @@ impl Tool for Screenshot {
     }
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
-        c.settings.shortcut(Command::Area).map(|s| vec![("Capture area", s.display())]).unwrap_or_default()
+        c.settings.shortcut(Command::Area).map(|s| vec![(ts!("cap.sc.area"), s.display())]).unwrap_or_default()
     }
     fn sidebar_meta(&self) -> String {
         key(&self.0.borrow(), Command::Area)
@@ -83,7 +83,7 @@ impl Tool for Screenshot {
         self.0.borrow_mut().set_parts(Some(on), None);
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Screenshot", about: "Take a screenshot; recent captures at the bigger sizes.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("cap.screenshot"), about: ts!("cap.w_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(&mut self.0.borrow_mut(), size, ui, rect, cx);
@@ -120,7 +120,7 @@ impl Tool for Video {
         VIDEO_ID
     }
     fn name(&self) -> &'static str {
-        "Video"
+        ts!("cap.video")
     }
     /// Whisper, for transcripts and captions of recordings.
     fn setup_models(&self) -> Vec<crate::core::tool::SetupModel> {
@@ -130,10 +130,10 @@ impl Tool for Video {
         Badge { icon: Icon::Camera, color: tint::CAPTURE() }
     }
     fn section(&self) -> &'static str {
-        "Create"
+        ts!("cap.section_create")
     }
     fn about(&self) -> &'static str {
-        "Screen recordings with camera, microphone and transcripts"
+        ts!("cap.video_about")
     }
     fn needs(&self) -> Vec<crate::kit::perms::Need> {
         use crate::kit::perms::{Need, Perm};
@@ -141,7 +141,7 @@ impl Tool for Video {
     }
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
-        c.settings.shortcut(Command::Record).map(|s| vec![("Record screen", s.display())]).unwrap_or_default()
+        c.settings.shortcut(Command::Record).map(|s| vec![(ts!("cap.sc.record"), s.display())]).unwrap_or_default()
     }
     fn sidebar_meta(&self) -> String {
         let c = self.0.borrow();
@@ -151,7 +151,7 @@ impl Tool for Video {
         self.0.borrow_mut().set_parts(None, Some(on));
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: VIDEO_CARD, title: "Video", about: "Record the screen; recent recordings at the bigger sizes.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: VIDEO_CARD, title: ts!("cap.video"), about: ts!("cap.vw_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::video_widget(&mut self.0.borrow_mut(), size, ui, rect, cx);

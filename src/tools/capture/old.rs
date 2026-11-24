@@ -93,11 +93,11 @@ fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
     // Cleanup never brings up a Keychain prompt: a key macOS won't give
     // without asking is allowed once from a Share first
     if share::secret::quiet(share::VIDEO_ACCOUNT) == share::secret::Access::Ask {
-        return Err("Share a capture once to allow Keychain access".into());
+        return Err(ts!("cap.old.share_once").into());
     }
     let b = s.share.bucket(share::VIDEO_ACCOUNT);
     if !b.ready() {
-        return Err("Sharing isn't set up".into());
+        return Err(ts!("cap.old.not_set_up").into());
     }
     share::s3::delete(&b, key)?;
     share::forget(local);
@@ -107,19 +107,17 @@ fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
 /// Why Cleanup may not remove `p` now, if so: only a capture or recording
 /// in the save folder, or a history copy, and none pinned (since the scan too).
 fn keep_why(p: &Path) -> Option<&'static str> {
-    const NOT_OURS: &str = "Not a capture saved by Cmd+Meow";
-    const PINNED: &str = "Pinned in History";
     if !p.symlink_metadata().is_ok_and(|m| m.is_file()) {
-        return Some(NOT_OURS);
+        return Some(ts!("cap.old.not_ours"));
     }
     let st = Store::open(history_dir());
     if p.parent() == Some(history_dir().as_path()) {
-        let Some(id) = p.file_stem().and_then(|s| s.to_string_lossy().parse::<u64>().ok()).filter(|_| p.extension().is_some_and(|e| e == "png")) else { return Some(NOT_OURS) };
-        return st.shots.iter().any(|x| x.id == id && x.pinned).then_some(PINNED);
+        let Some(id) = p.file_stem().and_then(|s| s.to_string_lossy().parse::<u64>().ok()).filter(|_| p.extension().is_some_and(|e| e == "png")) else { return Some(ts!("cap.old.not_ours")) };
+        return st.shots.iter().any(|x| x.id == id && x.pinned).then_some(ts!("cap.old.pinned"));
     }
     let folder = settings::load(&settings::data_dir()).folder;
-    let Some(t) = stamp(p).filter(|_| p.parent() == Some(folder.as_path())) else { return Some(NOT_OURS) };
-    pinned_stamps(&st).contains(&t).then_some(PINNED)
+    let Some(t) = stamp(p).filter(|_| p.parent() == Some(folder.as_path())) else { return Some(ts!("cap.old.not_ours")) };
+    pinned_stamps(&st).contains(&t).then_some(ts!("cap.old.pinned"))
 }
 
 /// The name a capture was saved under, without the " 2", " edited",

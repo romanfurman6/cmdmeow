@@ -25,15 +25,15 @@ impl Command {
 
     pub fn label(self) -> &'static str {
         match self {
-            Command::Area => "Capture area",
-            Command::Window => "Capture window",
-            Command::Screen => "Capture screen",
-            Command::Delayed => "Delayed capture",
-            Command::Text => "Copy text from screen",
-            Command::Color => "Pick a color",
-            Command::Ruler => "Measure (ruler)",
-            Command::History => "Open history",
-            Command::Record => "Record the screen",
+            Command::Area => ts!("cap.cmd.area"),
+            Command::Window => ts!("cap.cmd.window"),
+            Command::Screen => ts!("cap.cmd.screen"),
+            Command::Delayed => ts!("cap.cmd.delayed"),
+            Command::Text => ts!("cap.cmd.text"),
+            Command::Color => ts!("cap.cmd.color"),
+            Command::Ruler => ts!("cap.cmd.ruler"),
+            Command::History => ts!("cap.cmd.history"),
+            Command::Record => ts!("cap.cmd.record"),
         }
     }
 

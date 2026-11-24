@@ -171,9 +171,9 @@ fn countdown(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
     let left = cd.until.saturating_duration_since(Instant::now()).as_secs_f32();
     let total = cd.total as f32;
     let what = match (cd.grab, cd.purpose) {
-        (Grab::Area, _) => "Then drag out an area",
-        (Grab::Window, _) => "Then click a window",
-        (Grab::Screen, _) => "Capturing the screen",
+        (Grab::Area, _) => ts!("cap.cd.area"),
+        (Grab::Window, _) => ts!("cap.cd.window"),
+        (Grab::Screen, _) => ts!("cap.cd.screen"),
     };
     let size = Vec2::new(200.0, 200.0);
     let pos = Pos2::new((screen.x - size.x) / 2.0, (screen.y - size.y) / 2.0);
@@ -192,7 +192,7 @@ fn countdown(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         p.add(egui::epaint::PathShape::line(arc_points(c0, 44.0, a0, a0 + frac * std::f32::consts::TAU, 64), egui::epaint::PathStroke::new(4.0, tint::CAPTURE())));
         p.text(c0, Align2::CENTER_CENTER, format!("{}", left.ceil().max(1.0) as u32), bold(40.0), TEXT());
         p.text(Pos2::new(card.center().x, card.bottom() - 40.0), Align2::CENTER_CENTER, what, font(12.0), TEXT_SOFT());
-        p.text(Pos2::new(card.center().x, card.bottom() - 22.0), Align2::CENTER_CENTER, "Click to cancel", font(11.0), TEXT_FAINT());
+        p.text(Pos2::new(card.center().x, card.bottom() - 22.0), Align2::CENTER_CENTER, ts!("cap.click_cancel"), font(11.0), TEXT_FAINT());
         if ui.interact(card, ui.scope_id().with("cancel"), Sense::click()).clicked() {
             cancel = true;
         }
@@ -234,13 +234,13 @@ fn keychain(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
         let w = r.width() - 32.0;
         let chip = Rect::from_min_size(Pos2::new(x, r.top() + 20.0), Vec2::splat(42.0));
         tool_chip(&p, chip, Icon::Lock, tint::NEUTRAL());
-        p.text(Pos2::new(chip.right() + 12.0, chip.top() + 3.0), Align2::LEFT_TOP, "Keychain access", bold(15.0), TEXT());
-        p.text(Pos2::new(chip.right() + 12.0, chip.bottom() - 3.0), Align2::LEFT_BOTTOM, format!("{app} sharing"), font(13.0), TEXT_DIM());
-        let body = format!("Your secret key is in the macOS Keychain. macOS asks for your Mac password before {app} can read it.");
+        p.text(Pos2::new(chip.right() + 12.0, chip.top() + 3.0), Align2::LEFT_TOP, ts!("cap.kc.title"), bold(15.0), TEXT());
+        p.text(Pos2::new(chip.right() + 12.0, chip.bottom() - 3.0), Align2::LEFT_BOTTOM, t!("cap.kc.sub", app = app), font(13.0), TEXT_DIM());
+        let body = t!("cap.kc.body", app = app);
         let mut y = chip.bottom() + 14.0;
         y += paragraph(&p, Pos2::new(x, y), &body, font(13.0), TEXT_SOFT(), w) + 12.0;
         hairline(&p, Pos2::new(r.left(), y), Pos2::new(r.right(), y));
-        for (k, (glyph, line, col)) in [(Icon::Check, "Reads your sharing secret key only", GREEN()), (Icon::Close, "No other passwords or Keychain items", TEXT_FAINT())].into_iter().enumerate() {
+        for (k, (glyph, line, col)) in [(Icon::Check, ts!("cap.kc.only"), GREEN()), (Icon::Close, ts!("cap.kc.none"), TEXT_FAINT())].into_iter().enumerate() {
             let cy = y + 16.0 + k as f32 * 32.0;
             icon(&p, glyph, Rect::from_center_size(Pos2::new(x + 8.0, cy), Vec2::splat(14.0)), col);
             p.text(Pos2::new(x + 26.0, cy), Align2::LEFT_CENTER, line, font(13.0), if k == 0 { TEXT() } else { TEXT_DIM() });
@@ -248,7 +248,7 @@ fn keychain(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
         y += 64.0;
         hairline(&p, Pos2::new(r.left(), y), Pos2::new(r.right(), y));
         let by = r.bottom() - 16.0 - 32.0;
-        let (left, back, go) = if denied { ("Denied", "Enter key again", "Try again") } else { ("Choose Always Allow", "Not now", "Continue") };
+        let (left, back, go) = if denied { (ts!("cap.kc.denied"), ts!("cap.kc.enter_again"), ts!("cap.try_again")) } else { (ts!("cap.kc.always"), ts!("cap.not_now"), ts!("cap.continue")) };
         let gw = button_width(&p, go, BTN_PRIMARY);
         let gr = Rect::from_min_size(Pos2::new(r.right() - 16.0 - gw, by), Vec2::new(gw, 32.0));
         let bw = button_width(&p, back, BTN_SECONDARY);
@@ -286,11 +286,11 @@ fn permission(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
     // another one won't help, the switch in Settings has to be flipped again
     let restart = allowed && !crate::kit::perms::relaunched();
     let (title_text, body, action) = if restart {
-        ("Restart to turn on Screen Recording".to_string(), "macOS applies it after a restart".to_string(), "Restart")
+        (ts!("cap.perm.restart_title").to_string(), ts!("cap.perm.restart_body").to_string(), ts!("cap.perm.restart"))
     } else if allowed {
-        ("Screen Recording is still off".to_string(), format!("macOS didn't turn it on for {}. Switch it off and on in System Settings, then quit and reopen.", crate::kit::perms::app_name()), "Open System Settings")
+        (ts!("cap.perm.off_title").to_string(), t!("cap.perm.off_body", app = crate::kit::perms::app_name()).into_owned(), ts!("cap.perm.open"))
     } else {
-        ("Capture needs Screen Recording".to_string(), format!("Turn on {} in System Settings", crate::kit::perms::app_name()), "Open System Settings")
+        (ts!("cap.needs_screen").to_string(), t!("cap.perm.on_body", app = crate::kit::perms::app_name()).into_owned(), ts!("cap.perm.open"))
     };
     let size = Vec2::new(400.0, 152.0);
     let pos = Pos2::new((screen.x - size.x) / 2.0, screen.y * 0.3);
@@ -308,9 +308,9 @@ fn permission(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
         let y = r.bottom() - 16.0 - 32.0;
         let ow = button_width(&p, action, BTN_PRIMARY);
         let or = Rect::from_min_size(Pos2::new(r.right() - 16.0 - ow, y), Vec2::new(ow, 32.0));
-        let nw = button_width(&p, "Not now", BTN_SECONDARY);
+        let nw = button_width(&p, ts!("cap.not_now"), BTN_SECONDARY);
         let nr = Rect::from_min_size(Pos2::new(or.left() - 8.0 - nw, y), Vec2::new(nw, 32.0));
-        if pill_button(ui, nr, "Not now", BTN_SECONDARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if pill_button(ui, nr, ts!("cap.not_now"), BTN_SECONDARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             choice = Some(false);
         }
         if pill_button(ui, or, action, BTN_PRIMARY, true).clicked() {
@@ -383,7 +383,7 @@ fn preview(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
             let b = ui.interact(cr, ui.scope_id().with("close"), Sense::click());
             p.circle_filled(cr.center(), 10.0, white(if b.hovered() { 40 } else { 22 }));
             icons::draw(&p, Ico::Close, cr.shrink(5.0), TEXT_SOFT());
-            if b.on_hover_text("Close").clicked() {
+            if b.on_hover_text(ts!("cap.close")).clicked() {
                 act = Some(PreviewAct::Close);
             }
         } else {
@@ -402,11 +402,11 @@ fn preview(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         if tresp.drag_started() {
             vctx.send_viewport_cmd(ViewportCommand::StartDrag);
         }
-        if tresp.on_hover_text("Click to edit").clicked() {
+        if tresp.on_hover_text(ts!("cap.click_to_edit")).clicked() {
             act = Some(PreviewAct::Edit);
         }
         // actions
-        let items = [(Ico::Copy, "Copy", PreviewAct::Copy), (Ico::Save, "Save", PreviewAct::Save), (Ico::Edit, "Edit", PreviewAct::Edit), (Ico::Pin, "Pin", PreviewAct::Pin), (Ico::ScanText, "Text", PreviewAct::Text)];
+        let items = [(Ico::Copy, ts!("cap.copy"), PreviewAct::Copy), (Ico::Save, ts!("cap.save"), PreviewAct::Save), (Ico::Edit, ts!("cap.edit"), PreviewAct::Edit), (Ico::Pin, ts!("cap.pin"), PreviewAct::Pin), (Ico::ScanText, ts!("cap.text"), PreviewAct::Text)];
         let ay = tr.bottom() + 8.0;
         let bw = (w - 16.0 - 4.0 * 4.0) / 5.0;
         for (k, (ico, label, a)) in items.iter().enumerate() {
@@ -436,11 +436,11 @@ fn preview(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         Some(PreviewAct::Copy) => match id.and_then(|id| c.store.png(id)) {
             Some(png) => {
                 c.copy_png(png);
-                c.hud("Copied");
+                c.hud(ts!("cap.copied"));
             }
             None => {
                 c.copy_image(img);
-                c.hud("Copied");
+                c.hud(ts!("cap.copied"));
             }
         },
         Some(PreviewAct::Save) => c.save_image_later(id, img),
@@ -604,7 +604,7 @@ fn pins(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                 let b = ui.interact(cr, ui.scope_id().with("close"), Sense::click());
                 p.circle_filled(cr.center(), 11.0, Color32::from_black_alpha(if b.hovered() { 220 } else { 160 }));
                 icons::draw(&p, Ico::Close, cr.shrink(6.0), Color32::WHITE);
-                if b.on_hover_text("Unpin").clicked() {
+                if b.on_hover_text(ts!("cap.unpin")).clicked() {
                     close.push(k);
                 }
                 let label = format!("{:.0}%", pin.scale * 100.0);
@@ -708,7 +708,7 @@ fn editor_window(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
             // encoding and writing happen on a thread; a failure shows as a toast
             Request::Copy => {
                 c.copy_image(ew.ed.rendered());
-                c.hud("Copied to clipboard");
+                c.hud(ts!("cap.copied_clip"));
                 closed = true;
             }
             Request::Save => {
@@ -721,7 +721,7 @@ fn editor_window(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                 let img = ew.ed.rendered();
                 let id = c.commit_rendered(&mut ew.ed, &img);
                 c.pin(id, img);
-                ew.ed.flash("Pinned on screen");
+                ew.ed.flash(ts!("cap.pinned_on_screen"));
             }
             Request::Share => {
                 if ew.share.is_some() {
@@ -740,7 +740,7 @@ fn editor_window(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
                 match super::share::link_for(&path).filter(|_| fresh) {
                     Some(link) => {
                         c.copy_known_link(&link);
-                        ew.ed.flash("Link copied");
+                        ew.ed.flash(ts!("cap.link_copied"));
                     }
                     None => match c.try_share(path.clone()) {
                         Ok(()) => ew.share = Some(path),
@@ -806,8 +806,8 @@ fn overlay(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         let resp = ui.interact(r, ui.scope_id().with("overlay"), Sense::click_and_drag());
         vctx.set_cursor_icon(egui::CursorIcon::Crosshair);
         let hint = match ov.mode {
-            Measure::Color => "Pick a color: click to copy its hex code · Esc to close",
-            Measure::Ruler => "Ruler: snaps to edges · drag to measure a box · click copies the size · Esc to close",
+            Measure::Color => ts!("cap.hint.color"),
+            Measure::Ruler => ts!("cap.hint.ruler"),
         };
         let g = p.layout_no_wrap(hint.to_string(), font(12.0), TEXT());
         let hr = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 44.0), g.size() + Vec2::new(28.0, 14.0));
@@ -881,7 +881,7 @@ fn overlay(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
         c.overlay = None;
         if let Some(t) = copied {
             c.copy_text(&t);
-            c.hud(format!("Copied {t}"));
+            c.hud(t!("cap.copied_x", text = t).into_owned());
         }
     }
 }

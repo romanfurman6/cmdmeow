@@ -37,7 +37,9 @@ fn key_label(c: &Capture, cmd: Command) -> String {
 // ---------------------------------------------------------------- panel
 
 /// The Screenshot widget's actions: an area, a window or the whole screen.
-const MODES: [(Command, &str); 3] = [(Command::Area, "Area"), (Command::Window, "Window"), (Command::Screen, "Screen")];
+fn modes_list() -> [(Command, &'static str); 3] {
+    [(Command::Area, ts!("cap.mode.area")), (Command::Window, ts!("cap.mode.window")), (Command::Screen, ts!("cap.mode.screen"))]
+}
 /// The shortcuts each tool's settings list.
 const SHOT_KEYS: [Command; 8] = [Command::Area, Command::Window, Command::Screen, Command::Delayed, Command::Text, Command::Color, Command::Ruler, Command::History];
 const VIDEO_KEYS: [Command; 1] = [Command::Record];
@@ -47,9 +49,9 @@ pub fn widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
     let id = ui.scope_id().with("w-capture");
     match size {
         Size::S11 => {
-            let sub = if c.busy { "Capturing…".to_string() } else { key_label(c, Command::Area) };
-            let sub = if sub.is_empty() { "Area".to_string() } else { sub };
-            if tile::small(ui, rect, id, Icon::Crop, tint::CAPTURE(), "Screenshot", &sub, false).on_hover_text("Capture an area").clicked() {
+            let sub = if c.busy { ts!("cap.capturing").to_string() } else { key_label(c, Command::Area) };
+            let sub = if sub.is_empty() { ts!("cap.mode.area").to_string() } else { sub };
+            if tile::small(ui, rect, id, Icon::Crop, tint::CAPTURE(), ts!("cap.screenshot"), &sub, false).on_hover_text(ts!("cap.capture_an_area")).clicked() {
                 c.queue.push((Command::Area, c.settings.delay));
             }
         }
@@ -57,7 +59,8 @@ pub fn widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
             // W5: the actions alone, no header; the name is in each tip
             let _ = tile::frame(ui, rect, id, false);
             let p = ui.painter().clone();
-            let list: &[(Command, &str)] = if size == Size::S12 { &MODES[..2] } else { &MODES };
+            let all = modes_list();
+            let list: &[(Command, &str)] = if size == Size::S12 { &all[..2] } else { &all };
             modes(c, ui, &p, id, rect.shrink(4.0), list, true);
         }
         _ => card(c, ui, rect, cx),
@@ -74,7 +77,7 @@ fn modes(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: Rect,
             let key = key_label(c, *cmd);
             match (&live, cmd) {
                 // while recording, Record is the stop button with the time
-                (Some(t), Command::Record) => (t.trim_start_matches(['●', '❚', ' ']).to_string(), String::new(), RED(), "Stop and save the recording".to_string()),
+                (Some(t), Command::Record) => (t.trim_start_matches(['●', '❚', ' ']).to_string(), String::new(), RED(), ts!("cap.stop_save").to_string()),
                 // Record is the one red glyph, like a camera's button
                 _ => {
                     let tip = if key.is_empty() { label.to_string() } else { format!("{label} · {key}") };
@@ -99,12 +102,12 @@ pub fn card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let id = ui.scope_id().with("capture-card");
     let _ = tile::frame(ui, rect, id.with("frame"), false);
-    let (x0, x1, mut y) = card_head(ui, &p, rect, Icon::Crop, "Screenshot");
-    if link(ui, Pos2::new(x1, y - sp::M - 10.0), Align2::RIGHT_CENTER, "History", 12.0).clicked() {
+    let (x0, x1, mut y) = card_head(ui, &p, rect, Icon::Crop, ts!("cap.screenshot"));
+    if link(ui, Pos2::new(x1, y - sp::M - 10.0), Align2::RIGHT_CENTER, ts!("cap.history"), 12.0).clicked() {
         c.tab = Tab::History;
         cx.open_page(ID, "history");
     }
-    modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + MODE_H)), &MODES, false);
+    modes(c, ui, &p, id, Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + MODE_H)), &modes_list(), false);
     y += MODE_H + sp::M;
     // the newest images in the screenshot folder; history when it has none
     // (or before macOS was asked about it)
@@ -112,7 +115,7 @@ pub fn card(c: &mut Capture, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     // pictures only: recordings in the same folder are the Video widget's
     let items: Vec<Item> = if c.files.is_empty() { c.store.shots.iter().filter(|s| s.kind != Kind::Recording).take(4).map(Item::from_shot).collect() } else { c.files.iter().filter(|f| !folder::is_video(&f.path)).take(4).map(|f| Item::from_file(c, f)).collect() };
     let row = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, rect.bottom() - sp::M));
-    recent_row(c, ui, &p, id, row, &items, 4, Act::Edit, "click to edit");
+    recent_row(c, ui, &p, id, row, &items, 4, Act::Edit, ts!("cap.click_edit"));
 }
 
 /// Height of the capture buttons in the Medium widgets.
@@ -148,12 +151,13 @@ fn recent_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, id: egui::Id, r: 
             Src::File => c.thumb_at(it.key, it.path.clone()),
         };
         thumb(p, tr, tex, (it.w, it.h), 8.0);
-        if it.video.is_some() || it.meta.starts_with("Video") {
+        if it.video.is_some() || it.meta.starts_with(ts!("cap.video")) {
             // a play mark in the middle and the length in the corner
             p.circle_filled(tr.center(), 11.0, Color32::from_black_alpha(115));
             let c0 = tr.center();
             p.add(egui::Shape::convex_polygon(vec![c0 + Vec2::new(-3.0, -5.0), c0 + Vec2::new(5.5, 0.0), c0 + Vec2::new(-3.0, 5.0)], Color32::WHITE, Stroke::NONE));
-            let len = it.meta.trim_start_matches("Video · ");
+            let prefix = format!("{} · ", ts!("cap.video"));
+            let len = it.meta.trim_start_matches(prefix.as_str());
             let g = p.layout_no_wrap(len.to_string(), bold(11.0), Color32::WHITE);
             let lr = Rect::from_min_size(Pos2::new(tr.right() - 5.0 - g.size().x - 8.0, tr.bottom() - 5.0 - g.size().y - 2.0), g.size() + Vec2::new(8.0, 2.0));
             p.rect_filled(lr, 4.0, Color32::from_black_alpha(140));
@@ -204,23 +208,23 @@ pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let first = c.tab == Tab::History && no_shots(c);
     let sub = match c.tab {
-        Tab::History if first => format!("Saving to {}", c.shown_folder()),
+        Tab::History if first => t!("cap.saving_to", folder = c.shown_folder()).into_owned(),
         Tab::History => {
             let n = c.store.shots.iter().filter(|s| s.kind != Kind::Recording).count();
-            format!("{n} screenshot{} · {} · saving to {}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk()), c.shown_folder())
+            tn!("cap.hist_sub", n = n, size = human_bytes(c.store.bytes_on_disk()), folder = c.shown_folder()).into_owned()
         }
         Tab::Folder => {
             c.refresh_files(false);
             let n = c.files.len();
-            let more = if n >= super::folder::LIMIT { " (newest)" } else { "" };
-            format!("{n} image{}{more} in {}", if n == 1 { "" } else { "s" }, c.shown_folder())
+            let more = if n >= super::folder::LIMIT { ts!("cap.newest") } else { "" };
+            tn!("cap.folder_sub", n = n, more = more, folder = c.shown_folder()).into_owned()
         }
         Tab::Settings => "".into(),
     };
     // SP16: Capture area at the right edge on every tab, the tabs next to it
-    let label = "Capture area";
+    let label = ts!("cap.sc.area");
     let bw = icon_pill_width(&p, label, BTN_PRIMARY);
-    let btns = page_header_room(&p, r, "Screenshot", &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 246.0 - sp::M).0;
+    let btns = page_header_room(&p, r, ts!("cap.screenshot"), &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 246.0 - sp::M).0;
     let (tr, br) = header_controls(btns, 246.0, bw);
     let (resp, face) = pill_button_at(ui, br, "", BTN_PRIMARY, !c.busy);
     if resp.clicked() {
@@ -243,7 +247,9 @@ pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
 }
 
-const FILTERS: [&str; 5] = ["All", "Area", "Window", "Screen", "Pinned"];
+fn filters() -> [&'static str; 5] {
+    [ts!("cap.f.all"), ts!("cap.mode.area"), ts!("cap.mode.window"), ts!("cap.mode.screen"), ts!("cap.f.pinned")]
+}
 
 fn passes(filter: usize, s: &Shot) -> bool {
     if s.kind == Kind::Recording {
@@ -262,9 +268,9 @@ fn passes(filter: usize, s: &Shot) -> bool {
 fn day_label(d: chrono::NaiveDate) -> String {
     let today = chrono::Local::now().date_naive();
     if d == today {
-        "Today".into()
+        ts!("cap.today").into()
     } else if Some(d) == today.pred_opt() {
-        "Yesterday".into()
+        ts!("cap.yesterday").into()
     } else {
         d.format("%A, %b %-d").to_string()
     }
@@ -298,12 +304,12 @@ impl Item {
         // filter above the grid)
         let meta = match s.kind {
             Kind::Window | Kind::Screen | Kind::Edited | Kind::Area => format!("{}×{}", s.w, s.h),
-            Kind::Recording => format!("Video · {}", record::timeline::clock_label(s.secs.unwrap_or(0.0) as f64)),
+            Kind::Recording => t!("cap.video_len", len = record::timeline::clock_label(s.secs.unwrap_or(0.0) as f64)).into_owned(),
         };
-        let what = if s.kind == Kind::Recording { "Recording" } else { "Capture" };
+        let recording = s.kind == Kind::Recording;
         let video = (s.kind == Kind::Recording).then(|| s.saved.clone()).flatten();
         // history files live in the app's data folder, next to index.json
-        Item { key: s.id, path: PathBuf::new(), time: s.time(), w: s.w, h: s.h, title: format!("{what} from {}", s.time().format("%-I:%M %P")), meta, pinned: s.pinned, src: Src::Shot(s.id), video }
+        Item { key: s.id, path: PathBuf::new(), time: s.time(), w: s.w, h: s.h, title: if recording { t!("cap.recording_from", time = s.time().format("%-I:%M %P")).into_owned() } else { t!("cap.capture_from", time = s.time().format("%-I:%M %P")).into_owned() }, meta, pinned: s.pinned, src: Src::Shot(s.id), video }
     }
     /// An image in the folder, or a video (its picture comes from the
     /// history entry it was saved from, when there is one).
@@ -314,7 +320,7 @@ impl Item {
                 Some(s) => (c.store.path(s.id), s.w, s.h),
                 None => (PathBuf::new(), 16, 9),
             };
-            let meta = shot.and_then(|s| s.secs).map(|t| format!("Video · {}", record::timeline::clock_label(t as f64))).unwrap_or_else(|| "Video".into());
+            let meta = shot.and_then(|s| s.secs).map(|t| t!("cap.video_len", len = record::timeline::clock_label(t as f64)).into_owned()).unwrap_or_else(|| ts!("cap.video").into());
             return Item { key: f.key, path, time: f.time(), w, h, title: f.name(), meta, pinned: false, src: Src::File, video: Some(f.path.clone()) };
         }
         Item { key: f.key, path: f.path.clone(), time: f.time(), w: f.w, h: f.h, title: f.name(), meta: if f.w > 0 { format!("{}×{}", f.w, f.h) } else { String::new() }, pinned: false, src: Src::File, video: None }
@@ -344,9 +350,9 @@ fn run_act(c: &mut Capture, act: Act, it: &Item) {
     if let Some(v) = &it.video {
         match act {
             Act::Edit => c.open_video(v.clone()),
-            Act::Copy => c.hud(if record::sys::copy_file(v) { "Copied the video" } else { "Couldn't copy" }),
+            Act::Copy => c.hud(if record::sys::copy_file(v) { ts!("cap.copied_video") } else { ts!("cap.cant_copy") }),
             Act::Reveal => mac::reveal(v),
-            Act::Pin => c.hud("Videos can't be pinned"),
+            Act::Pin => c.hud(ts!("cap.no_pin_video")),
             Act::Link => c.copy_link(v.clone()),
             Act::Delete => {}
         }
@@ -359,16 +365,16 @@ fn run_act(c: &mut Capture, act: Act, it: &Item) {
         (Act::Copy, Src::Shot(id)) => match c.store.png(*id) {
             Some(png) => {
                 c.copy_png(png);
-                c.hud("Copied");
+                c.hud(ts!("cap.copied"));
             }
-            None => c.hud("Couldn't copy"),
+            None => c.hud(ts!("cap.cant_copy")),
         },
         (Act::Copy, Src::File) => match load(c, it) {
             Some(img) => {
                 c.copy_image(img);
-                c.hud("Copied");
+                c.hud(ts!("cap.copied"));
             }
-            None => c.hud("Couldn't copy"),
+            None => c.hud(ts!("cap.cant_copy")),
         },
         (Act::Edit, Src::Shot(id)) => c.open_editor_for(*id),
         (Act::Edit, Src::File) => {
@@ -379,7 +385,7 @@ fn run_act(c: &mut Capture, act: Act, it: &Item) {
         (Act::Pin, Src::Shot(id)) => c.pin_shot(*id),
         (Act::Pin, Src::File) => match load(c, it) {
             Some(img) => c.pin(None, img),
-            None => c.hud("Couldn't open it"),
+            None => c.hud(ts!("cap.cant_open_it")),
         },
         (Act::Reveal, Src::Shot(id)) => {
             let id = *id;
@@ -406,9 +412,9 @@ fn run_act(c: &mut Capture, act: Act, it: &Item) {
             Ok(()) => {
                 c.files.retain(|f| f.key != it.key);
                 c.forget_dropped_thumbs();
-                c.hud("Moved to Trash");
+                c.hud(ts!("cap.moved_trash"));
             }
-            Err(e) => c.hud(format!("Couldn't move it to the Trash: {e}")),
+            Err(e) => c.hud(t!("cap.trash_fail", e = e).into_owned()),
         },
     }
 }
@@ -482,17 +488,17 @@ fn tile_ui(ui: &mut Ui, p: &egui::Painter, r: Rect, it: &Item, tex: Option<egui:
     if hovered {
         let bar = Rect::from_min_max(Pos2::new(r.left() + 1.0, r.bottom() - 38.0), Pos2::new(r.right() - 1.0, r.bottom() - 1.0));
         p.rect_filled(bar, egui::CornerRadius { nw: 0, ne: 0, sw: 7, se: 7 }, Color32::from_rgba_unmultiplied(20, 20, 22, 225));
-        let delete_tip = if it.src == Src::File { "Move to Trash" } else { "Delete" };
+        let delete_tip = if it.src == Src::File { ts!("cap.move_to_trash") } else { ts!("cap.delete") };
         let video = it.video.is_some();
         let mut acts: Vec<(Ico, &str, Act)> = vec![
-            (Ico::Copy, "Copy", Act::Copy),
-            (if video { Ico::Scissors } else { Ico::Edit }, if video { "Play and edit" } else { "Edit" }, Act::Edit),
-            (Ico::Link, "Copy link", Act::Link),
+            (Ico::Copy, ts!("cap.copy"), Act::Copy),
+            (if video { Ico::Scissors } else { Ico::Edit }, if video { ts!("cap.play_edit") } else { ts!("cap.edit") }, Act::Edit),
+            (Ico::Link, ts!("cap.copy_link"), Act::Link),
         ];
         if !video {
-            acts.push((Ico::Pin, "Pin on screen", Act::Pin));
+            acts.push((Ico::Pin, ts!("cap.pin_on_screen"), Act::Pin));
         }
-        acts.extend([(Ico::Folder, "Show in Finder", Act::Reveal), (Ico::Trash, delete_tip, Act::Delete)]);
+        acts.extend([(Ico::Folder, ts!("cap.show_in_finder"), Act::Reveal), (Ico::Trash, delete_tip, Act::Delete)]);
         let gap = 3.0;
         let bw = ((bar.width() - 12.0 - (acts.len() - 1) as f32 * gap) / acts.len() as f32).min(26.0);
         let total = acts.len() as f32 * bw + (acts.len() - 1) as f32 * gap;
@@ -525,7 +531,7 @@ fn history(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let x1 = body.right() - 24.0;
     let fy = body.top() + 12.0;
     let mut x = x0;
-    for (i, f) in FILTERS.iter().enumerate() {
+    for (i, f) in filters().iter().enumerate() {
         let g = p.layout_no_wrap(f.to_string(), font(12.0), TEXT());
         let r = Rect::from_min_size(Pos2::new(x, fy), Vec2::new(g.size().x + 24.0, 26.0));
         let resp = ui.interact(r, ui.scope_id().with(("filter", i)), Sense::click());
@@ -538,16 +544,16 @@ fn history(c: &mut Capture, ui: &mut Ui, body: Rect) {
         }
         x = r.right() + 6.0;
     }
-    let lr = link(ui, Pos2::new(x1, fy + 13.0), Align2::RIGHT_CENTER, "change", 12.0);
+    let lr = link(ui, Pos2::new(x1, fy + 13.0), Align2::RIGHT_CENTER, ts!("cap.change"), 12.0);
     if lr.clicked() {
         c.tab = Tab::Settings;
     }
-    p.text(Pos2::new(lr.rect.left(), fy + 13.0), Align2::RIGHT_CENTER, format!("Keeps the last {} · ", c.settings.keep), font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(lr.rect.left(), fy + 13.0), Align2::RIGHT_CENTER, t!("cap.keeps_last", n = c.settings.keep), font(12.0), TEXT_FAINT());
 
     let list = Rect::from_min_max(Pos2::new(body.left(), fy + 38.0), body.max);
     let items: Vec<Item> = c.store.shots.iter().filter(|s| passes(c.filter, s)).map(Item::from_shot).collect();
     if items.is_empty() {
-        p.text(list.center() - Vec2::new(0.0, 30.0), Align2::CENTER_CENTER, "Nothing here with this filter", bold(15.0), TEXT_SOFT());
+        p.text(list.center() - Vec2::new(0.0, 30.0), Align2::CENTER_CENTER, ts!("cap.empty_filter"), bold(15.0), TEXT_SOFT());
         return;
     }
     for (a, it) in grid(c, ui, list, &items, "capture-history") {
@@ -588,7 +594,7 @@ fn first_capture(c: &mut Capture, ui: &mut Ui, body: Rect) {
         c.queue.push((Command::Area, 0));
     }
     let sy = hc.y + HERO_H / 2.0 + sp::L + 17.0;
-    let (ww, sw) = (side_width(&p, "Window", window.as_deref()), side_width(&p, "Screen", screen.as_deref()));
+    let (ww, sw) = (side_width(&p, ts!("cap.mode.window"), window.as_deref()), side_width(&p, ts!("cap.mode.screen"), screen.as_deref()));
     let x = cx0 - (ww + sp::S + sw) / 2.0;
     let (r1, _) = side_button(ui, Pos2::new(x, sy), id.with("window"), "Window", window.as_deref(), !c.busy, |p, r| icons::draw(p, Ico::Window, r, tint));
     let (r2, _) = side_button(ui, Pos2::new(x + ww + sp::S, sy), id.with("screen"), "Screen", screen.as_deref(), !c.busy, |p, r| icons::draw(p, Ico::Screen, r, tint));
@@ -635,7 +641,7 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
     }
     // sound: what you hear and your voice
     let sy = hc.y + HERO_H / 2.0 + sp::L + 17.0;
-    let (aw, mw) = (toggle_width(&p, "System audio"), toggle_width(&p, "Microphone"));
+    let (aw, mw) = (toggle_width(&p, ts!("cap.system_audio")), toggle_width(&p, ts!("cap.microphone")));
     let x = cx0 - (aw + sp::S + mw) / 2.0;
     let (sys, mic) = (c.settings.rec.system_audio, c.settings.rec.mic);
     let (r1, _) = toggle_chip(ui, Pos2::new(x, sy), id.with("sys"), "System audio", sys, |p, r, col| icons::draw(p, Ico::Speaker, r, col));
@@ -658,14 +664,14 @@ fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let fy = body.top() + 12.0;
     let cy = fy + 13.0;
     icons::draw(&p, Ico::Folder, Rect::from_center_size(Pos2::new(x0 + 8.0, cy), Vec2::splat(16.0)), TEXT_DIM());
-    let ow = button_width(&p, "Open in Finder", BTN_SECONDARY) - 6.0;
+    let ow = button_width(&p, ts!("cap.open_finder"), BTN_SECONDARY) - 6.0;
     let or = Rect::from_min_max(Pos2::new(x1 - ow, cy - 13.0), Pos2::new(x1, cy + 13.0));
-    if pill_button(ui, or, "Open in Finder", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, or, ts!("cap.open_finder"), BTN_SECONDARY, true).clicked() {
         let _ = std::process::Command::new("open").arg(&c.settings.folder).spawn();
     }
-    let cw = button_width(&p, "Change folder…", BTN_SECONDARY) - 6.0;
+    let cw = button_width(&p, ts!("cap.change_folder"), BTN_SECONDARY) - 6.0;
     let cr = Rect::from_min_max(Pos2::new(or.left() - 8.0 - cw, cy - 13.0), Pos2::new(or.left() - 8.0, cy + 13.0));
-    if pill_button(ui, cr, "Change folder…", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, cr, ts!("cap.change_folder"), BTN_SECONDARY, true).clicked() {
         c.choose_folder(false);
     }
     text_fit(&p, Pos2::new(x0 + 24.0, cy), Align2::LEFT_CENTER, &c.shown_folder(), mono(12.0), TEXT_SOFT(), cr.left() - x0 - 36.0);
@@ -674,11 +680,11 @@ fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let items: Vec<Item> = c.files.iter().map(|f| Item::from_file(c, f)).collect();
     if items.is_empty() {
         let (msg, hint) = if c.files_busy && c.files_at.is_none() {
-            ("Looking in the folder…", String::new())
+            (ts!("cap.looking_folder"), String::new())
         } else if !c.settings.save {
-            ("No images in this folder", "Turn on \"Save to folder\" in Settings to put every capture here.".to_string())
+            (ts!("cap.no_images"), ts!("cap.no_images_hint").to_string())
         } else {
-            ("No images in this folder", "".to_string())
+            (ts!("cap.no_images"), "".to_string())
         };
         p.text(list.center() - Vec2::new(0.0, 30.0), Align2::CENTER_CENTER, msg, bold(15.0), TEXT_SOFT());
         p.text(list.center() - Vec2::new(0.0, 6.0), Align2::CENTER_CENTER, hint, font(13.0), TEXT_DIM());
@@ -721,12 +727,12 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
         Clicks,
     }
     let clicks = super::record::engine::clicks_supported();
-    let rows: Vec<(Row, &str)> = [(Row::Fps, "Frame rate"), (Row::Quality, "Quality"), (Row::Countdown, "Countdown"), (Row::Cursor, "Show the cursor"), (Row::Clicks, "Highlight clicks")]
+    let rows: Vec<(Row, &str)> = [(Row::Fps, ts!("cap.frame_rate")), (Row::Quality, ts!("cap.quality")), (Row::Countdown, ts!("cap.countdown")), (Row::Cursor, ts!("cap.show_cursor")), (Row::Clicks, ts!("cap.highlight_clicks"))]
         .into_iter()
         .filter(|(r, _)| *r != Row::Clicks || clicks)
         .collect();
     let x0 = col.left();
-    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Recording");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), ts!("cap.recording"));
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), rows.len());
     let id = ui.scope_id().with("rec-options");
     let mut s = c.settings.rec.clone();
@@ -737,12 +743,12 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
         let sw = Rect::from_min_size(Pos2::new(card.right() - 12.0 - 30.0, y - 9.0), Vec2::new(30.0, 18.0));
         match row {
             Row::Fps => {
-                if let Some(i) = seg(ui, 110.0, &["30 fps", "60 fps"], if s.fps == 30 { 0 } else { 1 }) {
+                if let Some(i) = seg(ui, 110.0, &[ts!("cap.fps30"), ts!("cap.fps60")], if s.fps == 30 { 0 } else { 1 }) {
                     s.fps = RECORD_FPS[i];
                 }
             }
             Row::Quality => {
-                if let Some(i) = seg(ui, 180.0, &["Up to 1080p", "Up to 4K"], if s.quality == RecQuality::Smaller { 0 } else { 1 }) {
+                if let Some(i) = seg(ui, 180.0, &[ts!("cap.q1080"), ts!("cap.q4k")], if s.quality == RecQuality::Smaller { 0 } else { 1 }) {
                     s.quality = if i == 0 { RecQuality::Smaller } else { RecQuality::High };
                 }
             }
@@ -752,7 +758,7 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
                     5 => 2,
                     _ => 1,
                 };
-                if let Some(i) = seg(ui, 150.0, &["Off", "3 s", "5 s"], cd) {
+                if let Some(i) = seg(ui, 150.0, &[ts!("cap.off"), ts!("cap.s3"), ts!("cap.s5")], cd) {
                     s.countdown = [0, 3, 5][i];
                 }
             }
@@ -800,9 +806,9 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
     use super::share::VIDEO_ACCOUNT;
     let x0 = col.left();
     let id = ui.scope_id().with(("share", shots));
-    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Sharing");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), ts!("cap.sharing"));
     let mut s = if shots { c.settings.shot_share.clone() } else { c.settings.share.clone() };
-    let labels = [if shots { "Upload each screenshot" } else { "Upload each recording" }, "Copy the link when done", "Storage"];
+    let labels = [if shots { ts!("cap.up_shot") } else { ts!("cap.up_rec") }, ts!("cap.copy_when_done"), ts!("cap.storage")];
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), labels.len());
     for (k, l) in labels.iter().enumerate() {
         p.text(Pos2::new(card.left() + 14.0, row_y(card, k)), Align2::LEFT_CENTER, *l, font(13.0), TEXT());
@@ -819,12 +825,12 @@ fn sharing(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, shots: bo
     }
     // where it goes, and the way to change it
     let y = row_y(card, 2);
-    let lr = link(ui, Pos2::new(card.right() - 14.0, y), Align2::RIGHT_CENTER, "Sharing ›", 12.0);
+    let lr = link(ui, Pos2::new(card.right() - 14.0, y), Align2::RIGHT_CENTER, ts!("cap.sharing_link"), 12.0);
     if lr.clicked() {
         cx.open_page(SHARING_ID, "");
     }
     let st = &c.settings.share;
-    let (where_, col_) = if st.set_up(VIDEO_ACCOUNT) { (st.place(&s.folder), TEXT_DIM()) } else { ("Not set up".to_string(), AMBER()) };
+    let (where_, col_) = if st.set_up(VIDEO_ACCOUNT) { (st.place(&s.folder), TEXT_DIM()) } else { (ts!("cap.not_set_up").to_string(), AMBER()) };
     text_fit(p, Pos2::new(lr.rect.left() - 10.0, y), Align2::RIGHT_CENTER, &where_, font(12.0), col_, card.width() * 0.55);
     if (shots && s != c.settings.shot_share) || (!shots && s != c.settings.share) {
         if shots {
@@ -849,12 +855,12 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let p = ui.painter().clone();
     let shared = super::share::all();
     let ready = c.settings.share.set_up(VIDEO_ACCOUNT);
-    let sub = if ready { format!("{} shared · {}", shared.len(), c.settings.share.bucket.trim()) } else { String::new() };
+    let sub = if ready { t!("cap.shared_sub", n = shared.len(), bucket = c.settings.share.bucket.trim()).into_owned() } else { String::new() };
     // the main agent's chat walks them through a bucket and keys
     let agent = crate::kit::agent::main();
     let ask = super::share::setup::label(agent);
     let aw = crate::kit::aicheck::ui::agent_button_width(ui, &ask);
-    let (_, chip_at) = page_header_room(&p, r, "Sharing", &sub, if ready { TEXT_DIM() } else { AMBER() }, aw, r.right() - sp::PAGE_EDGE);
+    let (_, chip_at) = page_header_room(&p, r, ts!("cap.sharing"), &sub, if ready { TEXT_DIM() } else { AMBER() }, aw, r.right() - sp::PAGE_EDGE);
     if crate::kit::aicheck::ui::agent_button(ui, chip_at, ui.scope_id().with("share-ask"), agent, &ask).clicked() {
         let _ = std::process::Command::new("open").arg(super::share::setup::chat_url(agent)).spawn();
     }
@@ -868,21 +874,21 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let mut s = c.settings.share.clone();
     let mut shot = c.settings.shot_share.clone();
     let mut y = body.top() + 16.0;
-    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Storage");
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), ts!("cap.storage"));
     // R2 (the default) needs its public URL for Public links; Region only
     // for storages it can't be read from (MinIO…) or when already typed
     let host = s.endpoint.trim().to_lowercase();
     let known = s.is_r2() || host.contains("your-objectstorage.com") || host.contains("amazonaws.com");
     let show_public = host.is_empty() || s.is_r2() || !s.public_url.trim().is_empty();
     let show_region = !s.region.trim().is_empty() || (!host.is_empty() && !known);
-    let mut labels = vec!["Endpoint", "Bucket", "Access key", "Secret key"];
+    let mut labels = vec![ts!("cap.endpoint"), ts!("cap.bucket"), ts!("cap.access_key"), ts!("cap.secret_key")];
     if show_public {
-        labels.push("Public URL");
+        labels.push(ts!("cap.public_url"));
     }
     if show_region {
-        labels.push("Region");
+        labels.push(ts!("cap.region"));
     }
-    labels.push("Link");
+    labels.push(ts!("cap.link"));
     let card = card_rows(&p, x0, y + 28.0, colw, labels.len());
     for (k, l) in labels.iter().enumerate() {
         p.text(Pos2::new(card.left() + 14.0, row_y(card, k)), Align2::LEFT_CENTER, *l, font(13.0), TEXT());
@@ -894,7 +900,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     };
     field(ui, frect(card, 0), &mut s.endpoint, "account-id.r2.cloudflarestorage.com", false);
     field(ui, frect(card, 1), &mut s.bucket, "my-bucket", false);
-    field(ui, frect(card, 2), &mut s.access_key, "Access key", false);
+    field(ui, frect(card, 2), &mut s.access_key, ts!("cap.access_key"), false);
     // the secret goes straight to the Keychain and is never shown back.
     // Opening Sharing never reads it: only whether the item is there (no
     // macOS prompt). The key is read when something needs it, after the
@@ -904,7 +910,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     // flag set on the settings themselves was undone the same frame and
     // Screenshot settings said "Not set up" with a key in the Keychain
     s.secret_saved = has_secret;
-    let resp = field(ui, frect(card, 3), &mut c.share_secret, if has_secret { "Saved in the Keychain" } else { "Secret key" }, true);
+    let resp = field(ui, frect(card, 3), &mut c.share_secret, if has_secret { ts!("cap.in_keychain") } else { ts!("cap.secret_key") }, true);
     if std::mem::take(&mut c.focus_secret) {
         resp.request_focus();
     }
@@ -919,11 +925,11 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
             Ok(()) => {
                 c.has_secret = Some(true);
                 s.secret_saved = true;
-                c.hud("Secret key saved in the Keychain")
+                c.hud(ts!("cap.secret_saved"))
             }
             // an older key from another build is in the way: ask first
             Err(None) => c.need_keychain(super::KeychainPending::Save(v.to_string())),
-            Err(Some(e)) => c.hud(format!("Couldn't save to the Keychain: {e}")),
+            Err(Some(e)) => c.hud(t!("cap.keychain_fail", e = e).into_owned()),
         }
     }
     let mut k = 4;
@@ -932,7 +938,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         k += 1;
     }
     if show_region {
-        field(ui, frect(card, k), &mut s.region, "From the endpoint", false);
+        field(ui, frect(card, k), &mut s.region, ts!("cap.from_endpoint"), false);
         k += 1;
     }
     let ly = row_y(card, k);
@@ -940,9 +946,9 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         s.link = if i == 1 { LinkKind::Week } else { LinkKind::Public };
     }
     y = card.bottom() + 24.0;
-    crate::kit::glass::card_title(&p, Pos2::new(x0, y), "Folders");
+    crate::kit::glass::card_title(&p, Pos2::new(x0, y), ts!("cap.folders"));
     let fcard = card_rows(&p, x0, y + 28.0, colw, 2);
-    for (k, (ico, l)) in [(Icon::Crop, "Screenshots"), (Icon::Camera, "Videos")].into_iter().enumerate() {
+    for (k, (ico, l)) in [(Icon::Crop, ts!("cap.screenshots")), (Icon::Camera, ts!("cap.videos"))].into_iter().enumerate() {
         let ry = row_y(fcard, k);
         icon(&p, ico, Rect::from_center_size(Pos2::new(fcard.left() + 21.0, ry), Vec2::splat(15.0)), TEXT_DIM());
         p.text(Pos2::new(fcard.left() + 38.0, ry), Align2::LEFT_CENTER, l, font(13.0), TEXT());
@@ -959,12 +965,12 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let rx = x0 + colw + gap;
     let rw = body.right() - 24.0 - rx;
     let ty = body.top() + 16.0;
-    crate::kit::glass::card_title(&p, Pos2::new(rx, ty), "Shared");
+    crate::kit::glass::card_title(&p, Pos2::new(rx, ty), ts!("cap.shared"));
     let list = Rect::from_min_max(Pos2::new(rx, ty + 28.0), Pos2::new(rx + rw, body.bottom() - 16.0));
     if shared.is_empty() {
         let er = Rect::from_min_size(list.min, Vec2::new(rw, 90.0));
         glass_card(&p, er, R_CARD, 0.0, false);
-        p.text(er.center(), Align2::CENTER_CENTER, "Nothing shared yet", bold(13.0), TEXT_SOFT());
+        p.text(er.center(), Align2::CENTER_CENTER, ts!("cap.nothing_shared"), bold(13.0), TEXT_SOFT());
         return;
     }
     let row_h = 54.0;
@@ -980,7 +986,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
             icon(&p, if img { Icon::Crop } else { Icon::Camera }, Rect::from_center_size(Pos2::new(rr.left() + 22.0, rr.center().y), Vec2::splat(16.0)), TEXT_DIM());
             // buttons on the right: copy link, open, delete
             let mut bx = rr.right() - 10.0;
-            for (j, (ico, tip)) in [(Icon::Trash, "Delete from your storage"), (Icon::Forward, "Open in the browser"), (Icon::Link, "Copy link")].into_iter().enumerate() {
+            for (j, (ico, tip)) in [(Icon::Trash, ts!("cap.deleted_storage_tip")), (Icon::Forward, ts!("cap.open_browser")), (Icon::Link, ts!("cap.copy_link"))].into_iter().enumerate() {
                 let br = Rect::from_min_size(Pos2::new(bx - 28.0, rr.center().y - 14.0), Vec2::splat(28.0));
                 if round_button(ui, br, ico, tip).clicked() {
                     act = Some((k, j as u8));
@@ -1000,7 +1006,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         match j {
             2 => {
                 c.copy_text(&sh.link);
-                c.hud("Link copied");
+                c.hud(ts!("cap.link_copied"));
             }
             1 => {
                 let _ = std::process::Command::new("open").arg(&sh.link).spawn();
@@ -1058,7 +1064,7 @@ fn record_keys(c: &mut Capture, ui: &mut Ui, cx: &mut Cx) {
 /// Returns the bottom of what it drew.
 fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &[Command]) -> f32 {
     let x0 = col.left();
-    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Keyboard shortcuts");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), ts!("cap.shortcuts"));
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), list.len());
     for (k, cmd) in list.iter().enumerate() {
         let y = row_y(card, k);
@@ -1066,7 +1072,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
         let lr = p.text(Pos2::new(card.left() + 38.0, y), Align2::LEFT_CENTER, cmd.label(), font(13.0), TEXT());
         let rec = c.recording == Some(*cmd);
         let cur = c.settings.shortcut(*cmd).cloned();
-        let label = if rec { "Type a shortcut…".to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| "Record".into()) };
+        let label = if rec { ts!("cap.type_shortcut").to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| ts!("cap.record").into()) };
         let g = p.layout_no_wrap(label.clone(), font(12.0), TEXT());
         let bw = (g.size().x + 20.0).max(76.0);
         let clear = Rect::from_center_size(Pos2::new(card.right() - 22.0, y), Vec2::splat(20.0));
@@ -1082,7 +1088,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
             dashed_rect(p, br, 6.0, white(60));
         }
         p.text(br.center(), Align2::CENTER_CENTER, label, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-        if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
+        if resp.on_hover_text(ts!("cap.shortcut_tip")).clicked() {
             if rec {
                 stop_recording(c);
             } else {
@@ -1098,7 +1104,7 @@ fn shortcuts(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect, list: &
                 p.circle_filled(clear.center(), 10.0, white(26));
             }
             icons::draw(p, Ico::Close, clear.shrink(5.0), TEXT_FAINT());
-            if cr.on_hover_text("Remove shortcut").clicked() {
+            if cr.on_hover_text(ts!("cap.remove_shortcut")).clicked() {
                 c.settings.set_shortcut(*cmd, None);
                 c.save_settings();
                 c.apply_keys();
@@ -1129,31 +1135,31 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     let mut y = col.top();
 
     // after a capture
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "After a capture");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("cap.after_capture"));
     let card = card_rows(p, x0, y + 28.0, w, 5);
     let ry = row_y(card, 0);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Then", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.then"), font(13.0), TEXT());
     let sr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 270.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
     let cur = match c.settings.after {
         After::Preview => 0,
         After::Editor => 1,
         After::Nothing => 2,
     };
-    if let Some(i) = segmented(ui, sr, id.with("after"), &["Show preview", "Open editor", "Nothing"], cur) {
+    if let Some(i) = segmented(ui, sr, id.with("after"), &[ts!("cap.show_preview"), ts!("cap.open_editor"), ts!("cap.nothing")], cur) {
         c.settings.after = [After::Preview, After::Editor, After::Nothing][i];
         changed = true;
     }
     let ry = row_y(card, 3);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Hide preview after", font(13.0), TEXT());
-    if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - 200.0, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0)), id.with("hide"), &["3 s", "6 s", "10 s", "Never"], secs_index(c.settings.preview_secs, &PREVIEW_SECS)) {
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.hide_after"), font(13.0), TEXT());
+    if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - 200.0, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0)), id.with("hide"), &[ts!("cap.s3"), ts!("cap.s6"), ts!("cap.s10"), ts!("cap.never")], secs_index(c.settings.preview_secs, &PREVIEW_SECS)) {
         c.settings.preview_secs = PREVIEW_SECS.get(i).copied();
         changed = true;
     }
     let switches: [(&str, &str, bool); 4] = [
-        ("Copy to clipboard", "", c.settings.copy),
-        ("Save to folder", "", c.settings.save),
+        (ts!("cap.copy_clip"), "", c.settings.copy),
+        (ts!("cap.save_folder"), "", c.settings.save),
         ("", "", false),
-        ("Play sound", "", c.settings.sound),
+        (ts!("cap.play_sound"), "", c.settings.sound),
     ];
     for (k, (label, hint, on)) in switches.iter().enumerate() {
         if k == 2 {
@@ -1177,18 +1183,18 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     y = card.bottom() + 16.0;
 
     // saving
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Saving");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("cap.saving"));
     let card = card_rows(p, x0, y + 28.0, w, 4);
     folder_row(c, ui, p, card, row_y(card, 0), false);
     let ry = row_y(card, 1);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Format", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.format"), font(13.0), TEXT());
     let fr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 110.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
     if let Some(i) = segmented(ui, fr, id.with("format"), &["PNG", "JPG"], (c.settings.format == Format::Jpg) as usize) {
         c.settings.format = if i == 1 { Format::Jpg } else { Format::Png };
         changed = true;
     }
     let ry = row_y(card, 2);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "File name", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.file_name"), font(13.0), TEXT());
     let example = c.settings.file_name(chrono::Local::now());
     text_fit(p, Pos2::new(card.right() - 12.0, ry), Align2::RIGHT_CENTER, &example, mono(12.0), TEXT_DIM(), card.width() - 110.0);
     changed |= history_row(c, ui, p, card, row_y(card, 3), id, false);
@@ -1204,10 +1210,10 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
 /// The Folder row of a Saving card: where screenshots, or recordings
 /// (`video`), go, and Change….
 fn folder_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: f32, video: bool) {
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Folder", font(13.0), TEXT());
-    let bw = button_width(p, "Change…", BTN_SECONDARY) - 6.0;
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.folder"), font(13.0), TEXT());
+    let bw = button_width(p, ts!("cap.change_btn"), BTN_SECONDARY) - 6.0;
     let br = Rect::from_min_max(Pos2::new(card.right() - 12.0 - bw, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
-    if pill_button(ui, br, "Change…", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, br, ts!("cap.change_btn"), BTN_SECONDARY, true).clicked() {
         c.choose_folder(video);
     }
     let shown = if video { c.shown_rec_folder() } else { c.shown_folder() };
@@ -1218,9 +1224,9 @@ fn folder_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: f
 /// recordings (`video`), each with its own limit. True when the limit moved.
 fn history_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: f32, id: egui::Id, video: bool) -> bool {
     let mut changed = false;
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "History keeps", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.history_keeps"), font(13.0), TEXT());
     let confirming = c.confirm_clear.is_some_and(|(v, t)| v == video && t.elapsed().as_secs_f32() < 3.0);
-    let clear_label = if confirming { "Click again to clear" } else { "Clear history" };
+    let clear_label = if confirming { ts!("cap.click_again") } else { ts!("cap.clear_history") };
     let cw = button_width(p, clear_label, BTN_DANGER) - 6.0;
     let cr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - cw, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
     let any = c.store.shots.iter().any(|s| (s.kind == Kind::Recording) == video);
@@ -1229,7 +1235,7 @@ fn history_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: 
             c.store.clear(video);
             c.forget_dropped_thumbs();
             c.confirm_clear = None;
-            c.hud("History cleared");
+            c.hud(ts!("cap.history_cleared"));
         } else {
             c.confirm_clear = Some((video, Instant::now()));
         }
@@ -1262,7 +1268,7 @@ fn history_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: 
 
 /// A Permission card at `y` (R17): one row per permission.
 fn permissions(ui: &mut Ui, p: &egui::Painter, x0: f32, y: f32, w: f32, list: &[Perm]) -> f32 {
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Permission");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("cap.permission"));
     let card = card_rows(p, x0, y + 28.0, w, list.len());
     for (k, perm) in list.iter().enumerate() {
         perm_row(ui, p, card, row_y(card, k), *perm);
@@ -1277,41 +1283,41 @@ fn recording_after(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     let id = ui.scope_id().with("rec-after");
     let mut changed = false;
     let mut y = col.top();
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "After a recording");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("cap.after_recording"));
     let card = card_rows(p, x0, y + 28.0, w, 3);
     let ry = row_y(card, 0);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Then", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.then"), font(13.0), TEXT());
     let sr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 270.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
     let cur = match c.settings.rec.after {
         After::Preview => 0,
         After::Editor => 1,
         After::Nothing => 2,
     };
-    if let Some(i) = segmented(ui, sr, id.with("after"), &["Show preview", "Open editor", "Nothing"], cur) {
+    if let Some(i) = segmented(ui, sr, id.with("after"), &[ts!("cap.show_preview"), ts!("cap.open_editor"), ts!("cap.nothing")], cur) {
         c.settings.rec.after = [After::Preview, After::Editor, After::Nothing][i];
         changed = true;
     }
     let ry = row_y(card, 1);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Copy to clipboard", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.copy_clip"), font(13.0), TEXT());
     let sw = Rect::from_center_size(Pos2::new(card.right() - 27.0, ry), Vec2::new(30.0, 18.0));
     if switch(ui, sw, id.with("copy"), c.settings.rec.copy, true).clicked() {
         c.settings.rec.copy = !c.settings.rec.copy;
         changed = true;
     }
     let ry = row_y(card, 2);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Hide preview after", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.hide_after"), font(13.0), TEXT());
     let hr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 200.0, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
-    if let Some(i) = segmented(ui, hr, id.with("hide"), &["5 s", "8 s", "15 s", "Never"], secs_index(c.settings.rec.card_secs, &CARD_SECS)) {
+    if let Some(i) = segmented(ui, hr, id.with("hide"), &[ts!("cap.s5"), ts!("cap.s8"), ts!("cap.s15"), ts!("cap.never")], secs_index(c.settings.rec.card_secs, &CARD_SECS)) {
         c.settings.rec.card_secs = CARD_SECS.get(i).copied();
         changed = true;
     }
     y = card.bottom() + 16.0;
 
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Saving");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("cap.saving"));
     let card = card_rows(p, x0, y + 28.0, w, 3);
     folder_row(c, ui, p, card, row_y(card, 0), true);
     let ry = row_y(card, 1);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "File name", font(13.0), TEXT());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, ts!("cap.file_name"), font(13.0), TEXT());
     let example = Settings::recording_name(chrono::Local::now());
     text_fit(p, Pos2::new(card.right() - 12.0, ry), Align2::RIGHT_CENTER, &example, mono(12.0), TEXT_DIM(), card.width() - 110.0);
     changed |= history_row(c, ui, p, card, row_y(card, 2), id, true);

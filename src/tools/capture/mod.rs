@@ -229,7 +229,7 @@ impl Capture {
     pub fn transcript_models(&self) -> Vec<crate::core::tool::SetupModel> {
         use crate::core::tool::{ModelState, SetupModel};
         use crate::kit::whisper::Model;
-        let row = |m: Model, state| SetupModel { id: m.file(), what: "Transcripts of recordings", name: m.setup_name(), bytes: m.bytes(), state };
+        let row = |m: Model, state| SetupModel { id: m.file(), what: ts!("cap.setup_transcripts"), name: m.setup_name(), bytes: m.bytes(), state };
         let found: Vec<SetupModel> = if self.dir.is_none() { Vec::new() } else { Model::ALL.into_iter().filter(|m| m.ready()).map(|m| row(m, ModelState::Ready)).collect() };
         if found.is_empty() {
             vec![row(Model::default(), ModelState::OnFirstUse)]
@@ -372,12 +372,12 @@ impl Capture {
     /// Sharing page, put the secret key in the Keychain, trash the file.
     fn import_storage(&mut self, path: &std::path::Path) {
         let Some(st) = share::import::read(path) else {
-            self.hud("Not a Cmd+Meow sharing file");
+            self.hud(ts!("cap.not_share_file"));
             return;
         };
         // a file from anywhere could point uploads at someone else's bucket:
         // the person sees where they'd go and says yes
-        if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, share::import::short_host(&st.endpoint)), "Use") {
+        if !crate::kit::native::confirm(ts!("cap.use_storage_q"), &format!("{}\n{}", st.bucket, share::import::short_host(&st.endpoint)), ts!("cap.use")) {
             return;
         }
         match share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key, false) {
@@ -386,7 +386,7 @@ impl Capture {
             // nothing changes (the file stays) until the key is saved
             Err(None) => return self.need_keychain(KeychainPending::Import(path.to_path_buf(), st.secret_key)),
             Err(Some(e)) => {
-                self.hud(format!("Couldn't save to the Keychain: {e}"));
+                self.hud(t!("cap.keychain_fail", e = e).into_owned());
                 return;
             }
         }
@@ -409,7 +409,7 @@ impl Capture {
         if let Err(e) = crate::kit::fs::move_to_trash(path) {
             eprintln!("[share] couldn't trash {}: {e}", path.display());
         }
-        self.hud("Sharing set up");
+        self.hud(ts!("cap.sharing_set_up"));
     }
 
     fn hud(&mut self, msg: impl Into<String>) {
@@ -420,12 +420,12 @@ impl Capture {
     /// Put a picture on the clipboard. Encoding a big capture takes a
     /// moment, so it happens on a thread; a failure shows as a toast.
     fn copy_image(&self, img: RgbaImage) {
-        self.in_background(move || (!mac::copy_png(&store::png_bytes(&img))).then(|| Done::Note("Couldn't copy".into())));
+        self.in_background(move || (!mac::copy_png(&store::png_bytes(&img))).then(|| Done::Note(ts!("cap.cant_copy").into())));
     }
 
     /// [`Capture::copy_image`] for a picture already encoded as PNG.
     fn copy_png(&self, png: Vec<u8>) {
-        self.in_background(move || (!mac::copy_png(&png)).then(|| Done::Note("Couldn't copy".into())));
+        self.in_background(move || (!mac::copy_png(&png)).then(|| Done::Note(ts!("cap.cant_copy").into())));
     }
 
     /// Run `job` on a thread; what it returns comes back to [`Capture::done`].
@@ -471,7 +471,7 @@ impl Capture {
                     if !mac::can_record_screen() {
                         self.perm_needed = true;
                         mac::ask_to_record_screen();
-                        self.hud("Allow Screen Recording for Cmd+Meow, then try again");
+                        self.hud(ts!("cap.allow_screen"));
                         return;
                     }
                 }
@@ -493,7 +493,7 @@ impl Capture {
                 Some(id)
             }
             Err(e) => {
-                self.hud(format!("Couldn't keep it in history: {e}"));
+                self.hud(t!("cap.history_fail", e = e).into_owned());
                 None
             }
         };
@@ -502,7 +502,7 @@ impl Capture {
             self.share(st.path.clone());
         }
         if self.settings.rec.copy && !record::sys::copy_file(&st.path) {
-            self.hud("Couldn't copy the video");
+            self.hud(ts!("cap.cant_copy_video"));
         }
         match self.settings.rec.after {
             settings::After::Editor => {
@@ -556,7 +556,7 @@ impl Capture {
         self.in_background(move || match share::s3::delete(&b, &key) {
             Ok(()) => {
                 share::forget(&path);
-                Some(Done::Note("Deleted from your storage".into()))
+                Some(Done::Note(ts!("cap.deleted_storage").into()))
             }
             Err(e) => Some(Done::Note(e)),
         });
@@ -617,12 +617,12 @@ impl Capture {
                     self.settings.share.secret_saved = has;
                     self.save_settings();
                     if has {
-                        self.hud("Secret key saved in the Keychain");
+                        self.hud(ts!("cap.secret_saved"));
                     }
                 }
                 KeychainPending::Import(path, _) => match share::import::read(&path) {
                     Some(st) => self.import_finish(&path, st),
-                    None => self.hud("Not a Cmd+Meow sharing file"),
+                    None => self.hud(ts!("cap.not_share_file")),
                 },
                 KeychainPending::Share(path) => self.share(path),
                 KeychainPending::Delete(path, key) => self.delete_shared(path, key),
@@ -638,7 +638,7 @@ impl Capture {
         match share::link_for(&path) {
             Some(link) => {
                 self.copy_known_link(&link);
-                self.hud("Link copied");
+                self.hud(ts!("cap.link_copied"));
             }
             None => self.share(path),
         }
@@ -662,7 +662,7 @@ impl Capture {
                 let note = match r {
                     Ok(link) => {
                         self.copy_text(&link);
-                        Some("Link copied".to_string())
+                        Some(ts!("cap.link_copied").to_string())
                     }
                     Err(e) if e == "Stopped" => None,
                     Err(e) => {
@@ -682,9 +682,9 @@ impl Capture {
                 Ok(link) => {
                     if self.share_for(&path).0.copy_link {
                         self.copy_text(&link);
-                        self.hud("Uploaded · link copied");
+                        self.hud(ts!("cap.uploaded_link"));
                     } else {
-                        self.hud("Uploaded");
+                        self.hud(ts!("cap.uploaded"));
                     }
                 }
                 Err(e) if e == "Stopped" => {}
@@ -778,7 +778,7 @@ impl Capture {
                 self.busy = false;
                 match (p, r) {
                     (_, Ok(None)) => {}
-                    (_, Err(e)) => self.hud(format!("Couldn't capture: {e}")),
+                    (_, Err(e)) => self.hud(t!("cap.cant_capture", e = e).into_owned()),
                     (Purpose::Keep(kind), Ok(Some((g, small)))) => self.keep(g, small, kind),
                     (Purpose::Text, Ok(Some((g, _)))) => self.spawn_ocr(g.img),
                     (Purpose::Measure(m), Ok(Some((g, _)))) => self.overlay = Some(windows::Overlay::new(m, g.img)),
@@ -792,19 +792,19 @@ impl Capture {
                     }
                     self.files_at = None;
                     if announce {
-                        self.hud(format!("Saved to {}", windows::short_path(&path)));
+                        self.hud(t!("cap.saved_to", path = windows::short_path(&path)).into_owned());
                     }
                 }
-                Err(e) => self.hud(format!("Couldn't save: {e}")),
+                Err(e) => self.hud(t!("cap.cant_save", e = e).into_owned()),
             },
             Done::Text(lines) => {
                 self.busy = false;
                 if lines.is_empty() {
-                    self.hud("No text found");
+                    self.hud(ts!("cap.no_text"));
                 } else {
                     self.copy_text(&mac::join_lines(&lines, self.settings.keep_breaks));
                     let n = lines.len();
-                    self.hud(format!("Copied {n} line{}", if n == 1 { "" } else { "s" }));
+                    self.hud(tn!("cap.copied_lines", n = n).into_owned());
                 }
             }
             Done::Thumb(id, img) => {
@@ -858,7 +858,7 @@ impl Capture {
                 Some(id)
             }
             Err(e) => {
-                self.hud(format!("Couldn't keep it in history: {e}"));
+                self.hud(t!("cap.history_fail", e = e).into_owned());
                 None
             }
         };
@@ -889,10 +889,10 @@ impl Capture {
             });
         }
         let note = match (copied, saved) {
-            (true, true) => "Copied and saved",
-            (true, false) => "Copied",
-            (false, true) => "Saved",
-            _ => "Captured",
+            (true, true) => ts!("cap.copied_saved"),
+            (true, false) => ts!("cap.copied"),
+            (false, true) => ts!("cap.saved"),
+            _ => ts!("cap.captured"),
         };
         match self.settings.after {
             settings::After::Preview => self.preview = Some(windows::Preview::new(id, img, preview, note.into())),
@@ -947,8 +947,8 @@ impl Capture {
 
     fn title_for(&self, id: Option<u64>) -> String {
         match id.and_then(|id| self.store.get(id)) {
-            Some(s) => format!("Capture from {}", s.time().format("%-I:%M %P")),
-            None => "Capture".into(),
+            Some(s) => t!("cap.capture_from", time = s.time().format("%-I:%M %P")).into_owned(),
+            None => ts!("cap.capture").into(),
         }
     }
 
@@ -973,7 +973,7 @@ impl Capture {
                     ed.shot = Some(id);
                     ed.edited = false;
                 }
-                Err(e) => ed.flash(format!("Couldn't keep the edit: {e}")),
+                Err(e) => ed.flash(t!("cap.edit_fail", e = e).into_owned()),
             }
         }
         ed.shot
@@ -1009,7 +1009,7 @@ impl Capture {
     fn open_editor_for(&mut self, id: u64) {
         match self.store.load(id) {
             Some(img) => self.open_editor(Some(id), img),
-            None => self.hud("That capture is gone"),
+            None => self.hud(ts!("cap.gone")),
         }
     }
 
@@ -1026,7 +1026,7 @@ impl Capture {
     fn pin_shot(&mut self, id: u64) {
         match self.store.load(id) {
             Some(img) => self.pin(Some(id), img),
-            None => self.hud("That capture is gone"),
+            None => self.hud(ts!("cap.gone")),
         }
     }
 
@@ -1049,7 +1049,7 @@ impl Capture {
                 Some(path)
             }
             Err(e) => {
-                self.hud(format!("Couldn't save: {e}"));
+                self.hud(t!("cap.cant_save", e = e).into_owned());
                 None
             }
         }
@@ -1130,7 +1130,7 @@ impl Capture {
                     ew.ed.title = f.name();
                 }
             }
-            Err(e) => self.hud(format!("Couldn't open {}: {e}", f.name())),
+            Err(e) => self.hud(t!("cap.cant_open", name = f.name(), e = e).into_owned()),
         }
     }
 
@@ -1139,7 +1139,9 @@ impl Capture {
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            let out = std::process::Command::new("osascript").args(["-e", if video { "POSIX path of (choose folder with prompt \"Save recordings to\")" } else { "POSIX path of (choose folder with prompt \"Save screenshots to\")" }]).output();
+            let prompt = if video { ts!("cap.save_recs_to") } else { ts!("cap.save_shots_to") };
+            let script = format!("POSIX path of (choose folder with prompt \"{}\")", prompt.replace(['\\', '"'], ""));
+            let out = std::process::Command::new("osascript").args(["-e", script.as_str()]).output();
             let path = out.ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|s| !s.is_empty()).map(PathBuf::from);
             let _ = tx.send(Done::Folder(video, path));
             ctx.request_repaint();
@@ -1204,7 +1206,7 @@ impl Tool for Capture {
         ID
     }
     fn name(&self) -> &'static str {
-        "Capture"
+        ts!("cap.capture")
     }
     fn badge(&self) -> Badge {
         badge()
@@ -1215,14 +1217,14 @@ impl Tool for Capture {
     }
 
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
-        [(Command::Area, "Capture area"), (Command::Record, "Record screen")].into_iter().filter_map(|(c, l)| self.settings.shortcut(c).map(|s| (l, s.display()))).collect()
+        [(Command::Area, ts!("cap.sc.area")), (Command::Record, ts!("cap.sc.record"))].into_iter().filter_map(|(c, l)| self.settings.shortcut(c).map(|s| (l, s.display()))).collect()
     }
 
     fn section(&self) -> &'static str {
-        "Create"
+        ts!("cap.section_create")
     }
     fn about(&self) -> &'static str {
-        "Screenshots, markup and text from the screen"
+        ts!("cap.about")
     }
     fn set_on(&mut self, on: bool) {
         if on {
@@ -1258,7 +1260,7 @@ impl Tool for Capture {
         self.settings.shortcut(Command::Area).map(|s| s.display()).unwrap_or_default()
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Capture", about: "Take a screenshot; recent captures at the bigger sizes.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("cap.capture"), about: ts!("cap.w_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);
@@ -1290,9 +1292,9 @@ impl Tool for Capture {
         }
         vec![Recommendation {
             priority: 40,
-            title: "Capture needs Screen Recording".into(),
-            body: "Without it, captures show only the desktop. Turn it on in System Settings.".into(),
-            action: "Settings".into(),
+            title: ts!("cap.needs_screen").into(),
+            body: ts!("cap.needs_screen_body").into(),
+            action: ts!("cap.settings").into(),
             go: Action::OpenPage { tool: ID.into(), route: "settings".into() },
         }]
     }
