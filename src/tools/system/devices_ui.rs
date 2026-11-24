@@ -288,7 +288,6 @@ pub enum PageAction {
     ToggleAlerts,
     ToggleCharged,
     ChargedAt(u8),
-    ToggleMenuBar,
     OpenBluetooth,
     /// Alert below this charge for one device (0 = never).
     AlertBelow(String, u8),
@@ -309,7 +308,7 @@ pub fn settings_height(s: &Snapshot) -> f32 {
 /// A card title and the 12 under it (R2).
 const TITLE_H: f32 = 14.0 + sp::M;
 
-/// Mac Health settings: device alerts and the menu bar, the way to
+/// Mac Health settings: device alerts, the way to
 /// Bluetooth settings, and hidden devices. One card per list (S4).
 pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
     let p = ui.painter().clone();
@@ -318,12 +317,11 @@ pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
     crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), "Bluetooth devices");
     y += TITLE_H;
     let prefs = &s.bt_prefs;
-    let card = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 4.0 * SWITCH_H));
+    let card = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 3.0 * SWITCH_H));
     glass_card(&p, card, R_CARD, 0.0, false);
-    let rows: [(&str, bool, PageAction); 3] = [
+    let rows: [(&str, bool, PageAction); 2] = [
         ("Low battery alerts", crate::kit::notify::shown(prefs.alerts), PageAction::ToggleAlerts),
         ("Charged alert", crate::kit::notify::shown(prefs.charged), PageAction::ToggleCharged),
-        ("Show in menu bar", prefs.menu_bar, PageAction::ToggleMenuBar),
     ];
     let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * SWITCH_H), Vec2::new(card.width(), SWITCH_H));
     for (k, (label, on, act)) in rows.into_iter().enumerate() {
@@ -350,7 +348,7 @@ pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
         text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT(), tw);
     }
     // the way to macOS's own Bluetooth settings, as the card's last row
-    let rr = row(3);
+    let rr = row(2);
     hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
     p.text(Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Bluetooth Settings", font(13.0), TEXT());
     let bw = button_width(&p, "Open", BTN_SECONDARY);
