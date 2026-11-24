@@ -16,11 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Upload and deploy run as separate jobs: deploy-pages looks the artifact up
+  # through the API, and right after an upload in the same job it can find none.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Add the app icon
@@ -29,5 +28,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
