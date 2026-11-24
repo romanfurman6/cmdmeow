@@ -386,7 +386,7 @@ impl Uninstaller {
             g.last = Some((Report { moved, names: targets.iter().map(|t| t.name.clone()).collect(), reset: targets.iter().all(|t| t.reset), apps: targets.iter().filter(|t| !t.reset && t.app.is_some()).map(|t| t.name.clone()).collect(), ..Default::default() }, Instant::now()));
             return;
         }
-        g.working = Some("Starting…".into());
+        g.working = Some(ts!("un.starting").into());
         g.loader = true;
         g.work_title = work_title(&targets);
         g.work_total = targets.iter().flat_map(|t| t.items.iter().filter(|i| i.selected && !(t.reset && i.kind.is_part()))).map(|i| i.bytes).sum();
@@ -431,7 +431,7 @@ impl Uninstaller {
             return;
         }
         let (st, roots, app_roots, ctx) = (self.st.clone(), self.roots.clone(), self.app_roots.clone(), self.ctx.clone());
-        st.lock_ok().working = Some("Putting things back…".into());
+        st.lock_ok().working = Some(ts!("un.putting_back").into());
         std::thread::Builder::new()
             .name("uninstaller-undo".into())
             .spawn(move || {
@@ -456,7 +456,7 @@ impl Uninstaller {
         let path = path.ancestors().find(|a| a.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).unwrap_or(path);
         let mut g = self.st.lock_ok();
         if !path.extension().is_some_and(|e| e == "app") {
-            g.drop = Drop::Refused(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "Not an app. Drop an app from Applications.".into());
+            g.drop = Drop::Refused(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), ts!("un.drop.not_app").into());
             return;
         }
         if let Some(row) = g.apps.iter().find(|a| a.path == path && a.sized) {
@@ -481,7 +481,7 @@ impl Uninstaller {
                             Some(why) => Drop::Refused(row.name, format!("{why}, so it can't be removed.")),
                             None => Drop::Confirm(row.target(false)),
                         },
-                        None => Drop::Refused(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "Couldn't read this app.".into()),
+                        None => Drop::Refused(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), ts!("un.drop.unreadable").into()),
                     };
                 }
                 ctx.request_repaint();
@@ -937,7 +937,7 @@ impl Tool for Uninstaller {
         ID
     }
     fn name(&self) -> &'static str {
-        "Uninstaller"
+        ts!("un.name")
     }
     fn badge(&self) -> Badge {
         Badge { icon: Icon::AppRemove, color: TINT() }
@@ -948,10 +948,10 @@ impl Tool for Uninstaller {
     }
 
     fn section(&self) -> &'static str {
-        "Clean"
+        ts!("cleanup.short")
     }
     fn about(&self) -> &'static str {
-        "Remove apps with everything they leave behind"
+        ts!("un.about")
     }
     fn busy(&self) -> bool {
         let working = {
@@ -1013,14 +1013,14 @@ impl Tool for Uninstaller {
 pub fn work_title(targets: &[Target]) -> String {
     let who = match targets {
         [t] => t.name.clone(),
-        ts => format!("{} apps", ts.len()),
+        ts => t!("un.n_apps", n = ts.len()).into_owned(),
     };
     if targets.iter().all(|t| t.reset) {
-        format!("Resetting {who}…")
+        t!("un.work.resetting", who = who).into_owned()
     } else if targets.iter().all(|t| t.app.is_none()) {
-        "Removing leftovers…".to_string()
+        ts!("un.work.leftovers").to_string()
     } else {
-        format!("Removing {who}…")
+        t!("un.work.removing", who = who).into_owned()
     }
 }
 

@@ -116,13 +116,13 @@ const OWN_ID: &str = "com.romanfurman6.cmdmeow";
 /// Why `app` may never be removed, if so.
 pub fn locked(app: &Path, id: &str, source: Source) -> Option<&'static str> {
     if id == OWN_ID || id.starts_with(&format!("{OWN_ID}.")) || own_bundle().is_some_and(|b| b == app) {
-        return Some("This is Cmd+Meow");
+        return Some(ts!("un.locked.own"));
     }
     if source == Source::Apple && !APPLE_REMOVABLE.contains(&id) {
-        return Some("Part of macOS");
+        return Some(ts!("un.locked.macos"));
     }
     if app.starts_with("/System") {
-        return Some("Part of macOS");
+        return Some(ts!("un.locked.macos"));
     }
     None
 }
