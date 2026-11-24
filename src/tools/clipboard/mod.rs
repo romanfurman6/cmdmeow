@@ -226,9 +226,9 @@ impl Clipboard {
         Some(match p.0 {
             Some(t) => {
                 let left = t.saturating_duration_since(Instant::now()).as_secs();
-                format!("Paused · {} min left", left.div_ceil(60).max(1))
+                t!("clip.paused_left", n = left.div_ceil(60).max(1)).into_owned()
             }
-            None => "Paused".into(),
+            None => ts!("clip.paused").into(),
         })
     }
 
@@ -283,7 +283,7 @@ impl Clipboard {
         let Some(e) = self.store.get(id).cloned() else { return false };
         let png = if e.kind == Kind::Image { self.store.png(id) } else { None };
         if e.kind == Kind::Image && png.is_none() {
-            self.hud("That image is gone");
+            self.hud(ts!("clip.image_gone"));
             return false;
         }
         let rtf = if plain { None } else { self.store.rtf(id) };
@@ -419,16 +419,16 @@ impl Tool for Clipboard {
         ID
     }
     fn name(&self) -> &'static str {
-        "Clipboard"
+        ts!("clip.name")
     }
     fn badge(&self) -> Badge {
         badge()
     }
     fn section(&self) -> &'static str {
-        "Create"
+        ts!("cap.section_create")
     }
     fn about(&self) -> &'static str {
-        "Searchable history of everything you copy"
+        ts!("clip.about")
     }
     fn set_on(&mut self, on: bool) {
         if on {
@@ -438,7 +438,7 @@ impl Tool for Clipboard {
         }
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Clipboard", about: "Your latest clips; click one to copy it again.", sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("clip.name"), about: ts!("clip.widget_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);

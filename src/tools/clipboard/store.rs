@@ -134,7 +134,7 @@ impl Entry {
                 let f = self.files();
                 let name = f.first().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 if f.len() > 1 {
-                    format!("{name} and {} more", f.len() - 1)
+                    t!("clip.and_more", name = name, n = f.len() - 1).into_owned()
                 } else {
                     name
                 }
@@ -207,16 +207,16 @@ impl Entry {
             Kind::Image => format!("{}×{} · {}", self.w, self.h, crate::kit::glass::human_bytes(self.bytes)),
             Kind::File => {
                 let n = self.files().len();
-                format!("{n} file{}", if n == 1 { "" } else { "s" })
+                tn!("clip.files", n = n).into_owned()
             }
             Kind::Color => self.text.trim().to_string(),
             _ => {
                 let lines = self.text.lines().count().max(1);
                 let chars = self.text.chars().count();
                 if lines > 1 {
-                    format!("{lines} lines · {chars} characters")
+                    t!("clip.lines_chars", lines = lines, chars = chars).into_owned()
                 } else {
-                    format!("{chars} characters")
+                    t!("clip.chars", chars = chars).into_owned()
                 }
             }
         }

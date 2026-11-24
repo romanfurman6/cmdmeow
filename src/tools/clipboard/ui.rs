@@ -28,11 +28,11 @@ pub fn ago(e: &Entry) -> String {
     let t = e.time();
     let mins = (now - t).num_minutes();
     if mins < 1 {
-        "now".into()
+        ts!("clip.now").into()
     } else if mins < 60 {
-        format!("{mins} min")
+        t!("clip.mins", n = mins).into_owned()
     } else if mins < 24 * 60 {
-        format!("{} h", mins / 60)
+        t!("clip.hours", n = mins / 60).into_owned()
     } else {
         t.format("%b %-d").to_string()
     }
@@ -151,27 +151,27 @@ pub fn widget(c: &mut Clipboard, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
     }
     let id = ui.scope_id().with("w-clipboard");
     let latest = c.visible(Filter::All, "").first().and_then(|i| c.store.get(*i).cloned());
-    let status = c.pause_label().map(|_| "Paused".to_string()).unwrap_or_else(|| "History".into());
+    let status = c.pause_label().map(|_| ts!("clip.paused").to_string()).unwrap_or_else(|| ts!("clip.history").into());
     let (title, sub) = match &latest {
-        Some(e) => (e.title(), format!("{} · {}", if e.app.is_empty() { "Unknown app" } else { &e.app }, ago(e))),
-        None => ("Nothing copied yet".to_string(), status.clone()),
+        Some(e) => (e.title(), format!("{} · {}", if e.app.is_empty() { ts!("clip.unknown_app") } else { &e.app }, ago(e))),
+        None => (ts!("clip.nothing_yet").to_string(), status.clone()),
     };
     let n = c.store.entries.len();
-    let count = if c.pause_label().is_some() { "Paused".to_string() } else { format!("{n} item{}", if n == 1 { "" } else { "s" }) };
+    let count = if c.pause_label().is_some() { ts!("clip.paused").to_string() } else { tn!("clip.items", n = n).into_owned() };
     let resp = match size {
-        Size::S11 => tile::small(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &count, false),
+        Size::S11 => tile::small(ui, rect, id, Icon::Clipboard, TINT(), ts!("clip.name"), &count, false),
         // W3: the name, the latest clip (13, fading), where and when it came from
         Size::S12 => match &latest {
-            Some(_) => tile::wide_clip(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &title, &sub, false),
-            None => tile::wide_full(ui, rect, id, Icon::Clipboard, TINT(), None, "Clipboard", &count, "Nothing copied yet", ty::caption_color(), false),
+            Some(_) => tile::wide_clip(ui, rect, id, Icon::Clipboard, TINT(), ts!("clip.name"), &title, &sub, false),
+            None => tile::wide_full(ui, rect, id, Icon::Clipboard, TINT(), None, ts!("clip.name"), &count, ts!("clip.nothing_yet"), ty::caption_color(), false),
         },
         _ => {
             // W5: left like 1:1 (glyph, name, count), right the two latest clips, one line each
-            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Clipboard, TINT(), "Clipboard", &count, false);
+            let (resp, right) = tile::row_split_list(ui, rect, id, Icon::Clipboard, TINT(), ts!("clip.name"), &count, false);
             let p = ui.painter().clone();
             let recent: Vec<Entry> = c.visible(Filter::All, "").into_iter().take(2).filter_map(|i| c.store.get(i).cloned()).collect();
             if recent.is_empty() {
-                text_fit(&p, right.center(), Align2::CENTER_CENTER, "Nothing copied yet", font(12.0), TEXT_FAINT(), right.width());
+                text_fit(&p, right.center(), Align2::CENTER_CENTER, ts!("clip.nothing_yet"), font(12.0), TEXT_FAINT(), right.width());
             }
             let lh = (right.height() / 2.0).min(24.0);
             let top = right.center().y - lh * recent.len() as f32 / 2.0;
@@ -183,7 +183,7 @@ pub fn widget(c: &mut Clipboard, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
             resp
         }
     };
-    if resp.on_hover_text("Open the history").clicked() {
+    if resp.on_hover_text(ts!("clip.open_history")).clicked() {
         c.tab = Tab::History;
         cx.open_page(ID, "history");
     }
@@ -199,15 +199,15 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let x1 = rect.right() - 12.0;
     let mut y = rect.top() + 10.0;
     tool_chip(&p, Rect::from_min_size(Pos2::new(x0, y), Vec2::splat(20.0)), Icon::Clipboard, TINT());
-    p.text(Pos2::new(x0 + 28.0, y + 10.0), Align2::LEFT_CENTER, "Clipboard", bold(13.0), TEXT());
-    let hl = link(ui, Pos2::new(x1, y + 10.0), Align2::RIGHT_CENTER, "History", 12.0);
+    p.text(Pos2::new(x0 + 28.0, y + 10.0), Align2::LEFT_CENTER, ts!("clip.name"), bold(13.0), TEXT());
+    let hl = link(ui, Pos2::new(x1, y + 10.0), Align2::RIGHT_CENTER, ts!("clip.history"), 12.0);
     if hl.clicked() {
         c.tab = Tab::History;
         cx.open_page(ID, "history");
     }
     // pause / resume
     let paused = c.paused();
-    let label = if paused { "Resume" } else { "Pause 15 min" };
+    let label = if paused { ts!("clip.resume") } else { ts!("clip.pause_15") };
     let g = p.layout_no_wrap(label.to_string(), font(11.0), TEXT());
     let pr = Rect::from_min_size(Pos2::new(hl.rect.left() - 10.0 - g.size().x - 26.0, y), Vec2::new(g.size().x + 26.0, 20.0));
     let presp = row_hover(ui, pr, id.with("pause"));
@@ -223,7 +223,7 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         }
     }
     p.text(Pos2::new(pr.left() + 19.0, pr.center().y), Align2::LEFT_CENTER, label, font(11.0), if paused { AMBER() } else { TEXT_SOFT() });
-    if presp.on_hover_text(if paused { "Start recording again" } else { "Stop recording for 15 minutes" }).clicked() {
+    if presp.on_hover_text(if paused { ts!("clip.start_again") } else { ts!("clip.stop_15") }).clicked() {
         c.toggle_pause(15);
     }
     y += 30.0;
@@ -238,10 +238,10 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let n = c.store.entries.len();
         let hint = match c.pause_label() {
             Some(l) => l,
-            None => format!("Search {n} item{}", if n == 1 { "" } else { "s" }),
+            None => tn!("clip.search_n", n = n).into_owned(),
         };
         p.text(Pos2::new(sr.left() + 30.0, sr.center().y), Align2::LEFT_CENTER, hint, font(12.0), if paused { AMBER() } else { TEXT_FAINT() });
-        if sresp.on_hover_text("Search the history").clicked() {
+        if sresp.on_hover_text(ts!("clip.search_history")).clicked() {
             c.tab = Tab::History;
             cx.open_page(ID, "history");
         }
@@ -255,7 +255,7 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let ids: Vec<u64> = c.visible(Filter::All, "").into_iter().take(fit.min(PANEL_ROWS)).collect();
     if ids.is_empty() {
         let r = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, rect.bottom() - 12.0));
-        let msg = if paused { "Recording is paused" } else { "Copy something and it shows up here" };
+        let msg = if paused { ts!("clip.rec_paused") } else { ts!("clip.copy_something") };
         text_fit(&p, r.center(), Align2::CENTER_CENTER, msg, font(12.0), TEXT_FAINT(), r.width() - 16.0);
         return;
     }
@@ -278,8 +278,8 @@ pub fn card(c: &mut Clipboard, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let tx = th.right() + 9.0;
         let title_font = if e.kind == Kind::Code { mono(11.0) } else { font(12.0) };
         text_fade(&p, Pos2::new(tx, r.center().y), &e.title(), title_font, ink(TEXT()), right - tx - 4.0);
-        if resp.on_hover_text("Click to copy").clicked() && c.copy(e.id, false) {
-            cx.toast("Copied");
+        if resp.on_hover_text(ts!("clip.click_copy")).clicked() && c.copy(e.id, false) {
+            cx.toast(ts!("clip.copied"));
         }
         y += rh;
     }
@@ -300,21 +300,21 @@ pub fn page(c: &mut Clipboard, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let n = c.store.entries.len();
     let pinned = c.store.entries.iter().filter(|e| e.pinned).count();
     let (sub, sub_col) = match (c.tab, c.pause_label()) {
-        (Tab::Settings, _) => ("Stays on this Mac".to_string(), TEXT_DIM()),
-        (_, Some(l)) => (format!("{l} · {n} items"), AMBER()),
+        (Tab::Settings, _) => (ts!("clip.stays").to_string(), TEXT_DIM()),
+        (_, Some(l)) => (t!("clip.paused_items", state = l, n = n).into_owned(), AMBER()),
         // the normal state needs no word; only Paused is said
-        _ => (format!("{n} item{} · {pinned} pinned · {}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk())), TEXT_DIM()),
+        _ => (tn!("clip.sub", n = n, pinned = pinned, size = human_bytes(c.store.bytes_on_disk())).into_owned(), TEXT_DIM()),
     };
     // SP16: Pause at the right edge, one width for both labels
-    let label = if c.paused() { "Resume" } else { "Pause 15 min" };
-    let bw = button_width(&p, "Pause 15 min", BTN_SECONDARY).max(button_width(&p, "Resume", BTN_SECONDARY));
-    let btns = page_header_room(&p, r, "Clipboard", &sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 180.0 - sp::M).0;
+    let label = if c.paused() { ts!("clip.resume") } else { ts!("clip.pause_15") };
+    let bw = button_width(&p, ts!("clip.pause_15"), BTN_SECONDARY).max(button_width(&p, ts!("clip.resume"), BTN_SECONDARY));
+    let btns = page_header_room(&p, r, ts!("clip.name"), &sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 180.0 - sp::M).0;
     let (tr, br) = header_controls(btns, 180.0, bw);
     if pill_button(ui, br, label, BTN_SECONDARY, true).clicked() {
         c.toggle_pause(15);
     }
     let cur = (c.tab == Tab::Settings) as usize;
-    if let Some(i) = segmented(ui, tr, ui.scope_id().with("clip-tab"), &["History", "Settings"], cur) {
+    if let Some(i) = segmented(ui, tr, ui.scope_id().with("clip-tab"), &[ts!("clip.history"), ts!("clip.settings")], cur) {
         c.tab = if i == 1 { Tab::Settings } else { Tab::History };
     }
     let body = Rect::from_min_max(Pos2::new(r.left(), r.top() + PAGE_HEADER_H + 1.0), r.max);
@@ -324,28 +324,30 @@ pub fn page(c: &mut Clipboard, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     }
 }
 
-const FILTERS: [(&str, Filter); 8] = [
-    ("All", Filter::All),
-    ("Text", Filter::Kind(Kind::Text)),
-    ("Code", Filter::Kind(Kind::Code)),
-    ("Links", Filter::Kind(Kind::Link)),
-    ("Images", Filter::Kind(Kind::Image)),
-    ("Colors", Filter::Kind(Kind::Color)),
-    ("Files", Filter::Kind(Kind::File)),
-    ("Pinned", Filter::Pinned),
-];
+fn filters() -> [(&'static str, Filter); 8] {
+    [
+        (ts!("clip.f_all"), Filter::All),
+        (ts!("clip.f_text"), Filter::Kind(Kind::Text)),
+        (ts!("clip.f_code"), Filter::Kind(Kind::Code)),
+        (ts!("clip.f_links"), Filter::Kind(Kind::Link)),
+        (ts!("clip.f_images"), Filter::Kind(Kind::Image)),
+        (ts!("clip.f_colors"), Filter::Kind(Kind::Color)),
+        (ts!("clip.f_files"), Filter::Kind(Kind::File)),
+        (ts!("clip.f_pinned"), Filter::Pinned),
+    ]
+}
 
 /// Filter chips in a row from `x`; returns the right edge.
 pub fn chips(ui: &mut Ui, p: &egui::Painter, x: f32, y: f32, cur: &mut Filter, salt: &str) -> f32 {
-    filter_chips(ui, p, x, y, &FILTERS, cur, salt, |f| if let Filter::Kind(k) = f { Some(k.tint()) } else { None })
+    filter_chips(ui, p, x, y, &filters(), cur, salt, |f| if let Filter::Kind(k) = f { Some(k.tint()) } else { None })
 }
 
 fn day_label(d: chrono::NaiveDate) -> String {
     let today = chrono::Local::now().date_naive();
     if d == today {
-        "Today".into()
+        ts!("clip.today").into()
     } else if Some(d) == today.pred_opt() {
-        "Yesterday".into()
+        ts!("clip.yesterday").into()
     } else {
         d.format("%A, %b %-d").to_string()
     }
@@ -358,7 +360,7 @@ fn history(c: &mut Clipboard, ui: &mut Ui, body: Rect) {
     let fy = body.top() + 12.0;
     let sr = Rect::from_min_size(Pos2::new(x0, fy - 1.0), Vec2::new(220.0, 28.0));
     let mut q = std::mem::take(&mut c.search);
-    search_field(ui, sr, &mut q, "Search", false);
+    search_field(ui, sr, &mut q, ts!("clip.search"), false);
     c.search = q;
     let mut f = c.filter;
     chips(ui, &p, sr.right() + 12.0, fy, &mut f, "clip-filter");
@@ -366,7 +368,7 @@ fn history(c: &mut Clipboard, ui: &mut Ui, body: Rect) {
 
     // clear, with a second click to confirm
     let confirming = c.confirm_clear.is_some_and(|t| t.elapsed().as_secs_f32() < 3.0);
-    let label = if confirming { "Click again to clear" } else { "Clear unpinned" };
+    let label = if confirming { ts!("clip.click_again") } else { ts!("clip.clear_unpinned") };
     let cw = button_width(&p, label, BTN_DANGER) - 10.0;
     let cr = Rect::from_min_max(Pos2::new(x1 - cw, fy), Pos2::new(x1, fy + 26.0));
     let unpinned = c.store.entries.iter().any(|e| !e.pinned);
@@ -395,10 +397,10 @@ fn history(c: &mut Clipboard, ui: &mut Ui, body: Rect) {
     glass_card(&p, list, R_CARD, 0.0, false);
     if ids.is_empty() {
         let msg = match (c.store.entries.is_empty(), c.store.saves()) {
-            (false, _) => "Nothing matches",
-            (true, true) => "Nothing copied yet",
+            (false, _) => ts!("clip.no_match"),
+            (true, true) => ts!("clip.nothing_yet"),
             // the Keychain gave no key: this run's history isn't written down
-            (true, false) => "Keychain locked · history not saved",
+            (true, false) => ts!("clip.locked"),
         };
         p.text(list.center(), Align2::CENTER_CENTER, msg, bold(15.0), TEXT_SOFT());
     } else {
@@ -435,7 +437,7 @@ fn grouped_rows(c: &Clipboard, ids: &[u64]) -> std::sync::Arc<Vec<Row>> {
     let q = super::search::Query::new(&c.search);
     for id in ids {
         let Some(e) = by_id.get(id) else { continue };
-        let head = if e.pinned { "Pinned".to_string() } else { day_label(e.time().date_naive()) };
+        let head = if e.pinned { ts!("clip.f_pinned").to_string() } else { day_label(e.time().date_naive()) };
         if last.as_ref() != Some(&head) {
             rows.push(Row::Head(head.clone()));
             last = Some(head);
@@ -505,7 +507,7 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                         c.selected = Some(e.id);
                     }
                     if resp.double_clicked() && c.copy(e.id, false) {
-                        c.hud("Copied");
+                        c.hud(ts!("clip.copied"));
                     }
                     y += LIST_STEP;
                 }
@@ -573,9 +575,9 @@ fn detail(c: &mut Clipboard, ui: &mut Ui, r: Rect, e: &Entry) {
     preview(c, ui, &p, pv, e, 10.0);
     y = pv.bottom() + 14.0;
     let facts = [
-        ("From", if e.app.is_empty() { "Unknown app".to_string() } else { e.app.clone() }),
-        ("Copied", if e.count > 1 { format!("{} times", e.count) } else { "once".into() }),
-        ("Content", e.summary()),
+        (ts!("clip.from"), if e.app.is_empty() { ts!("clip.unknown_app").to_string() } else { e.app.clone() }),
+        (ts!("clip.copied_label"), if e.count > 1 { t!("clip.times", n = e.count).into_owned() } else { ts!("clip.once").into() }),
+        (ts!("clip.content"), e.summary()),
     ];
     for (k, v) in facts {
         p.text(Pos2::new(x0, y + 8.0), Align2::LEFT_CENTER, k, font(12.0), TEXT_FAINT());
@@ -586,7 +588,7 @@ fn detail(c: &mut Clipboard, ui: &mut Ui, r: Rect, e: &Entry) {
     let bw = (x1 - x0 - 6.0) / 2.0;
     let del = Rect::from_min_max(Pos2::new(x0, r.bottom() - 40.0), Pos2::new(x1, r.bottom() - 12.0));
     let dresp = ui.interact(del, ui.scope_id().with(("del", e.id)), Sense::click());
-    p.text(del.center(), Align2::CENTER_CENTER, "Delete from history", font(12.0), if dresp.hovered() { RED() } else { RED() });
+    p.text(del.center(), Align2::CENTER_CENTER, ts!("clip.delete"), font(12.0), if dresp.hovered() { RED() } else { RED() });
     if dresp.clicked() {
         c.store.remove(e.id);
         c.forget_dropped_thumbs();
@@ -596,16 +598,16 @@ fn detail(c: &mut Clipboard, ui: &mut Ui, r: Rect, e: &Entry) {
     let row2 = del.top() - 8.0 - 30.0;
     let row1 = row2 - 6.0 - 30.0;
     let b = |k: usize, top: f32| Rect::from_min_size(Pos2::new(x0 + k as f32 * (bw + 6.0), top), Vec2::new(bw, 30.0));
-    if pill_button(ui, b(0, row1), "Copy", BTN_PRIMARY, true).clicked() && c.copy(e.id, false) {
-        c.hud("Copied");
+    if pill_button(ui, b(0, row1), ts!("clip.copy"), BTN_PRIMARY, true).clicked() && c.copy(e.id, false) {
+        c.hud(ts!("clip.copied"));
     }
     let plain_ok = matches!(e.kind, Kind::Text | Kind::Code | Kind::Link) && (e.rtf || e.html) || e.kind == Kind::File;
-    if pill_button(ui, b(1, row1), "Copy as plain text", BTN_SECONDARY, plain_ok).clicked() && c.copy(e.id, true) {
-        c.hud("Copied as plain text");
+    if pill_button(ui, b(1, row1), ts!("clip.copy_plain"), BTN_SECONDARY, plain_ok).clicked() && c.copy(e.id, true) {
+        c.hud(ts!("clip.copied_plain"));
     }
     let open = match e.kind {
-        Kind::Link => Some("Open link"),
-        Kind::File => Some("Show in Finder"),
+        Kind::Link => Some(ts!("clip.open_link")),
+        Kind::File => Some(ts!("clip.show_finder")),
         _ => None,
     };
     match open {
@@ -625,10 +627,10 @@ fn detail(c: &mut Clipboard, ui: &mut Ui, r: Rect, e: &Entry) {
             }
         }
         None => {
-            pill_button(ui, b(0, row2), "Open", BTN_SECONDARY, false);
+            pill_button(ui, b(0, row2), ts!("clip.open"), BTN_SECONDARY, false);
         }
     }
-    if pill_button(ui, b(1, row2), if e.pinned { "Unpin" } else { "Pin" }, BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, b(1, row2), if e.pinned { ts!("clip.unpin") } else { ts!("clip.pin") }, BTN_SECONDARY, true).clicked() {
         c.store.set_pinned(e.id, !e.pinned);
     }
 }
@@ -757,12 +759,12 @@ fn left_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     let mut changed = false;
     let y = col.top();
 
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "History");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("clip.history"));
     let card = card_rows(p, x0, y + 28.0, w, 5);
     // keep N
-    label(p, card, 0, "Keep the last");
+    label(p, card, 0, ts!("clip.keep_last"));
     let ry = row_y(card, 0);
-    let unit = p.text(Pos2::new(card.right() - 12.0, ry), Align2::RIGHT_CENTER, "items", font(12.0), TEXT_FAINT());
+    let unit = p.text(Pos2::new(card.right() - 12.0, ry), Align2::RIGHT_CENTER, ts!("clip.items_unit"), font(12.0), TEXT_FAINT());
     let plus = Rect::from_center_size(Pos2::new(unit.left() - 20.0, ry), Vec2::new(24.0, 24.0));
     let num = Rect::from_center_size(Pos2::new(plus.left() - 22.0, ry), Vec2::new(44.0, 24.0));
     let minus = Rect::from_center_size(Pos2::new(num.left() - 12.0, ry), Vec2::new(24.0, 24.0));
@@ -778,15 +780,15 @@ fn left_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     }
     p.text(num.center(), Align2::CENTER_CENTER, c.settings.keep.to_string(), bold(13.0), TEXT());
     // age
-    label(p, card, 1, "Remove older than");
+    label(p, card, 1, ts!("clip.older"));
     let ry = row_y(card, 1);
     let ar = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 230.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
     let cur = AGES.iter().position(|a| *a == c.settings.max_days).unwrap_or(2);
-    if let Some(i) = segmented(ui, ar, id.with("age"), &["1 day", "7 days", "30 days", "Never"], cur) {
+    if let Some(i) = segmented(ui, ar, id.with("age"), &[ts!("clip.d1"), ts!("clip.d7"), ts!("clip.d30"), ts!("clip.never")], cur) {
         c.settings.max_days = AGES[i];
         changed = true;
     }
-    let switches: [(&str, &str, bool); 2] = [("Keep images", "up to 10 MB each", c.settings.keep_images), ("Move repeats to the top", "", c.settings.dedupe)];
+    let switches: [(&str, &str, bool); 2] = [(ts!("clip.keep_images"), ts!("clip.up_to_10"), c.settings.keep_images), (ts!("clip.repeats_top"), "", c.settings.dedupe)];
     for (k, (l, hint, on)) in switches.iter().enumerate() {
         label(p, card, 2 + k, l);
         let ry = row_y(card, 2 + k);
@@ -805,9 +807,9 @@ fn left_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     }
     let ry = row_y(card, 4);
     let n = c.store.entries.len();
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, format!("{n} items · {} on disk", human_bytes(c.store.bytes_on_disk())), font(13.0), TEXT_DIM());
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, t!("clip.on_disk", n = n, size = human_bytes(c.store.bytes_on_disk())).into_owned(), font(13.0), TEXT_DIM());
     let confirming = c.confirm_clear.is_some_and(|t| t.elapsed().as_secs_f32() < 3.0);
-    let cl = if confirming { "Click again to clear" } else { "Clear unpinned" };
+    let cl = if confirming { ts!("clip.click_again") } else { ts!("clip.clear_unpinned") };
     let cw = button_width(p, cl, BTN_DANGER) - 6.0;
     let cr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - cw, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
     if pill_button(ui, cr, cl, if confirming { BTN_DANGER } else { BTN_SECONDARY }, c.store.entries.iter().any(|e| !e.pinned)).clicked() {
@@ -832,12 +834,12 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     let mut changed = false;
     let mut y = col.top();
 
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Privacy");
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("clip.privacy"));
     let card = card_rows(p, x0, y + 28.0, w, 4);
     let switches = [
-        ("Record passwords (until quit)", c.settings.record_concealed),
-        ("Record tokens and card numbers", c.settings.record_secrets),
-        ("Record from other devices", c.settings.record_remote),
+        (ts!("clip.rec_passwords"), c.settings.record_concealed),
+        (ts!("clip.rec_tokens"), c.settings.record_secrets),
+        (ts!("clip.rec_remote"), c.settings.record_remote),
     ];
     for (k, (l, on)) in switches.into_iter().enumerate() {
         label(p, card, k, l);
@@ -853,19 +855,19 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
         }
     }
     let ry = row_y(card, 3);
-    label(p, card, 3, "Pause recording");
+    label(p, card, 3, ts!("clip.pause_rec"));
     let mut x = card.right() - 12.0;
     if c.paused() {
-        let bw = button_width(p, "Resume", BTN_PRIMARY) - 6.0;
+        let bw = button_width(p, ts!("clip.resume"), BTN_PRIMARY) - 6.0;
         let br = Rect::from_min_max(Pos2::new(x - bw, ry - 12.0), Pos2::new(x, ry + 12.0));
-        if pill_button(ui, br, "Resume", BTN_PRIMARY, true).clicked() {
+        if pill_button(ui, br, ts!("clip.resume"), BTN_PRIMARY, true).clicked() {
             c.toggle_pause(0);
         }
         if let Some(l) = c.pause_label() {
             p.text(Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, l, font(12.0), AMBER());
         }
     } else {
-        for (l, mins) in [("Until I resume", 0u64), ("1 hour", 60), ("15 min", 15)] {
+        for (l, mins) in [(ts!("clip.until_resume"), 0u64), (ts!("clip.h1"), 60), (ts!("clip.m15"), 15)] {
             let bw = button_width(p, l, BTN_SECONDARY) - 10.0;
             let br = Rect::from_min_max(Pos2::new(x - bw, ry - 12.0), Pos2::new(x, ry + 12.0));
             if pill_button(ui, br, l, BTN_SECONDARY, true).clicked() {
@@ -877,16 +879,16 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     y = card.bottom() + 16.0;
 
     // excluded apps
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Never record from");
-    let aw = button_width(p, "Add app…", BTN_SECONDARY) - 6.0;
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("clip.never_from"));
+    let aw = button_width(p, ts!("clip.add_app"), BTN_SECONDARY) - 6.0;
     let ar = Rect::from_min_max(Pos2::new(col.right() - aw, y - 3.0), Pos2::new(col.right(), y + 21.0));
-    if pill_button(ui, ar, "Add app…", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, ar, ts!("clip.add_app"), BTN_SECONDARY, true).clicked() {
         c.choose_app();
     }
     let n = c.settings.ignore.len();
     let card = card_rows(p, x0, y + 28.0, w, n.max(1));
     if n == 0 {
-        p.text(Pos2::new(card.left() + 12.0, row_y(card, 0)), Align2::LEFT_CENTER, "No apps excluded", font(13.0), TEXT_FAINT());
+        p.text(Pos2::new(card.left() + 12.0, row_y(card, 0)), Align2::LEFT_CENTER, ts!("clip.no_excluded"), font(13.0), TEXT_FAINT());
     }
     let mut remove = None;
     let mut budget = 4;
@@ -903,7 +905,7 @@ fn right_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
             p.circle_filled(clear.center(), 10.0, white(26));
         }
         icon(p, Icon::Close, clear.shrink(5.0), TEXT_FAINT());
-        if cr.on_hover_text(format!("Record from {} again", ig.name)).clicked() {
+        if cr.on_hover_text(t!("clip.record_again", name = ig.name)).clicked() {
             remove = Some(k);
         }
     }
@@ -920,8 +922,8 @@ impl Clipboard {
         let tx = self.app_tx.clone();
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            let script = "set a to choose application with prompt \"Never record copies from\" as alias\nreturn POSIX path of a";
-            let out = std::process::Command::new("osascript").args(["-e", script]).output();
+            let script = format!("set a to choose application with prompt \"{}\" as alias\nreturn POSIX path of a", ts!("clip.never_prompt").replace(['\\', '"'], ""));
+            let out = std::process::Command::new("osascript").args(["-e", script.as_str()]).output();
             let got = out.ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_end_matches('/').to_string());
             let app = got.filter(|p| !p.is_empty()).and_then(|p| {
                 let path = std::path::PathBuf::from(p);
