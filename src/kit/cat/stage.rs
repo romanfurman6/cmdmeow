@@ -301,7 +301,7 @@ pub struct Stage {
     /// the parts' pictures as drawn (lime), and in the theme's colours
     plain: HashMap<[u16; 2], Image>,
     images: HashMap<[u16; 2], Image>,
-    /// the theme `images` are in (empty for Dark Meow: `plain` is drawn)
+    /// the theme `images` are in (empty for Dark Classic: `plain` is drawn)
     theme: Option<Theme>,
     pub live: Live,
     /// the first screen, AppKit points

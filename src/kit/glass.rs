@@ -14,8 +14,8 @@ use std::f32::consts::{PI, TAU};
 // ---------------------------------------------------------------- palette
 //
 // One theme system (T1–T6 in docs/ui-rules.md): every colour is a function
-// that answers for the current [`Theme`]. Dark Meow is the deep moss window
-// with a lime action colour, Light Meow the pale sage window with darker
+// that answers for the current [`Theme`]. Dark Classic is the deep moss window
+// with a lime action colour, Light Classic the pale sage window with darker
 // lime, Miami a night-sunset window with a neon action colour. The
 // shell sets the theme once per frame ([`set_theme`]) from Settings › Theme
 // (Auto follows the system's light or dark).
@@ -70,7 +70,7 @@ pub fn press_dim(c: Color32, press: f32) -> Color32 {
 }
 
 /// What Settings › Theme holds: Auto follows the system's light or dark
-/// (Light Meow / Dark Meow); the rest pin one theme.
+/// (Light Classic / Dark Classic); the rest pin one theme.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ThemeChoice {
     Auto,
@@ -86,9 +86,9 @@ impl ThemeChoice {
     pub fn label(self) -> &'static str {
         match self {
             ThemeChoice::Auto => "Auto",
-            ThemeChoice::Light => "Light",
-            ThemeChoice::Dark => "Dark",
-            ThemeChoice::Miami => "Miami",
+            ThemeChoice::Light => "Light Classic",
+            ThemeChoice::Dark => "Dark Classic",
+            ThemeChoice::Miami => "Dark Miami",
         }
     }
 
@@ -116,19 +116,19 @@ pub fn set_theme_choice(c: ThemeChoice) {
     *CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = c;
 }
 
-/// True while the app is drawn on the light base (Light Meow).
+/// True while the app is drawn on the light base (Light Classic).
 pub fn is_light() -> bool {
     theme() == Theme::Light
 }
 
-/// `dark` on the dark base (Dark Meow, Miami), `light` in Light Meow.
+/// `dark` on the dark base (Dark Classic, Miami), `light` in Light Classic.
 /// For neutrals that only follow the ink; a colour with its own hue in
 /// Miami uses [`pick3`].
 pub fn pick(dark: Color32, light: Color32) -> Color32 {
     if is_light() { light } else { dark }
 }
 
-/// One value per theme: Dark Meow, Light Meow, Miami.
+/// One value per theme: Dark Classic, Light Classic, Miami.
 pub fn pick3(dark: Color32, light: Color32, miami: Color32) -> Color32 {
     match theme() {
         Theme::Dark => dark,
@@ -2453,7 +2453,7 @@ mod tests {
             assert_eq!(ThemeChoice::Miami.resolve(system), Theme::Miami);
         }
         let labels: Vec<_> = ThemeChoice::ALL.iter().map(|c| c.label()).collect();
-        assert_eq!(labels, ["Auto", "Light", "Dark", "Miami"]);
+        assert_eq!(labels, ["Auto", "Light Classic", "Dark Classic", "Dark Miami"]);
     }
 
     #[test]

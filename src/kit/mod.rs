@@ -38,6 +38,7 @@ pub mod settings_window;
 pub mod smc;
 pub mod spin;
 pub mod sync;
+pub mod theme_fade;
 pub mod key;
 pub mod sound;
 pub mod tile;
