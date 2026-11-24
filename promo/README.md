@@ -3,7 +3,7 @@
 ```bash
 npm install
 npm run studio        # timeline + live scrubbing, hot reload
-npm run render:16x9   # out/cmdmeow-promo-16x9.mp4  (~1 min, 4 threads)
+npm run render:16x9   # out/cmdmeow-promo-16x9.mp4  (~3 min, 4 threads); site/promo.mp4 = this at 1280 wide
 npm run render:9x16   # out/cmdmeow-promo-9x16.mp4
 ```
 
@@ -18,4 +18,4 @@ npm run render:9x16   # out/cmdmeow-promo-9x16.mp4
 
 - Music: `public/music.mp3`, an AI-generated track made by the Cmd+Meow author for this video, cut and mixed to -14 LUFS.
 - Font: Inter by The Inter Project Authors, SIL Open Font License 1.1, see `FONTS-LICENSE.txt`.
-- Background: `public/desk.jpg`, the same image as `site/desk.jpg`.
+- Background: `public/desk-miami.jpg` (Dark Miami, the video's theme), the same image as `site/desk-miami.jpg`. `public/desk.jpg` is the Dark Classic one.
