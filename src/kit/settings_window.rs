@@ -50,15 +50,17 @@ const DOCK_LAYER: i32 = 20;
 /// Disk Access points to) are never prompts.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn read(list: &[Win], settings_pid: Option<i32>, me: i32, apps: &[i32]) -> Scene {
-    read_with_finder(list, settings_pid, None, me, apps)
+    read_with_finder(list, settings_pid, None, me, apps, &[])
 }
 
 /// [`read`], also finding the front Finder window of `finder_pid`.
-pub fn read_with_finder(list: &[Win], settings_pid: Option<i32>, finder_pid: Option<i32>, me: i32, apps: &[i32]) -> Scene {
+/// `before`: prompt windows already up when the ask started (another app's
+/// alert left open, M1); they never count.
+pub fn read_with_finder(list: &[Win], settings_pid: Option<i32>, finder_pid: Option<i32>, me: i32, apps: &[i32], before: &[Win]) -> Scene {
     let others: Vec<(usize, &Win)> = list.iter().enumerate().filter(|(_, w)| w.pid != me && w.frame.width() >= 40.0 && w.frame.height() >= 40.0).collect();
     let main = settings_pid.and_then(|pid| others.iter().filter(|(_, w)| w.pid == pid && w.layer == 0).max_by(|a, b| area(a.1.frame).total_cmp(&area(b.1.frame))).copied());
     let settings = main.map(|(_, w)| w.frame);
-    let named = others.iter().any(|(_, w)| PROMPT_OWNERS.contains(&w.owner.as_str()));
+    let named = others.iter().any(|(_, w)| is_prompt(w) && !before.contains(w));
     // a dialog in front of Settings: smaller, its middle on Settings (a sheet
     // of Settings itself counts too, e.g. "Quit & Reopen")
     let on_top = main.is_some_and(|(at, s)| {
@@ -68,6 +70,15 @@ pub fn read_with_finder(list: &[Win], settings_pid: Option<i32>, finder_pid: Opt
     // full-screen Finder window is left out by its size
     let finder = finder_pid.and_then(|pid| others.iter().find(|(_, w)| w.pid == pid && w.layer == 0 && w.frame.width() >= 200.0 && w.frame.height() >= 150.0)).map(|(_, w)| w.frame);
     Scene { settings, finder, screen: None, prompt: named || on_top }
+}
+
+fn is_prompt(w: &Win) -> bool {
+    PROMPT_OWNERS.contains(&w.owner.as_str())
+}
+
+/// The prompt windows in `list`: the ones up before an ask.
+pub fn prompts(list: &[Win]) -> Vec<Win> {
+    list.iter().filter(|w| is_prompt(w)).cloned().collect()
 }
 
 fn area(r: Rect) -> f32 {
@@ -115,6 +126,16 @@ pub fn place_clear(settings: Rect, finder: Option<Rect>, screen: Rect, size: Vec
         spots.extend(around(f));
     }
     spots.into_iter().find(|&p| clear(p)).unwrap_or(Pos2::new(screen.right() - GAP - size.x, screen.bottom() - GAP - size.y))
+}
+
+/// Prompt windows on screen when the current ask started.
+static BEFORE: std::sync::Mutex<Vec<Win>> = std::sync::Mutex::new(Vec::new());
+
+/// An ask starts: macOS prompts already on screen (another app's alert
+/// left open) belong to something else, and must not hide the hint for
+/// as long as they stay up.
+pub fn begin() {
+    *BEFORE.lock().unwrap_or_else(|e| e.into_inner()) = imp::prompts_now();
 }
 
 /// The scene now, read at most four times a second.
@@ -189,6 +210,10 @@ mod imp {
         pid_of("com.apple.systempreferences")
     }
 
+    pub fn prompts_now() -> Vec<Win> {
+        super::prompts(&windows())
+    }
+
     /// Whether System Settings has its window on screen yet.
     pub fn settings_up() -> bool {
         let Some(pid) = settings_pid() else { return false };
@@ -211,7 +236,8 @@ mod imp {
     }
 
     pub fn scene() -> Scene {
-        let mut s = super::read_with_finder(&windows(), settings_pid(), pid_of("com.apple.finder"), std::process::id() as i32, &app_pids());
+        let before = super::BEFORE.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let mut s = super::read_with_finder(&windows(), settings_pid(), pid_of("com.apple.finder"), std::process::id() as i32, &app_pids(), &before);
         s.screen = s.settings.and_then(|r| screen_at(r.center()));
         s
     }
@@ -225,6 +251,10 @@ mod imp {
 
     pub fn settings_up() -> bool {
         false
+    }
+
+    pub fn prompts_now() -> Vec<super::Win> {
+        Vec::new()
     }
 }
 
@@ -271,6 +301,19 @@ mod tests {
     }
 
     #[test]
+    fn a_prompt_up_before_the_ask_doesnt_count() {
+        // M1: another app's alert (local network) left open hid the hint
+        // for the whole setup
+        let alert = win(55, "UserNotificationCenter", 0, 1100.0, 40.0, 260.0, 300.0);
+        let list = vec![alert.clone(), settings()];
+        assert!(!read_with_finder(&list, Some(SET), None, ME, &[SET], &prompts(&list)).prompt);
+        // a new one that comes up while asking still does
+        let ours = win(56, "UserNotificationCenter", 0, 600.0, 300.0, 260.0, 300.0);
+        let list = vec![ours, alert.clone(), settings()];
+        assert!(read_with_finder(&list, Some(SET), None, ME, &[SET], &[alert]).prompt);
+    }
+
+    #[test]
     fn our_own_windows_and_windows_behind_settings_dont_count() {
         let list = vec![win(ME, "CmdMeow Dev", 3, 400.0, 300.0, 360.0, 132.0), settings(), win(9, "Notes", 0, 300.0, 300.0, 200.0, 200.0)];
         assert!(!read(&list, Some(SET), ME, &[]).prompt);
@@ -302,7 +345,7 @@ mod tests {
     #[test]
     fn finds_the_front_finder_window() {
         let list = vec![win(9, "Finder", 0, 900.0, 380.0, 880.0, 420.0), settings(), win(9, "Finder", 0, 0.0, 0.0, 1512.0, 982.0)];
-        let s = read_with_finder(&list, Some(SET), Some(9), ME, &[9, SET]);
+        let s = read_with_finder(&list, Some(SET), Some(9), ME, &[9, SET], &[]);
         assert_eq!(s.finder, Some(list[0].frame));
         assert!(!s.prompt);
     }

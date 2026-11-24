@@ -347,6 +347,7 @@ impl PermWatch {
         self.asked.insert(p, now);
         self.polled = 0.0;
         if self.demo.is_none() {
+            crate::kit::settings_window::begin();
             p.ask();
         }
     }
