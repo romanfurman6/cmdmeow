@@ -49,19 +49,9 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     let show_settings = ui.ctx().data(|d| d.get_temp::<bool>(settings_id)).unwrap_or(std::env::var("CMDMEOW_HEALTH_TAB").is_ok_and(|v| v == "settings"));
 
     // header: model, chip, uptime; the top recommendation and Overview / Settings on the right
-    let mut sub: Vec<String> = Vec::new();
-    if !s.model.is_empty() {
-        sub.push(s.model.clone());
-    }
-    if !s.chip.is_empty() {
-        sub.push(s.chip.clone());
-    }
-    if s.uptime_secs > 0 {
-        sub.push(format!("up {}", human_duration(s.uptime_secs)));
-    }
     let (sub, sub_col) = match recs.first() {
         Some(rec) => (rec.title.clone(), AMBER()),
-        None => { let _ = sub; (String::new(), TEXT_DIM()) }
+        None => (String::new(), TEXT_DIM()),
     };
     // AI Check: a chip after the title, on the overview
     let cw = if show_settings { 0.0 } else { aicheck::ui::chip_width(ai, ui, s.ready) };
@@ -70,9 +60,9 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY)).unwrap_or(0.0);
     // SP16: the fix at the right edge, the tabs next to it
     let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - if rec_w > 0.0 { rec_w + sp::M } else { 0.0 };
-    let (btns, chip_at) = page_header_room(&p, r, "Mac Health", &sub, sub_col, cw, sub_right);
+    let (btns, chip_at) = page_header_room(&p, r, ts!("health.name"), &sub, sub_col, cw, sub_right);
     let (tr, br) = header_controls(btns, 180.0, rec_w);
-    if let Some(i) = segmented(ui, tr, ui.scope_id().with("health-tab"), &["Overview", "Settings"], show_settings as usize) {
+    if let Some(i) = segmented(ui, tr, ui.scope_id().with("health-tab"), &[ts!("health.tab.overview"), ts!("health.tab.settings")], show_settings as usize) {
         ui.ctx().data_mut(|d| d.insert_temp(settings_id, i == 1));
     }
     if let Some(rec) = rec_btn {
@@ -288,8 +278,8 @@ fn level_status(l: Level) -> Color32 {
 
 fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     let load = format!("{:.0}%", s.cpu_load);
-    let th = (["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], level_status(s.thermal_level()));
-    let y = card_title(p, r, "CPU load", if s.thermal_level() == Level::Good { None } else { Some(th) }, Some(&load));
+    let th = ([ts!("health.thermal.nominal"), ts!("health.thermal.fair"), ts!("health.thermal.serious"), ts!("health.thermal.critical")][s.thermal.min(3) as usize], level_status(s.thermal_level()));
+    let y = card_title(p, r, ts!("health.cpu_load"), if s.thermal_level() == Level::Good { None } else { Some(th) }, Some(&load));
     let foot = r.bottom() - 18.0;
     // the history with its time span under it, as in the widgets (W5);
     // the stats are a block of their own, `sp::L` below the captions
@@ -297,7 +287,7 @@ fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
     tile::spark_span(p, gr, &s.cpu_history, level_color(s.thermal_level()), Some(peak.max(5.0)));
     let mut x = r.left();
-    for t in [format!("User {:.0}%", s.cpu_user), format!("System {:.0}%", s.cpu_system)] {
+    for t in [t!("health.cpu_user", pct = s.cpu_user : {:.0}).into_owned(), t!("health.cpu_system", pct = s.cpu_system : {:.0}).into_owned()] {
         x = p.text(Pos2::new(x, foot + 9.0), Align2::LEFT_CENTER, t, ty::label(), white(166)).right() + sp::L;
     }
 }
@@ -325,9 +315,9 @@ fn disk_rows(s: &Snapshot) -> Vec<Row> {
     // no Used: the ring says free of total (T2); drive health only when it isn't fine (T1)
     let mut rows: Vec<Row> = Vec::new();
     if !s.smart_status.is_empty() && !s.smart_status.eq_ignore_ascii_case("Verified") {
-        rows.push((None, "Drive health".to_string(), s.smart_status.clone()));
+        rows.push((None, ts!("health.drive_health").to_string(), s.smart_status.clone()));
     }
-    rows.push((None, "Trash".to_string(), s.trash_bytes.map(human_bytes).unwrap_or_else(|| "—".into())));
+    rows.push((None, ts!("health.trash").to_string(), s.trash_bytes.map(human_bytes).unwrap_or_else(|| "—".into())));
     rows
 }
 
@@ -338,20 +328,20 @@ fn disk_ring_area(r: Rect, s: &Snapshot) -> Rect {
 }
 
 fn disk_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot, ring_d: f32) -> Option<SheetAction> {
-    let name = if s.volume_name.is_empty() { "Macintosh HD".to_string() } else { s.volume_name.clone() };
+    let name = if s.volume_name.is_empty() { ts!("health.macintosh_hd").to_string() } else { s.volume_name.clone() };
     card_title(p, r, &name, None, None);
     let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
     let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
     lines(p, bottom, &disk_rows(s));
     let col = if s.disk_level() == Level::Good { tint::HEALTH() } else { level_color(s.disk_level()) };
     // SP2: the free space whole, "free of <total>" under it, as on the start ring
-    ring_in(p, disk_ring_area(r, s), ring_d, used, col, &human_bytes(s.disk_free), &format!("free of {}", human_bytes(s.disk_total)));
+    ring_in(p, disk_ring_area(r, s), ring_d, used, col, &human_bytes(s.disk_free), &t!("health.free_of", size = human_bytes(s.disk_total)));
     // footer: the way to free space
     let fy = r.bottom() - BTN_H_ROW;
     let mut out = None;
-    let bw = button_width(p, "Free up space", BTN_SECONDARY);
+    let bw = button_width(p, ts!("health.free_up_space"), BTN_SECONDARY);
     let br = Rect::from_min_size(Pos2::new(r.left(), fy), Vec2::new(bw, BTN_H_ROW));
-    if pill_button(ui, br, "Free up space", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, br, ts!("health.free_up_space"), BTN_SECONDARY, true).clicked() {
         out = Some(SheetAction::Open("cleanup"));
     }
     out
@@ -359,22 +349,22 @@ fn disk_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot, ring_d: f32)
 
 fn memory_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     let word = match s.mem_level() {
-        Level::Good => "Normal",
-        Level::Fair => "Elevated",
-        Level::Critical => "High",
+        Level::Good => ts!("health.pressure.good"),
+        Level::Fair => ts!("health.pressure.fair"),
+        Level::Critical => ts!("health.pressure.critical"),
     };
     let pct = format!("{:.0}%", s.mem_pressure);
-    let y = card_title(p, r, "Memory pressure", if s.mem_level() == Level::Good { None } else { Some((word, level_status(s.mem_level()))) }, Some(&pct));
+    let y = card_title(p, r, ts!("health.memory_pressure"), if s.mem_level() == Level::Good { None } else { Some((word, level_status(s.mem_level()))) }, Some(&pct));
     // what holds the memory as name · bar · value lines like the widgets
     // (W5), bars against the largest so they read as a comparison
     let hi = s.mem_active.max(s.mem_wired).max(s.mem_compressed).max(1) as f32;
     let bar_of = |b: u64| Some(((b as f32 / hi).clamp(0.01, 1.0), tint::HEALTH()));
     let rows: Vec<Row> = vec![
-        (bar_of(s.mem_active), "Apps".to_string(), human_bytes(s.mem_active)),
-        (bar_of(s.mem_wired), "Wired".to_string(), human_bytes(s.mem_wired)),
-        (bar_of(s.mem_compressed), "Compressed".to_string(), human_bytes(s.mem_compressed)),
-        (None, "Swap used".to_string(), human_bytes(s.swap_used)),
-        (None, "Installed".to_string(), human_bytes(s.mem_total)),
+        (bar_of(s.mem_active), ts!("health.mem.apps").to_string(), human_bytes(s.mem_active)),
+        (bar_of(s.mem_wired), ts!("health.mem.wired").to_string(), human_bytes(s.mem_wired)),
+        (bar_of(s.mem_compressed), ts!("health.mem.compressed").to_string(), human_bytes(s.mem_compressed)),
+        (None, ts!("health.swap_used").to_string(), human_bytes(s.swap_used)),
+        (None, ts!("health.installed").to_string(), human_bytes(s.mem_total)),
     ];
     // no pressure graph: it barely moves, so it says nothing (as the
     // Memory widget); the lines take the card from the top, sheet rows 32
@@ -387,20 +377,20 @@ fn battery_rows(s: &Snapshot) -> Vec<Row> {
     let mut rows = Vec::new();
     if !b.plugged {
         if let Some(min) = b.minutes_left {
-            rows.push((None, "Time left".to_string(), human_duration(min as u64 * 60)));
+            rows.push((None, ts!("health.time_left").to_string(), human_duration(min as u64 * 60)));
         }
     }
     if let Some(h) = b.health_pct {
-        rows.push((None, "Health".to_string(), format!("{h:.0}%")));
+        rows.push((None, ts!("health.health").to_string(), format!("{h:.0}%")));
     } else if !b.health_text.is_empty() {
-        rows.push((None, "Health".to_string(), b.health_text.clone()));
+        rows.push((None, ts!("health.health").to_string(), b.health_text.clone()));
     }
     if b.cycles > 0 {
-        let of = if b.design_cycles > 0 { format!(" of {}", b.design_cycles) } else { String::new() };
-        rows.push((None, "Cycles".to_string(), format!("{}{of}", b.cycles)));
+        let of = if b.design_cycles > 0 { t!("health.cycles_of", n = b.design_cycles).into_owned() } else { String::new() };
+        rows.push((None, ts!("health.cycles").to_string(), format!("{}{of}", b.cycles)));
     }
     if let Some(t) = b.temp_c {
-        rows.push((None, "Temperature".to_string(), format!("{t:.0} °C")));
+        rows.push((None, ts!("health.temperature").to_string(), t!("unit.celsius", c = t : {:.0}).into_owned()));
     }
     rows
 }
@@ -417,45 +407,44 @@ fn battery_ring_area(r: Rect, s: &Snapshot) -> Rect {
 fn battery_card(p: &egui::Painter, r: Rect, s: &Snapshot, ring_d: f32) {
     let b = &s.battery;
     if !b.present {
-        card_title(p, r, "Power", Some(("No battery", TEXT_DIM())), None);
+        card_title(p, r, ts!("health.power"), Some((ts!("health.no_battery"), TEXT_DIM())), None);
         return;
     }
     // the same words as the battery sheet's header (C6)
-    let state = super::sheets::battery_state(s);
-    let state = if state.starts_with("Held at") { "Held at limit".to_string() } else { state };
+    let state = if super::sheets::battery_held(s) { ts!("health.bat.held_short").to_string() } else { super::sheets::battery_state(s) };
     let scol = if b.charging { GREEN() } else if !b.plugged && b.percent <= 20 { RED() } else { TEXT_DIM() };
-    card_title(p, r, "Battery", Some((&state, scol)), None);
+    card_title(p, r, ts!("health.battery"), Some((&state, scol)), None);
     let col = if b.percent <= 20 { RED() } else { GREEN() };
     lines(p, r, &battery_rows(s));
-    ring_in(p, battery_ring_area(r, s), ring_d, b.percent as f32 / 100.0, col, &format!("{}%", b.percent), "charge");
+    ring_in(p, battery_ring_area(r, s), ring_d, b.percent as f32 / 100.0, col, &format!("{}%", b.percent), ts!("health.ring_charge"));
 }
 
 fn devices_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<super::devices_ui::PageAction> {
     let low = s.devices.iter().filter(|d| super::devices::is_low(d)).count();
     let status = if low > 0 { Some((super::devices_ui::note(&s.devices), AMBER())) } else { None };
-    let y = card_title(p, r, "Devices", status.as_ref().map(|(t, c)| (t.as_str(), *c)), None);
+    let y = card_title(p, r, ts!("health.devices"), status.as_ref().map(|(t, c)| (t.as_str(), *c)), None);
     super::devices_ui::card_body(ui, p, Rect::from_min_max(Pos2::new(r.left(), y), r.max), s)
 }
 
 fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<SheetAction> {
     // the network's own name when macOS gives it (not just "Wi-Fi")
     let named = !s.wifi.name.is_empty() && !s.wifi.name.eq_ignore_ascii_case("wi-fi") && !s.wifi.name.eq_ignore_ascii_case("ethernet");
-    let title = if named { s.wifi.name.clone() } else if s.wifi.wired { "Ethernet".to_string() } else if s.wifi.name.is_empty() { "Network".to_string() } else { "Wi-Fi".to_string() };
-    let status = if !s.online { Some(("Offline", RED())) } else { None };
+    let title = if named { s.wifi.name.clone() } else if s.wifi.wired { ts!("health.ethernet").to_string() } else if s.wifi.name.is_empty() { ts!("health.network").to_string() } else { ts!("health.wifi").to_string() };
+    let status = if !s.online { Some((ts!("health.offline"), RED())) } else { None };
     // the download as the big number, like the Wi-Fi widget; upload in the lines
     let down = format!("↓ {}", human_rate(s.net_down));
     let y = card_title(p, r, &title, status, Some(&down));
-    let mut rows: Vec<Row> = vec![(None, "Upload".to_string(), format!("↑ {}", human_rate(s.net_up)))];
-    rows.push((None, "Today".to_string(), format!("{} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total))));
+    let mut rows: Vec<Row> = vec![(None, ts!("health.upload").to_string(), format!("↑ {}", human_rate(s.net_up)))];
+    rows.push((None, ts!("health.today").to_string(), t!("health.in_out", received = human_bytes(s.net_recv_total), sent = human_bytes(s.net_sent_total)).into_owned()));
     if !s.wifi.signal.is_empty() {
-        rows.push((None, "Signal".to_string(), s.wifi.signal.split(" / ").next().unwrap_or("").trim().to_string()));
+        rows.push((None, ts!("health.signal").to_string(), s.wifi.signal.split(" / ").next().unwrap_or("").trim().to_string()));
     }
     // the speed only once there is one: the buttons say a test can run (T3)
     let sp_ = &s.speed;
     if sp_.running {
-        rows.push((None, "Speed".to_string(), format!("Testing… {:.0}%", sp_.progress * 100.0)));
+        rows.push((None, ts!("health.speed").to_string(), t!("health.testing_pct", pct = sp_.progress * 100.0 : {:.0}).into_owned()));
     } else if let (Some(d), Some(u)) = (sp_.down_mbps, sp_.up_mbps) {
-        rows.push((None, "Speed".to_string(), format!("{d:.0} down · {u:.0} up Mbps")));
+        rows.push((None, ts!("health.speed").to_string(), t!("health.down_up_mbps", down = d : {:.0}, up = u : {:.0}).into_owned()));
     }
     let bottom = Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - BTN_H_ROW - sp::M));
     let lt = lines(p, bottom, &rows);
@@ -476,7 +465,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
         let label = mode.label();
         let bw = button_width(p, label, BTN_SECONDARY);
         let br = Rect::from_min_size(Pos2::new(x, r.bottom() - BTN_H_ROW), Vec2::new(bw, BTN_H_ROW));
-        let tip = if mode == super::monitor::SpeedMode::Quick { "About 6 seconds" } else { "About 20 seconds" };
+        let tip = if mode == super::monitor::SpeedMode::Quick { ts!("health.speed_quick_tip") } else { ts!("health.speed_full_tip_short") };
         if pill_button(ui, br, label, BTN_SECONDARY, !s.speed.running).on_hover_text(tip).clicked() {
             out = Some(SheetAction::SpeedTest(mode));
         }
@@ -521,8 +510,8 @@ fn health_ask(s: &monitor::Snapshot) -> aicheck::Ask {
     aicheck::Ask {
         task: "This is Mac Health: how this Mac is doing right now and its busiest processes. Point out what is slowing it down, heating it or draining the battery, and what to do about it. Only suggest quitting a process the user runs.".into(),
         actions: vec![
-            ("quit", "quit that process (like Activity Monitor's Quit)", "Quit"),
-            ("activity", "open Activity Monitor to look at it", "Open Activity Monitor"),
+            ("quit", "quit that process (like Activity Monitor's Quit)", ts!("health.ai.quit")),
+            ("activity", "open Activity Monitor to look at it", ts!("health.ai.activity")),
         ],
         items,
         facts,
@@ -628,7 +617,7 @@ fn battery_settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<SheetAction> {
     }
     use crate::kit::charge;
     let p = ui.painter().clone();
-    crate::kit::glass::card_title(&p, Pos2::new(r.left(), r.top()), "Battery");
+    crate::kit::glass::card_title(&p, Pos2::new(r.left(), r.top()), ts!("health.battery"));
     let card = Rect::from_min_size(Pos2::new(r.left(), r.top() + SET_TITLE_H), Vec2::new(r.width(), n as f32 * SET_ROW_H));
     glass_card(&p, card, R_CARD, 0.0, false);
     let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * SET_ROW_H), Vec2::new(card.width(), SET_ROW_H));
@@ -636,28 +625,28 @@ fn battery_settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<SheetAction> {
     let mut out = None;
     // the limit
     let rr = row(0);
-    let labels: Vec<String> = charge::LIMITS.iter().map(|l| if *l >= 100 { "Off".to_string() } else { format!("{l}%") }).collect();
+    let labels: Vec<String> = charge::LIMITS.iter().map(|l| if *l >= 100 { ts!("health.limit_off").to_string() } else { format!("{l}%") }).collect();
     let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
     let sel = charge::LIMITS.iter().position(|l| *l == c.policy.limit).unwrap_or(0);
     let seg = Rect::from_min_size(Pos2::new(rr.right() - sp::L - 200.0, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(200.0, sp::CONTROL_H));
     if let Some(i) = segmented(ui, seg, ui.scope_id().with("health-set-limit"), &labels, sel) {
         out = Some(SheetAction::SetLimit(charge::LIMITS[i]));
     }
-    text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Charge limit", font(13.0), TEXT(), seg.left() - rr.left() - 2.0 * sp::L);
+    text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, ts!("health.charge_limit"), font(13.0), TEXT(), seg.left() - rr.left() - 2.0 * sp::L);
     if c.needs_helper() || c.installing {
         let rr = row(1);
         hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
-        let label = if c.installing { "Installing…" } else { "Install" };
+        let label = if c.installing { ts!("health.installing") } else { ts!("health.install") };
         let bw = button_width(&p, label, BTN_SECONDARY);
         let br = Rect::from_min_size(Pos2::new(rr.right() - sp::L - bw, rr.center().y - BTN_H_ROW / 2.0), Vec2::new(bw, BTN_H_ROW));
         if pill_button(ui, br, label, BTN_SECONDARY, !c.installing).clicked() {
             out = Some(SheetAction::InstallHelper);
         }
-        text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Charging helper", font(13.0), TEXT(), br.left() - rr.left() - 2.0 * sp::L);
+        text_fit(&p, Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, ts!("health.charging_helper"), font(13.0), TEXT(), br.left() - rr.left() - 2.0 * sp::L);
     } else if c.policy.active() {
         let sw = [
-            (format!("Charge again below {}%", c.policy.limit.saturating_sub(charge::SAIL_GAP)), c.policy.sailing, SheetAction::ToggleSailing),
-            (format!("Pause charging at {:.0} °C", charge::HEAT_C), c.policy.heat, SheetAction::ToggleHeat),
+            (t!("health.sail", n = c.policy.limit.saturating_sub(charge::SAIL_GAP)).into_owned(), c.policy.sailing, SheetAction::ToggleSailing),
+            (t!("health.heat", c = charge::HEAT_C : {:.0}).into_owned(), c.policy.heat, SheetAction::ToggleHeat),
         ];
         for (k, (label, on, act)) in sw.iter().enumerate() {
             let rr = row(k + 1);

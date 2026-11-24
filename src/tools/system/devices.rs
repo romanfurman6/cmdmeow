@@ -42,14 +42,14 @@ impl Kind {
     }
     pub fn label(self) -> &'static str {
         match self {
-            Kind::Earbuds | Kind::Headphones => "Headphones",
-            Kind::Mouse => "Mouse",
-            Kind::Keyboard => "Keyboard",
-            Kind::Trackpad => "Trackpad",
-            Kind::Gamepad => "Controller",
-            Kind::Phone => "iPhone",
-            Kind::Tablet => "iPad",
-            Kind::Other => "Device",
+            Kind::Earbuds | Kind::Headphones => ts!("health.kind.headphones"),
+            Kind::Mouse => ts!("health.kind.mouse"),
+            Kind::Keyboard => ts!("health.kind.keyboard"),
+            Kind::Trackpad => ts!("health.kind.trackpad"),
+            Kind::Gamepad => ts!("health.kind.controller"),
+            Kind::Phone => ts!("health.kind.iphone"),
+            Kind::Tablet => ts!("health.kind.ipad"),
+            Kind::Other => ts!("health.kind.device"),
         }
     }
     /// Guess the kind from macOS's minor type and the device's name.
@@ -196,11 +196,11 @@ impl Device {
     /// become one "Buds" when they're about the same.
     pub fn parts(&self) -> Vec<(&'static str, Option<u8>, bool)> {
         let mut v = if self.pods_merged() {
-            vec![("Buds", self.battery(), self.charging)]
+            vec![(ts!("health.part.buds"), self.battery(), self.charging)]
         } else {
-            vec![("Left", self.left, self.charging), ("Right", self.right, self.charging)]
+            vec![(ts!("health.part.left"), self.left, self.charging), (ts!("health.part.right"), self.right, self.charging)]
         };
-        v.push(("Case", self.case, self.case_charging));
+        v.push((ts!("health.part.case"), self.case, self.case_charging));
         v
     }
     /// "L 42 · R 38 · Case 71" (or "Buds 40 · Case 71") for earbuds, the
@@ -216,9 +216,9 @@ impl Device {
             return self.kind.label().to_string();
         }
         let v = |o: Option<u8>| o.map(|x| x.to_string()).unwrap_or_else(|| "–".into());
-        let mut s = if self.pods_merged() { format!("Buds {}", v(self.battery())) } else { format!("L {} · R {}", v(self.left), v(self.right)) };
+        let mut s = if self.pods_merged() { t!("health.detail.buds", n = v(self.battery())).into_owned() } else { t!("health.detail.left_right", left = v(self.left), right = v(self.right)).into_owned() };
         if let Some(c) = self.case {
-            s.push_str(&format!(" · Case {c}"));
+            s.push_str(&t!("health.detail.case", n = c));
         }
         s
     }
@@ -226,7 +226,7 @@ impl Device {
     pub fn short(&self) -> String {
         match self.kind {
             Kind::Earbuds | Kind::Headphones if self.name.contains("AirPods") => "AirPods".into(),
-            Kind::Other => self.name.split_whitespace().last().unwrap_or("Device").to_string(),
+            Kind::Other => self.name.split_whitespace().last().unwrap_or(ts!("health.kind.device")).to_string(),
             k => k.label().to_string(),
         }
     }
@@ -239,19 +239,19 @@ pub fn now() -> u64 {
 /// "just now", "12 min ago", "3 h ago", "2 d ago".
 pub fn ago(secs: u64) -> String {
     match secs {
-        0..=59 => "just now".into(),
-        60..=3599 => format!("{} min ago", secs / 60),
-        3600..=172_799 => format!("{} h ago", secs / 3600),
-        _ => format!("{} d ago", secs / 86_400),
+        0..=59 => ts!("health.ago.now").into(),
+        60..=3599 => t!("health.ago.min", n = secs / 60).into_owned(),
+        3600..=172_799 => t!("health.ago.h", n = secs / 3600).into_owned(),
+        _ => t!("health.ago.d", n = secs / 86_400).into_owned(),
     }
 }
 
 /// How long a charge lasts: "<1 h", "5 h", "3 d".
 pub fn duration_left(secs: u64) -> String {
     match secs {
-        0..=3599 => "<1 h".into(),
-        3600..=172_799 => format!("{} h", secs / 3600),
-        _ => format!("{} d", secs / 86_400),
+        0..=3599 => ts!("health.left.under_h").into(),
+        3600..=172_799 => t!("health.left.h", n = secs / 3600).into_owned(),
+        _ => t!("health.left.d", n = secs / 86_400).into_owned(),
     }
 }
 
@@ -644,7 +644,7 @@ impl Alerts {
             if d.charging {
                 if prefs.charged && b >= prefs.charged_at && self.charged.get(&key) != Some(&prefs.charged_at) {
                     self.charged.insert(key.clone(), prefs.charged_at);
-                    out.push(Note { charged: true, title: format!("{} charged", d.name), body: format!("At {b}%") });
+                    out.push(Note { charged: true, title: t!("health.note.charged_title", name = d.name).into_owned(), body: t!("health.note.charged_body", pct = b).into_owned() });
                 }
             } else {
                 self.charged.remove(&key);
@@ -668,19 +668,18 @@ impl Alerts {
             let had = self.fired.get(&key).copied().unwrap_or(0);
             if step > had {
                 self.fired.insert(key, step);
-                let verb = if d.kind == Kind::Earbuds || d.name.ends_with('s') { "are" } else { "is" };
-                let title = format!("{} {verb} at {b}%", d.name);
+                let title = if d.kind == Kind::Earbuds || d.name.ends_with('s') { t!("health.note.are_at", name = d.name, pct = b) } else { t!("health.note.is_at", name = d.name, pct = b) }.into_owned();
                 let body = if d.split() {
                     let side = match (d.left, d.right) {
-                        (Some(l), Some(r)) if l < r && !d.pods_merged() => "Left AirPod is almost empty. ",
-                        (Some(l), Some(r)) if r < l && !d.pods_merged() => "Right AirPod is almost empty. ",
+                        (Some(l), Some(r)) if l < r && !d.pods_merged() => ts!("health.note.left_empty"),
+                        (Some(l), Some(r)) if r < l && !d.pods_merged() => ts!("health.note.right_empty"),
                         _ => "",
                     };
-                    format!("{side}Put them in the case.")
+                    t!("health.note.put_in_case", side = side).into_owned()
                 } else if step == 2 {
-                    "Almost empty. Charge it now.".to_string()
+                    ts!("health.note.charge_now").to_string()
                 } else {
-                    "Charge it soon.".to_string()
+                    ts!("health.note.charge_soon").to_string()
                 };
                 out.push(Note { charged: false, title, body });
             }

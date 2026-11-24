@@ -21,15 +21,15 @@ fn level_color(l: Level) -> Color32 {
 
 /// The panel's title line: the Mac's name and its overall state.
 pub fn header(s: &Snapshot) -> PanelHeader {
-    let title = if s.model.is_empty() { "Mac".to_string() } else { s.model.clone() };
+    let title = if s.model.is_empty() { ts!("health.mac").to_string() } else { s.model.clone() };
     if !s.ready {
         return PanelHeader { title, status: String::new(), dot: TEXT_FAINT() };
     }
     let health = s.health();
     let status = match health {
         Level::Good => "",
-        Level::Fair => "Needs a look",
-        Level::Critical => "Needs attention",
+        Level::Fair => ts!("health.status.fair"),
+        Level::Critical => ts!("health.status.critical"),
     };
     PanelHeader { title, status: status.into(), dot: if health == Level::Good { GREEN() } else { level_color(health) } }
 }
@@ -64,16 +64,16 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
         "storage" => {
             let used = if s.disk_total > 0 { 1.0 - s.disk_free as f32 / s.disk_total as f32 } else { 0.0 };
             let c = if s.disk_level() == Level::Good { tint::HEALTH() } else { level_color(s.disk_level()) };
-            let cap = if s.disk_total > 0 { format!("free of {}", human_bytes(s.disk_total)) } else { "free".to_string() };
+            let cap = if s.disk_total > 0 { t!("health.free_of", size = human_bytes(s.disk_total)).into_owned() } else { ts!("health.free").to_string() };
             (Icon::Disk, s.volume_name_or(), split_num(&human_bytes(s.disk_free)), cap, Some((used.clamp(0.01, 1.0), c)))
         }
         "memory" => {
             let word = match s.mem_level() {
-                Level::Good => "normal",
-                Level::Fair => "elevated",
-                Level::Critical => "high",
+                Level::Good => ts!("health.pressure_word.good"),
+                Level::Fair => ts!("health.pressure_word.fair"),
+                Level::Critical => ts!("health.pressure_word.critical"),
             };
-            (Icon::Memory, "Memory".into(), (format!("{:.0}", s.mem_pressure), "%".into()), word.to_string(), Some((pct(s.mem_pressure), level_color(s.mem_level()))))
+            (Icon::Memory, ts!("health.memory").into(), (format!("{:.0}", s.mem_pressure), "%".into()), word.to_string(), Some((pct(s.mem_pressure), level_color(s.mem_level()))))
         }
         "cpu" => {
             let c = match s.thermal {
@@ -82,30 +82,30 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
                 _ => RED(),
             };
             // the hottest chip sensor as a number (the Fans tool reads it); the word without it
-            let cap = crate::kit::smc::last_hot().map(|t| format!("{t:.0} °C")).unwrap_or_else(|| s.thermal_word().to_lowercase());
-            (Icon::Cpu, "CPU".into(), (format!("{:.0}", s.cpu_load), "%".into()), cap, Some((pct(s.cpu_load), c)))
+            let cap = crate::kit::smc::last_hot().map(|t| t!("unit.celsius", c = t : {:.0}).into_owned()).unwrap_or_else(|| s.thermal_word().to_lowercase());
+            (Icon::Cpu, ts!("health.cpu").into(), (format!("{:.0}", s.cpu_load), "%".into()), cap, Some((pct(s.cpu_load), c)))
         }
         "battery" => {
             if s.battery.present {
                 let c = if s.battery.percent <= 20 { RED() } else { GREEN() };
                 let frac = (s.battery.percent as f32 / 100.0).clamp(0.01, 1.0);
-                (Icon::Battery(s.battery.percent), "Battery".into(), (s.battery.percent.to_string(), "%".into()), battery_status(s).to_lowercase(), Some((frac, c)))
+                (Icon::Battery(s.battery.percent), ts!("health.battery").into(), (s.battery.percent.to_string(), "%".into()), battery_status(s).to_lowercase(), Some((frac, c)))
             } else {
-                (Icon::Battery(100), "Power".into(), ("AC".to_string(), String::new()), "Power adapter".to_string(), None)
+                (Icon::Battery(100), ts!("health.power").into(), (ts!("health.ac").to_string(), String::new()), ts!("health.power_adapter").to_string(), None)
             }
         }
         "network" => {
-            let name = if s.wifi.name.is_empty() { "Network".to_string() } else { s.wifi.name.clone() };
+            let name = if s.wifi.name.is_empty() { ts!("health.network").to_string() } else { s.wifi.name.clone() };
             let (n, u) = split_num(&human_rate(s.net_down));
             (Icon::Wifi, name, (format!("↓ {}", n.strip_suffix(".0").unwrap_or(&n)), u), format!("↑ {}", human_rate(s.net_up)), None)
         }
         "devices" => {
             let n = s.devices.iter().filter(|d| d.live()).count();
             let low = devices::lowest_first(&s.devices).into_iter().find(|d| d.live());
-            let caption = if n == 0 { "None connected".to_string() } else { devices_ui::note(&s.devices) };
+            let caption = if n == 0 { ts!("health.devices_none").to_string() } else { devices_ui::note(&s.devices) };
             match low.as_ref().and_then(|d| d.battery().map(|b| (d, b))) {
-                Some((d, b)) => (d.kind.icon(), "Devices".into(), (b.to_string(), "%".into()), caption, Some(((b as f32 / 100.0).clamp(0.02, 1.0), devices::color(b)))),
-                None => (Icon::Bluetooth, "Devices".into(), (n.to_string(), "connected".into()), caption, None),
+                Some((d, b)) => (d.kind.icon(), ts!("health.devices").into(), (b.to_string(), "%".into()), caption, Some(((b as f32 / 100.0).clamp(0.02, 1.0), devices::color(b)))),
+                None => (Icon::Bluetooth, ts!("health.devices").into(), (n.to_string(), ts!("health.connected").into()), caption, None),
             }
         }
         _ => return None,
@@ -144,7 +144,7 @@ pub fn widget(mon: &monitor::Shared, id: &str, size: Size, ui: &mut Ui, r: Rect,
             let resp = tile::card(ui, r, wid, false);
             let p = ui.painter();
             // W6: the caption on the right; Wi-Fi shows today's totals there
-            let note = if id == "network" { format!("Today {} in · {} out", human_bytes(s.net_recv_total), human_bytes(s.net_sent_total)) } else { caption.clone() };
+            let note = if id == "network" { t!("health.today_in_out", received = human_bytes(s.net_recv_total), sent = human_bytes(s.net_sent_total)).into_owned() } else { caption.clone() };
             let body = tile::head(p, r, mt.glyph, col, &mt.label, &note);
             medium_body(&s, id, &mt, p, body);
             resp
@@ -174,14 +174,14 @@ fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
                 bar(p, br, used as f32 / s.disk_total as f32, mt.bar.map(|b| b.1).unwrap_or(tint::HEALTH()));
                 let y = br.bottom() + 6.0 + 7.0;
                 let tr = p.text(Pos2::new(r.right(), y), Align2::RIGHT_CENTER, human_bytes(s.disk_total), ty::caption(), ty::caption_color());
-                text_fit(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &format!("{} used", human_bytes(used)), ty::caption(), ty::caption_color(), tr.left() - r.left() - 8.0);
+                text_fit(p, Pos2::new(r.left(), y), Align2::LEFT_CENTER, &t!("health.used", size = human_bytes(used)), ty::caption(), ty::caption_color(), tr.left() - r.left() - 8.0);
                 return;
             }
             Vec::new()
         }
         "memory" => {
             let top = s.mem_active.max(s.mem_wired).max(s.mem_compressed).max(1) as f32;
-            [("Apps", s.mem_active), ("Wired", s.mem_wired), ("Compressed", s.mem_compressed)].into_iter().map(|(n, b)| (n.to_string(), Some(((b as f32 / top).clamp(0.01, 1.0), tint::HEALTH())), human_bytes(b))).collect()
+            [(ts!("health.mem.apps"), s.mem_active), (ts!("health.mem.wired"), s.mem_wired), (ts!("health.mem.compressed"), s.mem_compressed)].into_iter().map(|(n, b)| (n.to_string(), Some(((b as f32 / top).clamp(0.01, 1.0), tint::HEALTH())), human_bytes(b))).collect()
         }
         "cpu" => {
             // the graph, with its time span under it
@@ -190,9 +190,9 @@ fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
         }
         "battery" => {
             let b = &s.battery;
-            let mut v: Vec<Line> = vec![("Charge".into(), mt.bar, format!("{}%", b.percent))];
+            let mut v: Vec<Line> = vec![(ts!("health.charge").into(), mt.bar, format!("{}%", b.percent))];
             if let Some(h) = b.health_pct {
-                v.push(("Health".into(), Some(((h / 100.0).clamp(0.01, 1.0), if h < 80.0 { AMBER() } else { GREEN() })), format!("{h:.0}%")));
+                v.push((ts!("health.health").into(), Some(((h / 100.0).clamp(0.01, 1.0), if h < 80.0 { AMBER() } else { GREEN() })), format!("{h:.0}%")));
             }
             if !b.present {
                 v.clear();
@@ -205,11 +205,11 @@ fn row_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, r: Rect) {
                 spark_span(p, r, &s.net_history, tint::HEALTH());
                 return;
             }
-            vec![("Today".into(), None, human_bytes(s.net_recv_total))]
+            vec![(ts!("health.today").into(), None, human_bytes(s.net_recv_total))]
         }
         _ => Vec::new(),
     };
-    let empty = "On power adapter";
+    let empty = ts!("health.on_adapter");
     tile::lines(p, r, &lines, empty);
 }
 
@@ -234,14 +234,14 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
                 let used = 1.0 - s.disk_free as f32 / s.disk_total as f32;
                 let br = Rect::from_min_size(Pos2::new(body.left(), y), egui::Vec2::new(body.width(), 6.0));
                 bar(p, br, used, mt.bar.map(|b| b.1).unwrap_or(tint::HEALTH()));
-                text_fit(p, Pos2::new(body.right(), big.center().y), Align2::RIGHT_CENTER, &format!("of {}", human_bytes(s.disk_total)), font(12.0), TEXT_DIM(), beside.width());
+                text_fit(p, Pos2::new(body.right(), big.center().y), Align2::RIGHT_CENTER, &t!("health.of", size = human_bytes(s.disk_total)), font(12.0), TEXT_DIM(), beside.width());
                 y += 6.0 + 10.0;
             }
             let items: Vec<(String, u64)> = s.categories.iter().take(3).cloned().collect();
             rel(&items)
         }
         "memory" => {
-            let items = vec![("Apps".to_string(), s.mem_active), ("Wired".to_string(), s.mem_wired), ("Compressed".to_string(), s.mem_compressed)];
+            let items = vec![(ts!("health.mem.apps").to_string(), s.mem_active), (ts!("health.mem.wired").to_string(), s.mem_wired), (ts!("health.mem.compressed").to_string(), s.mem_compressed)];
             rel(&items)
         }
         "cpu" => {
@@ -255,7 +255,7 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
                 spark_span(p, list, &s.net_history, tint::HEALTH());
                 y = list.bottom() + 4.0;
             }
-            vec![("Upload".into(), None, mt.caption.clone())]
+            vec![(ts!("health.upload").into(), None, mt.caption.clone())]
         }
         _ => vec![(mt.caption.clone(), mt.bar, String::new())],
     };
@@ -277,7 +277,7 @@ trait VolName {
 impl VolName for Snapshot {
     fn volume_name_or(&self) -> String {
         if self.volume_name.is_empty() {
-            "Macintosh HD".into()
+            ts!("health.macintosh_hd").into()
         } else {
             self.volume_name.clone()
         }
@@ -287,18 +287,18 @@ impl VolName for Snapshot {
 fn battery_status(s: &Snapshot) -> String {
     let b = &s.battery;
     if !b.present {
-        return "Power adapter".into();
+        return ts!("health.power_adapter").into();
     }
     if b.full || (b.plugged && b.percent >= 100) {
-        "Fully charged".into()
+        ts!("health.bat.full").into()
     } else if b.charging {
-        "Charging".into()
+        ts!("health.bat.charging").into()
     } else if b.plugged {
-        "Not charging".into()
+        ts!("health.bat.not_charging").into()
     } else if let Some(min) = b.minutes_left {
-        format!("{} remaining", human_duration(min as u64 * 60))
+        t!("health.bat.remaining", time = human_duration(min as u64 * 60)).into_owned()
     } else {
-        "Calculating…".into()
+        ts!("health.bat.calculating").into()
     }
 }
 

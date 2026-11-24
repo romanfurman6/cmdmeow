@@ -88,8 +88,8 @@ pub enum SpeedMode {
 impl SpeedMode {
     pub fn label(self) -> &'static str {
         match self {
-            SpeedMode::Quick => "Quick test",
-            SpeedMode::Full => "Full test",
+            SpeedMode::Quick => ts!("health.quick_test"),
+            SpeedMode::Full => ts!("health.full_test"),
         }
     }
 }
@@ -246,7 +246,7 @@ impl Snapshot {
         self.trash_bytes.map(|b| b > m::TRASH_SIZE_THRESHOLD).unwrap_or(false)
     }
     pub fn thermal_word(&self) -> &'static str {
-        ["Cool", "Warm", "Hot", "Critical"][self.thermal.min(3) as usize]
+        [ts!("health.heat_word.cool"), ts!("health.heat_word.warm"), ts!("health.heat_word.hot"), ts!("health.heat_word.critical")][self.thermal.min(3) as usize]
     }
 }
 
@@ -1070,6 +1070,19 @@ pub fn good_for(mbps: f64) -> Vec<&'static str> {
         .filter(|(_, need)| mbps >= *need)
         .map(|(name, _)| *name)
         .collect()
+}
+
+/// A `good_for` name in the app's language.
+pub fn good_for_label(name: &'static str) -> &'static str {
+    match name {
+            "Messaging" => ts!("health.good.messaging"),
+            "Audio calls" => ts!("health.good.audio_calls"),
+            "Music streaming" => ts!("health.good.music"),
+            "Video calls" => ts!("health.good.video_calls"),
+            "Video streaming" => ts!("health.good.video"),
+            "Online gaming" => ts!("health.good.gaming"),
+        _ => name,
+    }
 }
 
 // ---------------------------------------------------------------- demo data
