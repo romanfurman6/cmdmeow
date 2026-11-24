@@ -406,10 +406,6 @@ fn app_open(ids: &HashSet<String>, names: &HashSet<String>, path: &Path, title: 
     })
 }
 
-/// Drop repeated and nested paths (the outer one stays), then measure what's
-/// left on all cores and drop items too small to matter. Sizing is nearly all
-/// of a scan's time, so nothing is measured twice.
-/// `brew_pending`: Homebrew's answer is still to come (one more Developer place).
 /// Drops repeated and nested items, so nothing is listed or counted twice.
 /// The same folder can come under two spellings: "~/Code" and "~/code" are one
 /// folder on a case-insensitive disk, so files are also matched by what they are on disk.
@@ -431,6 +427,10 @@ fn drop_repeats(items: &mut Vec<Item>) {
     items.retain(|it| !it.path.ancestors().skip(1).any(|a| all.contains(a)));
 }
 
+/// Drop repeated and nested paths (the outer one stays), then measure what's
+/// left on all cores and drop items too small to matter. Sizing is nearly all
+/// of a scan's time, so nothing is measured twice.
+/// `brew_pending`: Homebrew's answer is still to come (one more Developer place).
 fn measure(items: &mut Vec<Item>, shared: &Shared, ctx: &egui::Context, from: f32, cancel: &AtomicBool, brew_pending: bool) {
     drop_repeats(items);
     let n = items.len();
