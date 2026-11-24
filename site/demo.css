@@ -1,5 +1,5 @@
 /* Demo section: a few tasks, one focused card each. B3 Moss & Lime, same tokens as the site and app */
-.dm2 { --ik: 255,255,255; --cy: #6FD6E8; --ap: #F7B267; --lav: #E8E1FF; --t2: rgba(var(--ik),.64); --t3: rgba(var(--ik),.42); --ln: rgba(var(--ik),.08); }
+.dm2 { --cy: #6FD6E8; --ap: #F7B267; --lav: #E8E1FF; --t2: rgba(var(--ik),.64); --t3: rgba(var(--ik),.42); --ln: rgba(var(--ik),.08); }
 .dm2 .i { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .dm2 .num { font-variant-numeric: tabular-nums; }
 
@@ -436,3 +436,12 @@ html[data-app="light"] .dm2 .ac .ap1 .run { color: #437A20; background: rgba(67,
 html[data-app="light"] .dm2 .ac .bub text[style*="fill:#fff"] { fill: #14181A !important; }
 html[data-app="light"] .dm2 .ac .tg2::after { box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 html[data-app="light"] .dm2 .ac .pick .num { color: #2F5208; }
+/* light page: tabs, steps and No catch take the darker tints */
+html[data-app="light"] .dm2 { --lime: #5B8A14; --cy: #177A8E; --ap: #A65A0E; --lav: #6A5AC8; }
+html[data-app="light"] .nc1 .k { color: #4E7A10; }
+html[data-app="light"] .dm2 .ttab { background: rgba(255,255,255,.7); box-shadow: inset 0 0 0 1px rgba(20,24,26,.09); color: rgba(20,24,26,.72); }
+html[data-app="light"] .dm2 .ttab:hover { background: #fff; color: #14181A; }
+html[data-app="light"] .dm2 .ttab.on { background: #fff; box-shadow: inset 0 0 0 1.5px #5B8A14, 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.05); color: #14181A; }
+html[data-app="light"] .dm2 .st2.on { background: rgba(255,255,255,.8); box-shadow: inset 0 0 0 1px rgba(20,24,26,.08); }
+html[data-app="light"] .dm2 .ac .go { color: #0E1405; }
+html[data-app="light"] .nc1 .ki { stroke: #4E7A10; }

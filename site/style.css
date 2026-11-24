@@ -249,3 +249,19 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .human .cta { margin-top: 36px; justify-content: center; }
 @media (max-width: 860px) { .human { padding-top: 16px; padding-bottom: 72px; } .human code { font-size: 16px; } .human b { font-size: 32px; } .human .cta { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .human .cur { animation: none; } }
+
+/* ---- 2026-11-24: the page follows the visitor's macOS theme, like the app (site.js sets html[data-app]).
+   Light = the app's light backdrop (#FFFFFF → #EAF2DF → #D9E8C8), ink #14181A, darker tints for text (C9/L8).
+   The first screen and the menu bar picture are photos of a desktop, so they keep white text in both. */
+:root { --ik: 255,255,255; --lime-tx: var(--lime); }
+html[data-app="light"] { --bg: #EAF2DF; --ink: #14181A; --ink2: rgba(20,24,26,.66); --hair: rgba(20,24,26,.1); --ik: 20,24,26; --lime-tx: #4E7A10; color-scheme: light; }
+html[data-app="light"] body { background: radial-gradient(1400px 2400px at 50% 0, #FFFFFF 0%, #EAF2DF 55%, #D9E8C8 100%) var(--bg); }
+.desk, .mbx { --ink: #FFFFFF; --ink2: rgba(255,255,255,.64); --hair: rgba(255,255,255,.08); --ik: 255,255,255; color: #fff; }
+html[data-app="light"] .desk::after { background: linear-gradient(to bottom, transparent 62%, rgba(255,255,255,.9)); }
+.human b, .steps li::before { color: var(--lime-tx); }
+html[data-app="light"] .human b { text-shadow: none; }
+html[data-app="light"] main .btn.ghost, html[data-app="light"] .human .btn.ghost { background: rgba(255,255,255,.9); color: var(--ink); backdrop-filter: none; -webkit-backdrop-filter: none;
+  box-shadow: inset 0 0 0 1px rgba(20,24,26,.09), 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.05); }
+html[data-app="light"] main .btn.ghost:hover, html[data-app="light"] .human .btn.ghost:hover { background: #fff; }
+html[data-app="light"] .btn.pri { box-shadow: 0 1px 0 rgba(20,24,26,.25), 0 10px 20px -10px rgba(91,138,20,.55); }
+html[data-app="light"] .foot .tm { color: rgba(20,24,26,.56); }
