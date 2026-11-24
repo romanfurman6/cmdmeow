@@ -123,11 +123,11 @@ pub enum Measure {
     Usd,
 }
 
-/// Bars per day with a hover readout above them: $, tokens and requests of
-/// the day under the pointer (today when none), each a number over a
+/// Bars per day with a hover readout above them: $ (when `show_usd`),
+/// tokens and requests of the day under the pointer (today when none), each a number over a
 /// caption, the date under the dollars. `pace` draws a
 /// dashed line at that many dollars a day (a budget's even share).
-pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, salt: &str) {
+pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, show_usd: bool, salt: &str) {
     let p = ui.painter().clone();
     if days.is_empty() {
         return;
@@ -171,15 +171,15 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     // three stats, number over caption (Roman 2026-11-24, variant A): the
     // date names the dollars, so no line of mixed sizes sits over the bars
     let mut x = r.left();
-    let stats = [
-        (usd(d.usd), date),
-        (crate::kit::ai::human_tokens(d.tokens), "tokens".to_string()),
-        (if d.requests > 0 { d.requests.to_string() } else { String::new() }, "requests".to_string()),
-    ];
+    // with cost off, tokens lead and carry the date; requests always show
+    // (0 on an empty day) so the readout keeps its width while hovering
+    let tokens = crate::kit::ai::human_tokens(d.tokens);
+    let stats = if show_usd {
+        vec![(usd(d.usd), date), (tokens, "tokens".to_string()), (d.requests.to_string(), "requests".to_string())]
+    } else {
+        vec![(format!("{tokens} tok"), date), (d.requests.to_string(), "requests".to_string())]
+    };
     for (v, cap) in stats {
-        if v.is_empty() {
-            continue;
-        }
         let vr = p.text(Pos2::new(x, r.top()), Align2::LEFT_TOP, v, ty::lead(), TEXT());
         let cr = p.text(Pos2::new(x, r.top() + STAT_CAP_Y), Align2::LEFT_TOP, cap, ty::caption(), TEXT_DIM());
         x = vr.right().max(cr.right()) + sp::XL;
