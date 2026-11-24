@@ -91,6 +91,8 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R12 | Scroll bars float in a 14 gutter on the right, taken only when the content scrolls. Content in a scroll area takes `ui.available_width()`. | `sp::SCROLL_GUTTER` |
 | R14 | A master switch is the first row of its card. While it is off, the rows that depend on it show disabled (L6) and keep their values. | |
 | R15 | A page grid of cards fills the width but not the height: each card row grows to at most 340 pt and the grid stays at the top; the rest of a tall window stays empty below. Charts and rings never stretch past what the card needs. Also AI Usage (grid max 2×340+16). | `BENTO_MAX_H` (Mac Health) |
+| R16 | A setting that both Capture pages have (Screenshot, Video) uses the same label and the same choice words on both: "Then" (Show preview · Open editor · Nothing), "Hide preview after", Copy to clipboard, Folder, File name, History keeps. | |
+| R17 | **Permission row** in a tool's Settings (Screenshot, Video, Dictation): one shared kit row, 40 pt per permission: state dot, name, "Allowed" / "Not allowed", and a 28 Primary "Allow" when missing. Settings › Permissions keeps its own list. | ⏳ code |
 
 Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60, sheet header 58, sheet buttons 32.
 
@@ -368,3 +370,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-24, Roman ("merge all"): P9 permission card with `POPOVER` fill (Screen Recording card moves to 32 buttons, 16 inset; PR #313); SP3 footer acts on the picked group (canvas https://claude.ai/artifact/YEwNFRvzq6TUSm3Ppcwtgv); B1 panel header "…" (PR #274).
 
 2026-11-24, Roman: history graph captions 8 under the bars, stats row 16 below (W5, PR #324).
+
+2026-11-24, Roman: R16 same setting words on both Capture pages, R17 one shared permission row in tool Settings (Screenshot, Video, Dictation) (canvas https://claude.ai/artifact/5C9qp5rfHB3uF27JQ1taf4).
