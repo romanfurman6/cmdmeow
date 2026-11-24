@@ -1782,7 +1782,8 @@ fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, "Limits from your account in AI Usage", ty::body(), TEXT_DIM());
     // one tile per picked agent that keeps it there: today only Claude Code
     let a = ease(t / 0.4);
-    let r = Rect::from_min_size(Pos2::new(x, cr.bottom() + sp::M + (1.0 - a) * 8.0), Vec2::new(w, 84.0));
+    // R2: 24 between what it's for and the cards, as on AI agents
+    let r = Rect::from_min_size(Pos2::new(x, cr.bottom() + sp::XL + (1.0 - a) * 8.0), Vec2::new(w, 84.0));
     let st = if app.demo { Status::NotAsked } else { keychain::status() };
     let ok = st == Status::Allowed;
     let s = ctx.animate_bool_with_time(egui::Id::new("signin-tile"), ok, 0.18);
