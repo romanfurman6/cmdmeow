@@ -104,6 +104,11 @@ impl Settings {
 }
 
 /// The secret key, in the Keychain (read once, then kept in memory).
+///
+/// Nothing here makes macOS ask for a password unless the person pressed
+/// something that needs the key and saw the Keychain card first
+/// ([`secret::ask`]). Launch, the background and opening Sharing only check
+/// that the item is there.
 pub mod secret {
     use std::sync::Mutex;
 
@@ -111,6 +116,17 @@ pub mod secret {
 
     /// Per account: read once, then kept.
     static CACHE: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
+
+    /// What a read without any macOS prompt found.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum Access {
+        Key(String),
+        /// No key saved.
+        Missing,
+        /// The key is there, but macOS wants the person's say first (an item
+        /// saved by another build, or only "Allow" picked before).
+        Ask,
+    }
 
     /// Is a secret saved under `account`? Asks the Keychain for the item's
     /// attributes only, never its data, so macOS doesn't ask for a password.
@@ -123,31 +139,78 @@ pub mod secret {
         *seen.get_or_insert_with(HashMap::new).entry(account.to_string()).or_insert_with(|| keychain::exists(account))
     }
 
-    /// Read the key now, from the Keychain itself, on a thread: if macOS
-    /// wants to ask, it asks while the person is on the Sharing page (not in
-    /// the middle of an upload), and the answer is kept for this run.
-    pub fn approve_now(account: &str) {
-        let account = account.to_string();
+    fn cached(account: &str) -> Option<Option<String>> {
+        CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(account).cloned())
+    }
+
+    fn keep(account: &str, v: Option<String>) {
+        CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(account.to_string(), v);
+    }
+
+    /// The key, if it can be had without a macOS prompt.
+    pub fn quiet(account: &str) -> Access {
+        if let Some(v) = cached(account) {
+            return v.map_or(Access::Missing, Access::Key);
+        }
+        let a = keychain::get_quiet(account);
+        match &a {
+            Access::Key(v) => keep(account, Some(v.clone())),
+            Access::Missing => keep(account, None),
+            Access::Ask => {}
+        }
+        a
+    }
+
+    /// The key for an upload or a delete: kept or quiet only, never a prompt.
+    pub fn get(account: &str) -> Option<String> {
+        match quiet(account) {
+            Access::Key(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// After the Keychain card's Continue: on a thread, read the key (or put
+    /// `save` in place of an older one) and let macOS ask. [`asked`] gives
+    /// the answer once.
+    pub fn ask(account: &str, save: Option<String>, ctx: &egui::Context) {
+        let (account, ctx) = (account.to_string(), ctx.clone());
         std::thread::spawn(move || {
-            let v = keychain::get(&account);
-            CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(account, v);
+            let ok = match save {
+                Some(v) => set(&account, &v, true).is_ok(),
+                None => {
+                    let v = keychain::get(&account);
+                    let ok = v.is_some();
+                    if ok {
+                        keep(&account, v);
+                    }
+                    ok
+                }
+            };
+            *ASKED.lock().unwrap_or_else(|e| e.into_inner()) = Some(ok);
+            ctx.request_repaint();
         });
     }
+    static ASKED: Mutex<Option<bool>> = Mutex::new(None);
 
-    pub fn get(account: &str) -> Option<String> {
-        let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-        c.get_or_insert_with(HashMap::new).entry(account.to_string()).or_insert_with(|| keychain::get(account)).clone()
+    /// How the last [`ask`] ended (true: the key was read), once.
+    pub fn asked() -> Option<bool> {
+        ASKED.lock().unwrap_or_else(|e| e.into_inner()).take()
     }
 
-    /// Save it (empty removes it).
-    pub fn set(account: &str, v: &str) -> Result<(), String> {
-        keychain::set(account, v)?;
-        CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(account.to_string(), Some(v.to_string()).filter(|s| !s.is_empty()));
+    /// Save it (empty removes it). Saved from here, the item belongs to this
+    /// build, so reading it back never asks. `Err(None)`: an older item is in
+    /// the way and macOS wants the person's say to replace it.
+    pub fn set(account: &str, v: &str, prompt: bool) -> Result<(), Option<String>> {
+        keychain::set(account, v, prompt)?;
+        keep(account, Some(v.to_string()).filter(|s| !s.is_empty()));
         Ok(())
     }
 
     #[cfg(target_os = "macos")]
     mod keychain {
+        use super::Access;
+        use security_framework::os::macos::keychain::SecKeychain;
+
         fn service() -> &'static str {
             if crate::kit::fs::is_dev() { "Cmd+Meow Dev sharing" } else { "Cmd+Meow sharing" }
         }
@@ -155,48 +218,107 @@ pub mod secret {
         const OLD_SERVICE: &str = "CleanMeBro sharing";
         /// The account the first name used (videos only).
         const OLD_ACCOUNT: &str = "secret-key";
+        /// errSecItemNotFound.
+        const NOT_FOUND: i32 = -25300;
 
-        fn read(service: &str, account: &str) -> Option<String> {
-            security_framework::passwords::get_generic_password(service, account).ok().and_then(|b| String::from_utf8(b).ok()).filter(|s| !s.is_empty())
+        /// Ok(None): no such item. Err: macOS would ask, or said no.
+        fn read(service: &str, account: &str) -> Result<Option<String>, i32> {
+            match security_framework::passwords::get_generic_password(service, account) {
+                Ok(b) => Ok(String::from_utf8(b).ok().filter(|s| !s.is_empty())),
+                Err(e) if e.code() == NOT_FOUND => Ok(None),
+                Err(e) => Err(e.code()),
+            }
         }
+        fn old_too(account: &str) -> bool {
+            !crate::kit::fs::is_dev() && account == OLD_ACCOUNT
+        }
+        /// The item under its first name: move it to this build's name. Quiet:
+        /// what macOS won't allow without asking stays as it is.
+        fn move_old(account: &str, v: &str) {
+            let Ok(_quiet) = SecKeychain::disable_user_interaction() else { return };
+            if write(account, v, false).is_ok() {
+                let _ = security_framework::passwords::delete_generic_password(OLD_SERVICE, OLD_ACCOUNT);
+            }
+        }
+
+        /// Read with prompts turned off: macOS answers "not allowed" instead
+        /// of putting up its password dialog.
+        pub fn get_quiet(account: &str) -> Access {
+            let quiet = SecKeychain::disable_user_interaction();
+            if quiet.is_err() {
+                return Access::Ask;
+            }
+            match read(service(), account) {
+                Ok(Some(v)) => return Access::Key(v),
+                Ok(None) if !old_too(account) => return Access::Missing,
+                Ok(None) => {}
+                Err(_) => return Access::Ask,
+            }
+            let old = read(OLD_SERVICE, OLD_ACCOUNT);
+            // the move takes its own quiet hold (dropping one turns prompts back on)
+            drop(quiet);
+            match old {
+                Ok(Some(v)) => {
+                    move_old(account, &v);
+                    Access::Key(v)
+                }
+                Ok(None) => Access::Missing,
+                Err(_) => Access::Ask,
+            }
+        }
+        /// Read, letting macOS ask (only after the Keychain card).
         pub fn get(account: &str) -> Option<String> {
-            read(service(), account).or_else(|| {
-                if crate::kit::fs::is_dev() || account != OLD_ACCOUNT {
-                    return None;
-                }
-                let v = read(OLD_SERVICE, OLD_ACCOUNT)?;
-                if set(account, &v).is_ok() {
-                    let _ = security_framework::passwords::delete_generic_password(OLD_SERVICE, OLD_ACCOUNT);
-                }
-                Some(v)
-            })
+            match read(service(), account) {
+                Ok(Some(v)) => return Some(v),
+                Ok(None) if old_too(account) => {}
+                _ => return None,
+            }
+            let v = read(OLD_SERVICE, OLD_ACCOUNT).ok().flatten()?;
+            move_old(account, &v);
+            Some(v)
         }
         pub fn exists(account: &str) -> bool {
             use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
             let found = |service: &str| {
                 ItemSearchOptions::new().class(ItemClass::generic_password()).service(service).account(account).load_attributes(true).limit(Limit::Max(1)).search().is_ok_and(|r| !r.is_empty())
             };
-            found(service()) || (!crate::kit::fs::is_dev() && account == OLD_ACCOUNT && found(OLD_SERVICE))
+            found(service()) || (old_too(account) && found(OLD_SERVICE))
         }
-        pub fn set(account: &str, v: &str) -> Result<(), String> {
+        /// A fresh item made by this build (the old one removed first), so its
+        /// access list trusts this build. Without `prompt`, macOS may not ask:
+        /// Err(None) means it would have.
+        pub fn set(account: &str, v: &str, prompt: bool) -> Result<(), Option<String>> {
+            let _quiet = if prompt { None } else { Some(SecKeychain::disable_user_interaction().map_err(|_| None)?) };
+            write(account, v, prompt)
+        }
+        fn write(account: &str, v: &str, prompt: bool) -> Result<(), Option<String>> {
+            match security_framework::passwords::delete_generic_password(service(), account) {
+                Ok(()) => {}
+                Err(e) if e.code() == NOT_FOUND => {}
+                Err(_) if !prompt => return Err(None),
+                Err(e) => return Err(Some(e.to_string())),
+            }
             if v.is_empty() {
-                let _ = security_framework::passwords::delete_generic_password(service(), account);
                 return Ok(());
             }
-            security_framework::passwords::set_generic_password(service(), account, v.as_bytes()).map_err(|e| e.to_string())
+            security_framework::passwords::set_generic_password(service(), account, v.as_bytes()).map_err(|e| Some(e.to_string()))
         }
     }
 
     /// Elsewhere (tests): only in memory.
     #[cfg(not(target_os = "macos"))]
     mod keychain {
+        use super::Access;
+        pub fn get_quiet(_account: &str) -> Access {
+            Access::Missing
+        }
         pub fn get(_account: &str) -> Option<String> {
             None
         }
         pub fn exists(_account: &str) -> bool {
             false
         }
-        pub fn set(_account: &str, _v: &str) -> Result<(), String> {
+        pub fn set(_account: &str, _v: &str, _prompt: bool) -> Result<(), Option<String>> {
             Ok(())
         }
     }

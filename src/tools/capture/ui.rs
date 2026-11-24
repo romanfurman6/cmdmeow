@@ -909,24 +909,23 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     field(ui, frect(card, 0), &mut s.endpoint, "account-id.r2.cloudflarestorage.com", false);
     field(ui, frect(card, 1), &mut s.bucket, "my-bucket", false);
     field(ui, frect(card, 2), &mut s.access_key, "Access key", false);
-    // the secret goes straight to the Keychain and is never shown back
-    // only here (the user opened Sharing) is the Keychain asked whether a
-    // key exists; settings remember the answer for everywhere else
-    let first = c.has_secret.is_none();
+    // the secret goes straight to the Keychain and is never shown back.
+    // Opening Sharing never reads it: only whether the item is there (no
+    // macOS prompt). The key is read when something needs it, after the
+    // Keychain card (docs/ui-rules.md, Keychain access).
     let has_secret = *c.has_secret.get_or_insert_with(|| secret::exists(VIDEO_ACCOUNT));
-    if first && has_secret {
-        // ask macOS for access now, while they're looking at Sharing
-        secret::approve_now(VIDEO_ACCOUNT);
-    }
     // on the page's own copy: the end of the page writes `s` back, so a
     // flag set on the settings themselves was undone the same frame and
     // Screenshot settings said "Not set up" with a key in the Keychain
     s.secret_saved = has_secret;
     let resp = field(ui, frect(card, 3), &mut c.share_secret, if has_secret { "Saved in the Keychain" } else { "Secret key" }, true);
+    if std::mem::take(&mut c.focus_secret) {
+        resp.request_focus();
+    }
     if resp.lost_focus() && !c.share_secret.is_empty() {
         let v = std::mem::take(&mut c.share_secret);
         let v = v.trim();
-        match secret::set(VIDEO_ACCOUNT, v) {
+        match secret::set(VIDEO_ACCOUNT, v, false) {
             Ok(()) if v.is_empty() => {
                 c.has_secret = Some(false);
                 s.secret_saved = false;
@@ -934,11 +933,11 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
             Ok(()) => {
                 c.has_secret = Some(true);
                 s.secret_saved = true;
-                // read it straight back: any approval happens now, not on the first upload
-                secret::approve_now(VIDEO_ACCOUNT);
                 c.hud("Secret key saved in the Keychain")
             }
-            Err(e) => c.hud(format!("Couldn't save to the Keychain: {e}")),
+            // an older key from another build is in the way: ask first
+            Err(None) => c.need_keychain(super::KeychainPending::Save(v.to_string())),
+            Err(Some(e)) => c.hud(format!("Couldn't save to the Keychain: {e}")),
         }
     }
     let mut k = 4;
