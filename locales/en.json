@@ -1035,7 +1035,6 @@
     "purgeable": "%{free} · %{purgeable} purgeable",
     "no_big": "No big files here",
     "close": "Close",
-    "size_items": "%{size} · %{items} items",
     "small_files": "Small files",
     "more_small": "%{n} more and small files",
     "back": "Back",
@@ -1075,7 +1074,10 @@
     "not_moved_other": "%{n} items couldn't be moved",
     "items_one": "%{count} item",
     "items_other": "%{count} items",
-    "moved_failed": "Moved %{size} to the Trash · %{n} items couldn't be removed"
+    "moved_failed": "Moved %{size} to the Trash · %{n} items couldn't be removed",
+    "size_items_one": "%{size} · %{items} item",
+    "size_items_other": "%{size} · %{items} items",
+    "map_prompt": "Map a folder"
   },
   "un": {
     "locked": {

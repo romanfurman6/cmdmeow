@@ -329,7 +329,8 @@ fn switch(app: &mut App, ctx: &egui::Context, to: Option<PathBuf>) {
 fn choose_folder(app: &mut App, ctx: &egui::Context) {
     let (slot, ctx) = (app.lens_pick.clone(), ctx.clone());
     std::thread::spawn(move || {
-        let out = std::process::Command::new("osascript").args(["-e", "POSIX path of (choose folder with prompt \"Map a folder\")"]).output();
+        let script = format!("POSIX path of (choose folder with prompt \"{}\")", ts!("lens.map_prompt").replace(['\\', '"'], ""));
+        let out = std::process::Command::new("osascript").args(["-e", script.as_str()]).output();
         let path = out.ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_end_matches('/').to_string()).filter(|s| !s.is_empty()).map(PathBuf::from);
         if let Some(p) = path {
             *slot.lock_ok() = Some(p);
@@ -1291,7 +1292,7 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
     p.rect_filled(m, 14.0, POPOVER());
     p.rect_stroke(m, 14.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
     text_fit(&p, m.min + Vec2::new(22.0, 20.0), Align2::LEFT_TOP, &node.name, bold(15.0), TEXT(), m.width() - 90.0);
-    p.text(m.min + Vec2::new(22.0, 44.0), Align2::LEFT_TOP, t!("lens.size_items", size = human_bytes(node.bytes), items = group_digits(node.items)), font(12.0), TEXT_DIM());
+    p.text(m.min + Vec2::new(22.0, 44.0), Align2::LEFT_TOP, tn!("lens.size_items", n = node.items, size = human_bytes(node.bytes), items = group_digits(node.items)), font(12.0), TEXT_DIM());
     let xr = Rect::from_center_size(Pos2::new(m.right() - 26.0, m.top() + 30.0), Vec2::splat(24.0));
     let mut close = round_button(ui, xr, Icon::Close, ts!("lens.close")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape));
     if scrim.clicked() && ctx.pointer_interact_pos().is_some_and(|q| !m.contains(q)) {
@@ -1614,7 +1615,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let title = if previewing { shown_node.name.clone() } else { here.clone() };
     icon(&p, Icon::Folder, Rect::from_min_size(Pos2::new(x0, y + 2.0), Vec2::splat(28.0)), ACCENT());
     text_fit(&p, Pos2::new(x0 + 38.0, y + 1.0), Align2::LEFT_TOP, &title, ty::title(), TEXT(), x1 - x0 - 38.0);
-    text_fit(&p, Pos2::new(x0 + 38.0, y + 19.0), Align2::LEFT_TOP, &t!("lens.size_items", size = human_bytes(shown_node.bytes), items = group_digits(shown_node.items)), ty::caption(), ty::caption_color(), x1 - x0 - 38.0);
+    text_fit(&p, Pos2::new(x0 + 38.0, y + 19.0), Align2::LEFT_TOP, &tn!("lens.size_items", n = shown_node.items, size = human_bytes(shown_node.bytes), items = group_digits(shown_node.items)), ty::caption(), ty::caption_color(), x1 - x0 - 38.0);
     y += 46.0;
     // its share of the folder above (a shadow under the hairline)
     let above = shown_node.path.parent().and_then(|q| scan::find(root, q)).filter(|_| shown_node.path != root.path);
