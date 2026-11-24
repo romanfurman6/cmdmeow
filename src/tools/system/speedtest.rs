@@ -412,7 +412,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
         // of nine M1 runs), so it gets a few tries before "no internet"
         if let Err(e) = open_connection(&stopped, |limit| agent.get(&ping_url).config().timeout_global(Some(limit)).build().call().map(|_| ())) {
             if !stopped() {
-                finish(Some(format!("No internet connection ({e})")));
+                finish(Some(t!("health.err.offline_detail", error = e).into_owned()));
             }
             return;
         }
@@ -428,7 +428,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
             return;
         }
         if rtts.is_empty() {
-            finish(Some("No internet connection".into()));
+            finish(Some(ts!("health.err.offline").into()));
             return;
         }
 
@@ -446,7 +446,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
             return;
         }
         let Some(down) = down else {
-            finish(Some("Download test failed".into()));
+            finish(Some(ts!("health.err.download").into()));
             return;
         };
         set(&|s| {
@@ -463,7 +463,7 @@ pub fn start(shared: Shared, ctx: egui::Context, mode: SpeedMode) {
             s.up_mbps = up;
             s.progress = 1.0;
         });
-        finish(if up.is_none() { Some("Upload test failed".into()) } else { None });
+        finish(if up.is_none() { Some(ts!("health.err.upload").into()) } else { None });
     });
 }
 

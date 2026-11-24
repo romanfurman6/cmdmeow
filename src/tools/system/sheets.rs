@@ -133,33 +133,43 @@ fn split_num(s: &str) -> (String, String) {
 pub fn battery_state(s: &Snapshot) -> String {
     let b = &s.battery;
     let c = &s.charge;
-    let ours = b.plugged && !b.charging && c.policy.active() && c.helper_ok == Some(true);
     if !b.present {
-        "Power adapter".to_string()
-    } else if ours && c.status.state.hot {
-        "Paused · battery warm".to_string()
-    } else if ours && c.status.state.held {
-        format!("Held at {}% limit", c.policy.limit)
+        ts!("health.power_adapter").to_string()
+    } else if ours(s) && c.status.state.hot {
+        ts!("health.bat.paused_warm").to_string()
+    } else if battery_held(s) {
+        t!("health.bat.held", n = c.policy.limit).into_owned()
     } else if b.full || (b.plugged && b.percent >= 100) {
-        "Fully charged".into()
+        ts!("health.bat.full").into()
     } else if b.charging {
-        "Charging".into()
+        ts!("health.bat.charging").into()
     } else if b.plugged {
-        "Not charging · on adapter".into()
+        ts!("health.bat.not_charging_adapter").into()
     } else {
-        "On battery".into()
+        ts!("health.bat.on_battery").into()
     }
+}
+
+/// Our charge limit is holding the battery where it is.
+pub fn battery_held(s: &Snapshot) -> bool {
+    s.battery.present && ours(s) && !s.charge.status.state.hot && s.charge.status.state.held
+}
+
+/// Plugged in, not charging, and our charging helper is in charge.
+fn ours(s: &Snapshot) -> bool {
+    let (b, c) = (&s.battery, &s.charge);
+    b.plugged && !b.charging && c.policy.active() && c.helper_ok == Some(true)
 }
 
 fn spec(kind: Sheet, s: &Snapshot) -> Spec {
     match kind {
         Sheet::Storage => {
-            let name = if s.volume_name.is_empty() { "Macintosh HD".to_string() } else { s.volume_name.clone() };
-            let mut sp = Spec::new(Icon::Disk, tint::HEALTH(), name, format!("{} drive", human_bytes(s.disk_total)));
+            let name = if s.volume_name.is_empty() { ts!("health.macintosh_hd").to_string() } else { s.volume_name.clone() };
+            let mut sp = Spec::new(Icon::Disk, tint::HEALTH(), name, t!("health.drive", size = human_bytes(s.disk_total)).into_owned());
             let total = s.disk_total.max(1) as f32;
             let used = s.disk_total.saturating_sub(s.disk_free);
             let (n, u) = split_num(&human_bytes(s.disk_free));
-            sp.hero = Some((n, u, format!("free of {}", human_bytes(s.disk_total))));
+            sp.hero = Some((n, u, t!("health.free_of", size = human_bytes(s.disk_total)).into_owned()));
             // three coloured series at most; the rest joins Other (C5)
             let shown = &s.categories[..s.categories.len().min(3)];
             let shown_sum: u64 = shown.iter().map(|c| c.1).sum();
@@ -170,56 +180,56 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 sp.legend.push(leg(c, label, human_bytes(*b)));
             }
             sp.segs.push((other as f32 / total, OTHER()));
-            sp.legend.push(leg(OTHER(), "Other", human_bytes(other)));
-            sp.legend.push(leg_dim("Free", human_bytes(s.disk_free)));
+            sp.legend.push(leg(OTHER(), ts!("health.other"), human_bytes(other)));
+            sp.legend.push(leg_dim(ts!("health.free_legend"), human_bytes(s.disk_free)));
             // drive health only when it fails (T1), as on the page's card
             if !s.smart_status.is_empty() && !s.smart_status.eq_ignore_ascii_case("Verified") {
-                sp.facts.push(fact("Drive health", s.smart_status.clone(), RED(), "Back up now and replace it"));
+                sp.facts.push(fact(ts!("health.drive_health"), s.smart_status.clone(), RED(), ts!("health.drive_health_hint")));
             }
             match s.trash_bytes {
                 Some(b) => {
-                    let hint = if s.trash_overfill() { "Empty it in Cleanup".to_string() } else { String::new() };
-                    sp.facts.push(fact("Trash", human_bytes(b), if s.trash_overfill() { AMBER() } else { TEXT() }, &hint));
+                    let hint = if s.trash_overfill() { ts!("health.trash_hint").to_string() } else { String::new() };
+                    sp.facts.push(fact(ts!("health.trash"), human_bytes(b), if s.trash_overfill() { AMBER() } else { TEXT() }, &hint));
                 }
-                None => sp.facts.push(fact("Trash", "—", TEXT(), "Needs Full Disk Access")),
+                None => sp.facts.push(fact(ts!("health.trash"), "—", TEXT(), ts!("health.trash_no_access"))),
             }
-            sp.refresh = Some(("Measure folders again", Action::MeasureFolders));
-            sp.buttons = vec![("Disk Map", BTN_SECONDARY, Action::Open("lens")), ("Free up space", BTN_PRIMARY, Action::Open("cleanup"))];
+            sp.refresh = Some((ts!("health.measure_again"), Action::MeasureFolders));
+            sp.buttons = vec![(ts!("health.disk_map"), BTN_SECONDARY, Action::Open("lens")), (ts!("health.free_up_space"), BTN_PRIMARY, Action::Open("cleanup"))];
             sp
         }
         Sheet::Memory => {
-            let mut sp = Spec::new(Icon::Memory, tint::HEALTH(), "Memory", format!("{} memory", human_bytes(s.mem_total)));
+            let mut sp = Spec::new(Icon::Memory, tint::HEALTH(), ts!("health.memory"), t!("health.memory_total", size = human_bytes(s.mem_total)).into_owned());
             let total = s.mem_total.max(1) as f32;
             let (n, u) = split_num(&human_bytes(s.mem_available));
-            sp.hero = Some((n, u, "available".into()));
+            sp.hero = Some((n, u, ts!("health.available").into()));
             sp.segs = vec![(s.mem_active as f32 / total, series::monitor(0)), (s.mem_wired as f32 / total, series::monitor(1)), (s.mem_compressed as f32 / total, series::monitor(2))];
             sp.legend = vec![
-                leg(series::monitor(0), "Apps", human_bytes(s.mem_active)),
-                leg(series::monitor(1), "Wired", human_bytes(s.mem_wired)),
-                leg(series::monitor(2), "Compressed", human_bytes(s.mem_compressed)),
-                leg_dim("Available", human_bytes(s.mem_available)),
+                leg(series::monitor(0), ts!("health.mem.apps"), human_bytes(s.mem_active)),
+                leg(series::monitor(1), ts!("health.mem.wired"), human_bytes(s.mem_wired)),
+                leg(series::monitor(2), ts!("health.mem.compressed"), human_bytes(s.mem_compressed)),
+                leg_dim(ts!("health.available_legend"), human_bytes(s.mem_available)),
             ];
             let l = s.mem_level();
             let word = match l {
-                Level::Good => "normal",
-                Level::Fair => "elevated",
-                Level::Critical => "high",
+                Level::Good => ts!("health.pressure_word.good"),
+                Level::Fair => ts!("health.pressure_word.fair"),
+                Level::Critical => ts!("health.pressure_word.critical"),
             };
-            sp.facts.push(fact("Pressure", format!("{:.0}% · {word}", s.mem_pressure), level_color(l), ""));
-            sp.facts.push(fact("Swap used", human_bytes(s.swap_used), TEXT(), ""));
+            sp.facts.push(fact(ts!("health.pressure_fact"), t!("health.pressure_value", pct = s.mem_pressure : {:.0}, word = word).into_owned(), level_color(l), ""));
+            sp.facts.push(fact(ts!("health.swap_used"), human_bytes(s.swap_used), TEXT(), ""));
             sp
         }
         Sheet::Battery => {
             let b = &s.battery;
             let c = &s.charge;
             let state = battery_state(s);
-            let ours = b.plugged && !b.charging && c.policy.active() && c.helper_ok == Some(true);
-            let mut sp = Spec::new(Icon::Battery(b.percent), tint::HEALTH(), "Battery", state);
+            let ours = ours(s);
+            let mut sp = Spec::new(Icon::Battery(b.percent), tint::HEALTH(), ts!("health.battery"), state);
             if !b.present {
-                sp.facts.push(fact("Power", "Adapter", TEXT(), ""));
+                sp.facts.push(fact(ts!("health.power"), ts!("health.adapter"), TEXT(), ""));
                 return sp;
             }
-            sp.hero = Some((b.percent.to_string(), "%".into(), "charge".into()));
+            sp.hero = Some((b.percent.to_string(), "%".into(), ts!("health.ring_charge").into()));
             sp.segs = vec![(b.percent as f32 / 100.0, if b.percent <= 20 { RED() } else { GREEN() })];
             let hv = b.health_pct.map(|h| format!("{h:.0}%")).unwrap_or_else(|| "—".into());
             let hd = match m::battery_health_state(&b.health_text, b.permanent_failure) {
@@ -227,52 +237,52 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                     ""
                 }
                 m::BatteryHealthState::Fair => "",
-                m::BatteryHealthState::Poor | m::BatteryHealthState::Service => "Should be replaced soon.",
+                m::BatteryHealthState::Poor | m::BatteryHealthState::Service => ts!("health.replace_soon"),
                 m::BatteryHealthState::Unknown => "",
             };
-            sp.facts.push(fact("Health", hv, level_color(s.battery_level()), hd));
-            sp.facts.push(fact("Charge cycles", format!("{} of {}", b.cycles, if b.design_cycles > 0 { b.design_cycles } else { 1000 }), TEXT(), ""));
+            sp.facts.push(fact(ts!("health.health"), hv, level_color(s.battery_level()), hd));
+            sp.facts.push(fact(ts!("health.charge_cycles"), t!("health.cycles_value", n = b.cycles, total = if b.design_cycles > 0 { b.design_cycles } else { 1000 }).into_owned(), TEXT(), ""));
             match b.temp_c {
-                Some(t) => sp.facts.push(fact("Temperature", format!("{t:.0} °C"), if t < 35.0 { TEXT() } else { AMBER() }, "")),
-                None => sp.facts.push(fact("Temperature", "—", TEXT(), "")),
+                Some(t) => sp.facts.push(fact(ts!("health.temperature"), t!("unit.celsius", c = t : {:.0}).into_owned(), if t < 35.0 { TEXT() } else { AMBER() }, "")),
+                None => sp.facts.push(fact(ts!("health.temperature"), "—", TEXT(), "")),
             }
             let time = if ours && (c.status.state.hot || c.status.state.held) {
                 None
             } else if b.charging {
-                b.minutes_left.map(|m| (format!("{} until full", human_duration(m as u64 * 60)), ""))
+                b.minutes_left.map(|m| (t!("health.until_full", time = human_duration(m as u64 * 60)).into_owned(), ""))
             } else if !b.plugged {
-                b.minutes_left.map(|m| (format!("About {} left", human_duration(m as u64 * 60)), ""))
+                b.minutes_left.map(|m| (t!("health.about_left", time = human_duration(m as u64 * 60)).into_owned(), ""))
             } else if !b.full && b.percent < 100 {
-                Some(("Paused by macOS".to_string(), ""))
+                Some((ts!("health.paused_by_macos").to_string(), ""))
             } else {
                 None
             };
             if let Some((v, h)) = time {
-                sp.facts.push(fact(if b.plugged && !b.charging { "Why not charging" } else { "Time" }, v, TEXT(), h));
+                sp.facts.push(fact(if b.plugged && !b.charging { ts!("health.why_not_charging") } else { ts!("health.time") }, v, TEXT(), h));
             }
             // the charge limit and its switches live in Mac Health › Settings
             if b.present {
-                sp.buttons.push(("Charging settings", BTN_SECONDARY, Action::Open("health-settings")));
+                sp.buttons.push((ts!("health.charging_settings"), BTN_SECONDARY, Action::Open("health-settings")));
             }
             sp
         }
         Sheet::Cpu => {
-            let sub = if s.chip.is_empty() { "Processor".to_string() } else { s.chip.clone() };
-            let mut sp = Spec::new(Icon::Cpu, tint::HEALTH(), "CPU", sub);
-            sp.hero = Some((format!("{:.0}", s.cpu_load), "%".into(), "load".into()));
+            let sub = if s.chip.is_empty() { ts!("health.processor").to_string() } else { s.chip.clone() };
+            let mut sp = Spec::new(Icon::Cpu, tint::HEALTH(), ts!("health.cpu"), sub);
+            sp.hero = Some((format!("{:.0}", s.cpu_load), "%".into(), ts!("health.load").into()));
             sp.spark = s.cpu_history.clone();
             sp.legend = vec![
                 // only the total load is drawn, so the rows carry no squares
-                leg_plain("User", format!("{:.0}%", s.cpu_user), TEXT()),
-                leg_plain("System", format!("{:.0}%", s.cpu_system), TEXT()),
+                leg_plain(ts!("health.user"), format!("{:.0}%", s.cpu_user), TEXT()),
+                leg_plain(ts!("health.system"), format!("{:.0}%", s.cpu_system), TEXT()),
             ];
             if let Some(pw) = &s.power {
                 // whole-Mac watts beside user / system, so the cores get a column of their own
                 let parts = (pw.cpu_w > 0.0).then_some(pw.cpu_w + pw.gpu_w + pw.ane_w);
                 if let Some(total) = s.sys_watts.or(parts) {
-                    sp.legend.push(leg_plain("Power", watts(total), TEXT()));
+                    sp.legend.push(leg_plain(ts!("health.power"), watts(total), TEXT()));
                 }
-                for (label, u) in [("E-cores", pw.ecpu), ("P-cores", pw.pcpu), ("GPU", pw.gpu)] {
+                for (label, u) in [(ts!("health.e_cores"), pw.ecpu), (ts!("health.p_cores"), pw.pcpu), (ts!("health.gpu"), pw.gpu)] {
                     sp.legend.push(leg_plain(label, usage_text(u), TEXT()));
                 }
             }
@@ -281,14 +291,14 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 1 => AMBER(),
                 _ => RED(),
             };
-            sp.facts.push(fact("Thermal pressure", ["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], tc, ""));
+            sp.facts.push(fact(ts!("health.thermal_pressure"), [ts!("health.thermal.nominal"), ts!("health.thermal.fair"), ts!("health.thermal.serious"), ts!("health.thermal.critical")][s.thermal.min(3) as usize], tc, ""));
             sp.procs = s.procs.clone();
-            sp.facts.push(fact("Uptime", human_duration(s.uptime_secs), if s.uptime_warning() { AMBER() } else { TEXT() }, ""));
+            sp.facts.push(fact(ts!("health.uptime"), human_duration(s.uptime_secs), if s.uptime_warning() { AMBER() } else { TEXT() }, ""));
             sp
         }
         Sheet::Network => {
-            let title = if s.wifi.name.is_empty() { "Network".to_string() } else { s.wifi.name.clone() };
-            let mut sub = if s.wifi.wired { "Wired".to_string() } else { "Wi-Fi".to_string() };
+            let title = if s.wifi.name.is_empty() { ts!("health.network").to_string() } else { s.wifi.name.clone() };
+            let mut sub = if s.wifi.wired { ts!("health.wired").to_string() } else { ts!("health.wifi").to_string() };
             if !s.wifi.phy.is_empty() {
                 sub.push_str(&format!(" · {}", s.wifi.phy));
             }
@@ -296,26 +306,26 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             // download first, like the widget and the per-app rows
             let down = human_rate(s.net_down);
             let (n, u) = split_num(&down);
-            sp.hero = Some((n, u, format!("down · {} up", human_rate(s.net_up))));
+            sp.hero = Some((n, u, t!("health.down_up", up = human_rate(s.net_up)).into_owned()));
             sp.speed = true;
             let dash = |v: &str| if v.is_empty() { "—".to_string() } else { v.to_string() };
             for a in &s.apps {
                 sp.apps.push(leg_plain(&a.name, format!("{} ↓  {} ↑", human_rate(a.down), human_rate(a.up)), TEXT_DIM()));
             }
-            sp.facts.push(fact("Security", dash(&title_case(&s.wifi.security)), TEXT(), ""));
-            sp.facts.push(fact("Channel", dash(&channel_text(&s.wifi.channel)), TEXT(), ""));
-            sp.facts.push(fact("Signal", dash(s.wifi.signal.split(" / ").next().unwrap_or("").trim()), TEXT(), ""));
+            sp.facts.push(fact(ts!("health.security"), dash(&title_case(&s.wifi.security)), TEXT(), ""));
+            sp.facts.push(fact(ts!("health.channel"), dash(&channel_text(&s.wifi.channel)), TEXT(), ""));
+            sp.facts.push(fact(ts!("health.signal"), dash(s.wifi.signal.split(" / ").next().unwrap_or("").trim()), TEXT(), ""));
             use super::monitor::SpeedMode;
-            sp.buttons = vec![("Full test", BTN_SECONDARY, Action::SpeedTest(SpeedMode::Full)), ("Quick test", BTN_PRIMARY, Action::SpeedTest(SpeedMode::Quick))];
+            sp.buttons = vec![(SpeedMode::Full.label(), BTN_SECONDARY, Action::SpeedTest(SpeedMode::Full)), (SpeedMode::Quick.label(), BTN_PRIMARY, Action::SpeedTest(SpeedMode::Quick))];
             sp
         }
         Sheet::Devices => {
             let devs = super::devices::lowest_first(&s.devices);
-            let mut sp = Spec::new(Icon::Bluetooth, tint::NEUTRAL(), "Devices", super::devices_ui::note(&devs));
+            let mut sp = Spec::new(Icon::Bluetooth, tint::NEUTRAL(), ts!("health.devices"), super::devices_ui::note(&devs));
             for d in &devs {
                 let mut label = format!("{} · {}", d.name, d.detail());
                 if d.charging && d.live() {
-                    label.push_str(" · charging");
+                    label.push_str(ts!("health.charging_suffix"));
                 }
                 match d.battery() {
                     Some(b) if d.live() => sp.legend.push(Legend { color: super::devices::color(b), label, value: format!("{b}%"), value_col: super::devices::text_color(b) }),
@@ -323,7 +333,7 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                     None => sp.legend.push(Legend { color: TEXT_FAINT(), label: d.name.clone(), value: "–".into(), value_col: TEXT_FAINT() }),
                 }
             }
-            sp.buttons = vec![("Bluetooth Settings", BTN_SECONDARY, Action::OpenBluetooth)];
+            sp.buttons = vec![(ts!("health.bt_settings"), BTN_SECONDARY, Action::OpenBluetooth)];
             sp
         }
     }
@@ -368,9 +378,9 @@ fn busy(act: Action, s: &Snapshot) -> bool {
 
 fn busy_label(act: Action) -> &'static str {
     match act {
-        Action::MeasureFolders => "Measuring…",
-        Action::InstallHelper => "Installing…",
-        _ => "Testing…",
+        Action::MeasureFolders => ts!("health.measuring"),
+        Action::InstallHelper => ts!("health.installing"),
+        _ => ts!("health.testing"),
     }
 }
 
@@ -494,7 +504,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         }
         y += h + GROUP_GAP;
     } else if kind == Sheet::Devices {
-        y += paragraph(p, Pos2::new(x0, y), "No devices", font(13.0), TEXT_DIM(), w) + 14.0;
+        y += paragraph(p, Pos2::new(x0, y), ts!("health.no_devices"), font(13.0), TEXT_DIM(), w) + 14.0;
     }
 
     // speed test card: its title over it (R2), ping on the title line
@@ -503,16 +513,16 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         if y > top {
             y += divider(p, x0, w, y);
         }
-        card_title(p, Pos2::new(x0, y), "Speed test");
+        card_title(p, Pos2::new(x0, y), ts!("health.speed_test"));
         if let Some(l) = sp_.latency_ms {
             p.text(Pos2::new(x0 + w, y), Align2::RIGHT_TOP, match sp_.jitter_ms {
-                Some(j) => format!("Ping {l:.0} ms ±{j:.0}"),
-                None => format!("Ping {l:.0} ms"),
+                Some(j) => t!("health.ping_jitter", ms = l : {:.0}, jitter = j : {:.0}).into_owned(),
+                None => t!("health.ping_ms", ms = l : {:.0}).into_owned(),
             }, ty::label(), TEXT_DIM());
         }
         y += CARD_TITLE_H;
         let lr = Rect::from_min_size(Pos2::new(x0 - 12.0, y - 12.0), Vec2::new(w + 24.0, 92.0));
-        for (k, (label, v)) in [("Download", sp_.down_mbps), ("Upload", sp_.up_mbps)].iter().enumerate() {
+        for (k, (label, v)) in [(ts!("health.download"), sp_.down_mbps), (ts!("health.upload"), sp_.up_mbps)].iter().enumerate() {
             let x = lr.left() + 12.0 + k as f32 * (w / 2.0);
             p.text(Pos2::new(x, lr.top() + 12.0), Align2::LEFT_TOP, *label, ty::label(), TEXT_DIM());
             let (txt, col) = match v {
@@ -532,8 +542,8 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         } else if let Some(e) = &sp_.error {
             text_fit(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, e, ty::label(), AMBER(), w - 24.0);
         } else if let Some(d) = sp_.down_mbps {
-            let good = monitor::good_for(d);
-            let txt = if good.is_empty() { "Very slow".to_string() } else { format!("Good for {}", good.join(", ").to_lowercase()) };
+            let good: Vec<&str> = monitor::good_for(d).into_iter().map(monitor::good_for_label).collect();
+            let txt = if good.is_empty() { ts!("health.very_slow").to_string() } else { t!("health.good_for", list = good.join(", ").to_lowercase()).into_owned() };
             text_fit(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, &txt, ty::label(), TEXT_DIM(), w - 24.0);
         }
         y += lr.height() - 12.0 + GROUP_GAP;
@@ -544,7 +554,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         if y > top {
             y += divider(p, x0, w, y);
         }
-        card_title(p, Pos2::new(x0, y), "Apps");
+        card_title(p, Pos2::new(x0, y), ts!("health.apps"));
         y += CARD_TITLE_H;
         for (i, l) in sp.apps.iter().enumerate() {
             legend_row(p, bare(x0, w, y + i as f32 * SHEET_ROW_H, SHEET_ROW_H), l.color, &l.label, &l.value, l.value_col);
@@ -586,7 +596,7 @@ fn procs_card(ui: &mut Ui, procs: &[super::procs::Proc], x0: f32, w: f32, y: f32
     }
     let p = ui.painter().clone();
     let y = y + divider(&p, x0, w, y);
-    card_title(&p, Pos2::new(x0, y), "Top processes");
+    card_title(&p, Pos2::new(x0, y), ts!("health.top_processes"));
     let y = y + CARD_TITLE_H;
     let now = ui.input(|i| i.time);
     let arm_id = ui.scope_id().with("proc-quit-armed");
@@ -598,7 +608,7 @@ fn procs_card(ui: &mut Ui, procs: &[super::procs::Proc], x0: f32, w: f32, y: f32
         let is_armed = armed.is_some_and(|(pid, _)| pid == pr.pid);
         let mut right = rr.right() - 12.0;
         if pr.mine && (hover || is_armed) {
-            let label = if is_armed { "Quit?" } else { "Quit" };
+            let label = if is_armed { ts!("health.quit_confirm") } else { ts!("health.quit") };
             let kind = if is_armed { BTN_DANGER } else { BTN_SECONDARY };
             let bw = button_width(&p, label, kind);
             let br = Rect::from_min_size(Pos2::new(right - bw, rr.center().y - 14.0), Vec2::new(bw, 28.0));

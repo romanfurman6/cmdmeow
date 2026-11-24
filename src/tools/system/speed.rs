@@ -147,10 +147,10 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
     let mut y = m.top() + PAD;
 
     // header
-    let tr = p.text(Pos2::new(x0, y + 14.0), Align2::LEFT_CENTER, "Speed test", ty::lead(), TEXT());
+    let tr = p.text(Pos2::new(x0, y + 14.0), Align2::LEFT_CENTER, ts!("health.speed_test"), ty::lead(), TEXT());
     p.text(Pos2::new(tr.right() + 8.0, y + 15.0), Align2::LEFT_CENTER, s.mode.label(), ty::caption(), ty::caption_color());
     let cr = Rect::from_center_size(Pos2::new(x1 - 13.0, y + 14.0), Vec2::splat(26.0));
-    let mut closed = round_button(ui, cr, Icon::Close, "Close").clicked();
+    let mut closed = round_button(ui, cr, Icon::Close, ts!("health.close")).clicked();
     y += 28.0 + sp::M;
 
     // dial
@@ -224,12 +224,12 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
     let unit = if s.phase == SpeedPhase::Ping { "ms" } else { "Mbps" };
     p.text(c + Vec2::new(0.0, 28.0), Align2::CENTER_CENTER, unit, ty::body(), TEXT_DIM());
     let (glyph, label, lcol) = match s.phase {
-        SpeedPhase::Ping => (None, "Ping", TEXT_DIM()),
-        SpeedPhase::Download => (Some(Icon::Down), "Download", down_color()),
-        SpeedPhase::Upload => (Some(Icon::Up), "Upload", up_color()),
+        SpeedPhase::Ping => (None, ts!("health.ping"), TEXT_DIM()),
+        SpeedPhase::Download => (Some(Icon::Down), ts!("health.download"), down_color()),
+        SpeedPhase::Upload => (Some(Icon::Up), ts!("health.upload"), up_color()),
         SpeedPhase::Done if s.error.is_some() => (None, "", TEXT_DIM()),
-        SpeedPhase::Done if s.down_mbps.is_none() || s.up_mbps.is_none() => (None, "Stopped", TEXT_DIM()),
-        _ => (Some(Icon::Down), "Download", down_color()),
+        SpeedPhase::Done if s.down_mbps.is_none() || s.up_mbps.is_none() => (None, ts!("health.stopped"), TEXT_DIM()),
+        _ => (Some(Icon::Down), ts!("health.download"), down_color()),
     };
     if !label.is_empty() {
         let lp = c + Vec2::new(0.0, DIAL_R * 0.62);
@@ -249,9 +249,9 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
     glass_card(&p, row, R_CARD, 0.0, false);
     let cw = row.width() / 3.0;
     let cols = [
-        Col { label: "Ping", value: s.latency_ms, unit: "ms", color: TEXT(), phase: SpeedPhase::Ping, glyph: None },
-        Col { label: "Download", value: s.down_mbps, unit: "Mbps", color: down_color(), phase: SpeedPhase::Download, glyph: Some(Icon::Down) },
-        Col { label: "Upload", value: s.up_mbps, unit: "Mbps", color: up_color(), phase: SpeedPhase::Upload, glyph: Some(Icon::Up) },
+        Col { label: ts!("health.ping"), value: s.latency_ms, unit: "ms", color: TEXT(), phase: SpeedPhase::Ping, glyph: None },
+        Col { label: ts!("health.download"), value: s.down_mbps, unit: "Mbps", color: down_color(), phase: SpeedPhase::Download, glyph: Some(Icon::Down) },
+        Col { label: ts!("health.upload"), value: s.up_mbps, unit: "Mbps", color: up_color(), phase: SpeedPhase::Upload, glyph: Some(Icon::Up) },
     ];
     for (k, Col { label, value: v, unit, color: vc, phase: ph, glyph: gl }) in cols.into_iter().enumerate() {
         let cx = row.left() + k as f32 * cw + 14.0;
@@ -301,9 +301,9 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
     let mut ask = None;
     let left;
     if !s.running {
-        let done_w = button_width(&p, "Done", BTN_PRIMARY);
+        let done_w = button_width(&p, ts!("health.done"), BTN_PRIMARY);
         let dr = Rect::from_min_size(Pos2::new(x1 - done_w, by), Vec2::new(done_w, 30.0));
-        if pill_button(ui, dr, "Done", BTN_PRIMARY, true).clicked() {
+        if pill_button(ui, dr, ts!("health.done"), BTN_PRIMARY, true).clicked() {
             closed = true;
         }
         let mut l = dr.left();
@@ -312,8 +312,8 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
             let w = button_width(&p, label, BTN_SECONDARY);
             let r = Rect::from_min_size(Pos2::new(l - sp::S - w, by), Vec2::new(w, 30.0));
             let tip = match mode {
-                SpeedMode::Quick => "About 6 seconds",
-                SpeedMode::Full => "About 20 seconds, more streams",
+                SpeedMode::Quick => ts!("health.speed_quick_tip"),
+                SpeedMode::Full => ts!("health.speed_full_tip"),
             };
             if pill_button(ui, r, label, BTN_SECONDARY, true).on_hover_text(tip).clicked() {
                 ask = Some(Ask::Run(mode));
@@ -322,9 +322,9 @@ fn content(ui: &mut Ui, m: Rect, s: &SpeedTest) -> (Option<Ask>, bool) {
         }
         left = l;
     } else {
-        let sw = button_width(&p, "Stop", BTN_SECONDARY);
+        let sw = button_width(&p, ts!("health.stop"), BTN_SECONDARY);
         let sr = Rect::from_min_size(Pos2::new(x1 - sw, by), Vec2::new(sw, 30.0));
-        if pill_button(ui, sr, "Stop", BTN_SECONDARY, true).clicked() {
+        if pill_button(ui, sr, ts!("health.stop"), BTN_SECONDARY, true).clicked() {
             ask = Some(Ask::Stop);
         }
         left = sr.left();

@@ -64,9 +64,9 @@ impl Tone {
 pub fn note(devs: &[Device]) -> String {
     let low = devs.iter().filter(|d| devices::is_low(d)).count();
     if low > 0 {
-        format!("{low} low")
+        t!("health.n_low", n = low).into_owned()
     } else {
-        format!("{} connected", devs.iter().filter(|d| d.live()).count())
+        t!("health.n_connected", n = devs.iter().filter(|d| d.live()).count()).into_owned()
     }
 }
 
@@ -130,8 +130,8 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
                 pct_with_bolt(p, Pos2::new(r.center().x, r.bottom() - 10.0), Align2::CENTER_BOTTOM, b, false, bold(13.0), Tone::of(d).c(TEXT()));
                 resp.on_hover_text(format!("{} · {}", d.name, note(&devs)))
             }
-            Some(d) => tile::small(ui, r, wid, d.kind.icon(), tint::HEALTH(), &d.name, "Connected", sel),
-            None => tile::small(ui, r, wid, Icon::Bluetooth, tint::HEALTH(), "Devices", "None", sel),
+            Some(d) => tile::small(ui, r, wid, d.kind.icon(), tint::HEALTH(), &d.name, ts!("health.connected_cap"), sel),
+            None => tile::small(ui, r, wid, Icon::Bluetooth, tint::HEALTH(), ts!("health.devices"), ts!("health.none"), sel),
         };
     }
     // 1:2 and 1:4 (W2, W5): the weakest device as the ring, the rest as bar lines
@@ -139,10 +139,10 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
         let first = devs.first().filter(|d| d.live());
         let (glyph, ring_, label, value) = match first {
             Some(d) => (d.kind.icon(), d.battery().map(|b| (frac(Some(b)), devices::color(b))), short_name(&d.name), pct_text(d.battery())),
-            None => (Icon::Bluetooth, None, "Devices".to_string(), "None".to_string()),
+            None => (Icon::Bluetooth, None, ts!("health.devices").to_string(), ts!("health.none").to_string()),
         };
         // the weakest device is the value; the caption says how many there are
-        let caption = if first.is_some() { format!("{} connected", devs.iter().filter(|d| d.live()).count()) } else { String::new() };
+        let caption = if first.is_some() { t!("health.n_connected", n = devs.iter().filter(|d| d.live()).count()).into_owned() } else { String::new() };
         if size == Size::S12 {
             return tile::wide_full(ui, r, wid, glyph, tint::HEALTH(), ring_, &label, &value, &caption, ty::caption_color(), sel);
         }
@@ -154,13 +154,13 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
             Some(d) if others.is_empty() => {
                 let mut v = Vec::new();
                 if d.left.is_some() {
-                    v.push(line("Left", d.left, pct_text(d.left)));
+                    v.push(line(ts!("health.part.left"), d.left, pct_text(d.left)));
                 }
                 if d.right.is_some() {
-                    v.push(line("Right", d.right, pct_text(d.right)));
+                    v.push(line(ts!("health.part.right"), d.right, pct_text(d.right)));
                 }
                 if d.case.is_some() {
-                    v.push(line("Case", d.case, pct_text(d.case)));
+                    v.push(line(ts!("health.part.case"), d.case, pct_text(d.case)));
                 }
                 v
             }
@@ -174,9 +174,9 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, r: Rect, wid: egui::Id, sel
     let p = ui.painter();
     match size {
         Size::S24 => {
-            let body = tile::head(p, r, Icon::Bluetooth, tint::HEALTH(), "Devices", &note(&devs));
+            let body = tile::head(p, r, Icon::Bluetooth, tint::HEALTH(), ts!("health.devices"), &note(&devs));
             if devs.is_empty() {
-                tile::empty_note(p, body, "No Bluetooth devices connected");
+                tile::empty_note(p, body, ts!("health.no_bt_devices"));
                 return resp;
             }
             let lh = (body.height() / 3.0).min(40.0);
@@ -241,9 +241,9 @@ fn device_line_sub(p: &egui::Painter, lr: Rect, d: &Device, sub: &str, bw: f32) 
 
 /// 4:4: earbuds get a card with a ring per part, other devices a line each.
 fn large(devs: &[Device], p: &egui::Painter, r: Rect) {
-    let body = tile::head(p, r, Icon::Bluetooth, tint::HEALTH(), "Devices", &note(devs));
+    let body = tile::head(p, r, Icon::Bluetooth, tint::HEALTH(), ts!("health.devices"), &note(devs));
     if devs.is_empty() {
-        tile::empty_note(p, body, "No Bluetooth devices connected");
+        tile::empty_note(p, body, ts!("health.no_bt_devices"));
         return;
     }
     let mut y = body.top();
@@ -314,14 +314,14 @@ pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
     let p = ui.painter().clone();
     let mut out = None;
     let mut y = r.top();
-    crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), "Bluetooth devices");
+    crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), ts!("health.bt_devices"));
     y += TITLE_H;
     let prefs = &s.bt_prefs;
     let card = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 3.0 * SWITCH_H));
     glass_card(&p, card, R_CARD, 0.0, false);
     let rows: [(&str, bool, PageAction); 2] = [
-        ("Low battery alerts", crate::kit::notify::shown(prefs.alerts), PageAction::ToggleAlerts),
-        ("Charged alert", crate::kit::notify::shown(prefs.charged), PageAction::ToggleCharged),
+        (ts!("health.low_alerts"), crate::kit::notify::shown(prefs.alerts), PageAction::ToggleAlerts),
+        (ts!("health.charged_alert"), crate::kit::notify::shown(prefs.charged), PageAction::ToggleCharged),
     ];
     let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * SWITCH_H), Vec2::new(card.width(), SWITCH_H));
     for (k, (label, on, act)) in rows.into_iter().enumerate() {
@@ -350,15 +350,15 @@ pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
     // the way to macOS's own Bluetooth settings, as the card's last row
     let rr = row(2);
     hairline(&p, Pos2::new(rr.left() + sp::L, rr.top()), Pos2::new(rr.right() - sp::L, rr.top()));
-    p.text(Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, "Bluetooth Settings", font(13.0), TEXT());
-    let bw = button_width(&p, "Open", BTN_SECONDARY);
+    p.text(Pos2::new(rr.left() + sp::L, rr.center().y), Align2::LEFT_CENTER, ts!("health.bt_settings"), font(13.0), TEXT());
+    let bw = button_width(&p, ts!("health.open"), BTN_SECONDARY);
     let br = Rect::from_min_size(Pos2::new(rr.right() - sp::M - bw, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
-    if pill_button(ui, br, "Open", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, br, ts!("health.open"), BTN_SECONDARY, true).clicked() {
         out = Some(PageAction::OpenBluetooth);
     }
     y = card.bottom() + sp::XL;
     if !s.hidden_devices.is_empty() {
-        crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), "Hidden devices");
+        crate::kit::glass::card_title(&p, Pos2::new(r.left(), y), ts!("health.hidden_devices"));
         y += TITLE_H;
         let list = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), s.hidden_devices.len() as f32 * sp::ROW_H));
         glass_card(&p, list, R_CARD, 0.0, false);
@@ -369,9 +369,9 @@ pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
             }
             let t = Tone { a: AWAY_ALPHA };
             device_glyph(&p, d, Rect::from_center_size(Pos2::new(rr.left() + 26.0, rr.center().y), Vec2::splat(18.0)), t.c(TEXT_SOFT()));
-            let bw = button_width(&p, "Show", BTN_SECONDARY);
+            let bw = button_width(&p, ts!("health.show"), BTN_SECONDARY);
             let br = Rect::from_min_size(Pos2::new(rr.right() - sp::M - bw, rr.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
-            if pill_button(ui, br, "Show", BTN_SECONDARY, true).clicked() {
+            if pill_button(ui, br, ts!("health.show"), BTN_SECONDARY, true).clicked() {
                 out = Some(PageAction::Hide(d.key(), false));
             }
             let vr = p.text(Pos2::new(br.left() - sp::M, rr.center().y), Align2::RIGHT_CENTER, pct_text(d.battery()), bold(12.0), t.c(TEXT_DIM()));
@@ -390,10 +390,10 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
     if devs.is_empty() {
         let cy = r.center().y - 16.0;
         icon(p, Icon::Bluetooth, Rect::from_center_size(Pos2::new(r.center().x, cy - 18.0), Vec2::splat(26.0)), TEXT_FAINT());
-        p.text(Pos2::new(r.center().x, cy + 10.0), Align2::CENTER_CENTER, "No devices connected", font(13.0), TEXT_DIM());
-        let bw = button_width(p, "Bluetooth Settings", BTN_SECONDARY);
+        p.text(Pos2::new(r.center().x, cy + 10.0), Align2::CENTER_CENTER, ts!("health.no_devices_connected"), font(13.0), TEXT_DIM());
+        let bw = button_width(p, ts!("health.bt_settings"), BTN_SECONDARY);
         let br = Rect::from_min_size(Pos2::new(r.left(), r.bottom() - BTN_H_ROW), Vec2::new(bw, BTN_H_ROW));
-        if pill_button(ui, br, "Bluetooth Settings", BTN_SECONDARY, true).clicked() {
+        if pill_button(ui, br, ts!("health.bt_settings"), BTN_SECONDARY, true).clicked() {
             out = Some(PageAction::OpenBluetooth);
         }
         return out;
@@ -409,7 +409,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
         let mr = Rect::from_center_size(Pos2::new(lr.right() - 12.0, lr.center().y), Vec2::new(24.0, 22.0));
         let mut sub = d.detail();
         if let Some(e) = d.eta {
-            sub.push_str(&format!(" · {} left", devices::duration_left(e)));
+            sub.push_str(&t!("health.time_left_suffix", time = devices::duration_left(e)));
         }
         let key = d.key();
         let (resp, shown) = dots(ui, mr, lr, ui.scope_id().with(("dev-card-more", &key)));
@@ -424,7 +424,7 @@ pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Optio
     if more > 0 {
         let lr = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), LINE_H));
         let names: Vec<&str> = devs.iter().skip(shown).map(|d| d.name.as_str()).collect();
-        let t = format!("+{more} more");
+        let t = t!("health.n_more", n = more);
         p.text(Pos2::new(lr.left(), lr.center().y), Align2::LEFT_CENTER, &t, font(12.0), TEXT_DIM());
         ui.interact(lr, ui.scope_id().with("dev-card-rest"), Sense::hover()).on_hover_text(names.join("\n"));
     }
@@ -437,18 +437,18 @@ fn device_menu(resp: &Response, d: &Device, prefs: &Prefs) -> Option<PageAction>
     let key = d.key();
     menu::popup(resp).show(|ui| {
         let below = prefs.alert_below(&key);
-        menu::sub(ui, "Alert below", |ui| {
+        menu::sub(ui, ts!("health.alert_below"), |ui| {
             for c in ALERT_CHOICES {
-                let label = if c == 0 { "Never".to_string() } else { format!("{c}%") };
+                let label = if c == 0 { ts!("health.never").to_string() } else { format!("{c}%") };
                 if menu::choice(ui, &label, below == c).clicked() {
                     out = Some(PageAction::AlertBelow(key.clone(), c));
                 }
             }
         });
-        if menu::item(ui, "Hide").clicked() {
+        if menu::item(ui, ts!("health.hide")).clicked() {
             out = Some(PageAction::Hide(key.clone(), true));
         }
-        if !d.live() && menu::item(ui, "Forget").clicked() {
+        if !d.live() && menu::item(ui, ts!("health.forget")).clicked() {
             out = Some(PageAction::Forget(key.clone()));
         }
     });
@@ -472,7 +472,7 @@ fn dots(ui: &mut Ui, r: Rect, row: Rect, id: egui::Id) -> (Response, f32) {
     for dx in [-5.0, 0.0, 5.0] {
         p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT().gamma_multiply(shown));
     }
-    (resp.on_hover_text("More"), shown)
+    (resp.on_hover_text(ts!("health.more")), shown)
 }
 
 #[cfg(test)]

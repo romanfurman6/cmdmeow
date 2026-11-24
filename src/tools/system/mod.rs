@@ -40,24 +40,26 @@ impl System {
 
 const SMALL_TO_MEDIUM: &[Size] = UP_TO_MEDIUM;
 
-const WIDGETS: [WidgetSpec; 6] = [
-    WidgetSpec { id: "storage", title: "Storage", about: "Free space on your startup disk.", sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: true },
-    WidgetSpec { id: "memory", title: "Memory", about: "Memory pressure and what uses it.", sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
-    WidgetSpec { id: "cpu", title: "CPU", about: "Load and temperature, with the last minute.", sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
-    WidgetSpec { id: "battery", title: "Battery", about: "Charge and time left.", sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: true },
-    WidgetSpec { id: "network", title: "Network", about: "Wi-Fi and live speed.", sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
-    WidgetSpec { id: "devices", title: "Devices", about: "Bluetooth devices and their batteries.", sizes: &[Size::S11, Size::S12, Size::S14, Size::S24, Size::S44], size: Size::S14, default_on: true },
-];
+fn widgets() -> [WidgetSpec; 6] {
+    [
+        WidgetSpec { id: "storage", title: ts!("health.widget.storage.title"), about: ts!("health.widget.storage.about"), sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: true },
+        WidgetSpec { id: "memory", title: ts!("health.widget.memory.title"), about: ts!("health.widget.memory.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
+        WidgetSpec { id: "cpu", title: ts!("health.widget.cpu.title"), about: ts!("health.widget.cpu.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
+        WidgetSpec { id: "battery", title: ts!("health.widget.battery.title"), about: ts!("health.widget.battery.about"), sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: true },
+        WidgetSpec { id: "network", title: ts!("health.widget.network.title"), about: ts!("health.widget.network.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
+        WidgetSpec { id: "devices", title: ts!("health.widget.devices.title"), about: ts!("health.widget.devices.about"), sizes: &[Size::S11, Size::S12, Size::S14, Size::S24, Size::S44], size: Size::S14, default_on: true },
+    ]
+}
 
 impl Tool for System {
     fn id(&self) -> ToolId {
         ID
     }
     fn name(&self) -> &'static str {
-        "Mac Health"
+        ts!("health.name")
     }
     fn about(&self) -> &'static str {
-        "Live disk, memory, CPU, battery, network and connected devices"
+        ts!("health.about")
     }
     fn busy(&self) -> bool {
         self.ai.phase() == crate::kit::aicheck::Phase::Running
@@ -80,7 +82,7 @@ impl Tool for System {
         Some(ui::header(&self.mon.lock_ok()))
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        WIDGETS.to_vec()
+        widgets().to_vec()
     }
     fn widget_loading(&self, _widget: &str) -> bool {
         !self.mon.lock_ok().ready
@@ -111,23 +113,23 @@ impl Tool for System {
         let rec = |priority: u32, title: String, action: &str, go: Action| Recommendation { priority, title, body: String::new(), action: action.into(), go };
         let mut v = Vec::new();
         if !s.smart_status.is_empty() && !s.smart_status.eq_ignore_ascii_case("Verified") {
-            v.push(rec(m::PRIORITY_DRIVE_HEALTH, "Drive is failing · back up now".into(), "Disk details", card("storage")));
+            v.push(rec(m::PRIORITY_DRIVE_HEALTH, ts!("health.rec.drive").into(), ts!("health.rec.disk_details"), card("storage")));
         }
         if s.battery_level() == Level::Critical {
-            v.push(rec(m::PRIORITY_BATTERY_HEALTH, "Battery needs service".into(), "Battery details", card("battery")));
+            v.push(rec(m::PRIORITY_BATTERY_HEALTH, ts!("health.rec.battery").into(), ts!("health.rec.battery_details"), card("battery")));
         }
         if s.disk_level() != Level::Good {
-            v.push(rec(m::PRIORITY_OUT_OF_DISK, format!("Less than {} free", human_bytes(m::disk_alert_threshold(s.disk_total))), "Open Disk Map", page("lens")));
+            v.push(rec(m::PRIORITY_OUT_OF_DISK, t!("health.rec.low_disk", size = human_bytes(m::disk_alert_threshold(s.disk_total))).into_owned(), ts!("health.rec.open_disk_map"), page("lens")));
         }
         if s.mem_level() != Level::Good {
-            v.push(rec(15, "Memory pressure high".into(), "Memory details", card("memory")));
+            v.push(rec(15, ts!("health.rec.memory").into(), ts!("health.rec.memory_details"), card("memory")));
         }
         if s.uptime_warning() {
             // no button: a restart is the fix, and the app doesn't do it
-            v.push(rec(10, format!("Up {} days", s.uptime_days()), "", card("cpu")));
+            v.push(rec(10, tn!("health.rec.up_days", n = s.uptime_days()).into_owned(), "", card("cpu")));
         }
         if s.trash_overfill() {
-            v.push(rec(m::PRIORITY_TRASH_OVERFILL, format!("Trash holds {}", human_bytes(s.trash_bytes.unwrap_or(0))), "Open Cleanup", page("cleanup")));
+            v.push(rec(m::PRIORITY_TRASH_OVERFILL, t!("health.rec.trash", size = human_bytes(s.trash_bytes.unwrap_or(0))).into_owned(), ts!("health.rec.open_cleanup"), page("cleanup")));
         }
         v
     }
@@ -152,7 +154,7 @@ impl Tool for System {
             return Some(View::Page);
         }
         // a widget id: the page with that card's details
-        let w = WIDGETS.iter().find(|w| w.id == view)?;
+        let w = widgets().into_iter().find(|w| w.id == view)?;
         self.route = Some(w.id.to_string());
         Some(View::Page)
     }
