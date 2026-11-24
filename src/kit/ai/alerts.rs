@@ -117,6 +117,8 @@ pub fn check(info: &UsageInfo, s: &Settings, mem: &mut Memory, now: i64) -> Vec<
 }
 
 /// The limit closest to running out, for the menu bar: (provider, limit).
+// the menu bar number is off for now (Roman 2026-11-24); kept for its return
+#[allow(dead_code)]
 pub fn closest<'a>(infos: &'a [UsageInfo]) -> Option<(&'a UsageInfo, &'a Limit)> {
     infos.iter().flat_map(|i| i.limits.iter().map(move |l| (i, l))).max_by(|a, b| a.1.pct.total_cmp(&b.1.pct))
 }

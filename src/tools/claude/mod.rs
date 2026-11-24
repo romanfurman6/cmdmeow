@@ -126,23 +126,6 @@ impl Claude {
     fn info(&self) -> UsageInfo {
         backend::current(&self.all).lock_ok().clone()
     }
-
-    /// Next to the menu-bar icon: the limit closest to running out across
-    /// every provider that's on, or one provider's session, or for an API
-    /// key this month's dollars.
-    fn menu_bar(&self) -> Option<String> {
-        let set = ai::settings::get();
-        let infos = backend::enabled(&self.all);
-        let pick = match set.menu_bar.as_str() {
-            "off" => return None,
-            "closest" => ai::alerts::closest(&infos).map(|(i, l)| (i.clone(), Some(l.pct))),
-            id => infos.iter().find(|i| ai::meta(i.provider).id == id).map(|i| (i.clone(), i.session().map(|l| l.pct))),
-        };
-        match pick {
-            Some((_, Some(pct))) => Some(format!("{pct:.0}%")),
-            _ => infos.iter().find(|i| i.is_api() && i.local.usd_month > 0.0).map(|i| format!("${:.0}", i.local.usd_month)),
-        }
-    }
 }
 
 fn badge() -> Badge {
@@ -206,9 +189,6 @@ impl Tool for Claude {
             action: "See Limits".into(),
             go: Action::OpenPage { tool: ID.into(), route: LIMITS.into() },
         }]
-    }
-    fn tray_title(&self) -> Option<String> {
-        self.menu_bar()
     }
     fn demo_view(&mut self, view: &str) -> Option<View> {
         match view {

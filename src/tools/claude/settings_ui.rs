@@ -1,5 +1,4 @@
-//! Settings › AI Usage: which providers to read, notifications, and what
-//! the menu bar shows.
+//! Settings › AI Usage: which providers to read, notifications and display.
 
 use crate::kit::ai::{self, settings, UsageInfo};
 use crate::kit::glass::*;
@@ -7,7 +6,6 @@ use egui::{Align2, Pos2, Rect, Ui, Vec2};
 
 const ROW_H: f32 = sp::SETTINGS_ROW_H;
 const THRESHOLDS: [u8; 3] = [50, 80, 95];
-const MENU: [(&str, &str); 4] = [("closest", "Closest to limit"), ("claude", "Claude"), ("codex", "Codex"), ("off", "Off")];
 
 /// A card of `n` rows under a section title. Returns the card and moves `y`
 /// past it.
@@ -163,15 +161,7 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     }
 
     // display
-    let card = section(&p, x, w, &mut y, "Display", 3);
-    let r0 = row(card, 0);
-    label(&p, r0, "Menu bar");
-    let labels: Vec<&str> = MENU.iter().map(|m| m.1).collect();
-    let seg = Rect::from_min_size(Pos2::new(r0.right() - 16.0 - 380.0, r0.center().y - 13.0), Vec2::new(380.0, 26.0));
-    let cur = MENU.iter().position(|m| m.0 == set.menu_bar).unwrap_or(0);
-    if let Some(i) = segmented(ui, seg, ui.scope_id().with("ai-menu"), &labels, cur) {
-        change = Some(Box::new(move |s| s.menu_bar = MENU[i].0.into()));
-    }
+    let card = section(&p, x, w, &mut y, "Display", 2);
     for (k, (name, on, f)) in [
         ("Cost in $", set.show_cost, (|s: &mut settings::Settings| s.show_cost = !s.show_cost) as fn(&mut settings::Settings)),
         ("Provider outages", set.show_outages, |s: &mut settings::Settings| s.show_outages = !s.show_outages),
@@ -179,7 +169,7 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     .into_iter()
     .enumerate()
     {
-        let r = row(card, k + 1);
+        let r = row(card, k);
         label(&p, r, name);
         if switch(ui, switch_at(r), ui.scope_id().with(("ai-d", k)), on, true).clicked() {
             change = Some(Box::new(f));
