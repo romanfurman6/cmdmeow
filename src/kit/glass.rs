@@ -1492,8 +1492,9 @@ pub fn hairline(p: &Painter, a: Pos2, b: Pos2) {
 
 /// Small section header ("Clean", "Monitor", table column titles).
 /// A sidebar section title with its group's 6 pt dot in front.
-pub fn group_header(p: &Painter, pos: Pos2, label: &str) -> Rect {
-    p.circle_filled(Pos2::new(pos.x + 3.0, pos.y + 7.0), 3.0, group_color(label));
+/// `id` picks the dot colour (a fixed section id), `label` is the shown text.
+pub fn group_header(p: &Painter, pos: Pos2, id: &str, label: &str) -> Rect {
+    p.circle_filled(Pos2::new(pos.x + 3.0, pos.y + 7.0), 3.0, group_color(id));
     section_header(p, Pos2::new(pos.x + 12.0, pos.y), Align2::LEFT_TOP, label)
 }
 

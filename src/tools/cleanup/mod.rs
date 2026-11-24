@@ -98,7 +98,7 @@ impl Tool for Cleanup {
     }
 
     fn section(&self) -> &'static str {
-        ts!("cleanup.short")
+        "Clean"
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
         vec![WidgetSpec { id: "clean", title: ts!("cleanup.short"), about: ts!("cleanup.widget_about"), sizes: &[Size::S12, Size::S14], size: Size::S12, default_on: true }]

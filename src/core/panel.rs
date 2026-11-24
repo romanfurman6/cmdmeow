@@ -122,7 +122,7 @@ fn draw_inner(app: &mut App, ui: &mut Ui, owner: Option<usize>, id: &'static str
                 let title = app.tools[i].widgets().into_iter().find(|w| w.id == id).map(|w| w.title).unwrap_or_else(|| app.tools[i].name());
                 let mut child = ui.new_child(UiBuilder::new().max_rect(r).id_salt((salt, "locked")));
                 let lid = child.scope_id();
-                if crate::kit::tile::locked(&mut child, r, lid, b.icon, title, perm.name()).on_hover_text(format!("Needs {}", perm.name())).clicked() {
+                if crate::kit::tile::locked(&mut child, r, lid, b.icon, title, perm.name()).on_hover_text(t!("app.needs", perm = perm.name())).clicked() {
                     app.perm_watch.ask(perm, ui.ctx().input(|i| i.time));
                 }
                 return;
@@ -264,7 +264,7 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         ctx.request_repaint();
     }
     let x0 = rect.left() + 16.0;
-    let quit_w = button_width(&p, "Quit", BTN_DANGER).max(56.0);
+    let quit_w = button_width(&p, ts!("app.quit"), BTN_DANGER).max(56.0);
     let mut clicked_quit = false;
     let mut hot = Rect::NOTHING;
     {
@@ -273,7 +273,7 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         let r = Rect::from_min_size(Pos2::new(quit_r.right() - w, top), Vec2::new(w, size));
         title_line(app, &p, x0, rect.top(), r.left() - x0 - 10.0);
         if t < 0.01 {
-            if round_button_in(ui, r, Icon::Close, "Quit Cmd+Meow").clicked() {
+            if round_button_in(ui, r, Icon::Close, ts!("app.quit_app")).clicked() {
                 quit_log("arm");
                 ctx.data_mut(|d| {
                     d.insert_temp(id, std::time::Instant::now());
@@ -295,7 +295,7 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
                 icon(&p, Icon::Close, Rect::from_center_size(face.center(), Vec2::splat(size * 0.46)), TEXT_SOFT().gamma_multiply(1.0 - t * 2.0));
             } else {
                 let col = on_color(DANGER());
-                p.text(face.center(), Align2::CENTER_CENTER, "Quit", bold(13.0), col.gamma_multiply((t - 0.5) * 2.0));
+                p.text(face.center(), Align2::CENTER_CENTER, ts!("app.quit"), bold(13.0), col.gamma_multiply((t - 0.5) * 2.0));
             }
             if k.resp.hovered() {
                 ctx.data_mut(|d| d.insert_temp(id.with("idle"), std::time::Instant::now()));
@@ -303,7 +303,7 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
             clicked_quit = k.resp.clicked();
             hot = r;
         }
-        if round_button_in(ui, open_r, Icon::Window, "Open Cmd+Meow").clicked() {
+        if round_button_in(ui, open_r, Icon::Window, ts!("app.open_app")).clicked() {
             disarm(&ctx);
             open_app(app, &ctx);
         }
@@ -347,8 +347,8 @@ fn widgets(app: &mut App, ui: &mut Ui, origin: Rect, cx: &mut Cx) {
     let (placed, _) = place(app, origin.width());
     if placed.is_empty() {
         let p = ui.painter();
-        p.text(origin.center_top() + Vec2::new(0.0, 40.0), Align2::CENTER_CENTER, "No widgets shown", bold(15.0), TEXT_DIM());
-        p.text(origin.center_top() + Vec2::new(0.0, 64.0), Align2::CENTER_CENTER, "Use Edit widgets… to pick some.", font(13.0), TEXT_FAINT());
+        p.text(origin.center_top() + Vec2::new(0.0, 40.0), Align2::CENTER_CENTER, ts!("app.no_widgets"), bold(15.0), TEXT_DIM());
+        p.text(origin.center_top() + Vec2::new(0.0, 64.0), Align2::CENTER_CENTER, ts!("app.use_edit"), font(13.0), TEXT_FAINT());
         return;
     }
     for w in &placed {
@@ -375,7 +375,7 @@ pub fn size_chips(ui: &mut Ui, rect: Rect, id: Id, offered: &[Size], cur: Size) 
         if !ok {
             p.line_segment([g.left_center(), g.right_center()], Stroke::new(1.0, white(60)));
         }
-        let resp = resp.on_hover_text(if ok { z.name() } else { "Not offered for this widget" });
+        let resp = resp.on_hover_text(if ok { z.name() } else { ts!("app.not_offered") });
         if ok && resp.clicked() && z != cur {
             out = Some(z);
         }
@@ -402,14 +402,14 @@ fn update_banner(ui: &mut Ui, r: Rect) {
         State::Available(m) => (format!("Cmd+Meow {}", m.version), ACTION()),
         State::Downloading(v, _) | State::Installing(v) => (format!("Cmd+Meow {v}"), ACTION()),
         State::Restarting => ("Cmd+Meow".into(), ACTION()),
-        State::Failed(..) => ("Update failed".into(), RED()),
+        State::Failed(..) => (ts!("app.update_failed").into(), RED()),
         State::Idle => return,
     };
     icon(&p, if matches!(state, State::Failed(..)) { Icon::Info } else { Icon::Down }, icon_r, accent);
     let mut text_right = right;
     match &state {
         State::Available(_) => {
-            let label = "Update";
+            let label = ts!("app.update");
             let bw = button_width(&p, label, BTN_PRIMARY);
             let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - btn_h / 2.0), Vec2::new(bw, btn_h));
             if pill_button(ui, b, label, BTN_PRIMARY, true).clicked() {
@@ -427,10 +427,10 @@ fn update_banner(ui: &mut Ui, r: Rect) {
         }
         State::Failed(_, why) => {
             let close = Rect::from_min_size(Pos2::new(right - btn_h, r.center().y - btn_h / 2.0), Vec2::splat(btn_h));
-            if icon_button(ui, close, Icon::Close, "Hide").clicked() {
+            if icon_button(ui, close, Icon::Close, ts!("app.hide")).clicked() {
                 update::dismiss();
             }
-            let label = "Download";
+            let label = ts!("app.download");
             let bw = button_width(&p, label, BTN_SECONDARY);
             let b = Rect::from_min_size(Pos2::new(close.left() - sp::S - bw, close.top()), Vec2::new(bw, btn_h));
             if pill_button(ui, b, label, BTN_SECONDARY, true).on_hover_text(why).clicked() {
@@ -448,7 +448,7 @@ fn update_banner(ui: &mut Ui, r: Rect) {
 /// "Edit widgets…", centred under the widgets.
 fn footer(app: &mut App, ui: &mut Ui, rect: Rect) {
     let p = ui.painter().clone();
-    let g = p.layout_no_wrap("Edit widgets…".into(), font(12.0), TEXT_FAINT());
+    let g = p.layout_no_wrap(ts!("app.edit_widgets").into(), font(12.0), TEXT_FAINT());
     let c = Pos2::new(rect.center().x, rect.bottom() - FOOTER / 2.0 - 2.0);
     let r = Rect::from_center_size(c, g.size() + Vec2::new(16.0, 8.0));
     let resp = ui.interact(r, ui.scope_id().with("edit-widgets"), Sense::click());
@@ -456,7 +456,7 @@ fn footer(app: &mut App, ui: &mut Ui, rect: Rect) {
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    if resp.on_hover_text("Edit the panel's widgets in the Cmd+Meow window").clicked() {
+    if resp.on_hover_text(ts!("app.edit_widgets_tip")).clicked() {
         let ctx = ui.ctx().clone();
         app.open_settings(&ctx, false);
     }

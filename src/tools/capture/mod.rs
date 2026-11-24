@@ -1221,7 +1221,7 @@ impl Tool for Capture {
     }
 
     fn section(&self) -> &'static str {
-        ts!("cap.section_create")
+        "Create"
     }
     fn about(&self) -> &'static str {
         ts!("cap.about")

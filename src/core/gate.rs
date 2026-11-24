@@ -81,7 +81,7 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     let mut ask: Option<Perm> = None;
     if app.perm_watch.waiting(hero, now) {
         // asked: a quiet button with a spinner until macOS answers
-        let label = if hero.answered_in_place() { hero.ask_label() } else { "System Settings" };
+        let label = if hero.answered_in_place() { hero.ask_label() } else { ts!("app.system_settings") };
         let r = empty::hero_button(ui, Pos2::new(cx, y), id.with("wait"), label, None, Lead::Dot(egui::Color32::TRANSPARENT), None, true, 0.0);
         let tw = p.layout_no_wrap(label.to_owned(), bold(16.0), TEXT()).size().x;
         let lead = 12.0 + sp::S + 2.0;
@@ -91,7 +91,7 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     } else {
-        let (label, tint) = if status == Status::Denied { ("Open Settings", None) } else { (hero.ask_label(), Some(ACTION())) };
+        let (label, tint) = if status == Status::Denied { (ts!("app.open_settings"), None) } else { (hero.ask_label(), Some(ACTION())) };
         if empty::hero_button(ui, Pos2::new(cx, y), id.with("ask"), label, None, Lead::None, tint, true, 0.0).clicked() {
             ask = Some(hero);
         }

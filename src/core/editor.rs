@@ -61,7 +61,9 @@ enum Target {
 }
 
 /// Settings tabs by id, and the order they're shown in.
-const TAB_NAMES: [&str; 6] = ["Widgets", "Tools", "General", "AI Usage", "AI Check", "Cat"];
+fn tab_names() -> [&'static str; 6] {
+    [ts!("app.tab_widgets"), ts!("app.tab_tools"), ts!("app.tab_general"), ts!("app.tab_ai_usage"), ts!("app.tab_ai_check"), ts!("app.tab_cat")]
+}
 const TAB_ORDER: [usize; 6] = [2, 1, 3, 4, 5, 0];
 /// The tab Settings opens on from the sidebar.
 pub const TAB_GENERAL: usize = 2;
@@ -72,10 +74,10 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let top = Rect::from_min_size(r.min, Vec2::new(r.width(), TOP_H));
     hairline(&p, top.left_bottom(), top.right_bottom());
-    p.text(Pos2::new(top.left() + 24.0, top.center().y), Align2::LEFT_CENTER, "Settings", bold(15.0), TEXT());
+    p.text(Pos2::new(top.left() + 24.0, top.center().y), Align2::LEFT_CENTER, ts!("app.settings"), bold(15.0), TEXT());
     // shown General first; `settings_tab` keeps its ids (0 Widgets, 1 Tools,
     // 2 General, 3 AI Usage, 4 AI Check, 5 Cat) so links and Edit widgets… land on the right tab
-    let labels: Vec<&str> = TAB_ORDER.iter().map(|&t| TAB_NAMES[t]).collect();
+    let labels: Vec<&str> = TAB_ORDER.iter().map(|&t| tab_names()[t]).collect();
     let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, sp::HEADER_CONTROL_H));
     let shown = TAB_ORDER.iter().position(|&t| t == app.settings_tab).unwrap_or(0);
     if let Some(k) = segmented(ui, tabs, ui.scope_id().with("settings-tabs"), &labels, shown) {
@@ -165,7 +167,7 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
     // list: search, then each tool's widgets
     let sr = Rect::from_min_size(lr.min + Vec2::new(sp::M, sp::L), Vec2::new(list_w - 2.0 * sp::M, 28.0));
     let mut q = std::mem::take(&mut app.widget_search);
-    let sresp = search_field(ui, sr, &mut q, "Search", false);
+    let sresp = search_field(ui, sr, &mut q, ts!("app.search"), false);
     if sresp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         q.clear();
     }
@@ -185,7 +187,7 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
         let (origin, _) = ui.allocate_exact_size(Vec2::new(w, h.max(60.0)), Sense::hover());
         let p = ui.painter().clone();
         if groups.is_empty() {
-            text_fit(&p, Pos2::new(origin.left() + 4.0, origin.top() + 16.0), Align2::LEFT_CENTER, &format!("No widgets match \"{}\"", query.trim()), font(12.0), TEXT_DIM(), w - 8.0);
+            text_fit(&p, Pos2::new(origin.left() + 4.0, origin.top() + 16.0), Align2::LEFT_CENTER, &t!("app.no_match", q = query.trim()), font(12.0), TEXT_DIM(), w - 8.0);
         }
         let mut y = origin.top();
         for (name, items) in &groups {
@@ -241,14 +243,14 @@ fn widgets_tab(app: &mut App, ui: &mut Ui, body: Rect) {
     icon(&p, Icon::Wifi, Rect::from_center_size(Pos2::new(tray.center().x + 30.0, bar.center().y), Vec2::splat(14.0)), TEXT_SOFT());
     icon(&p, Icon::Battery(80), Rect::from_center_size(Pos2::new(tray.center().x - 30.0, bar.center().y), Vec2::splat(16.0)), TEXT_SOFT());
     let title_y = bar.bottom() + 12.0;
-    p.text(Pos2::new(px, title_y + 12.0), Align2::LEFT_CENTER, "Menu bar panel", bold(13.0), TEXT());
-    let rw = button_width(&p, "Reset", BTN_SECONDARY);
+    p.text(Pos2::new(px, title_y + 12.0), Align2::LEFT_CENTER, ts!("app.menu_bar_panel"), bold(13.0), TEXT());
+    let rw = button_width(&p, ts!("app.reset"), BTN_SECONDARY);
     let reset = Rect::from_min_size(Pos2::new(px + pw - rw, title_y), Vec2::new(rw, 24.0));
-    if pill_button(ui, reset, "Reset", BTN_SECONDARY, true).on_hover_text("Back to the default widgets").clicked() {
+    if pill_button(ui, reset, ts!("app.reset"), BTN_SECONDARY, true).on_hover_text(ts!("app.reset_tip")).clicked() {
         app.reset_widgets();
     }
     let shown = panel::place(app, panel::inner_width()).0.len();
-    p.text(Pos2::new(reset.left() - 10.0, title_y + 12.0), Align2::RIGHT_CENTER, format!("{shown} widget{}", if shown == 1 { "" } else { "s" }), font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(reset.left() - 10.0, title_y + 12.0), Align2::RIGHT_CENTER, tn!("app.widgets", n = shown).into_owned(), font(12.0), TEXT_FAINT());
     let boxr = Rect::from_min_max(Pos2::new(px, title_y + 36.0), Pos2::new(px + pw, pr.bottom() - 20.0 - SIZE_BAR_H));
     p.rect_filled(boxr, 14.0, BG());
     p.rect_stroke(boxr, 14.0, Stroke::new(1.0, white(31)), StrokeKind::Inside);
@@ -387,7 +389,7 @@ fn variants(app: &mut App, ui: &mut Ui, r: Rect, key: &str) -> Option<Size> {
                 if resp.drag_started() && !dragging {
                     let grab = resp.interact_pointer_pos().map(|q| q - wr.min).unwrap_or(Vec2::splat(12.0));
                     app.drag = Some(Drag { key: key.to_string(), from_gallery: true, label: spec.title.to_string(), size: sz, grab, as_size: Some(*z) });
-                } else if resp.on_hover_text(if here { "In the panel at this size" } else { "Click to add at this size, or drag into the panel" }).clicked() {
+                } else if resp.on_hover_text(if here { ts!("app.in_panel") } else { ts!("app.click_add") }).clicked() {
                     out = Some(*z);
                 }
                 cx += sz.x + gap_x;
@@ -428,7 +430,7 @@ fn size_bar(app: &mut App, ui: &mut Ui, r: Rect) {
     };
     let ty = r.top() + 8.0;
     let tr = p.text(Pos2::new(r.left(), ty), Align2::LEFT_CENTER, spec.title, bold(12.0), TEXT());
-    p.text(Pos2::new(tr.right() + 6.0, ty), Align2::LEFT_CENTER, "size", font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(tr.right() + 6.0, ty), Align2::LEFT_CENTER, ts!("app.size"), font(12.0), TEXT_FAINT());
     p.text(Pos2::new(r.right(), ty), Align2::RIGHT_CENTER, format!("{} · {}", cur.name(), cur.label()), font(12.0), TEXT_FAINT());
     let chips = Rect::from_min_max(Pos2::new(r.left(), ty + 14.0), Pos2::new(r.right(), ty + 44.0));
     if let Some(z) = panel::size_chips(ui, chips, ui.scope_id().with(("sizes", &key)), spec.sizes, cur) {
@@ -498,7 +500,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
             p.circle_filled(mb.center() + Vec2::new(0.0, 1.5), 10.5, Color32::from_black_alpha(90));
             p.circle_filled(mb.center(), 10.0, if b.hovered() { lerp_color(GRAY(), TEXT(), 0.3) } else { GRAY() });
             p.line_segment([mb.center() - Vec2::new(4.5, 0.0), mb.center() + Vec2::new(4.5, 0.0)], Stroke::new(1.8, Color32::WHITE));
-            if b.on_hover_text("Hide").clicked() {
+            if b.on_hover_text(ts!("app.hide")).clicked() {
                 hide = Some(key.clone());
             }
         }
@@ -512,7 +514,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
             if b.hovered() {
                 ctx.set_cursor_icon(egui::CursorIcon::ResizeNwSe);
             }
-            if b.on_hover_text("Next size").clicked() {
+            if b.on_hover_text(ts!("app.next_size")).clicked() {
                 pick = Some(Pick::Grow(key.clone()));
             }
         }
@@ -553,7 +555,7 @@ fn preview(app: &mut App, ui: &mut Ui, origin: Rect, clip: Rect, placed: &[Place
         p.rect_filled(end, 10.0, with_alpha(ACTION(), 0.12));
     }
     dashed_rect(&p, end, 10.0, if on_end { ACCENT() } else { white(40) });
-    let label = if app.drag.is_some() { "Drop here to add at the end" } else { "Drag widgets here" };
+    let label = if app.drag.is_some() { ts!("app.drop_end") } else { ts!("app.drag_here") };
     p.text(end.center(), Align2::CENTER_CENTER, label, font(12.0), if on_end { ACCENT() } else { TEXT_MUTED() });
     (target, hide, pick)
 }
@@ -630,7 +632,7 @@ fn tools_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         p.galley(Pos2::new(text_x, block_top + name_h + sp::LINE_GAP), about, TEXT_DIM());
         let sw = Rect::from_min_size(Pos2::new(r.right() - sp::M - sw_size.x, r.center().y - sw_size.y / 2.0), sw_size);
         let on = app.tool_on(k);
-        if switch(ui, sw, ui.scope_id().with(("tool-on", t.id())), on, true).on_hover_text(if on { "Turn off" } else { "Turn on" }).clicked() {
+        if switch(ui, sw, ui.scope_id().with(("tool-on", t.id())), on, true).on_hover_text(if on { ts!("app.turn_off") } else { ts!("app.turn_on") }).clicked() {
             flip = Some((k, !on));
         }
     }
@@ -658,7 +660,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     };
 
     // the agent: one card each, the picked one lit; a click picks it
-    title(&mut y, "Agent");
+    title(&mut y, ts!("app.agent"));
     let main = if demo { Agent::Claude } else { crate::kit::agent::main() };
     let cw = (w - sp::M) / 2.0;
     for (k, a) in Agent::ALL.into_iter().enumerate() {
@@ -670,7 +672,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         let m = Rect::from_center_size(Pos2::new(r.left() + 16.0 + 10.0, r.center().y), Vec2::splat(20.0));
         aicheck::ui::agent_mark(&p, m, a, None);
         let ready = demo || a.ready();
-        let (label, col) = if ready { ("Ready".to_string(), GREEN()) } else { (a.why_not(), TEXT_DIM()) };
+        let (label, col) = if ready { (ts!("app.ready").to_string(), GREEN()) } else { (a.why_not(), TEXT_DIM()) };
         let c = chip(&p, Pos2::new(r.right() - 16.0, r.center().y), Align2::RIGHT_CENTER, &label, (with_alpha(col, 0.16), col));
         text_fit(&p, Pos2::new(m.right() + 10.0, r.center().y), Align2::LEFT_CENTER, a.name(), bold(13.0), TEXT(), c.left() - m.right() - 20.0);
         if resp.clicked() && !on && !demo {
@@ -689,7 +691,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
 
     // which tools check by themselves after a scan (otherwise: on a click)
     let set = aicheck::settings();
-    title(&mut y, "Check after each scan");
+    title(&mut y, ts!("app.check_after"));
     let rows: Vec<(&str, &str, Icon, Color32)> = aicheck::TOOLS
         .iter()
         .filter_map(|(id, name, _)| app.tools.iter().find(|t| t.id() == *id).map(|t| (*id, *name, t.badge().icon, t.badge().color)))
@@ -718,7 +720,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     }
 
     // what Cmd+Meow's own checks took (read now and then, not every frame)
-    title(&mut y, "Used by Cmd+Meow · 30 days");
+    title(&mut y, ts!("app.used_30"));
     let now = ui.ctx().input(|i| i.time);
     let key = ui.scope_id().with("ai-check-total");
     let t = if demo {
@@ -736,7 +738,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 2.0 * sp::M + line_h(&p, &bold(22.0)) + sp::LINE_GAP + line_h(&p, &font(12.0))));
     glass_card(&p, card, R_CARD, 0.0, false);
     let tokens = if t.tokens >= 1_000_000 { format!("{:.1}M", t.tokens as f64 / 1e6) } else if t.tokens >= 1_000 { format!("{}k", t.tokens / 1_000) } else { t.tokens.to_string() };
-    let stats = [(t.calls.to_string(), "checks", TEXT()), (tokens, "tokens", TEXT()), (format!("${:.2}", t.cost), "at API prices", tint::HEALTH())];
+    let stats = [(t.calls.to_string(), ts!("app.checks"), TEXT()), (tokens, ts!("app.tokens"), TEXT()), (format!("${:.2}", t.cost), ts!("app.api_prices"), tint::HEALTH())];
     let mut sx = card.left() + 16.0;
     for (v, l, c) in stats {
         let a = p.text(Pos2::new(sx, card.top() + sp::M), Align2::LEFT_TOP, &v, bold(22.0), c);
@@ -763,7 +765,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     // Theme: its own card on top (T5)
     let theme_card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
     glass_card(&p, theme_card, R_CARD, 0.0, false);
-    p.text(Pos2::new(theme_card.left() + 16.0, theme_card.center().y), Align2::LEFT_CENTER, "Theme", font(13.0), TEXT());
+    p.text(Pos2::new(theme_card.left() + 16.0, theme_card.center().y), Align2::LEFT_CENTER, ts!("app.theme"), font(13.0), TEXT());
     {
         use crate::kit::glass::{set_theme_choice, theme, theme_choice, Theme, ThemeChoice};
         // screenshots show the theme they are drawn in
@@ -793,21 +795,21 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let sw_in = |r: Rect| Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
     let (r0, r1) = (row(0), row(1));
     hairline(&p, Pos2::new(r1.left() + 16.0, r1.top()), Pos2::new(r1.right() - 16.0, r1.top()));
-    p.text(Pos2::new(r0.left() + 16.0, r0.center().y), Align2::LEFT_CENTER, "Open at login", font(13.0), TEXT());
+    p.text(Pos2::new(r0.left() + 16.0, r0.center().y), Align2::LEFT_CENTER, ts!("app.open_login"), font(13.0), TEXT());
     let now = ui.ctx().input(|i| i.time);
     let on = app.perm_watch.login_on(app.demo, now);
     if switch(ui, sw_in(r0), ui.scope_id().with("open-at-login"), on, true).clicked() && !app.demo {
         app.perm_watch.set_login(!on);
     }
     // off: a menu bar app only, no Dock icon even with this window open
-    p.text(Pos2::new(r1.left() + 16.0, r1.center().y), Align2::LEFT_CENTER, "Show in Dock", font(13.0), TEXT());
+    p.text(Pos2::new(r1.left() + 16.0, r1.center().y), Align2::LEFT_CENTER, ts!("app.show_dock"), font(13.0), TEXT());
     let on = crate::kit::native::show_in_dock() || app.demo;
     if switch(ui, sw_in(r1), ui.scope_id().with("show-in-dock"), on, true).clicked() && !app.demo {
         crate::kit::native::set_show_in_dock(!on);
     }
     let r2 = row(2);
     hairline(&p, Pos2::new(r2.left() + 16.0, r2.top()), Pos2::new(r2.right() - 16.0, r2.top()));
-    p.text(Pos2::new(r2.left() + 16.0, r2.center().y), Align2::LEFT_CENTER, "Sounds", font(13.0), TEXT());
+    p.text(Pos2::new(r2.left() + 16.0, r2.center().y), Align2::LEFT_CENTER, ts!("app.sounds"), font(13.0), TEXT());
     let on = crate::kit::sound::on() || app.demo;
     if switch(ui, sw_in(r2), ui.scope_id().with("sounds"), on, true).clicked() && !app.demo {
         crate::kit::sound::set_on(!on);
@@ -817,7 +819,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     // the menu bar panel stays up when focus leaves it (for screenshots of it)
     let r3 = row(3);
     hairline(&p, Pos2::new(r3.left() + 16.0, r3.top()), Pos2::new(r3.right() - 16.0, r3.top()));
-    p.text(Pos2::new(r3.left() + 16.0, r3.center().y), Align2::LEFT_CENTER, "Keep menu bar panel open", font(13.0), TEXT());
+    p.text(Pos2::new(r3.left() + 16.0, r3.center().y), Align2::LEFT_CENTER, ts!("app.keep_open"), font(13.0), TEXT());
     let on = super::panel::keep_open();
     if switch(ui, sw_in(r3), ui.scope_id().with("keep-panel-open"), on, true).clicked() && !app.demo {
         super::panel::set_keep_open(!on);
@@ -825,14 +827,14 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     if crash {
         let r4 = row(4);
         hairline(&p, Pos2::new(r4.left() + 16.0, r4.top()), Pos2::new(r4.right() - 16.0, r4.top()));
-        p.text(Pos2::new(r4.left() + 16.0, r4.center().y), Align2::LEFT_CENTER, "Send crash reports", font(13.0), TEXT());
+        p.text(Pos2::new(r4.left() + 16.0, r4.center().y), Align2::LEFT_CENTER, ts!("app.send_crash"), font(13.0), TEXT());
         let on = app.demo || crate::kit::crash_report::consent() == Some(true);
         if switch(ui, sw_in(r4), ui.scope_id().with("crash-reports"), on, true).clicked() && !app.demo {
             crate::kit::crash_report::set_consent(!on);
         }
     }
     y = card.bottom() + 28.0;
-    crate::kit::glass::card_title(&p, Pos2::new(x, y), "Permissions");
+    crate::kit::glass::card_title(&p, Pos2::new(x, y), ts!("app.permissions"));
     y += 28.0;
     let list = super::onboard::rows(app);
     {
@@ -842,13 +844,13 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let area = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, body.bottom().max(y)));
     let used = super::onboard::perm_list(app, ui, area, &list, 10.0, now);
     y += used + 16.0;
-    let label = "Run setup again";
+    let label = ts!("app.setup_again");
     let bw = button_width(&p, label, BTN_SECONDARY);
     if pill_button(ui, Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, sp::HEADER_CONTROL_H)), label, BTN_SECONDARY, true).clicked() {
         app.open_setup();
     }
     // the panel has no menu of its own: Quit lives here
-    let quit = "Quit Cmd+Meow";
+    let quit = ts!("app.quit_app");
     let qw = button_width(&p, quit, BTN_SECONDARY);
     if pill_button(ui, Rect::from_min_size(Pos2::new(x + bw + sp::S, y), Vec2::new(qw, sp::HEADER_CONTROL_H)), quit, BTN_SECONDARY, true).clicked() && !app.demo {
         let ctx = ui.ctx().clone();
@@ -892,13 +894,13 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
         }
         let live = k == 0 || s.cat;
         let (label, on) = match k {
-            0 => ("Cat", &mut s.cat),
-            1 => ("Hardware reactions", &mut s.hardware),
-            _ => ("Tidy the desktop", &mut s.tidy),
+            0 => (ts!("app.cat"), &mut s.cat),
+            1 => (ts!("app.hardware"), &mut s.hardware),
+            _ => (ts!("app.tidy"), &mut s.tidy),
         };
         let text = p.text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, label, font(13.0), dim(TEXT(), live));
         if k == 1 {
-            ui.interact(text, ui.scope_id().with("cat-hardware"), Sense::hover()).on_hover_text("Charger, lid, trackpad, slaps, low battery");
+            ui.interact(text, ui.scope_id().with("cat-hardware"), Sense::hover()).on_hover_text(ts!("app.hardware_tip"));
         }
         let sw = sw_in(r);
         if k == 2 {
@@ -911,7 +913,7 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
                     .pivot(Align2::RIGHT_BOTTOM)
                     .fixed_pos(Pos2::new(keys.right(), keys.top() - 6.0))
                     .show(ui.ctx(), |ui| {
-                        egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(format!("Put back  {}", cat::PUT_BACK_KEYS)));
+                        egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(t!("app.put_back", keys = cat::PUT_BACK_KEYS).into_owned()));
                     });
             }
         }
@@ -937,9 +939,9 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
     let armed = ctx.data(|d| d.get_temp::<f64>(armed_id)).is_some_and(|t| now - t < 4.0);
     let run = if app.demo { Run::Idle } else { remove::run_state() };
     let label = match (&run, armed) {
-        (Run::Working, _) => "Removing…",
-        (_, true) => "Click again to remove",
-        _ => "Remove Cmd+Meow",
+        (Run::Working, _) => ts!("app.removing"),
+        (_, true) => ts!("app.click_remove"),
+        _ => ts!("app.remove_app"),
     };
     let p = ui.painter().clone();
     let bw = button_width(&p, label, BTN_DANGER);
@@ -963,8 +965,8 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
     if ctx.data(|d| d.get_temp::<bool>(loading_id)).unwrap_or(false) {
         use crate::kit::loader::{self, Count, Status};
         let status = match &run {
-            Run::Failed(e) => Status::Failed { title: "Cmd+Meow couldn't be removed".into(), problem: e.clone() },
-            _ => Status::Working { title: "Removing Cmd+Meow…".into(), count: Count::Unknown, current: String::new(), can_stop: false },
+            Run::Failed(e) => Status::Failed { title: ts!("app.cant_remove").into(), problem: e.clone() },
+            _ => Status::Working { title: ts!("app.removing_app").into(), count: Count::Unknown, current: String::new(), can_stop: false },
         };
         if loader::show(ui, ctx.content_rect(), "remove-app", &status).is_some() {
             ctx.data_mut(|d| d.remove::<bool>(loading_id));
@@ -981,10 +983,10 @@ mod tab_tests {
     fn every_settings_tab_shows_once_general_first_widgets_last() {
         let mut ids = TAB_ORDER.to_vec();
         ids.sort();
-        assert_eq!(ids, (0..TAB_NAMES.len()).collect::<Vec<_>>());
-        assert_eq!(TAB_NAMES[TAB_ORDER[0]], "General");
+        assert_eq!(ids, (0..tab_names().len()).collect::<Vec<_>>());
+        assert_eq!(tab_names()[TAB_ORDER[0]], "General");
         assert_eq!(TAB_ORDER[0], TAB_GENERAL);
-        assert_eq!(TAB_NAMES[*TAB_ORDER.last().unwrap()], "Widgets");
-        assert_eq!(TAB_NAMES[5], "Cat");
+        assert_eq!(tab_names()[*TAB_ORDER.last().unwrap()], "Widgets");
+        assert_eq!(tab_names()[5], "Cat");
     }
 }

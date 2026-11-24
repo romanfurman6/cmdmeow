@@ -9,7 +9,9 @@ use egui::{Align2, Color32, Pos2, Rect, Sense, Ui, UiBuilder, Vec2, ViewportComm
 /// Tools that are planned but not built yet: shown dashed and disabled so
 /// it's clear where they will live. An installed tool with the same name hides
 /// its placeholder.
-const PLANNED: [(Icon, &str); 4] = [(Icon::Crop, "Screenshot"), (Icon::Clipboard, "Clipboard"), (Icon::Fan, "Fan Control"), (Icon::Cup, "Keep Awake")];
+fn planned() -> [(Icon, &'static str, &'static str); 4] {
+    [(Icon::Crop, "capture", ts!("cap.screenshot")), (Icon::Clipboard, "clipboard", ts!("clip.name")), (Icon::Fan, "fan", ts!("fan.name")), (Icon::Cup, "keep_awake", ts!("awake.name"))]
+}
 
 /// `draw_lights`: paint traffic lights ourselves (screenshots; the real
 /// window has native ones).
@@ -47,7 +49,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         p.image(tex.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
     }
     p.text(Pos2::new(side.left() + 46.0, logo_y + 11.0), Align2::LEFT_CENTER, "Cmd+Meow", bold(13.0), TEXT());
-    let planned: Vec<_> = PLANNED.iter().filter(|(_, n)| !app.tools.iter().any(|t| t.name() == *n)).collect();
+    let planned: Vec<_> = planned().into_iter().filter(|(_, tid, _)| !app.tools.iter().any(|t| t.id() == *tid)).map(|(ic, _, n)| (ic, n)).collect();
     // the list sits between the logo and Settings: on a short window the gaps
     // tighten first, then it scrolls (clipped) instead of running under Settings
     let settings_top = full.bottom() - 12.0 - 30.0 - 6.0 - SIDEBAR_ROW_H;
@@ -81,7 +83,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         if app.tools[i].section() != section {
             section = app.tools[i].section();
             y += gap;
-            group_header(&p, Pos2::new(x + 8.0, y), section);
+            group_header(&p, Pos2::new(x + 8.0, y), section, super::tool::section_label(section));
             y += head;
         }
         // a required permission is missing: a lock where the shortcut sits
@@ -108,9 +110,9 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
     }
     if !planned.is_empty() {
         y += gap;
-        section_header(&p, Pos2::new(x + 8.0, y), Align2::LEFT_TOP, "Planned tools");
+        section_header(&p, Pos2::new(x + 8.0, y), Align2::LEFT_TOP, ts!("app.planned_tools"));
         y += head;
-        for (ic, label) in planned {
+        for (ic, label) in &planned {
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, SIDEBAR_ROW_H));
             sidebar_item(ui, r, ui.scope_id().with(("planned", *label)), *ic, Color32::TRANSPARENT, label, "", false, true, 0.0);
             y += step;
@@ -125,7 +127,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         // no hover fill: only the text brightens
         let col = if resp.hovered() { TEXT() } else { TEXT_DIM() };
         icon(&p, Icon::Plus, Rect::from_center_size(Pos2::new(r.left() + 16.0, r.center().y), Vec2::splat(12.0)), col);
-        p.text(Pos2::new(r.left() + 33.0, r.center().y), Align2::LEFT_CENTER, "More tools", font(12.0), col);
+        p.text(Pos2::new(r.left() + 33.0, r.center().y), Align2::LEFT_CENTER, ts!("app.more_tools"), font(12.0), col);
         if resp.clicked() {
             app.settings_open = true;
             app.settings_tab = super::editor::TAB_TOOLS;
@@ -136,7 +138,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
     let p = ui.painter().clone();
     // settings: widgets and tools
     let r = Rect::from_min_size(Pos2::new(x, full.bottom() - 12.0 - 30.0 - 6.0 - SIDEBAR_ROW_H), Vec2::new(w, SIDEBAR_ROW_H));
-    if sidebar_item(ui, r, ui.scope_id().with("nav-settings"), Icon::Gear, tint::NEUTRAL(), "Settings", "", app.settings_open, false, 0.0).clicked() && !app.settings_open {
+    if sidebar_item(ui, r, ui.scope_id().with("nav-settings"), Icon::Gear, tint::NEUTRAL(), ts!("app.settings"), "", app.settings_open, false, 0.0).clicked() && !app.settings_open {
         app.settings_open = true;
         app.settings_tab = super::editor::TAB_GENERAL;
     }
@@ -148,8 +150,8 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         p.rect_filled(r, R_SMALL, white((12.0 * hov) as u8));
     }
     icon(&p, Icon::Monitor, Rect::from_min_size(Pos2::new(r.left() + 10.0, r.center().y - 8.0), Vec2::splat(16.0)), TEXT_DIM());
-    p.text(Pos2::new(r.left() + 34.0, r.center().y), Align2::LEFT_CENTER, "Menu bar panel", font(13.0), TEXT_DIM());
-    if resp.on_hover_text("Show the menu bar panel").clicked() {
+    p.text(Pos2::new(r.left() + 34.0, r.center().y), Align2::LEFT_CENTER, ts!("app.menu_bar_panel"), font(13.0), TEXT_DIM());
+    if resp.on_hover_text(ts!("app.show_panel")).clicked() {
         app.open_panel(&ctx);
     }
     let content = Rect::from_min_max(Pos2::new(side.right() + 1.0, full.top()), full.max);
@@ -159,7 +161,7 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
         return;
     }
     if !app.tools.get(app.page).is_some_and(|t| t.has_page()) {
-        p.text(content.center(), Align2::CENTER_CENTER, "No tools with a page are installed", bold(15.0), TEXT_DIM());
+        p.text(content.center(), Align2::CENTER_CENTER, ts!("app.no_pages"), bold(15.0), TEXT_DIM());
         return;
     }
     // a required permission is missing: Allow row on top, the page dimmed and off
@@ -182,8 +184,8 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
 fn stopped_page(app: &App, ui: &mut Ui, content: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let t = &app.tools[app.page];
-    let title = format!("{} stopped", t.name());
-    let what = format!("{} ran into an error, so Cmd+Meow turned it off to keep your other tools running. Restart Cmd+Meow to bring it back.", t.name());
+    let title = t!("app.stopped", name = t.name()).into_owned();
+    let what = t!("app.stopped_why", name = t.name()).into_owned();
     let text_w = (content.width() - 2.0 * sp::PAGE_EDGE).min(380.0);
     let mut job = egui::text::LayoutJob::default();
     job.append(&what, 0.0, egui::TextFormat { font_id: ty::body(), color: TEXT_DIM(), line_height: Some(20.0), ..Default::default() });
@@ -210,7 +212,7 @@ fn stopped_page(app: &App, ui: &mut Ui, content: Rect, cx: &mut Cx) {
     p.galley(Pos2::new(x, y), desc.clone(), TEXT_DIM());
     y += desc.size().y + sp::XL;
 
-    let label = "Restart Cmd+Meow";
+    let label = ts!("app.restart_app");
     let bw = button_width(&p, label, BTN_PRIMARY);
     let r = Rect::from_min_size(Pos2::new(x - bw / 2.0, y), Vec2::new(bw, btn_h));
     if pill_button(ui, r, label, BTN_PRIMARY, true).clicked() {
@@ -271,6 +273,25 @@ fn no_zero(meta: String) -> String {
 
 #[cfg(test)]
 mod meta_tests {
+    /// Sections are ids, never the translated label: grouping and order
+    /// compare them as they are.
+    #[test]
+    fn every_section_is_a_known_id() {
+        let tools = crate::tools::all(&crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true });
+        for t in &tools {
+            assert!(crate::core::tool::SECTIONS.contains(&t.section()), "{}: {}", t.id(), t.section());
+        }
+    }
+
+    #[test]
+    fn section_dots_are_coloured_by_id() {
+        use crate::kit::glass::{group_color, TEXT_FAINT};
+        for id in ["Clean", "Monitor", "Create", "Utilities"] {
+            assert!(crate::core::tool::SECTIONS.contains(&id), "{id}");
+            assert_ne!(group_color(id), TEXT_FAINT(), "{id}");
+        }
+    }
+
     #[test]
     fn zero_counts_are_hidden() {
         assert_eq!(super::no_zero("0".into()), "");
