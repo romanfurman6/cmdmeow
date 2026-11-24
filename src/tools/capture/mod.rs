@@ -563,6 +563,19 @@ impl Capture {
         self.ctx.request_repaint();
     }
 
+    /// The Keychain card closed without a yes: drop what waited, and let the
+    /// editor's Share work again (it waits on its upload otherwise).
+    fn keychain_drop(&mut self) {
+        let Some(k) = self.keychain.take() else { return };
+        for p in k.pending {
+            if let KeychainPending::Share(path) = p {
+                if let Some(ew) = self.editor.as_mut().filter(|ew| ew.share.as_deref() == Some(path.as_path())) {
+                    ew.share = None;
+                }
+            }
+        }
+    }
+
     /// The Keychain card's Continue / Try again: let macOS ask now.
     fn keychain_continue(&mut self) {
         let Some(k) = self.keychain.as_mut() else { return };

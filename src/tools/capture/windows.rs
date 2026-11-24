@@ -266,9 +266,9 @@ fn keychain(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
     });
     match choice {
         Some(Choice::Go) => c.keychain_continue(),
-        Some(Choice::Cancel) => c.keychain = None,
+        Some(Choice::Cancel) => c.keychain_drop(),
         Some(Choice::NewKey) => {
-            c.keychain = None;
+            c.keychain_drop();
             c.focus_secret = true;
             cx.open_page(super::SHARING_ID, "");
         }
