@@ -107,7 +107,7 @@ impl Tool for Cleanup {
         let g = self.clean.lock_ok().clone();
         let (value, sub, frac) = match g.phase {
             engine::Phase::Results => (human_bytes(g.total()), "to review".to_string(), None),
-            engine::Phase::Scanning | engine::Phase::Judging => ("Scanning…".into(), g.current.clone(), Some(g.progress)),
+            engine::Phase::Scanning | engine::Phase::Judging => ("Scanning…".into(), g.current.clone(), Some(g.shown_progress())),
             engine::Phase::Cleaning => ("Cleaning…".into(), g.current.clone(), Some(g.progress)),
             engine::Phase::Done => (human_bytes(g.cleaned_bytes), "cleaned".into(), None),
             engine::Phase::Intro => ("Scan".into(), String::new(), None),
