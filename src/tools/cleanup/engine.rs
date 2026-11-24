@@ -189,6 +189,8 @@ pub struct State {
     pub listed: bool,
     /// When this scan started (the bar creeps from it until real progress comes).
     pub started: Option<std::time::Instant>,
+    /// The clean in progress (or just done) took only this group's ticked items.
+    pub clean_only: Option<Group>,
 }
 
 /// One group's live progress while scanning.
@@ -234,7 +236,11 @@ impl State {
         self.items.iter().filter(|i| i.verdict != Verdict::Keep).map(|i| i.bytes).sum()
     }
     pub fn selected_bytes(&self) -> u64 {
-        self.items.iter().filter(|i| i.selected).map(|i| i.bytes).sum()
+        self.selected_in(None)
+    }
+    /// Ticked bytes in one group, or in all of them.
+    pub fn selected_in(&self, only: Option<Group>) -> u64 {
+        self.items.iter().filter(|i| i.selected && in_scope(i, only)).map(|i| i.bytes).sum()
     }
     pub fn pending_questions(&self) -> usize {
         self.items.iter().filter(|i| i.verdict == Verdict::Ask && i.by != Who::You).count()
@@ -1244,6 +1250,11 @@ fn parse_verdicts(text: &str) -> Vec<(usize, Verdict, String)> {
 
 /// What a clean removes, in order: the Trash is emptied first, so what this
 /// clean moves there can still be put back.
+/// The item is in the group a clean is limited to (any, when `None`).
+pub fn in_scope(it: &Item, only: Option<Group>) -> bool {
+    only.is_none_or(|g| it.group == g)
+}
+
 fn clean_order(items: &[Item]) -> Vec<Item> {
     let mut t: Vec<Item> = items.iter().filter(|i| i.selected && i.verdict != Verdict::Keep && !i.hard_keep).cloned().collect();
     t.sort_by_key(|i| i.group != Group::Trash);
@@ -1299,7 +1310,8 @@ fn live_kind(kind: &str) -> bool {
     matches!(kind, "Caches" | "Temp Files" | "Build Data")
 }
 
-pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
+/// Remove the ticked items; with `only`, just that group's (the rest stay ticked).
+pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: Option<Group>) {
     let plan: Vec<(Item, How)> = {
         let mut g = shared.lock_ok();
         g.phase = Phase::Cleaning;
@@ -1311,8 +1323,10 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool) {
         g.cleaned.clear();
         g.stopped = false;
         g.clean_done = 0;
+        g.clean_only = only;
         g.cancel = Arc::new(AtomicBool::new(false));
-        let plan = plan_clean(&g.items, delete_now);
+        let scoped: Vec<Item> = g.items.iter().filter(|i| in_scope(i, only)).cloned().collect();
+        let plan = plan_clean(&scoped, delete_now);
         g.clean_total = plan.iter().map(|(it, _)| it.bytes).sum();
         plan
     };

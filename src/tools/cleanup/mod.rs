@@ -249,10 +249,24 @@ impl Tool for Cleanup {
                 self.clean_group = Some(engine::Group::Captures);
                 v
             }
+            // one group picked: the footer cleans only it
+            "results-group" | "results-group-confirm" => {
+                let v = self.demo_view(if view == "results-group" { "results" } else { "results-confirm" });
+                self.clean_group = Some(engine::Group::AppCaches);
+                if self.clean_confirm {
+                    let items = self.clean.lock_ok().items.clone();
+                    self.quit = page::quit_rows(&items, page::demo_apps(), self.clean_group);
+                }
+                v
+            }
+            "cleanup-done-group" => {
+                *self.clean.lock_ok() = page::demo_done_group();
+                Some(View::Page)
+            }
             "results-confirm" => {
                 let v = self.demo_view("results");
                 let items = self.clean.lock_ok().items.clone();
-                self.quit = page::quit_rows(&items, page::demo_apps());
+                self.quit = page::quit_rows(&items, page::demo_apps(), self.clean_group);
                 // one of each state
                 let states = [page::Quit::Stuck, page::Quit::Open, page::Quit::Closed];
                 for (row, st) in self.quit.iter_mut().zip(states) {
