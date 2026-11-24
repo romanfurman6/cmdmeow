@@ -1895,7 +1895,8 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 tx -= 26.0 + 6.0;
             }
         }
-        cr.bottom() + sp::M
+        // room between what it's for and the agent cards (Roman, M5)
+        cr.bottom() + sp::XL
     };
     // a ping round the main agent's mark when it changes
     let now = ui.ctx().input(|i| i.time);
@@ -2022,7 +2023,9 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     let head_h = 36.0;
     let h = sp::XS + head_h + ROWS.iter().map(|r| if r.2.is_some() { sp::ROW2_H } else { sp::ROW_H }).sum::<f32>() + sp::XS;
     let r = Rect::from_min_size(top_left, Vec2::new(w, h));
-    p.rect_filled(r, R_CARD, CARD().gamma_multiply(a));
+    // an example, not this Mac's findings: no fill, a dashed edge, and
+    // "Example" by its title (Roman, M5 clean install)
+    crate::kit::glass::dashed_rect(p, r, R_CARD, white(56).gamma_multiply(a));
     let now = ui.ctx().input(|i| i.time);
     // the round's fraction, stopped once every row has its answer
     let c = ((t - DEMO_DELAY) / DEMO_LOOP).clamp(0.0, DEMO_END);
@@ -2035,7 +2038,11 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     let x0 = r.left() + sp::L;
     let x1 = r.right() - sp::L;
     agent_mark(p, Rect::from_center_size(Pos2::new(x0 + 9.0, hy), Vec2::splat(18.0)), agent, false);
-    p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
+    let title = p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
+    let tag = p.layout_no_wrap("Example".into(), bold(11.0), TEXT_DIM().gamma_multiply(a));
+    let tr = Rect::from_min_size(Pos2::new(title.right() + sp::S, hy - 9.0), Vec2::new(tag.size().x + 2.0 * sp::S, 18.0));
+    p.rect_filled(tr, 6.0, white(20).gamma_multiply(a));
+    p.galley(Pos2::new(tr.left() + sp::S, hy - tag.size().y / 2.0), tag, TEXT_DIM());
     if done {
         p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, format!("{} checked", ROWS.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
     } else if !done {
