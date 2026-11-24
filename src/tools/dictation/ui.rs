@@ -5,7 +5,7 @@ use super::settings::{Engine, SILENCE_CHOICES};
 use super::{mac, Dictation, Note, Phase, Tab, ID, TINT};
 use crate::core::tool::{Cx, Size};
 use crate::kit::glass::*;
-use crate::kit::perms::{Perm, Status};
+use crate::kit::perms::Perm;
 use crate::kit::tile;
 use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, ViewportBuilder, ViewportId};
 
@@ -920,21 +920,7 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
     crate::kit::glass::card_title(p, Pos2::new(x0, y0), "Permissions");
     let card = card_rows(p, x0, y0 + 28.0, col.width(), 2);
     for (k, perm) in [Perm::Microphone, Perm::Accessibility].into_iter().enumerate() {
-        let y = row_y(card, k);
-        icon(p, perm.icon(), Rect::from_center_size(Pos2::new(card.left() + 21.0, y), Vec2::splat(15.0)), TEXT_DIM());
-        p.text(Pos2::new(card.left() + 38.0, y), Align2::LEFT_CENTER, perm.name(), font(13.0), TEXT());
-        let right = card.right() - 12.0;
-        if perm.status() == Status::Allowed {
-            p.text(Pos2::new(right, y), Align2::RIGHT_CENTER, "Allowed", font(12.0), GREEN());
-        } else {
-            let label = perm.ask_label();
-            let bw = button_width(p, label, BTN_PRIMARY);
-            let br = Rect::from_min_max(Pos2::new(right - bw, y - 12.0), Pos2::new(right, y + 12.0));
-            if pill_button(ui, br, label, BTN_PRIMARY, true).clicked() {
-                perm.ask();
-            }
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
-        }
+        perm_row(ui, p, card, row_y(card, k), perm);
     }
     changed
 }

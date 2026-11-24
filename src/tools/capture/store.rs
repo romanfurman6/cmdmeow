@@ -70,12 +70,12 @@ impl Store {
     }
 
     /// Add a capture and trim to `keep`. Returns its id.
-    pub fn add(&mut self, img: &RgbaImage, kind: Kind, keep: usize) -> Result<u64, String> {
+    pub fn add(&mut self, img: &RgbaImage, kind: Kind, keep: (usize, usize)) -> Result<u64, String> {
         self.add_png(&png_bytes(img), img.dimensions(), kind, keep)
     }
 
     /// [`Store::add`] for a picture already encoded as PNG (`size` in pixels).
-    pub fn add_png(&mut self, png: &[u8], size: (u32, u32), kind: Kind, keep: usize) -> Result<u64, String> {
+    pub fn add_png(&mut self, png: &[u8], size: (u32, u32), kind: Kind, keep: (usize, usize)) -> Result<u64, String> {
         let _ = std::fs::create_dir_all(&self.dir);
         let mut id = chrono::Local::now().timestamp_millis().max(0) as u64;
         while self.shots.iter().any(|s| s.id == id) {
@@ -88,13 +88,15 @@ impl Store {
         Ok(id)
     }
 
-    /// Drop the oldest captures beyond `keep` (pinned ones count but stay).
-    pub fn trim(&mut self, keep: usize) {
-        let mut n = 0;
+    /// Drop the oldest screenshots beyond `keep.0` and recordings beyond
+    /// `keep.1`, each counted on its own (pinned ones count but stay).
+    pub fn trim(&mut self, keep: (usize, usize)) {
+        let (mut shots, mut videos) = (0, 0);
         let mut gone = Vec::new();
         self.shots.retain(|s| {
-            n += 1;
-            if n <= keep || s.pinned {
+            let (n, k) = if s.kind == Kind::Recording { (&mut videos, keep.1) } else { (&mut shots, keep.0) };
+            *n += 1;
+            if *n <= k || s.pinned {
                 true
             } else {
                 gone.push(s.id);
@@ -112,8 +114,12 @@ impl Store {
         self.write_index();
     }
 
-    pub fn clear(&mut self) {
-        for s in std::mem::take(&mut self.shots) {
+    /// Forget every recording (`videos`) or every screenshot; files in the
+    /// folder stay.
+    pub fn clear(&mut self, videos: bool) {
+        let (gone, kept): (Vec<Shot>, Vec<Shot>) = std::mem::take(&mut self.shots).into_iter().partition(|s| (s.kind == Kind::Recording) == videos);
+        self.shots = kept;
+        for s in gone {
             let _ = std::fs::remove_file(self.path(s.id));
         }
         self.write_index();
@@ -254,10 +260,10 @@ mod tests {
         let dir = tmp("store");
         let mut st = Store::open(dir.clone());
         let img = RgbaImage::from_pixel(4, 3, image::Rgba([1, 2, 3, 255]));
-        let first = st.add(&img, Kind::Area, 3).unwrap();
+        let first = st.add(&img, Kind::Area, (3, 3)).unwrap();
         st.set_pinned(first, true);
         for _ in 0..4 {
-            st.add(&img, Kind::Screen, 3).unwrap();
+            st.add(&img, Kind::Screen, (3, 3)).unwrap();
         }
         assert_eq!(st.shots.len(), 4, "3 newest plus the pinned one");
         assert!(st.get(first).is_some());
@@ -269,9 +275,27 @@ mod tests {
         assert_eq!(again.load(first).unwrap().dimensions(), (4, 3));
         st.remove(first);
         assert!(st.get(first).is_none() && !st.path(first).exists());
-        st.clear();
+        st.clear(false);
         crate::kit::fs::flush_writes();
         assert!(Store::open(dir.clone()).shots.is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn screenshots_and_recordings_keep_their_own_limits() {
+        let dir = tmp("store-kinds");
+        let mut st = Store::open(dir.clone());
+        let img = RgbaImage::from_pixel(4, 3, image::Rgba([1, 2, 3, 255]));
+        for _ in 0..2 {
+            st.add(&img, Kind::Recording, (2, 2)).unwrap();
+        }
+        for _ in 0..5 {
+            st.add(&img, Kind::Area, (2, 2)).unwrap();
+        }
+        let videos = st.shots.iter().filter(|s| s.kind == Kind::Recording).count();
+        assert_eq!((st.shots.len() - videos, videos), (2, 2), "screenshots never push recordings out");
+        st.clear(true);
+        assert!(st.shots.iter().all(|s| s.kind != Kind::Recording) && st.shots.len() == 2, "Clear on Video keeps screenshots");
         let _ = std::fs::remove_dir_all(dir);
     }
 

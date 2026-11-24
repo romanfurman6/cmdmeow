@@ -197,6 +197,16 @@ pub struct RecSettings {
     pub open_editor: bool,
     /// Seconds the saved card stays up; None keeps it until closed.
     pub card_secs: Option<u32>,
+    /// What happens once a recording is saved (as Screenshot's `after`);
+    /// older settings' `open_editor: true` becomes Editor.
+    pub after: After,
+    /// Put the saved .mp4 on the clipboard.
+    pub copy: bool,
+    /// Where recordings go; None only before the first load, which takes
+    /// the screenshot folder (where they went before they had their own).
+    pub folder: Option<PathBuf>,
+    /// How many recordings history keeps (pinned ones stay).
+    pub keep: usize,
 }
 
 impl Default for RecSettings {
@@ -215,6 +225,10 @@ impl Default for RecSettings {
             countdown: 3,
             open_editor: false,
             card_secs: Some(8),
+            after: After::Preview,
+            copy: false,
+            folder: None,
+            keep: 50,
         }
     }
 }
@@ -269,6 +283,16 @@ impl Settings {
         Command::ALL.iter().filter_map(|&c| self.shortcut(c).map(|s| (c, s.clone()))).collect()
     }
 
+    /// The folder recordings are saved to.
+    pub fn rec_folder(&self) -> &Path {
+        self.rec.folder.as_deref().unwrap_or(&self.folder)
+    }
+
+    /// History limits: (screenshots, recordings).
+    pub fn keeps(&self) -> (usize, usize) {
+        (self.keep, self.rec.keep)
+    }
+
     /// File name for a capture taken at `t`: "Capture 2026-11-08 at 17.41.12.png".
     pub fn file_name(&self, t: chrono::DateTime<chrono::Local>) -> String {
         format!("Capture {}.{}", t.format("%Y-%m-%d at %H.%M.%S"), self.format.ext())
@@ -282,6 +306,14 @@ impl Settings {
     /// Keep values in range after loading a file someone edited by hand.
     fn sanitize(mut self) -> Self {
         self.keep = self.keep.clamp(KEEP_MIN, KEEP_MAX);
+        self.rec.keep = self.rec.keep.clamp(KEEP_MIN, KEEP_MAX);
+        if self.rec.open_editor {
+            self.rec.after = After::Editor;
+            self.rec.open_editor = false;
+        }
+        if self.rec.folder.is_none() {
+            self.rec.folder = Some(self.folder.clone());
+        }
         // the first default folder; videos and screenshots now sit side by side
         if self.share.folder.trim() == "recordings/" {
             self.share.folder = super::share::VIDEO_FOLDER.into();
@@ -324,6 +356,16 @@ mod tests {
 
     fn sc(key: &str) -> Shortcut {
         Shortcut { cmd: true, shift: true, alt: false, ctrl: false, key: key.into() }
+    }
+
+    #[test]
+    fn recordings_get_their_own_folder_and_after() {
+        let old: Settings = serde_json::from_str(r#"{"folder":"/tmp/shots","rec":{"open_editor":true}}"#).unwrap();
+        let s = old.sanitize();
+        assert_eq!(s.rec_folder(), Path::new("/tmp/shots"), "old settings keep saving videos where they went");
+        assert_eq!(s.rec.after, After::Editor);
+        assert!(!s.rec.open_editor);
+        assert_eq!(s.keeps(), (50, 50));
     }
 
     #[test]
