@@ -342,7 +342,7 @@ impl Startup {
                 g.busy = None;
                 if let Err(e) = res {
                     if e != "Cancelled" {
-                        crate::kit::notify::send("Couldn't change startup items", &e);
+                        crate::kit::notify::send(ts!("startup.couldnt_change"), &e);
                     }
                 }
                 ctx.request_repaint();
@@ -354,7 +354,7 @@ impl Startup {
         let (j, want) = (j.clone(), !j.on);
         let demo = self.demo;
         self.work(
-            format!("Turning {} {}…", if want { "on" } else { "off" }, j.name),
+            if want { t!("startup.turning_on_name", name = j.name) } else { t!("startup.turning_off_name", name = j.name) }.into_owned(),
             move |st| {
                 if !demo {
                     items::set_jobs(&[(j.clone(), want)])?;
@@ -374,7 +374,7 @@ impl Startup {
         let (a, want) = (a.clone(), !a.on);
         let demo = self.demo;
         self.work(
-            format!("Turning {} {}…", if want { "on" } else { "off" }, a.name),
+            if want { t!("startup.turning_on_name", name = a.name) } else { t!("startup.turning_off_name", name = a.name) }.into_owned(),
             move |st| {
                 if !demo {
                     items::set_login_app(&a, want)?;
@@ -403,7 +403,7 @@ impl Startup {
         }
         let demo = self.demo;
         self.work(
-            format!("Turning off {}…", plural(list.len(), "item")),
+            t!("startup.turning_off_items", items = tn!("startup.items", n = list.len())).into_owned(),
             move |st| {
                 if !demo {
                     let batch: Vec<(Job, bool)> = list.iter().map(|j| (j.clone(), false)).collect();
@@ -427,7 +427,7 @@ impl Startup {
         let Some((changes, _)) = self.state().last.clone() else { return };
         let demo = self.demo;
         self.work(
-            "Turning them back on…".into(),
+            ts!("startup.turning_back_on").into(),
             move |st| {
                 let jobs: Vec<(Job, bool)> = changes.iter().map(|Change::Job(j)| (j.clone(), j.on)).collect();
                 if !demo {
@@ -457,7 +457,7 @@ impl Startup {
             self.state().trashing = Some((j.name.clone(), j.plist.display().to_string(), None));
             crate::kit::loader::reset(&self.ctx, "startup-trash");
         }
-        self.work(format!("Moving {} to the Trash…", j.name), move |st| {
+        self.work(t!("startup.moving_to_trash", name = j.name).into_owned(), move |st| {
             crate::kit::loader::test_pause();
             let res = if demo { Ok(()) } else { items::trash_job(&j) };
             {
@@ -484,7 +484,7 @@ impl Startup {
         let (c, want) = (c.clone(), !c.on);
         let demo = self.demo;
         self.work(
-            format!("Turning {} a cron job…", if want { "on" } else { "off" }),
+            if want { ts!("startup.turning_on_cron") } else { ts!("startup.turning_off_cron") }.to_string(),
             move |st| {
                 if !demo {
                     extra::set_cron(&c, want)?;
@@ -535,7 +535,7 @@ impl Startup {
             .name("startup-vt".into())
             .spawn(move || match sign::sha256(&file) {
                 Some(h) => crate::kit::macos::open(&format!("https://www.virustotal.com/gui/file/{h}")),
-                None => crate::kit::notify::send("Couldn't read the file", &file.display().to_string()),
+                None => crate::kit::notify::send(ts!("startup.couldnt_read_file"), &file.display().to_string()),
             })
             .ok();
     }
@@ -563,7 +563,7 @@ impl Startup {
                 match res {
                     Ok(list) => g.btm = Some(list),
                     Err(e) if e == "Cancelled" || e.contains("-128") => {}
-                    Err(e) => crate::kit::notify::send("Couldn't read background items", &e),
+                    Err(e) => crate::kit::notify::send(ts!("startup.couldnt_read_btm"), &e),
                 }
                 ctx.request_repaint();
             })
@@ -604,10 +604,6 @@ impl Startup {
     }
 }
 
-pub fn plural(n: usize, word: &str) -> String {
-    if n == 1 { format!("1 {word}") } else { format!("{n} {word}s") }
-}
-
 /// What changed between two looks at the job plists.
 #[derive(Debug, Default, PartialEq)]
 pub struct Diff {
@@ -640,9 +636,9 @@ pub fn diff(seen: &BTreeMap<PathBuf, Seen>, jobs: &[Job]) -> (Diff, BTreeMap<Pat
 /// The notification for a job that's new or now runs something else.
 fn announce(j: &Job, changed: bool) {
     let app = j.owner_name().unwrap_or_else(|| j.name.clone());
-    let title = if changed { format!("{app} changed what starts with your Mac") } else { format!("{app} added itself to startup") };
-    let body = if changed { format!("{} now runs {}", j.label, j.command()) } else { format!("{} · runs {}", j.label, j.when.label(j.scope)) };
-    crate::kit::notify::send_with(&title, &body, "Turn off", NOTE, &format!("job|{:?}|{}", j.scope, j.label));
+    let title = if changed { t!("startup.changed_title", app = app) } else { t!("startup.added_title", app = app) };
+    let body = if changed { t!("startup.now_runs", label = j.label, command = j.command()) } else { t!("startup.runs_when", label = j.label, when = j.when.label(j.scope)) };
+    crate::kit::notify::send_with(&title, &body, ts!("startup.turn_off"), NOTE, &format!("job|{:?}|{}", j.scope, j.label));
 }
 
 /// Read what starts now and then: jobs (signatures read once per program),
@@ -807,7 +803,7 @@ impl Tool for Startup {
         ID
     }
     fn name(&self) -> &'static str {
-        "Startup"
+        ts!("startup.name")
     }
     fn badge(&self) -> Badge {
         badge()
@@ -821,13 +817,13 @@ impl Tool for Startup {
         "Clean"
     }
     fn about(&self) -> &'static str {
-        "Login items and background apps that start with your Mac, and a switch for each"
+        ts!("startup.about")
     }
     fn busy(&self) -> bool {
         self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: SUMMARY, title: "Startup", about: "What starts with your Mac, and one button for what can go.", sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: SUMMARY, title: ts!("startup.name"), about: ts!("startup.widget_about"), sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
     }
     fn widget_loading(&self, _widget: &str) -> bool {
         !self.state().jobs_loaded
@@ -856,9 +852,9 @@ impl Tool for Startup {
             let names: Vec<String> = odd.iter().take(2).map(|j| j.name.clone()).collect();
             out.push(Recommendation {
                 priority: 9,
-                title: format!("{} look suspicious", plural(odd.len(), "startup item")),
+                title: t!("startup.look_suspicious", items = tn!("startup.startup_items", n = odd.len())).into_owned(),
                 body: names.join(", "),
-                action: "Review".into(),
+                action: ts!("startup.review").into(),
                 go: Action::OpenPage { tool: ID.into(), route: "flagged".into() },
             });
         }
@@ -867,12 +863,12 @@ impl Tool for Startup {
             return out;
         }
         let names: Vec<String> = list.iter().take(2).map(|j| j.name.clone()).collect();
-        let more = if list.len() > 2 { format!(" and {} more", list.len() - 2) } else { String::new() };
+        let more = if list.len() > 2 { t!("startup.and_more", n = list.len() - 2).into_owned() } else { String::new() };
         out.push(Recommendation {
             priority: 8,
-            title: format!("{} start with your Mac for nothing", plural(list.len(), "item")),
-            body: format!("{}{more}. Turning them off removes nothing.", names.join(", ")),
-            action: "Review".into(),
+            title: t!("startup.for_nothing", items = tn!("startup.items", n = list.len())).into_owned(),
+            body: t!("startup.removes_nothing", names = names.join(", "), more = more).into_owned(),
+            action: ts!("startup.review").into(),
             go: Action::OpenPage { tool: ID.into(), route: "suggested".into() },
         });
         out
@@ -933,7 +929,7 @@ mod tests {
         demo(&mut d, true);
         assert!(d.suggested().is_empty());
         assert_eq!(d.undoable(), Some(4));
-        assert_eq!(plural(1, "item"), "1 item");
+        assert_eq!(tn!("startup.items", n = 1), "1 item");
     }
 
     #[test]

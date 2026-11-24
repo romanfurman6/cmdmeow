@@ -36,16 +36,17 @@ impl Signer {
     /// One line for the item's menu.
     pub fn line(&self) -> String {
         match self {
-            Signer::Apple => "Signed by Apple".into(),
-            Signer::AppStore => "From the App Store".into(),
-            Signer::DevId { name, team, notarized } => format!("Signed by {name} ({team}){}", if *notarized { " · notarized" } else { " · not notarized" }),
-            Signer::Development { name } => format!("Development build · {name}"),
-            Signer::AdHoc => "Ad-hoc signature (no developer)".into(),
-            Signer::Unsigned => "Not signed".into(),
-            Signer::Broken => "Signature doesn't match the files".into(),
-            Signer::Script => "Script (no signature)".into(),
-            Signer::Missing => "Program is missing".into(),
-            Signer::Unknown => "Signature unknown".into(),
+            Signer::Apple => ts!("startup.signer.apple").into(),
+            Signer::AppStore => ts!("startup.signer.app_store").into(),
+            Signer::DevId { name, team, notarized: true } => t!("startup.signer.dev_id_notarized", name = name, team = team).into_owned(),
+            Signer::DevId { name, team, notarized: false } => t!("startup.signer.dev_id_not_notarized", name = name, team = team).into_owned(),
+            Signer::Development { name } => t!("startup.signer.development", name = name).into_owned(),
+            Signer::AdHoc => ts!("startup.signer.ad_hoc").into(),
+            Signer::Unsigned => ts!("startup.signer.unsigned").into(),
+            Signer::Broken => ts!("startup.signer.broken").into(),
+            Signer::Script => ts!("startup.signer.script").into(),
+            Signer::Missing => ts!("startup.signer.missing").into(),
+            Signer::Unknown => ts!("startup.signer.unknown").into(),
         }
     }
 }
@@ -70,14 +71,14 @@ pub enum Flag {
 impl Flag {
     pub fn label(self) -> &'static str {
         match self {
-            Flag::FakeApple => "fake Apple",
-            Flag::Unsigned => "unsigned",
-            Flag::BrokenSignature => "broken signature",
-            Flag::InlineCode => "inline code",
-            Flag::TempFolder => "temp folder",
-            Flag::HiddenFolder => "hidden folder",
-            Flag::AdHoc => "ad-hoc",
-            Flag::Script => "script",
+            Flag::FakeApple => ts!("startup.flag.fake_apple"),
+            Flag::Unsigned => ts!("startup.flag.unsigned"),
+            Flag::BrokenSignature => ts!("startup.flag.broken_signature"),
+            Flag::InlineCode => ts!("startup.flag.inline_code"),
+            Flag::TempFolder => ts!("startup.flag.temp_folder"),
+            Flag::HiddenFolder => ts!("startup.flag.hidden_folder"),
+            Flag::AdHoc => ts!("startup.flag.ad_hoc"),
+            Flag::Script => ts!("startup.flag.script"),
         }
     }
     /// Worth a look on its own (red); the rest are hints (amber).

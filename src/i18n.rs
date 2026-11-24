@@ -5,6 +5,8 @@
 //!   places that keep a `&'static str`
 //! - `t!("fan.rpm_value", rpm = x)` → `Cow<str>`, with `%{rpm}` in the text
 //!   filled in; `c = v : {:.0}` formats the value first
+//! - `tn!("startup.items", n = k)` → `Cow<str>` from `startup.items_one`
+//!   when k is 1, else `startup.items_other`; both texts get `%{n}`
 //!
 //! Keys are always string literals, so the tests below can check them:
 //! every key used exists in en.json, every en.json key is used, the
@@ -21,6 +23,20 @@ macro_rules! ts {
     ($key:literal) => {
         $crate::i18n::st(t!($key))
     };
+}
+
+/// A count: `key_one` for 1, `key_other` otherwise (English). Languages
+/// with more forms get their own keys when they arrive.
+#[macro_export]
+macro_rules! tn {
+    ($key:literal, n = $n:expr $(, $k:ident = $v:expr)* $(,)?) => {{
+        let n = $n;
+        if n == 1 {
+            t!(concat!($key, "_one"), n = n $(, $k = $v)*)
+        } else {
+            t!(concat!($key, "_other"), n = n $(, $k = $v)*)
+        }
+    }};
 }
 
 /// `t!` hands back texts borrowed from its static tables; an owned one
@@ -92,6 +108,8 @@ mod tests {
         file: String,
         key: Option<String>,
         args: BTreeSet<String>,
+        /// a `tn!` text: it may leave `%{n}` out ("every hour")
+        count: bool,
     }
 
     fn sources(dir: &Path, out: &mut Vec<(String, String)>) {
@@ -99,7 +117,7 @@ mod tests {
             let p = e.path();
             if p.is_dir() {
                 sources(&p, out);
-            } else if p.extension().is_some_and(|x| x == "rs") && !p.ends_with("i18n.rs") {
+            } else if p.extension().is_some_and(|x| x == "rs") && !p.ends_with("src/i18n.rs") {
                 out.push((p.display().to_string(), std::fs::read_to_string(&p).unwrap()));
             }
         }
@@ -171,7 +189,7 @@ mod tests {
         sources(&root().join("src"), &mut files);
         let mut out = Vec::new();
         for (file, src) in &files {
-            for mac in ["t!(", "ts!("] {
+            for mac in ["t!(", "ts!(", "tn!("] {
                 let mut from = 0;
                 while let Some(i) = src[from..].find(mac).map(|i| i + from) {
                     from = i + mac.len();
@@ -182,8 +200,15 @@ mod tests {
                     let open = i + mac.len() - 1;
                     let ps = parts(group(src, open));
                     let key = ps.first().and_then(|k| k.strip_prefix('"')).and_then(|k| k.strip_suffix('"')).map(str::to_string);
-                    let args = ps.iter().skip(1).map(|a| a.split('=').next().unwrap().trim().to_string()).collect();
-                    out.push(Call { file: file.clone(), key, args });
+                    let args: BTreeSet<String> = ps.iter().skip(1).map(|a| a.split('=').next().unwrap().trim().to_string()).collect();
+                    if mac == "tn!(" {
+                        // one call, two texts
+                        for form in ["_one", "_other"] {
+                            out.push(Call { file: file.clone(), key: key.as_ref().map(|k| format!("{k}{form}")), args: args.clone(), count: true });
+                        }
+                    } else {
+                        out.push(Call { file: file.clone(), key, args, count: false });
+                    }
                 }
             }
         }
@@ -202,7 +227,8 @@ mod tests {
             };
             match en.get(key) {
                 None => errors.push(format!("{}: `{key}` isn't in locales/en.json", c.file)),
-                Some(text) if holes(text) != c.args => errors.push(format!("{}: `{key}` gets {:?}, the text uses {:?}", c.file, c.args, holes(text))),
+                Some(text) if c.count && !(holes(text).is_subset(&c.args) && c.args.iter().all(|a| a == "n" || holes(text).contains(a))) => errors.push(format!("{}: `{key}` gets {:?}, the text uses {:?}", c.file, c.args, holes(text))),
+                Some(text) if !c.count && holes(text) != c.args => errors.push(format!("{}: `{key}` gets {:?}, the text uses {:?}", c.file, c.args, holes(text))),
                 _ => {}
             }
         }
@@ -239,5 +265,7 @@ mod tests {
         assert_eq!(a, "Fan Control");
         assert!(std::ptr::eq(a, ts!("fan.name")));
         assert_eq!(t!("unit.celsius", c = 71.6 : {:.0}), "72 °C");
+        assert_eq!(tn!("startup.items", n = 1), "1 item");
+        assert_eq!(tn!("startup.items", n = 3usize), "3 items");
     }
 }
