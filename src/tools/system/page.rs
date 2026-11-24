@@ -295,8 +295,9 @@ fn cpu_card(p: &egui::Painter, r: Rect, s: &Snapshot) {
     let th = (["Nominal", "Fair", "Serious", "Critical"][s.thermal.min(3) as usize], level_status(s.thermal_level()));
     let y = card_title(p, r, "CPU load", if s.thermal_level() == Level::Good { None } else { Some(th) }, Some(&load));
     let foot = r.bottom() - 18.0;
-    // the history with its time span under it, as in the widgets (W5)
-    let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), foot - sp::M));
+    // the history with its time span under it, as in the widgets (W5);
+    // the stats are a block of their own, `sp::L` below the captions
+    let gr = Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), foot - sp::L));
     let peak = s.cpu_history.iter().copied().fold(0.0f32, f32::max);
     tile::spark_span(p, gr, &s.cpu_history, level_color(s.thermal_level()), Some(peak.max(5.0)));
     let mut x = r.left();
