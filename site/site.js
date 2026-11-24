@@ -50,6 +50,8 @@
     try { if (b.dataset.t === 'auto') localStorage.removeItem('theme'); else localStorage.setItem('theme', b.dataset.t); } catch {}
     theme(); open(false); thm.focus();
   });
+  // the dots pill sits on <html> so no wrapper's transform can unpin it
+  const seg = document.querySelector('.tseg'); if (seg) document.documentElement.appendChild(seg);
   document.querySelectorAll('.tseg button').forEach(b => b.addEventListener('click', () => {
     try { localStorage.setItem('theme', b.dataset.t); } catch {}
     theme();
