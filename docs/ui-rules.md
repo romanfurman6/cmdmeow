@@ -92,7 +92,7 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R14 | A master switch is the first row of its card. While it is off, the rows that depend on it show disabled (L6) and keep their values. | |
 | R15 | A page grid of cards fills the width but not the height: each card row grows to at most 340 pt and the grid stays at the top; the rest of a tall window stays empty below. Charts and rings never stretch past what the card needs. Also AI Usage (grid max 2×340+16). | `BENTO_MAX_H` (Mac Health) |
 | R16 | A setting that both Capture pages have (Screenshot, Video) uses the same label and the same choice words on both: "Then" (Show preview · Open editor · Nothing), "Hide preview after", Copy to clipboard, Folder, File name, History keeps. | |
-| R17 | **Permission row** in a tool's Settings (Screenshot, Video, Dictation): one shared kit row, 40 pt per permission: state dot, name, "Allowed" / "Not allowed", and a 28 Primary "Allow" when missing. Settings › Permissions keeps its own list. | ⏳ code |
+| R17 | **Permission row** in a tool's Settings (Screenshot, Video, Dictation): one shared kit row, 40 pt per permission: state dot, name, "Allowed" / "Not allowed", and a 28 Primary "Allow" when missing. Settings › Permissions keeps its own list. | ✅ |
 
 Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60, sheet header 58, sheet buttons 32.
 
