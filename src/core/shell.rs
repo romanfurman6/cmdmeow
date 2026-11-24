@@ -94,6 +94,10 @@ pub struct App {
     // window/tray state
     tray: Option<tray_icon::TrayIcon>,
     tray_rx: Receiver<tray_icon::TrayIconEvent>,
+    /// Presses on the menu bar icon, from the app's own event watch (see
+    /// `native::watch_menu_icon_presses`); when that watch runs, tray-icon's
+    /// clicks are not used.
+    icon_rx: Option<Receiver<()>>,
     tray_title: String,
     anchor: Option<Pos2>,
     /// The usable part of the menu bar icon's display (below the menu bar),
@@ -209,6 +213,22 @@ impl App {
             let older = cc.storage.and_then(|s| eframe::get_value(s, crate::kit::cat::STORAGE_KEY));
             crate::kit::cat::start(saved, older, objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void);
         }
+        let icon_rx = tray.as_ref().and_then(|t| {
+            #[cfg(target_os = "macos")]
+            let ptr = objc2::rc::Retained::as_ptr(&t.ns_status_item()?) as *mut std::ffi::c_void;
+            #[cfg(not(target_os = "macos"))]
+            let ptr: *mut std::ffi::c_void = { let _ = t; std::ptr::null_mut() };
+            let (tx, rx) = std::sync::mpsc::channel::<()>();
+            let c3 = ctx.clone();
+            let on = crate::kit::native::watch_menu_icon_presses(ptr, move || {
+                if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {
+                    eprintln!("[tray-log] icon press");
+                }
+                let _ = tx.send(());
+                c3.request_repaint();
+            });
+            on.then_some(rx)
+        });
 
         // screenshots always use the default widgets
         let prefs: WidgetPrefs = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::STORAGE_KEY)) }.unwrap_or_default();
@@ -247,6 +267,7 @@ impl App {
             gallery_pick: None,
             tray,
             tray_rx,
+            icon_rx,
             tray_title: String::new(),
             anchor: None,
             menu_screen: None,
@@ -721,9 +742,13 @@ impl App {
     }
 
     fn handle_tray(&mut self, ctx: &egui::Context) {
+        let watched = self.icon_rx.is_some();
         while let Ok(ev) = self.tray_rx.try_recv() {
             if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() && !matches!(ev, tray_icon::TrayIconEvent::Move { .. }) {
                 eprintln!("[tray-log] handle_tray {ev:?} visible {} mode {:?} since hide {} ms setup {}", self.visible, self.mode, self.last_hide.elapsed().as_millis(), self.setup.is_some());
+            }
+            if watched {
+                continue;
             }
             if let tray_icon::TrayIconEvent::Click { rect, button: tray_icon::MouseButton::Left, button_state: tray_icon::MouseButtonState::Up, .. } = ev {
                 if !self.read_menu_icon() {
@@ -733,16 +758,35 @@ impl App {
                     let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
                     self.anchor = Some(Pos2::new(cx, bottom));
                 }
-                let just_hid = self.last_hide.elapsed().as_millis() < 350;
-                if self.setup.is_some() && self.mode == Mode::Panel {
-                    // until setup is finished the menu bar only leads back to it
-                    self.open_setup_window(ctx);
-                } else if self.visible && self.mode == Mode::Panel {
-                    self.hide(ctx);
-                } else if !just_hid || self.mode == Mode::Window {
-                    self.open_panel(ctx);
-                }
+                self.icon_clicked(ctx);
             }
+        }
+        let mut presses = 0;
+        if let Some(rx) = &self.icon_rx {
+            while rx.try_recv().is_ok() {
+                presses += 1;
+            }
+        }
+        // one toggle per pass, however many presses queued
+        if presses > 0 {
+            self.read_menu_icon();
+            self.icon_clicked(ctx);
+        }
+    }
+
+    /// A click on the menu bar icon: show or hide the panel.
+    fn icon_clicked(&mut self, ctx: &egui::Context) {
+        if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {
+            eprintln!("[tray-log] icon clicked: visible {} mode {:?} since hide {} ms setup {}", self.visible, self.mode, self.last_hide.elapsed().as_millis(), self.setup.is_some());
+        }
+        let just_hid = self.last_hide.elapsed().as_millis() < 350;
+        if self.setup.is_some() && self.mode == Mode::Panel {
+            // until setup is finished the menu bar only leads back to it
+            self.open_setup_window(ctx);
+        } else if self.visible && self.mode == Mode::Panel {
+            self.hide(ctx);
+        } else if !just_hid || self.mode == Mode::Window {
+            self.open_panel(ctx);
         }
     }
 

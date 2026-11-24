@@ -536,6 +536,44 @@ mod mac {
         out.and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())).ok_or_else(|| "Moved, but the Trash didn't say where".to_string())
     }
 
+    /// Call `f` on every left press on the menu bar icon, seen as the app
+    /// takes the event in, before any view. tray-icon's own view only
+    /// reports a click on the release, and after full-screen sweeps on
+    /// macOS 26 the releases stopped reaching it (the presses still came):
+    /// a click on the icon did nothing. False when it can't watch.
+    pub fn watch_menu_icon_presses(item: *mut std::ffi::c_void, f: impl Fn() + 'static) -> bool {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        let Some(_mtm) = MainThreadMarker::new() else { return false };
+        let Some(item) = (unsafe { Retained::retain(item as *mut AnyObject) }) else { return false };
+        let block = block2::RcBlock::new(move |e: std::ptr::NonNull<AnyObject>| -> *mut AnyObject {
+            unsafe {
+                let kind = (*(e.as_ptr() as *const objc2_app_kit::NSEvent)).r#type();
+                if kind == objc2_app_kit::NSEventType::LeftMouseDown {
+                    let window: Option<Retained<AnyObject>> = msg_send![e.as_ref(), window];
+                    let button: Option<Retained<AnyObject>> = msg_send![&*item, button];
+                    let icon_window: Option<Retained<AnyObject>> = button.and_then(|b| msg_send![&*b, window]);
+                    if let (Some(w), Some(iw)) = (&window, &icon_window) {
+                        if Retained::as_ptr(w) == Retained::as_ptr(iw) {
+                            f();
+                        }
+                    }
+                }
+            }
+            e.as_ptr()
+        });
+        unsafe {
+            // NSEventMaskLeftMouseDown
+            let mask: u64 = 1 << 1;
+            let token: Option<Retained<AnyObject>> = msg_send![class!(NSEvent), addLocalMonitorForEventsMatchingMask: mask, handler: &*block];
+            let ok = token.is_some();
+            // watched for the app's whole life
+            std::mem::forget(token);
+            std::mem::forget(block);
+            ok
+        }
+    }
+
     /// Debug (CMDMEOW_TRAY_LOG=1): log every left press/release our app
     /// receives, with the window and the view under it, to see whether a
     /// click on the menu bar icon reaches the app at all.
@@ -657,6 +695,9 @@ mod other {
     }
     pub fn panel_follows_spaces(_id: egui::ViewportId) {}
     pub fn log_left_clicks() {}
+    pub fn watch_menu_icon_presses(_item: *mut std::ffi::c_void, _f: impl Fn() + 'static) -> bool {
+        false
+    }
     pub fn key_window_title() -> Option<String> {
         None
     }
