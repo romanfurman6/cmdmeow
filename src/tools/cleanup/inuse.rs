@@ -165,13 +165,13 @@ fn unescape(name: &str) -> Option<PathBuf> {
 /// snapshot when there is one, else probes the folder's databases.
 pub fn blocked(path: &Path, open: Option<&OpenFiles>) -> Option<&'static str> {
     if let Some(o) = open {
-        return o.holds(path).then_some("a running app has files in it open");
+        return o.holds(path).then_some(ts!("cleanup.why.files_open"));
     }
-    let Some(files) = db_files(path) else { return Some("too many files to check; quit its app and scan again") };
+    let Some(files) = db_files(path) else { return Some(ts!("cleanup.why.too_many")) };
     match probe(&files) {
         Probe::Idle => None,
-        Probe::Busy => Some("a running app has it open"),
-        Probe::Unknown => Some("couldn't check whether a running app uses it"),
+        Probe::Busy => Some(ts!("cleanup.why.busy")),
+        Probe::Unknown => Some(ts!("cleanup.why.unknown")),
     }
 }
 

@@ -436,7 +436,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         open_confirm(app);
     }
     let seg = Rect::from_min_size(Pos2::new(cr.left() - 16.0 - 200.0, fy - 14.0), Vec2::new(200.0, 28.0));
-    if let Some(k) = segmented(ui, seg, ui.scope_id().with("removal"), &["Move to Trash", "Delete now"], app.delete_now as usize) {
+    if let Some(k) = segmented(ui, seg, ui.scope_id().with("removal"), &[ts!("cleanup.move_to_trash"), ts!("cleanup.delete_now")], app.delete_now as usize) {
         app.delete_now = k == 1;
     }
     if app.clean_confirm {
@@ -465,13 +465,18 @@ fn is_question(it: &Item) -> bool {
 /// Items of one kind that are offered together (dozens of macOS caches,
 /// Claude Code's per-session files, build folders of recent projects), so
 /// one answer covers them all. The name is the bundle's title.
+/// Whether `p` sits right inside a folder named `name`.
+fn parent_is(p: &std::path::Path, name: &str) -> bool {
+    p.parent().and_then(|d| d.file_name()).is_some_and(|n| n == name)
+}
+
 fn bundle_of(it: &Item) -> Option<&'static str> {
     let apple = it.path.components().any(|c| c.as_os_str().to_string_lossy().starts_with("com.apple."));
     match it.group {
         Group::AppCaches if apple => Some(ts!("cleanup.bundle.macos")),
-        Group::AiTools if it.title.starts_with("Edit history · ") => Some(ts!("cleanup.bundle.edit_history")),
-        Group::AiTools if it.title.starts_with("Uploaded files · ") => Some(ts!("cleanup.bundle.claude_uploads")),
-        Group::AiTools if it.kind == "Old Sessions" && it.title.starts_with("Project · ") => Some(ts!("cleanup.bundle.old_chats")),
+        Group::AiTools if parent_is(&it.path, "file-history") => Some(ts!("cleanup.bundle.edit_history")),
+        Group::AiTools if parent_is(&it.path, "uploads") => Some(ts!("cleanup.bundle.claude_uploads")),
+        Group::AiTools if it.kind == "Old Sessions" && parent_is(&it.path, "projects") => Some(ts!("cleanup.bundle.old_chats")),
         Group::Projects if it.rule_verdict == Verdict::Ask => Some(ts!("cleanup.bundle.recent_builds")),
         Group::Captures => super::captures::bundle(it.kind),
         _ => None,
@@ -694,7 +699,7 @@ fn ask_detail(items: &[Item], e: &Entry) -> String {
         Some(_) => items_n(e.idx.len()),
         None => {
             let it = &items[e.idx[0]];
-            if it.rule_reason.is_empty() { it.kind.to_string() } else { it.rule_reason.clone() }
+            if it.rule_reason.is_empty() { super::engine::kind_label(it.kind).to_string() } else { it.rule_reason.clone() }
         }
     }
 }
@@ -1624,7 +1629,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
             y += 18.0;
         }
         // only when an open app was in the way
-        if st.failed.iter().any(|(_, e)| e.contains("open") || e.contains("in use")) {
+        if st.in_way || st.failed.iter().any(|(_, e)| e.contains("open") || e.contains("in use")) {
             text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, ts!("cleanup.quit_and_rescan"), ty::caption(), ty::caption_color(), li.width());
         }
     }
@@ -1650,8 +1655,8 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
         let mut child = ui.new_child(UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
         child.set_clip_rect(list);
         ScrollArea::vertical().id_salt("log").auto_shrink([false, false]).show(&mut child, |ui| {
-            for l in &st.log {
-                let col = if l.starts_with("Couldn't") { AMBER() } else { TEXT_DIM() };
+            for (l, warn) in &st.log {
+                let col = if *warn { AMBER() } else { TEXT_DIM() };
                 ui.label(egui::RichText::new(l.replacen(&home_str(), "~", 1)).font(glass::mono(11.0)).color(col));
             }
         });
@@ -1752,7 +1757,7 @@ pub fn demo_done() -> cleanup::State {
     st.cleaned_bytes = sel.iter().map(|i| i.bytes).sum();
     st.cleaned = sel.iter().map(|i| (i.group, i.bytes)).collect();
     st.trashed_bytes = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).map(|i| i.bytes).sum();
-    st.log = sel.iter().map(|i| format!("Moved to Trash: {}", i.path.display())).collect();
+    st.log = sel.iter().map(|i| (format!("{}: {}", ts!("cleanup.how.trash"), i.path.display()), false)).collect();
     st
 }
 
@@ -1767,7 +1772,7 @@ pub fn demo_done_group() -> cleanup::State {
     st.cleaned_bytes = sel.iter().map(|i| i.bytes).sum();
     st.cleaned = sel.iter().map(|i| (i.group, i.bytes)).collect();
     st.trashed_bytes = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).map(|i| i.bytes).sum();
-    st.log = sel.iter().map(|i| format!("Moved to Trash: {}", i.path.display())).collect();
+    st.log = sel.iter().map(|i| (format!("{}: {}", ts!("cleanup.how.trash"), i.path.display()), false)).collect();
     st.items.retain(|i| !(i.selected && i.group == g));
     st
 }

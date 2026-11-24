@@ -230,7 +230,7 @@ impl Tool for Cleanup {
                 };
                 let asks: Vec<String> = self.clean.lock_ok().items.iter().filter(|i| i.verdict == engine::Verdict::Ask).map(|i| i.path.display().to_string()).collect();
                 let tip = |key: &str, action: &str, label: &str, title: &str, value: &str, why: &str, name: &str| crate::kit::aicheck::Rec { key: key.into(), ..rec(key, action, label, title, value, why, name) };
-                let xcode = self.clean.lock_ok().items.iter().find(|i| i.title.starts_with("Derived")).map(|i| i.path.display().to_string()).unwrap_or_default();
+                let xcode = self.clean.lock_ok().items.iter().find(|i| i.path.components().any(|c| c.as_os_str() == "DerivedData")).map(|i| i.path.display().to_string()).unwrap_or_default();
                 self.ai.set_demo(
                     "Both questions answered, one more tip",
                     vec![

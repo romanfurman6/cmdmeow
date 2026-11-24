@@ -56,11 +56,11 @@ pub fn verdict(f: &Found) -> Option<(Verdict, String)> {
     }
     let days = f.idle_days as u64;
     Some(if f.careful {
-        (Verdict::Ask, format!("{} build output, idle {days} days, may be kept on purpose", f.kind))
+        (Verdict::Ask, t!("cleanup.why.build_careful", kind = f.kind, days = days).into_owned())
     } else if f.idle_days >= IDLE_DAYS {
-        (Verdict::Safe, format!("{} build output, idle {days} days, rebuilds itself", f.kind))
+        (Verdict::Safe, t!("cleanup.why.build_idle", kind = f.kind, days = days).into_owned())
     } else {
-        (Verdict::Ask, format!("{} build output, used {days} days ago", f.kind))
+        (Verdict::Ask, t!("cleanup.why.build_used", kind = f.kind, days = days).into_owned())
     })
 }
 
@@ -130,14 +130,14 @@ fn is_artifact_dir(p: &Path) -> bool {
 
 /// The project's guard at removal time: still a build folder of a project.
 pub fn still_build_output(p: &Path) -> Option<&'static str> {
-    let (Some(parent), Some(name)) = (p.parent(), p.file_name()) else { return Some("Not a build folder") };
+    let (Some(parent), Some(name)) = (p.parent(), p.file_name()) else { return Some(ts!("cleanup.why.not_build")) };
     let name = name.to_string_lossy();
     if !is_artifact_dir(p) {
-        return Some("Not a plain build folder any more");
+        return Some(ts!("cleanup.why.not_plain"));
     }
     let ns = names(parent);
     let known = catalog().projects.iter().any(|t| t.is_in(parent, &ns) && t.all_dirs().any(|(d, _)| d == name));
-    (!known).then_some("Its project files are gone; not sure it's build output")
+    (!known).then_some(ts!("cleanup.why.project_files_gone"))
 }
 
 /// Days since anything in the project (outside its build output) changed,
