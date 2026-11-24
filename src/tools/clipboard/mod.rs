@@ -425,7 +425,7 @@ impl Tool for Clipboard {
         badge()
     }
     fn section(&self) -> &'static str {
-        ts!("cap.section_create")
+        "Create"
     }
     fn about(&self) -> &'static str {
         ts!("clip.about")

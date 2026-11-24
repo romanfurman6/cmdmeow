@@ -1517,7 +1517,7 @@ fn all_tools(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
     for (si, sec) in secs.iter().enumerate() {
         let c = si % 2;
         let x = area.left() + c as f32 * (cw + gap);
-        group_header(&p, Pos2::new(x + 8.0, ys[c]), sec);
+        group_header(&p, Pos2::new(x + 8.0, ys[c]), super::tool::section_label(sec));
         ys[c] += 20.0;
         for i in 0..app.tools.len() {
             if app.tools[i].section() != *sec {

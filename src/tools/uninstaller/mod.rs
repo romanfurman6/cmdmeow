@@ -948,7 +948,7 @@ impl Tool for Uninstaller {
     }
 
     fn section(&self) -> &'static str {
-        ts!("cleanup.short")
+        "Clean"
     }
     fn about(&self) -> &'static str {
         ts!("un.about")

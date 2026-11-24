@@ -836,7 +836,7 @@ impl Tool for Dictation {
         badge()
     }
     fn section(&self) -> &'static str {
-        ts!("cap.section_create")
+        "Create"
     }
     fn about(&self) -> &'static str {
         ts!("dict.about")

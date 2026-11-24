@@ -602,18 +602,18 @@ impl App {
                         // -128: the person pressed Cancel in that dialog
                         if let Err(e) = crate::kit::macos::osascript("tell application \"loginwindow\" to «event aevtrrst»") {
                             if e != "Cancelled" {
-                                later_toast(&ctx, "Couldn't restart. Allow CmdMeow in Privacy & Security › Automation");
+                                later_toast(&ctx, ts!("app.cant_restart"));
                             }
                         }
                     });
                 }
                 Action::EmptyTrash => {
-                    if crate::kit::native::confirm("Empty the Trash?", "Items in the Trash are deleted for good.", "Empty Trash") {
+                    if crate::kit::native::confirm(ts!("app.empty_trash_q"), ts!("app.empty_trash_why"), ts!("app.empty_trash")) {
                         let ctx = ctx.clone();
                         std::thread::spawn(move || {
                             let msg = match crate::kit::macos::osascript("tell application \"Finder\" to empty trash") {
-                                Ok(_) => "Trash emptied",
-                                Err(_) => "Couldn't empty the Trash. Allow CmdMeow to control Finder in Privacy & Security › Automation",
+                                Ok(_) => ts!("app.trash_emptied"),
+                                Err(_) => ts!("app.cant_empty"),
                             };
                             later_toast(&ctx, msg);
                         });
@@ -885,7 +885,7 @@ impl App {
         let Some(tray) = &self.tray else { return };
         // until setup is finished the menu bar says so (and a click opens setup)
         let title = if self.setup.is_some() || !super::onboard::is_done() {
-            "Finish setup".to_string()
+            ts!("app.finish_setup").to_string()
         } else {
             self.tools.iter().enumerate().filter(|(i, _)| self.tool_on(*i)).find_map(|(_, t)| t.tray_title()).unwrap_or_default()
         };

@@ -165,7 +165,7 @@ impl Tool for Lens {
     }
 
     fn section(&self) -> &'static str {
-        ts!("cleanup.short")
+        "Clean"
     }
     fn has_page(&self) -> bool {
         true

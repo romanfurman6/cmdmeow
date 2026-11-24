@@ -54,11 +54,11 @@ impl Size {
     }
     pub fn name(self) -> &'static str {
         match self {
-            Size::S11 => "Small",
-            Size::S12 => "Wide",
-            Size::S14 => "Row",
-            Size::S24 => "Medium",
-            Size::S44 => "Large",
+            Size::S11 => ts!("app.size_small"),
+            Size::S12 => ts!("app.size_wide"),
+            Size::S14 => ts!("app.size_row"),
+            Size::S24 => ts!("app.size_medium"),
+            Size::S44 => ts!("app.size_large"),
         }
     }
     pub fn parse(s: &str) -> Option<Size> {
@@ -184,11 +184,27 @@ impl Cx {
 
 /// A tool. Every method except identity has a do-nothing default, so a tool
 /// implements only what it offers.
+/// The sidebar groups a tool's `section()` names, in no particular order.
+#[cfg(test)]
+pub const SECTIONS: [&str; 5] = ["Clean", "Create", "Monitor", "Utilities", "Tools"];
+
+/// What a section id reads as.
+pub fn section_label(id: &str) -> &'static str {
+    match id {
+        "Clean" => ts!("app.sec_clean"),
+        "Create" => ts!("app.sec_create"),
+        "Monitor" => ts!("app.sec_monitor"),
+        "Utilities" => ts!("app.sec_utilities"),
+        _ => ts!("app.sec_tools"),
+    }
+}
+
 pub trait Tool {
     fn id(&self) -> ToolId;
     fn name(&self) -> &'static str;
     fn badge(&self) -> Badge;
-    /// Sidebar group, e.g. "Clean" or "Monitor".
+    /// Sidebar group id: "Clean", "Create", "Monitor", "Utilities" or
+    /// "Tools", shown through [`section_label`].
     fn section(&self) -> &'static str {
         "Tools"
     }

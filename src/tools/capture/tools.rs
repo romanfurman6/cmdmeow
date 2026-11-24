@@ -32,7 +32,7 @@ impl Tool for Sharing {
         Badge { icon: Icon::Link, color: tint::CAPTURE() }
     }
     fn section(&self) -> &'static str {
-        ts!("cap.section_create")
+        "Create"
     }
     fn about(&self) -> &'static str {
         ts!("cap.sharing_about")
@@ -63,7 +63,7 @@ impl Tool for Screenshot {
         Badge { icon: Icon::Crop, color: tint::CAPTURE() }
     }
     fn section(&self) -> &'static str {
-        ts!("cap.section_create")
+        "Create"
     }
     fn about(&self) -> &'static str {
         ts!("cap.shot_about")
@@ -130,7 +130,7 @@ impl Tool for Video {
         Badge { icon: Icon::Camera, color: tint::CAPTURE() }
     }
     fn section(&self) -> &'static str {
-        ts!("cap.section_create")
+        "Create"
     }
     fn about(&self) -> &'static str {
         ts!("cap.video_about")
