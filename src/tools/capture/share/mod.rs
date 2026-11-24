@@ -209,7 +209,9 @@ pub mod secret {
     #[cfg(target_os = "macos")]
     mod keychain {
         use super::Access;
-        use security_framework::os::macos::keychain::SecKeychain;
+        use security_framework::os::macos::keychain::{KeychainUserInteractionLock, SecKeychain};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{Mutex, MutexGuard};
 
         fn service() -> &'static str {
             if crate::kit::fs::is_dev() { "Cmd+Meow Dev sharing" } else { "Cmd+Meow sharing" }
@@ -220,6 +222,34 @@ pub mod secret {
         const OLD_ACCOUNT: &str = "secret-key";
         /// errSecItemNotFound.
         const NOT_FOUND: i32 = -25300;
+
+        /// Turning prompts off is process-wide, so every call here takes
+        /// turns: a quiet read must not make a prompting one fail, nor
+        /// turn prompts back on under another quiet read.
+        static TURN: Mutex<()> = Mutex::new(());
+        /// macOS's dialog may be up: quiet calls answer "ask" at once
+        /// instead of waiting on the person.
+        static PROMPTING: AtomicBool = AtomicBool::new(false);
+
+        /// Prompts off, Keychain to ourselves. Fields drop in order: prompts
+        /// come back on before the turn passes.
+        struct Quiet(#[allow(dead_code)] KeychainUserInteractionLock, #[allow(dead_code)] MutexGuard<'static, ()>);
+        fn quiet() -> Option<Quiet> {
+            if PROMPTING.load(Ordering::Acquire) {
+                return None;
+            }
+            let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+            Some(Quiet(SecKeychain::disable_user_interaction().ok()?, turn))
+        }
+        /// `f` with prompts allowed, on the Keychain's own turn.
+        fn prompting<R>(f: impl FnOnce() -> R) -> R {
+            PROMPTING.store(true, Ordering::Release);
+            let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+            let r = f();
+            drop(turn);
+            PROMPTING.store(false, Ordering::Release);
+            r
+        }
 
         /// Ok(None): no such item. Err: macOS would ask, or said no.
         fn read(service: &str, account: &str) -> Result<Option<String>, i32> {
@@ -232,10 +262,9 @@ pub mod secret {
         fn old_too(account: &str) -> bool {
             !crate::kit::fs::is_dev() && account == OLD_ACCOUNT
         }
-        /// The item under its first name: move it to this build's name. Quiet:
-        /// what macOS won't allow without asking stays as it is.
+        /// The item under its first name: move it to this build's name. Only
+        /// with prompts off: what macOS won't allow without asking stays.
         fn move_old(account: &str, v: &str) {
-            let Ok(_quiet) = SecKeychain::disable_user_interaction() else { return };
             if write(account, v, false).is_ok() {
                 let _ = security_framework::passwords::delete_generic_password(OLD_SERVICE, OLD_ACCOUNT);
             }
@@ -244,20 +273,14 @@ pub mod secret {
         /// Read with prompts turned off: macOS answers "not allowed" instead
         /// of putting up its password dialog.
         pub fn get_quiet(account: &str) -> Access {
-            let quiet = SecKeychain::disable_user_interaction();
-            if quiet.is_err() {
-                return Access::Ask;
-            }
+            let Some(_quiet) = quiet() else { return Access::Ask };
             match read(service(), account) {
                 Ok(Some(v)) => return Access::Key(v),
                 Ok(None) if !old_too(account) => return Access::Missing,
                 Ok(None) => {}
                 Err(_) => return Access::Ask,
             }
-            let old = read(OLD_SERVICE, OLD_ACCOUNT);
-            // the move takes its own quiet hold (dropping one turns prompts back on)
-            drop(quiet);
-            match old {
+            match read(OLD_SERVICE, OLD_ACCOUNT) {
                 Ok(Some(v)) => {
                     move_old(account, &v);
                     Access::Key(v)
@@ -268,14 +291,18 @@ pub mod secret {
         }
         /// Read, letting macOS ask (only after the Keychain card).
         pub fn get(account: &str) -> Option<String> {
-            match read(service(), account) {
-                Ok(Some(v)) => return Some(v),
-                Ok(None) if old_too(account) => {}
-                _ => return None,
-            }
-            let v = read(OLD_SERVICE, OLD_ACCOUNT).ok().flatten()?;
-            move_old(account, &v);
-            Some(v)
+            prompting(|| {
+                match read(service(), account) {
+                    Ok(Some(v)) => return Some(v),
+                    Ok(None) if old_too(account) => {}
+                    _ => return None,
+                }
+                let v = read(OLD_SERVICE, OLD_ACCOUNT).ok().flatten()?;
+                if let Ok(_off) = SecKeychain::disable_user_interaction() {
+                    move_old(account, &v);
+                }
+                Some(v)
+            })
         }
         pub fn exists(account: &str) -> bool {
             use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
@@ -288,8 +315,11 @@ pub mod secret {
         /// access list trusts this build. Without `prompt`, macOS may not ask:
         /// Err(None) means it would have.
         pub fn set(account: &str, v: &str, prompt: bool) -> Result<(), Option<String>> {
-            let _quiet = if prompt { None } else { Some(SecKeychain::disable_user_interaction().map_err(|_| None)?) };
-            write(account, v, prompt)
+            if prompt {
+                return prompting(|| write(account, v, true));
+            }
+            let Some(_quiet) = quiet() else { return Err(None) };
+            write(account, v, false)
         }
         fn write(account: &str, v: &str, prompt: bool) -> Result<(), Option<String>> {
             match security_framework::passwords::delete_generic_password(service(), account) {
