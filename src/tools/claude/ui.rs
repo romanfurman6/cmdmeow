@@ -22,7 +22,7 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
     match size {
         // W4: the ring and the number; Session and its reset in the tip
         Size::S11 => {
-            let tip = session.as_ref().map(|l| format!("Session · resets {}", super::parts::reset_when(l))).unwrap_or_else(|| status(cl));
+            let tip = session.as_ref().map(|l| t!("ai.session_resets", when = super::parts::reset_when(l)).into_owned()).unwrap_or_else(|| status(cl));
             tile::small_ring(ui, r, id, Icon::Gauge, pct / 100.0, col, &value, sel).on_hover_text(tip)
         }
         // W3, W8: "AI Usage", the session %, when it resets
@@ -35,25 +35,25 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
                     // doesn't fit beside the ring, the day alone (the hour
                     // is in the sheet)
                     let when = super::parts::reset_when(l);
-                    let full = format!("Resets {when}");
+                    let full = t!("ai.resets", when = when).into_owned();
                     let room = if size == Size::S12 { r.width() } else { tile::ROW_SPLIT } - (tile::PAD + 50.0 + tile::PAD) - tile::PAD;
                     let fits = ui.painter().layout_no_wrap(full.clone(), ty::caption(), TEXT()).size().x <= room;
-                    if when.is_empty() { "Not started".to_string() } else if fits { full } else { format!("Resets {}", when.split(' ').next().unwrap_or(&when)) }
+                    if when.is_empty() { ts!("ai.not_started").to_string() } else if fits { full } else { t!("ai.resets", when = when.split(' ').next().unwrap_or(&when)).into_owned() }
                 }
                 None => status(cl),
             };
             let value = if session.is_some() { value } else { "–".to_string() };
             if size == Size::S12 {
-                return tile::wide_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, "AI Usage", &value, &caption, ty::caption_color(), sel);
+                return tile::wide_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, ts!("ai.name"), &value, &caption, ty::caption_color(), sel);
             }
             // the right part adds what the left doesn't have: the week and today's tokens
-            let (resp, right) = tile::row_split_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, "AI Usage", &value, &caption, ty::caption_color(), sel);
+            let (resp, right) = tile::row_split_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, ts!("ai.name"), &value, &caption, ty::caption_color(), sel);
             let mut lines: Vec<(String, Option<(f32, Color32)>, String)> = Vec::new();
             if let Some(w) = cl.weekly() {
-                lines.push(("Week".into(), Some(((w.pct / 100.0).max(0.01), super::page::usage_color(w.pct))), format!("{:.0}%", w.pct)));
+                lines.push((ts!("ai.week").into(), Some(((w.pct / 100.0).max(0.01), super::page::usage_color(w.pct))), format!("{:.0}%", w.pct)));
             }
             if cl.local.tokens_today > 0 {
-                lines.push(("Today".into(), None, format!("{} tokens", backend::human_tokens(cl.local.tokens_today))));
+                lines.push((ts!("ai.today").into(), None, t!("ai.n_tokens", n = backend::human_tokens(cl.local.tokens_today)).into_owned()));
             }
             tile::lines(ui.painter(), right, &lines, &status(cl));
             resp
@@ -66,8 +66,8 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
         _ => {
             let resp = tile::card(ui, r, id, sel);
             let p = ui.painter();
-            let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), "AI Usage", &status(cl));
-            let rows: Vec<(&str, _, String)> = [("Session", cl.session()), ("Week", cl.weekly())]
+            let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), ts!("ai.name"), &status(cl));
+            let rows: Vec<(&str, _, String)> = [(ts!("ai.session"), cl.session()), (ts!("ai.week"), cl.weekly())]
                 .into_iter()
                 .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, super::parts::reset_when(l))).unwrap_or_default()))
                 .collect();
@@ -77,7 +77,7 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
                 tile::bar_line(p, lr, label, l.map(|l| ((l.pct / 100.0).max(0.01), super::page::usage_color(l.pct))), v, cols);
             }
             let lr = Rect::from_min_max(Pos2::new(body.left(), body.top() + 52.0), body.max);
-            p.text(lr.left_top(), Align2::LEFT_TOP, "Tokens · 7 days", font(11.0), TEXT_FAINT());
+            p.text(lr.left_top(), Align2::LEFT_TOP, ts!("ai.tokens_7d"), font(11.0), TEXT_FAINT());
             super::parts::day_bars(p, Rect::from_min_max(lr.left_top() + Vec2::new(0.0, 17.0), lr.max), &cl.local.daily, 5.0);
             resp
         }
@@ -88,8 +88,8 @@ pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo
 /// by side with the even-use tick, and the dollars of all of them today.
 fn providers(p: &egui::Painter, r: Rect, all: &[UsageInfo]) {
     let usd: f64 = all.iter().map(|i| i.local.usd_today).sum();
-    let note = if crate::kit::ai::settings::get().show_cost { format!("{} today", super::parts::usd(usd)) } else { String::new() };
-    let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), "AI limits", &note);
+    let note = if crate::kit::ai::settings::get().show_cost { t!("ai.usd_today", usd = super::parts::usd(usd)).into_owned() } else { String::new() };
+    let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), ts!("ai.widget_title"), &note);
     let rows: Vec<&UsageInfo> = all.iter().filter(|i| !i.limits.is_empty()).take(2).collect();
     let rh = (body.height() / rows.len().max(1) as f32).min(48.0);
     for (k, info) in rows.iter().enumerate() {
@@ -110,15 +110,15 @@ fn providers(p: &egui::Painter, r: Rect, all: &[UsageInfo]) {
 
 fn status(cl: &UsageInfo) -> String {
     if (cl.loading || !cl.scanned) && cl.limits.is_empty() {
-        "Checking…".to_string()
+        ts!("ai.checking").to_string()
     } else if !cl.installed {
-        "Not installed".to_string()
+        ts!("ai.not_installed").to_string()
     } else if cl.signed_out && cl.limits.is_empty() {
-        "Signed out".to_string()
+        ts!("ai.signed_out").to_string()
     } else if cl.limits.is_empty() {
-        cl.error.clone().unwrap_or_else(|| "No data yet".into())
+        cl.error.clone().unwrap_or_else(|| ts!("ai.no_data").into())
     } else {
-        format!("{} tokens today", backend::human_tokens(cl.local.tokens_today))
+        t!("ai.tokens_today", n = backend::human_tokens(cl.local.tokens_today)).into_owned()
     }
 }
 
@@ -134,9 +134,9 @@ fn contrib_lines(cl: &UsageInfo) -> (&'static str, Vec<(String, Color32, f32)>) 
             }
         }
         None if !cl.note.is_empty() && cl.provider != crate::kit::ai::claude::NAME => lines.push((cl.note.clone(), TEXT_DIM(), 13.0)),
-        None => lines.push((format!("{} reports this once you've used it on this Mac.", cl.provider), TEXT_DIM(), 13.0)),
+        None => lines.push((t!("ai.reports_once", provider = cl.provider).into_owned(), TEXT_DIM(), 13.0)),
     }
-    let title = if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { "About these limits" } else { "What uses your limits" };
+    let title = if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { ts!("ai.about_limits") } else { ts!("ai.what_uses") };
     (title, lines)
 }
 
@@ -163,15 +163,15 @@ pub fn details(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> bool
     let p = ui.painter().clone();
     let t = ctx.input(|i| i.time);
     let busy = cl.loading || !cl.scanned || backend::refreshing();
-    let sub = if busy { "Updating…".to_string() } else { super::parts::fresh(&cl).0 };
-    let close = sheet_header(ui, rect, Icon::Gauge, tint::CLAUDE(), "Limits", &sub);
+    let sub = if busy { ts!("ai.updating").to_string() } else { super::parts::fresh(&cl).0 };
+    let close = sheet_header(ui, rect, Icon::Gauge, tint::CLAUDE(), ts!("ai.limits"), &sub);
     let rb = Rect::from_center_size(Pos2::new(rect.right() - 27.0 - 34.0, rect.top() + 29.0), Vec2::splat(26.0));
     if busy {
         spinner(&p, rb.center(), 6.0, t, TEXT_DIM());
         crate::kit::glass::poll(&ctx);
-    } else if round_button(ui, rb, Icon::Refresh, "Refresh limits").clicked() {
+    } else if round_button(ui, rb, Icon::Refresh, ts!("ai.refresh_limits")).clicked() {
         backend::request_refresh();
-        cx.toast(format!("Asking {} for your limits…", cl.provider));
+        cx.toast(t!("ai.asking_limits", provider = cl.provider));
     }
     let x0 = rect.left() + 16.0;
     let w = rect.width() - 32.0;
@@ -183,7 +183,7 @@ pub fn details(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> bool
     let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, lim_h));
     data_card(&p, lr);
     if n == 0 {
-        let msg = cl.error.clone().unwrap_or_else(|| format!("Asking {} for your limits…", cl.provider));
+        let msg = cl.error.clone().unwrap_or_else(|| t!("ai.asking_limits", provider = cl.provider).into_owned());
         paragraph(&p, lr.min + Vec2::new(12.0, 12.0), &msg, font(13.0), TEXT_DIM(), w - 24.0);
     }
     for (i, l) in cl.limits.iter().enumerate() {
@@ -193,7 +193,7 @@ pub fn details(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> bool
         super::parts::pace_bar(&p, Rect::from_min_size(Pos2::new(lr.left() + 12.0, yy + 20.0), Vec2::new(w - 24.0, 6.0)), l);
         // no pace words (T9): the marker on the bar shows the pace
         let f = super::parts::forecast(l);
-        let col = if f.starts_with("Runs out") { RED() } else { TEXT_FAINT() };
+        let col = if super::parts::runs_out(l) { RED() } else { TEXT_FAINT() };
         text_fit(&p, Pos2::new(lr.left() + 12.0, yy + 32.0), Align2::LEFT_TOP, &f, font(12.0), col, w - 24.0);
     }
     y = lr.bottom() + GAP;
@@ -223,7 +223,7 @@ pub fn details(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> bool
 
     // Cleanup knows Claude's caches only
     if cl.provider == crate::kit::ai::claude::NAME {
-        let primary = "Clean Claude caches";
+        let primary = ts!("ai.clean_caches");
         let pw = button_width(&p, primary, BTN_PRIMARY);
         // right under what uses the limits, or on the bottom when that's cut
         let pr = Rect::from_min_size(Pos2::new(rect.right() - 16.0 - pw, (ur.bottom() + 16.0).min(by)), Vec2::new(pw, BTN_H));
