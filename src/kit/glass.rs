@@ -13,12 +13,41 @@ use std::f32::consts::{PI, TAU};
 
 // ---------------------------------------------------------------- palette
 //
-// "Moss & Lime": a deep moss window with a lime action colour in dark mode,
-// a pale sage window with darker lime in light mode. The app follows the
-// system appearance ([`set_light`] is called once per frame by the shell).
-// Every colour is a function so it can answer for the current mode.
+// One theme system (T1–T6 in docs/ui-rules.md): every colour is a function
+// that answers for the current [`Theme`]. Dark Meow is the deep moss window
+// with a lime action colour, Light Meow the pale sage window with darker
+// lime, Miami a night-sunset window with a neon action colour. The
+// shell sets the theme once per frame ([`set_theme`]) from Settings › Theme
+// (Auto follows the system's light or dark).
 
-static LIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The app's themes. Miami is drawn on the dark base (white ink).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Theme {
+    Dark,
+    Light,
+    Miami,
+}
+
+static THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The theme being drawn.
+pub fn theme() -> Theme {
+    match THEME.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => Theme::Light,
+        2 => Theme::Miami,
+        _ => Theme::Dark,
+    }
+}
+
+/// Switch the palette. Returns true when the theme changed.
+pub fn set_theme(t: Theme) -> bool {
+    let v = match t {
+        Theme::Dark => 0,
+        Theme::Light => 1,
+        Theme::Miami => 2,
+    };
+    THEME.swap(v, std::sync::atomic::Ordering::Relaxed) != v
+}
 
 thread_local! {
     static IN_WIDGET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -40,19 +69,72 @@ pub fn press_dim(c: Color32, press: f32) -> Color32 {
     with_alpha(c, c.a() as f32 / 255.0 * (1.0 - 0.5 * press.clamp(0.0, 1.0)))
 }
 
-/// True while the app is drawn in light mode.
+/// What Settings › Theme holds: Auto follows the system's light or dark
+/// (Light Meow / Dark Meow); the rest pin one theme.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum ThemeChoice {
+    Auto,
+    Light,
+    Dark,
+    Miami,
+}
+
+impl ThemeChoice {
+    /// In the order Settings shows them.
+    pub const ALL: [ThemeChoice; 4] = [ThemeChoice::Auto, ThemeChoice::Light, ThemeChoice::Dark, ThemeChoice::Miami];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ThemeChoice::Auto => "Auto",
+            ThemeChoice::Light => "Light",
+            ThemeChoice::Dark => "Dark",
+            ThemeChoice::Miami => "Miami",
+        }
+    }
+
+    /// The theme drawn, given whether the system is in light mode.
+    pub fn resolve(self, system_light: bool) -> Theme {
+        match self {
+            ThemeChoice::Auto if system_light => Theme::Light,
+            ThemeChoice::Auto | ThemeChoice::Dark => Theme::Dark,
+            ThemeChoice::Light => Theme::Light,
+            ThemeChoice::Miami => Theme::Miami,
+        }
+    }
+}
+
+/// Where Settings › Theme is saved.
+pub const THEME_KEY: &str = "app.theme";
+static CHOICE: std::sync::Mutex<ThemeChoice> = std::sync::Mutex::new(ThemeChoice::Auto);
+
+/// The theme picked in Settings.
+pub fn theme_choice() -> ThemeChoice {
+    *CHOICE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+pub fn set_theme_choice(c: ThemeChoice) {
+    *CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = c;
+}
+
+/// True while the app is drawn on the light base (Light Meow).
 pub fn is_light() -> bool {
-    LIGHT.load(std::sync::atomic::Ordering::Relaxed)
+    theme() == Theme::Light
 }
 
-/// Switch the palette. Returns true when the mode changed.
-pub fn set_light(light: bool) -> bool {
-    LIGHT.swap(light, std::sync::atomic::Ordering::Relaxed) != light
-}
-
-/// `dark` in dark mode, `light` in light mode.
+/// `dark` on the dark base (Dark Meow, Miami), `light` in Light Meow.
+/// For neutrals that only follow the ink; a colour with its own hue in
+/// Miami uses [`pick3`].
 pub fn pick(dark: Color32, light: Color32) -> Color32 {
     if is_light() { light } else { dark }
+}
+
+/// One value per theme: Dark Meow, Light Meow, Miami.
+pub fn pick3(dark: Color32, light: Color32, miami: Color32) -> Color32 {
+    match theme() {
+        Theme::Dark => dark,
+        Theme::Light => light,
+        Theme::Miami => miami,
+    }
 }
 
 const fn hex(v: u32) -> Color32 {
@@ -69,7 +151,7 @@ fn ink(a: f32) -> Color32 {
 
 /// Solid window colour (the middle of the backdrop gradient).
 #[allow(non_snake_case)]
-pub fn BG() -> Color32 { pick(hex(0x0E1B0D), hex(0xE6F0DA)) }
+pub fn BG() -> Color32 { pick3(hex(0x0E1B0D), hex(0xE6F0DA), hex(0x1A1248)) }
 /// Card surface.
 #[allow(non_snake_case)]
 pub fn CARD() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255, 14), Color32::from_rgba_unmultiplied(255, 255, 255, 191)) }
@@ -89,7 +171,7 @@ pub fn TILE_HI() -> Color32 { pick(Color32::from_rgba_unmultiplied(255, 255, 255
 pub fn TILE_BASE() -> Color32 { pick(Color32::from_rgba_unmultiplied(0, 0, 0, 89), Color32::from_rgba_unmultiplied(20, 24, 26, 36)) }
 /// Floating surfaces: menus, toasts, drop targets, previews.
 #[allow(non_snake_case)]
-pub fn POPOVER() -> Color32 { pick(hex(0x1A2818), hex(0xFFFFFF)) }
+pub fn POPOVER() -> Color32 { pick3(hex(0x1A2818), hex(0xFFFFFF), hex(0x1C1530)) }
 /// The hairline round a floating surface. With no shadow under it, light
 /// mode needs a firmer ink line to part a white popover from white cards.
 #[allow(non_snake_case)]
@@ -100,10 +182,10 @@ pub fn POPOVER_EDGE() -> Color32 { if is_light() { white(52) } else { white(30) 
 pub fn SCRIM() -> Color32 { pick(Color32::from_black_alpha(115), Color32::from_rgba_unmultiplied(14, 20, 5, 61)) }
 /// Window sidebar.
 #[allow(non_snake_case)]
-pub fn SIDEBAR() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128)) }
+pub fn SIDEBAR() -> Color32 { pick3(Color32::from_rgba_unmultiplied(3, 8, 3, 128), Color32::from_rgba_unmultiplied(255, 255, 255, 128), Color32::from_rgba_unmultiplied(6, 3, 18, 128)) }
 /// Window footer strip.
 #[allow(non_snake_case)]
-pub fn FOOTER() -> Color32 { pick(Color32::from_rgba_unmultiplied(3, 8, 3, 90), Color32::from_rgba_unmultiplied(255, 255, 255, 110)) }
+pub fn FOOTER() -> Color32 { pick3(Color32::from_rgba_unmultiplied(3, 8, 3, 90), Color32::from_rgba_unmultiplied(255, 255, 255, 110), Color32::from_rgba_unmultiplied(6, 3, 18, 90)) }
 
 #[allow(non_snake_case)]
 pub fn TEXT() -> Color32 { ink(1.0) }
@@ -122,7 +204,7 @@ pub fn TEXT_MUTED() -> Color32 { ink(if is_light() { 0.50 } else { 0.40 }) }
 /// switches, the active sidebar icon. Only for what you press or select,
 /// never data (C2). Text on it is [`ON_ACTION`].
 #[allow(non_snake_case)]
-pub fn ACTION() -> Color32 { pick(hex(0xC8F05A), hex(0xA8D83A)) }
+pub fn ACTION() -> Color32 { pick3(hex(0xC8F05A), hex(0xA8D83A), hex(0xFF5FA2)) }
 /// The recording dot (dictation, screen recording): macOS's own recording
 /// red, the same in both modes. One of the exceptions in C13.
 pub const REC: Color32 = hex(0xFF453A);
@@ -130,16 +212,16 @@ pub const REC: Color32 = hex(0xFF453A);
 pub const ON_ACTION: Color32 = hex(0x0E1405);
 /// Links and lime text on cards.
 #[allow(non_snake_case)]
-pub fn ACCENT() -> Color32 { pick(hex(0xD9F78A), hex(0x2F5208)) }
+pub fn ACCENT() -> Color32 { pick3(hex(0xD9F78A), hex(0x2F5208), hex(0xFF9DC6)) }
 /// State: fine. Never a category or chart series (C4).
 #[allow(non_snake_case)]
-pub fn GREEN() -> Color32 { pick(hex(0x94D45A), hex(0x437A20)) }
+pub fn GREEN() -> Color32 { pick3(hex(0x94D45A), hex(0x437A20), hex(0x7EEBA6)) }
 /// State: needs attention (busy spikes, "suggested", warnings).
 #[allow(non_snake_case)]
-pub fn AMBER() -> Color32 { pick(hex(0xF7B267), hex(0xA65A0E)) }
+pub fn AMBER() -> Color32 { pick3(hex(0xF7B267), hex(0xA65A0E), hex(0xFFC06B)) }
 /// State: problem, low battery.
 #[allow(non_snake_case)]
-pub fn RED() -> Color32 { pick(hex(0xFF9B7A), hex(0xC2391D)) }
+pub fn RED() -> Color32 { pick3(hex(0xFF9B7A), hex(0xC2391D), hex(0xFF6B5E)) }
 /// Fill of destructive buttons only; text on it is white. Not for text or
 /// marks: those use [`RED`].
 // callers land with the buttons / AI marks work
@@ -151,7 +233,7 @@ pub fn DANGER() -> Color32 { pick(hex(0xF04438), hex(0xD92D20)) }
 pub fn AI() -> Color32 { tint::HEALTH() }
 /// Neutral marks: You, Other, an app with no icon (C9).
 #[allow(non_snake_case)]
-pub fn GRAY() -> Color32 { pick(hex(0x98A096), hex(0x6E766B)) }
+pub fn GRAY() -> Color32 { pick3(hex(0x98A096), hex(0x6E766B), hex(0xA49CB8)) }
 /// The "Other" series in charts: the rest after the coloured series (C5).
 #[allow(non_snake_case)]
 pub fn OTHER() -> Color32 { GRAY() }
@@ -162,15 +244,16 @@ pub fn TRACK() -> Color32 { white(20) }
 /// Chart series (C5): the group tint first, then its next steps; at most
 /// three colours, the rest is [`OTHER`]. Same thing, same step everywhere.
 pub mod series {
-    use super::{hex, pick};
+    use super::{hex, pick3};
     use egui::Color32;
     /// Monitor charts (memory, storage): cyan, then pale (dark) / deep
     /// (light), then the step on the other side.
     pub fn monitor(i: usize) -> Color32 {
         const DARK: [u32; 3] = [0x6FD6E8, 0xB4EAF3, 0x4FA9BC];
         const LIGHT: [u32; 3] = [0x177A8E, 0x0B4652, 0x3A97AB];
+        const MIAMI: [u32; 3] = [0x4FE3E0, 0xAEF4F2, 0x2BB0AE];
         let i = i.min(2);
-        pick(hex(DARK[i]), hex(LIGHT[i]))
+        pick3(hex(DARK[i]), hex(LIGHT[i]), hex(MIAMI[i]))
     }
     /// Utilities charts (Keep Awake): lavender, then a deeper (dark) /
     /// deeper-ink (light) step.
@@ -179,8 +262,9 @@ pub mod series {
     pub fn util(i: usize) -> Color32 {
         const DARK: [u32; 2] = [0xE8E1FF, 0xA99BF0];
         const LIGHT: [u32; 2] = [0x6A5AC8, 0x3F3290];
+        const MIAMI: [u32; 2] = [0xE4DBFF, 0xB19BFF];
         let i = i.min(1);
-        pick(hex(DARK[i]), hex(LIGHT[i]))
+        pick3(hex(DARK[i]), hex(LIGHT[i]), hex(MIAMI[i]))
     }
     /// Clean charts: the junk ramp, lime stepping into green.
     pub fn clean(i: usize) -> Color32 {
@@ -193,8 +277,10 @@ pub mod series {
 pub fn junk_ramp(i: usize) -> Color32 {
     const DARK: [u32; 7] = [0xC8F05A, 0xAEE35A, 0x94D45A, 0x7CC25A, 0x66AE57, 0x549852, 0x4F8E4E];
     const LIGHT: [u32; 7] = [0x5B8A14, 0x507E14, 0x467318, 0x3E6A1A, 0x36601B, 0x2F571C, 0x284F1E];
+    // Miami: hot pink stepping into violet
+    const MIAMI: [u32; 7] = [0xFF5FA2, 0xF25BB0, 0xE05ABD, 0xC95BC8, 0xB05ECF, 0x9661D2, 0x7F63D0];
     let i = i.min(6);
-    pick(hex(DARK[i]), hex(LIGHT[i]))
+    pick3(hex(DARK[i]), hex(LIGHT[i]), hex(MIAMI[i]))
 }
 
 /// What the app draws over the user's picture or video frame (C16):
@@ -263,16 +349,16 @@ pub mod overlay {
 /// Tool tints by group: Clean (lime), Monitor (cyan), Create (apricot),
 /// Utilities (lavender).
 pub mod tint {
-    use super::{hex, pick};
+    use super::{hex, pick3};
     use egui::Color32;
     #[allow(non_snake_case)]
-    pub fn CLEANUP() -> Color32 { pick(hex(0xC8F05A), hex(0x5B8A14)) }
+    pub fn CLEANUP() -> Color32 { pick3(hex(0xC8F05A), hex(0x5B8A14), hex(0xFF5FA2)) }
     #[allow(non_snake_case)]
     pub fn DISK_MAP() -> Color32 { CLEANUP() }
     #[allow(non_snake_case)]
     pub fn STARTUP() -> Color32 { CLEANUP() }
     #[allow(non_snake_case)]
-    pub fn HEALTH() -> Color32 { pick(hex(0x6FD6E8), hex(0x177A8E)) }
+    pub fn HEALTH() -> Color32 { pick3(hex(0x6FD6E8), hex(0x177A8E), hex(0x4FE3E0)) }
     #[allow(non_snake_case)]
     pub fn CLAUDE() -> Color32 { HEALTH() }
     #[allow(non_snake_case)]
@@ -280,9 +366,9 @@ pub mod tint {
     #[allow(non_snake_case)]
     pub fn DISPLAYS() -> Color32 { HEALTH() }
     #[allow(non_snake_case)]
-    pub fn CAPTURE() -> Color32 { pick(hex(0xF7B267), hex(0xA65A0E)) }
+    pub fn CAPTURE() -> Color32 { pick3(hex(0xF7B267), hex(0xA65A0E), hex(0xFF9A4D)) }
     #[allow(non_snake_case)]
-    pub fn KEEP_AWAKE() -> Color32 { pick(hex(0xE8E1FF), hex(0x6A5AC8)) }
+    pub fn KEEP_AWAKE() -> Color32 { pick3(hex(0xE8E1FF), hex(0x6A5AC8), hex(0xC3B0FF)) }
     #[allow(non_snake_case)]
     pub fn NEUTRAL() -> Color32 { super::TEXT_FAINT() }
 }
@@ -563,10 +649,10 @@ pub fn backdrop_panel(painter: &Painter, rect: Rect, radius: f32, opaque: bool) 
 }
 
 fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: bool) {
-    let light = is_light();
+    let light = theme();
     // the mesh only changes with the window's size and the theme: build it
     // once, not every frame (it's ~1.4k vertices of gradient math)
-    type Key = ([u32; 5], bool, u32, bool);
+    type Key = ([u32; 5], Theme, u32, bool);
     static CACHE: std::sync::Mutex<Vec<(Key, std::sync::Arc<egui::epaint::Mesh>)>> = std::sync::Mutex::new(Vec::new());
     let key: Key = ([rect.min.x.to_bits(), rect.min.y.to_bits(), rect.max.x.to_bits(), rect.max.y.to_bits(), radius.to_bits()], light, alpha.to_bits(), tall);
     let mesh = {
@@ -592,13 +678,18 @@ fn backdrop_with(painter: &Painter, rect: Rect, radius: f32, alpha: f32, tall: b
 
 /// The backdrop's gradient (S1): colours from the glow's centre out to its
 /// edge, as fractions of the way.
-pub fn backdrop_stops(light: bool) -> &'static [(f32, Color32)] {
+pub fn backdrop_stops(theme: Theme) -> &'static [(f32, Color32)] {
     const LIGHT: &[(f32, Color32)] = &[(0.0, hex(0xFFFFFF)), (0.55, hex(0xEAF2DF)), (1.0, hex(0xD9E8C8))];
     const DARK: &[(f32, Color32)] = &[(0.0, hex(0x22401D)), (0.35, hex(0x132610)), (0.7, hex(0x0A150A)), (1.0, hex(0x070D07))];
-    if light {
-        LIGHT
-    } else {
-        DARK
+    // a sunset over the sea at night: warm rose at the top, violet, then
+    // deep indigo at the sides
+    // Miami is a dusk sky, read top to bottom (see glow_color): cobalt
+    // night, violet, magenta, a burnt-orange horizon
+    const MIAMI: &[(f32, Color32)] = &[(0.0, hex(0x0B1240)), (0.45, hex(0x2A1452)), (0.78, hex(0x5E1D57)), (1.0, hex(0x70283C))];
+    match theme {
+        Theme::Dark => DARK,
+        Theme::Light => LIGHT,
+        Theme::Miami => MIAMI,
     }
 }
 
@@ -627,12 +718,16 @@ pub fn backdrop_edge() -> Color32 {
 
 /// The backdrop's colour at a point of `rect`: a radial glow from the top
 /// centre (S1). `tall` is the panel's: a beam down the centre to the bottom.
-fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
+fn glow_color(rect: Rect, light: Theme, alpha: f32, tall: bool) -> impl Fn(Pos2) -> Color32 {
     let stops = backdrop_stops(light);
     let glow = Pos2::new(rect.center().x, rect.top());
     let (rx, ry) = backdrop_glow(rect.size(), tall);
     move |q: Pos2| {
-        let d = (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0);
+        let d = if light == Theme::Miami {
+            ((q.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0)
+        } else {
+            (((q.x - glow.x) / rx).powi(2) + ((q.y - glow.y) / ry).powi(2)).sqrt().min(1.0)
+        };
         let k = stops.iter().position(|(t, _)| *t >= d).unwrap_or(stops.len() - 1).max(1);
         let (t0, c0) = stops[k - 1];
         let (t1, c1) = stops[k];
@@ -640,7 +735,7 @@ fn glow_color(rect: Rect, light: bool, alpha: f32, tall: bool) -> impl Fn(Pos2) 
     }
 }
 
-fn backdrop_mesh(rect: Rect, radius: f32, light: bool, alpha: f32, tall: bool) -> egui::epaint::Mesh {
+fn backdrop_mesh(rect: Rect, radius: f32, light: Theme, alpha: f32, tall: bool) -> egui::epaint::Mesh {
     let color_at = glow_color(rect, light, alpha, tall);
     // a fan of rings from the centre out to the rounded outline
     let outline = densify(&rounded_points(rect, radius), 24.0);
@@ -2347,6 +2442,27 @@ pub fn human_duration(secs: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_choice_auto_follows_the_system_and_the_rest_pin_a_theme() {
+        assert_eq!(ThemeChoice::Auto.resolve(true), Theme::Light);
+        assert_eq!(ThemeChoice::Auto.resolve(false), Theme::Dark);
+        for system in [true, false] {
+            assert_eq!(ThemeChoice::Light.resolve(system), Theme::Light);
+            assert_eq!(ThemeChoice::Dark.resolve(system), Theme::Dark);
+            assert_eq!(ThemeChoice::Miami.resolve(system), Theme::Miami);
+        }
+        let labels: Vec<_> = ThemeChoice::ALL.iter().map(|c| c.label()).collect();
+        assert_eq!(labels, ["Auto", "Light", "Dark", "Miami"]);
+    }
+
+    #[test]
+    fn every_theme_has_its_own_backdrop() {
+        let [d, l, m] = [Theme::Dark, Theme::Light, Theme::Miami].map(backdrop_stops);
+        assert!(d != l && d != m && l != m);
+        assert_eq!(m.first().map(|s| s.0), Some(0.0));
+        assert_eq!(m.last().map(|s| s.0), Some(1.0));
+    }
 
     #[test]
     fn reveal_holds_then_fades_out() {
