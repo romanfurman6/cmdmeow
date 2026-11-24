@@ -517,6 +517,32 @@ pub fn bar_line(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Colo
     text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), room);
 }
 
+/// Columns for [`bar_line_pair`]: widest name, widest dim value, widest
+/// main value.
+pub fn bar_cols_pair(p: &egui::Painter, lines: &[(&str, &str, &str)]) -> (f32, f32, f32) {
+    let w = |t: &str| p.layout_no_wrap(t.to_string(), font(12.0), TEXT()).size().x;
+    let m = |f: &dyn Fn(&(&str, &str, &str)) -> f32| lines.iter().map(f).fold(0.0f32, f32::max).ceil();
+    (m(&|l| w(l.0)), m(&|l| w(l.1)), m(&|l| w(l.2)))
+}
+
+/// A W5 line with two values (AI Usage Models and Projects: tokens, then
+/// dollars): the dim value and the main value each right-aligned in their
+/// own shared column, 12 apart, so no unit repeats on every line.
+pub fn bar_line_pair(p: &egui::Painter, r: Rect, label: &str, frac: Option<(f32, Color32)>, values: (&str, &str), cols: (f32, f32, f32)) {
+    let (lw, dw, vw) = cols;
+    let cy = r.center().y;
+    p.text(Pos2::new(r.right(), cy), Align2::RIGHT_CENTER, values.1, font(12.0), TEXT());
+    let dx = r.right() - vw - sp::M;
+    let dr = p.text(Pos2::new(dx, cy), Align2::RIGHT_CENTER, values.0, font(12.0), TEXT_FAINT());
+    let x0 = r.left() + lw + 10.0;
+    let x1 = dx - dw - 10.0;
+    if let (Some((f, c)), true) = (frac, x1 - x0 >= 24.0) {
+        bar(p, Rect::from_min_max(Pos2::new(x0, cy - 2.0), Pos2::new(x1, cy + 2.0)), f, c);
+    }
+    let room = lw.min(dr.left() - r.left() - 8.0);
+    text_fade(p, Pos2::new(r.left(), cy), label, font(12.0), white(166), room);
+}
+
 /// A quiet line where the data would be (W11): no frame round it.
 pub fn empty_note(p: &egui::Painter, r: Rect, msg: &str) {
     text_fit(p, r.center(), Align2::CENTER_CENTER, msg, font(12.0), TEXT_FAINT(), r.width() - 16.0);

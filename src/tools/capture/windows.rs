@@ -156,6 +156,7 @@ pub fn show(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
     let screen = screen_size(ctx);
     countdown(c, ctx, screen);
     permission(c, ctx, screen, cx);
+    keychain(c, ctx, screen, cx);
     preview(c, ctx, screen);
     pins(c, ctx, screen);
     editor_window(c, ctx, screen);
@@ -202,6 +203,78 @@ fn countdown(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
 }
 
 // ---------------------------------------------------------------- permission
+
+/// The Keychain card: before macOS asks for the sharing key, what it is and
+/// what is allowed. A floating card like the Screen Recording one, so it
+/// shows wherever Share was pressed (editor, preview, the app window).
+/// Hidden while macOS's own dialog is up.
+fn keychain(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
+    let Some(k) = c.keychain.as_ref() else { return };
+    if k.busy {
+        return;
+    }
+    let denied = k.denied;
+    let app = crate::kit::perms::app_name();
+    let size = Vec2::new(440.0, 252.0);
+    let pos = Pos2::new((screen.x - size.x) / 2.0, screen.y * 0.3);
+    let title = &plain("capture-keychain");
+    #[derive(Clone, Copy)]
+    enum Choice {
+        Cancel,
+        Go,
+        NewKey,
+    }
+    let mut choice = None;
+    crate::kit::viewport::show(ctx, ViewportId::from_hash_of(title), floating(title, pos, size).with_active(true), |ui, _| {
+        let r = ui.max_rect();
+        let p = ui.painter().clone();
+        p.rect_filled(r, 14.0, BG());
+        p.rect_stroke(r, 14.0, Stroke::new(1.0, POPOVER_EDGE()), StrokeKind::Inside);
+        let x = r.left() + 16.0;
+        let w = r.width() - 32.0;
+        let chip = Rect::from_min_size(Pos2::new(x, r.top() + 20.0), Vec2::splat(42.0));
+        tool_chip(&p, chip, Icon::Lock, tint::NEUTRAL());
+        p.text(Pos2::new(chip.right() + 12.0, chip.top() + 3.0), Align2::LEFT_TOP, "Keychain access", bold(15.0), TEXT());
+        p.text(Pos2::new(chip.right() + 12.0, chip.bottom() - 3.0), Align2::LEFT_BOTTOM, format!("{app} sharing"), font(13.0), TEXT_DIM());
+        let body = format!("Your secret key is in the macOS Keychain. macOS asks for your Mac password before {app} can read it.");
+        let mut y = chip.bottom() + 14.0;
+        y += paragraph(&p, Pos2::new(x, y), &body, font(13.0), TEXT_SOFT(), w) + 12.0;
+        hairline(&p, Pos2::new(r.left(), y), Pos2::new(r.right(), y));
+        for (k, (glyph, line, col)) in [(Icon::Check, "Reads your sharing secret key only", GREEN()), (Icon::Close, "No other passwords or Keychain items", TEXT_FAINT())].into_iter().enumerate() {
+            let cy = y + 16.0 + k as f32 * 32.0;
+            icon(&p, glyph, Rect::from_center_size(Pos2::new(x + 8.0, cy), Vec2::splat(14.0)), col);
+            p.text(Pos2::new(x + 26.0, cy), Align2::LEFT_CENTER, line, font(13.0), if k == 0 { TEXT() } else { TEXT_DIM() });
+        }
+        y += 64.0;
+        hairline(&p, Pos2::new(r.left(), y), Pos2::new(r.right(), y));
+        let by = r.bottom() - 16.0 - 32.0;
+        let (left, back, go) = if denied { ("Denied", "Enter key again", "Try again") } else { ("Choose Always Allow", "Not now", "Continue") };
+        let gw = button_width(&p, go, BTN_PRIMARY);
+        let gr = Rect::from_min_size(Pos2::new(r.right() - 16.0 - gw, by), Vec2::new(gw, 32.0));
+        let bw = button_width(&p, back, BTN_SECONDARY);
+        let br = Rect::from_min_size(Pos2::new(gr.left() - 8.0 - bw, by), Vec2::new(bw, 32.0));
+        p.text(Pos2::new(x, br.center().y), Align2::LEFT_CENTER, left, font(12.0), if denied { AMBER() } else { TEXT_FAINT() });
+        if pill_button(ui, br, back, BTN_SECONDARY, true).clicked() {
+            choice = Some(if denied { Choice::NewKey } else { Choice::Cancel });
+        }
+        if pill_button(ui, gr, go, BTN_PRIMARY, true).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            choice = Some(Choice::Go);
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) || ui.ctx().input(|i| i.viewport().close_requested()) {
+            choice = Some(Choice::Cancel);
+        }
+    });
+    match choice {
+        Some(Choice::Go) => c.keychain_continue(),
+        Some(Choice::Cancel) => c.keychain_drop(),
+        Some(Choice::NewKey) => {
+            c.keychain_drop();
+            c.focus_secret = true;
+            cx.open_page(super::SHARING_ID, "");
+        }
+        None => {}
+    }
+}
 
 fn permission(c: &mut Capture, ctx: &egui::Context, screen: Vec2, cx: &mut Cx) {
     if c.perm_card.is_none() {

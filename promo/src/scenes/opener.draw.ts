@@ -40,15 +40,15 @@ const NOTES=[['#ff9500','Your trial ends in 3 days','Disk Sweeper Pro'],['#5856d
 $('notes').innerHTML=NOTES.map((n,i)=>`<div class="note" id="n${i}"><i style="background:${n[0]}"></i><span><b>${n[2]}</b>${n[1]}</span></div>`).join('');
 // keycap
 const EARS='M17 36 L23.500 14 Q25.500 9.500 29.500 13 L42 25 Z M83 36 L76.500 14 Q74.500 9.500 70.500 13 L58 25 Z';
-$('cat').innerHTML=`<ellipse id="cglow" cx="50" cy="56" rx="44" ry="40" fill="#C8F05A" opacity="0" style="filter:blur(8px)"/><rect x="15" y="30" width="70" height="60" rx="13" fill="#CBBFA8"/><g id="cears"><path d="${EARS}" fill="#F2ECE3" stroke="#F2ECE3" stroke-width="4" stroke-linejoin="round"/></g><rect x="15" y="24" width="70" height="60" rx="13" fill="#F2ECE3"/><rect id="el" x="36" y="45" width="8" height="18" rx="4" fill="#14181A"/><rect id="er" x="56" y="45" width="8" height="18" rx="4" fill="#14181A"/>`;
+$('cat').innerHTML=`<ellipse id="cglow" cx="50" cy="56" rx="44" ry="40" fill="#FF5FA2" opacity="0" style="filter:blur(8px)"/><rect x="15" y="30" width="70" height="60" rx="13" fill="#CBBFA8"/><g id="cears"><path d="${EARS}" fill="#F2ECE3" stroke="#F2ECE3" stroke-width="4" stroke-linejoin="round"/></g><rect x="15" y="24" width="70" height="60" rx="13" fill="#F2ECE3"/><rect id="el" x="36" y="45" width="8" height="18" rx="4" fill="#14181A"/><rect id="er" x="56" y="45" width="8" height="18" rx="4" fill="#14181A"/>`;
 
 let icRects=null;
 
 const VAR='b';
 function cmdPath(cx,cy,q){const a=cx-q,b=cx+q,c=cy-q,d=cy+q,r=q*.93;return `M${a} ${c-r}V${d+r}M${b} ${c-r}V${d+r}M${a-r} ${c}H${b+r}M${a-r} ${d}H${b+r}M${a} ${c-r}A${r} ${r} 0 1 0 ${a-r} ${c}M${b} ${c-r}A${r} ${r} 0 1 1 ${b+r} ${c}M${a} ${d+r}A${r} ${r} 0 1 1 ${a-r} ${d}M${b} ${d+r}A${r} ${r} 0 1 0 ${b+r} ${d}`;}
-$('cat').insertAdjacentHTML('beforeend',`<path id="ccmd" d="${cmdPath(50,54,7)}" fill="none" stroke="#E39A35" stroke-width="4.2"/>`);
-const ring=document.createElement('div');ring.style.cssText='position:absolute;border-radius:50%;border:4px solid #C8F05A;z-index:8;pointer-events:none';$('stage').appendChild(ring);
-const shadeEl=document.createElement('div');shadeEl.id='shade';shadeEl.style.cssText='position:absolute;inset:0;background:#000;z-index:4;pointer-events:none';$('stage').insertBefore(shadeEl,$('mb'));
+$('cat').insertAdjacentHTML('beforeend',`<path id="ccmd" d="${cmdPath(50,54,7)}" fill="none" stroke="#FF5FA2" stroke-width="4.2"/>`);
+const ring=document.createElement('div');ring.style.cssText='position:absolute;border-radius:50%;border:4px solid #FF5FA2;z-index:8;pointer-events:none';$('stage').appendChild(ring);
+const shadeEl=document.createElement('div');shadeEl.id='shade';shadeEl.style.cssText='position:absolute;inset:0;background:#0A0826;z-index:4;pointer-events:none';$('stage').insertBefore(shadeEl,$('mb'));
 // pseudo random
 const rnd=i=>{const x=Math.sin(i*127.1+3.7)*43758.5453;return x-Math.floor(x)};
 function eyes(m,bl){['el','er'].forEach(id=>{const e=$(id);e.style.opacity=m;const h=18*(1-bl*.85);e.setAttribute('height',h);e.setAttribute('y',54-h/2)});$('ccmd').style.opacity=1-m;}

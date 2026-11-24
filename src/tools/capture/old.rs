@@ -90,6 +90,11 @@ fn uploads(min_days: f64) -> Vec<Upload> {
 /// Remove an upload from the storage, then forget it here.
 fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
     let s = settings::load(&settings::data_dir());
+    // Cleanup never brings up a Keychain prompt: a key macOS won't give
+    // without asking is allowed once from a Share first
+    if share::secret::quiet(share::VIDEO_ACCOUNT) == share::secret::Access::Ask {
+        return Err("Share a capture once to allow Keychain access".into());
+    }
     let b = s.share.bucket(share::VIDEO_ACCOUNT);
     if !b.ready() {
         return Err("Sharing isn't set up".into());
