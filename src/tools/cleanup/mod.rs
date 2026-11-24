@@ -84,10 +84,10 @@ impl Tool for Cleanup {
         ID
     }
     fn name(&self) -> &'static str {
-        "Cleanup"
+        ts!("cleanup.name")
     }
     fn about(&self) -> &'static str {
-        "Clears caches, logs, developer junk and Trash, with an optional AI check"
+        ts!("cleanup.about")
     }
     fn badge(&self) -> Badge {
         badge()
@@ -98,19 +98,19 @@ impl Tool for Cleanup {
     }
 
     fn section(&self) -> &'static str {
-        "Clean"
+        ts!("cleanup.short")
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: "clean", title: "Clean", about: "What the last clean removed, and a scan.", sizes: &[Size::S12, Size::S14], size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: "clean", title: ts!("cleanup.short"), about: ts!("cleanup.widget_about"), sizes: &[Size::S12, Size::S14], size: Size::S12, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let g = self.clean.lock_ok().clone();
         let (value, sub, frac) = match g.phase {
-            engine::Phase::Results => (human_bytes(g.total()), "to review".to_string(), None),
-            engine::Phase::Scanning | engine::Phase::Judging => ("Scanning…".into(), g.current.clone(), Some(g.shown_progress())),
-            engine::Phase::Cleaning => ("Cleaning…".into(), g.current.clone(), Some(g.progress)),
-            engine::Phase::Done => (human_bytes(g.cleaned_bytes), "cleaned".into(), None),
-            engine::Phase::Intro => ("Scan".into(), String::new(), None),
+            engine::Phase::Results => (human_bytes(g.total()), ts!("cleanup.w.to_review").to_string(), None),
+            engine::Phase::Scanning | engine::Phase::Judging => (ts!("cleanup.scanning").into(), g.current.clone(), Some(g.shown_progress())),
+            engine::Phase::Cleaning => (ts!("cleanup.cleaning").into(), g.current.clone(), Some(g.progress)),
+            engine::Phase::Done => (human_bytes(g.cleaned_bytes), ts!("cleanup.w.cleaned").into(), None),
+            engine::Phase::Intro => (ts!("cleanup.scan").into(), String::new(), None),
         };
         // before a scan: what past cleans removed (the disk itself is Storage's)
         let hist = match g.phase {
@@ -126,8 +126,8 @@ impl Tool for Cleanup {
         let freed: u64 = hist.iter().map(|h| h.1).sum();
         let intro = g.phase == engine::Phase::Intro;
         let (value, sub) = match last {
-            Some(_) if intro => (human_bytes(freed), "freed so far".to_string()),
-            None if intro && size != Size::S12 => ("Not cleaned".to_string(), String::new()),
+            Some(_) if intro => (human_bytes(freed), ts!("cleanup.w.freed_so_far").to_string()),
+            None if intro && size != Size::S12 => (ts!("cleanup.w.not_cleaned").to_string(), String::new()),
             _ => (value, sub),
         };
         let id = ui.scope_id().with("w-clean");
@@ -135,27 +135,27 @@ impl Tool for Cleanup {
         let ring_ = frac.map(|f| (f.clamp(0.01, 1.0), ACCENT()));
         let never = intro && hist.is_empty();
         // W7: no lime button in the panel; never cleaned, the card itself opens Clean
-        let (value, sub) = if never { ("Not cleaned".to_string(), String::new()) } else { (value, sub) };
+        let (value, sub) = if never { (ts!("cleanup.w.not_cleaned").to_string(), String::new()) } else { (value, sub) };
         let resp = match size {
-            Size::S12 => tile::wide_full(ui, rect, id, Icon::Broom, col, ring_, "Clean", &value, &sub, crate::kit::glass::ty::caption_color(), false),
+            Size::S12 => tile::wide_full(ui, rect, id, Icon::Broom, col, ring_, ts!("cleanup.short"), &value, &sub, crate::kit::glass::ty::caption_color(), false),
             _ => {
-                let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Broom, col, ring_, "Clean", &value, &sub, crate::kit::glass::ty::caption_color(), false);
+                let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Broom, col, ring_, ts!("cleanup.short"), &value, &sub, crate::kit::glass::ty::caption_color(), false);
                 let p = ui.painter();
                 let lines: Vec<(String, Option<(f32, egui::Color32)>, String)> = match g.phase {
                     engine::Phase::Results => {
                         let tot = g.total().max(1) as f32;
                         let mut groups: Vec<(engine::Group, u64)> = engine::Group::ALL.iter().map(|k| (*k, g.group_bytes(*k))).filter(|(_, b)| *b > 0).collect();
                         groups.sort_by_key(|g| std::cmp::Reverse(g.1));
-                        groups.iter().take(3).map(|(grp, b)| (grp.title().to_string(), Some(((*b as f32 / tot).clamp(0.01, 1.0), ACCENT())), human_bytes(*b))).collect()
+                        groups.iter().take(3).map(|(grp, b)| (grp.label().to_string(), Some(((*b as f32 / tot).clamp(0.01, 1.0), ACCENT())), human_bytes(*b))).collect()
                     }
-                    engine::Phase::Scanning | engine::Phase::Judging | engine::Phase::Cleaning => vec![("Progress".into(), frac.map(|f| (f.clamp(0.01, 1.0), ACCENT())), format!("{:.0}%", frac.unwrap_or(0.0) * 100.0))],
+                    engine::Phase::Scanning | engine::Phase::Judging | engine::Phase::Cleaning => vec![(ts!("cleanup.w.progress").into(), frac.map(|f| (f.clamp(0.01, 1.0), ACCENT())), format!("{:.0}%", frac.unwrap_or(0.0) * 100.0))],
                     engine::Phase::Intro if !hist.is_empty() => vec![
-                        ("Last".into(), None, last.map(|l| engine::days_ago(l.0)).unwrap_or_default()),
-                        ("Freed".into(), None, last.map(|l| human_bytes(l.1)).unwrap_or_default()),
+                        (ts!("cleanup.w.last").into(), None, last.map(|l| engine::days_ago(l.0)).unwrap_or_default()),
+                        (ts!("cleanup.w.freed").into(), None, last.map(|l| human_bytes(l.1)).unwrap_or_default()),
                     ],
                     _ => Vec::new(),
                 };
-                let empty = if g.phase == engine::Phase::Done { "All clean" } else if never { "Never scanned" } else { "" };
+                let empty = if g.phase == engine::Phase::Done { ts!("cleanup.w.all_clean") } else if never { ts!("cleanup.w.never") } else { "" };
                 tile::lines(p, right, &lines, empty);
                 resp
             }
@@ -184,22 +184,22 @@ impl Tool for Cleanup {
         // always on offer, at the lowest priority
         let mut v = vec![Recommendation {
             priority: 0,
-            title: "Clean caches and logs".into(),
+            title: ts!("cleanup.rec.title").into(),
             body: if self.demo || crate::kit::claude_code::availability().ready() {
-                "Claude checks each cache and log path and tells you what's safe to remove.".into()
+                ts!("cleanup.rec.body_claude").into()
             } else {
-                "Finds caches, logs and leftovers and tells you what's safe to remove.".into()
+                ts!("cleanup.rec.body").into()
             },
-            action: "Start Cleanup".into(),
+            action: ts!("cleanup.rec.action").into(),
             go: go.clone(),
         }];
         let claude_junk = self.clean.lock_ok().claude_safe_bytes();
         if claude_junk > 50_000_000 {
             v.push(Recommendation {
                 priority: 4,
-                title: "Claude caches can be trimmed".into(),
-                body: format!("{} of old Claude caches, logs and versions are safe to remove.", human_bytes(claude_junk)),
-                action: "Review Cleanup".into(),
+                title: ts!("cleanup.rec.claude_title").into(),
+                body: t!("cleanup.rec.claude_body", size = human_bytes(claude_junk)).into_owned(),
+                action: ts!("cleanup.rec.claude_action").into(),
                 go: Action::OpenPage { tool: ID.into(), route: "claude".into() },
             });
         }

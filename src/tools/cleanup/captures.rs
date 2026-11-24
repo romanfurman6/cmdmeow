@@ -69,10 +69,10 @@ pub(super) fn delete_upload(local: &Path, key: &str) -> Result<(), String> {
 /// The bundle an old capture shows in.
 pub(super) fn bundle(kind: &str) -> Option<&'static str> {
     match kind {
-        SCREENSHOTS => Some("Screenshots"),
-        RECORDINGS => Some("Screen recordings"),
-        HISTORY => Some("Capture history"),
-        UPLOADS => Some("Uploads"),
+        SCREENSHOTS => Some(ts!("cleanup.bundle.screenshots")),
+        RECORDINGS => Some(ts!("cleanup.bundle.recordings")),
+        HISTORY => Some(ts!("cleanup.bundle.history")),
+        UPLOADS => Some(ts!("cleanup.bundle.uploads")),
         _ => None,
     }
 }
