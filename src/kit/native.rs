@@ -609,7 +609,24 @@ mod mac {
     pub fn watch_clicks_elsewhere(f: impl Fn() + 'static) {
         use objc2::runtime::AnyObject;
         use objc2::{class, msg_send};
-        let block = block2::RcBlock::new(move |_e: std::ptr::NonNull<AnyObject>| f());
+        let block = block2::RcBlock::new(move |_e: std::ptr::NonNull<AnyObject>| {
+            // right after the panel opens, before it takes the keyboard, a
+            // press on it can still come through here: a press on one of
+            // our own windows is not "elsewhere"
+            let ours = unsafe {
+                let at: objc2_foundation::NSPoint = msg_send![class!(NSEvent), mouseLocation];
+                let num: isize = msg_send![class!(NSWindow), windowNumberAtPoint: at, belowWindowWithWindowNumber: 0isize];
+                let app: Option<Retained<AnyObject>> = msg_send![class!(NSApplication), sharedApplication];
+                let w: Option<Retained<AnyObject>> = match &app {
+                    Some(a) => msg_send![&**a, windowWithWindowNumber: num],
+                    None => None,
+                };
+                w.is_some()
+            };
+            if !ours {
+                f();
+            }
+        });
         unsafe {
             // NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown
             let mask: u64 = (1 << 1) | (1 << 3) | (1 << 25);

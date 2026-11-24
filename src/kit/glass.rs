@@ -928,25 +928,6 @@ pub fn round_button_with(ui: &mut Ui, rect: Rect, tip: &str, draw: impl FnOnce(&
     k.resp.on_hover_text(tip)
 }
 
-/// "…" at `t` 0, "›" at `t` 1: the three dots slide onto the chevron's
-/// three corners and the strokes between them draw in.
-pub fn more_glyph(p: &Painter, rect: Rect, t: f32, color: Color32) {
-    let c = rect.center();
-    let u = rect.width().min(rect.height()) / 24.0;
-    let pt = |x: f32, y: f32| c + Vec2::new((x - 12.0) * u, (y - 12.0) * u);
-    let w = (1.8 * u).max(1.1);
-    let from = [(5.5, 12.0), (12.0, 12.0), (18.5, 12.0)];
-    let to = [(9.0, 5.5), (15.5, 12.0), (9.0, 18.5)];
-    let at: Vec<Pos2> = from.iter().zip(to).map(|(a, b)| pt(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)).collect();
-    if t > 0.01 {
-        p.add(PathShape::line(at.clone(), PathStroke::new(w, color.gamma_multiply(t))));
-    }
-    // the dots thin down to the stroke's width as they arrive
-    for d in &at {
-        p.circle_filled(*d, (1.9 + (w / u / 2.0 - 1.9) * t) * u, color);
-    }
-}
-
 /// Text link in bold [`ACCENT`]: lighter and underlined on hover, the text
 /// sinks 1 pt while held.
 pub fn link(ui: &mut Ui, pos: Pos2, align: Align2, label: &str, size: f32) -> Response {
