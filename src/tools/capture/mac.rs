@@ -167,8 +167,9 @@ const WARM_PNG: &[u8] = include_bytes!("../../../assets/ocr/warm.png");
 static OCR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Load the OCR model in the background so the first Copy text is quick.
-/// Called when Copy text or the editor starts, not at launch: the model
-/// keeps ~30 MB, which only people who use text recognition should pay.
+/// Called when Copy text or the editor starts, and once during first-run
+/// setup (a fresh Mac's first OCR can take many seconds). Not on later
+/// launches: the model keeps ~30 MB, which only people who use it should pay.
 pub fn warm_ocr() {
     use std::sync::atomic::Ordering;
     if OCR_READY.load(Ordering::Relaxed) || OCR_WARMING.swap(true, Ordering::SeqCst) {
