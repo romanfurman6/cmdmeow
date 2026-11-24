@@ -867,7 +867,9 @@ fn theme_art(ctx: &egui::Context, k: usize) -> Option<egui::TextureHandle> {
     }
     let img = image::load_from_memory(THEME_ART[k]).ok()?.to_rgba8();
     let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw());
-    let t = ctx.load_texture(format!("setup-theme-art-{k}"), ci, egui::TextureOptions::LINEAR);
+    // full-size art drawn at about half: mipmaps keep it sharp, not shimmery
+    let opts = egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR };
+    let t = ctx.load_texture(format!("setup-theme-art-{k}"), ci, opts);
     ctx.data_mut(|d| d.insert_temp(id, t.clone()));
     Some(t)
 }
