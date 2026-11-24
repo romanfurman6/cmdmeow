@@ -166,13 +166,27 @@ const WARM_PNG: &[u8] = include_bytes!("../../../assets/ocr/warm.png");
 /// runs waits for the model it is loading instead of loading a second copy.
 static OCR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Load the OCR model in the background so the first Copy text is quick.
-/// Called when Copy text or the editor starts, and once during first-run
-/// setup (a fresh Mac's first OCR can take many seconds). Not on later
-/// launches: the model keeps ~30 MB, which only people who use it should pay.
+/// When the last accurate pass ended, in ms since `clock()` started (0 = never).
+static OCR_LAST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn clock() -> u64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64 + 1
+}
+
+/// Vision lets go of an idle model after a while, so a warm-up older than
+/// this is warmed again.
+const WARM_FOR_MS: u64 = 20_000;
+
+/// Load the OCR model in the background so the next Copy text is quick.
+/// Called when Copy text or the editor starts (again if the model sat idle
+/// long enough for Vision to drop it), and once during first-run setup (a
+/// fresh Mac's first OCR can take many seconds). Not on later launches: the
+/// model keeps ~30 MB, which only people who use it should pay.
 pub fn warm_ocr() {
     use std::sync::atomic::Ordering;
-    if OCR_READY.load(Ordering::Relaxed) || OCR_WARMING.swap(true, Ordering::SeqCst) {
+    let last = OCR_LAST_MS.load(Ordering::Relaxed);
+    if (last > 0 && clock().saturating_sub(last) < WARM_FOR_MS) || OCR_WARMING.swap(true, Ordering::SeqCst) {
         return;
     }
     std::thread::spawn(|| {
@@ -181,6 +195,7 @@ pub fn warm_ocr() {
             let _ = recognize_path(&path, false);
             let _ = std::fs::remove_file(&path);
         }
+        OCR_WARMING.store(false, Ordering::SeqCst);
     });
 }
 
@@ -215,6 +230,9 @@ fn recognize_path(path: &Path, fast: bool) -> Vec<TextLine> {
     let Ok((w, h)) = image::image_dimensions(path) else { return Vec::new() };
     let _one = (!fast).then(|| OCR_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
     let mut lines = imp::recognize(path, w as f32, h as f32, fast);
+    if !fast {
+        OCR_LAST_MS.store(clock(), std::sync::atomic::Ordering::Relaxed);
+    }
     sort_reading_order(&mut lines);
     OCR_READY.store(true, std::sync::atomic::Ordering::Relaxed);
     lines
