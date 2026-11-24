@@ -1,6 +1,6 @@
 [package]
 name = "cmdmeow"
-version = "0.1.1"
+version = "0.2.0"
 license = "MIT"
 edition = "2021"
 description = "A glassy macOS menu bar health monitor with an AI-judged cleanup and Space Lens"

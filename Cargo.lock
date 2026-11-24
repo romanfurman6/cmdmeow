@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "cmdmeow"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ab_glyph",
  "block2 0.6.2",
