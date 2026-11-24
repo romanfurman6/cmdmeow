@@ -1951,4 +1951,22 @@ mod tests {
         assert_eq!(items_n(0), "0 items");
         assert_eq!(items_n(12), "12 items");
     }
+
+    /// Bundles go by folder and kinds show as words: neither reads the
+    /// shown title, so a translated title can't break them.
+    #[test]
+    fn bundles_and_kinds_do_not_read_titles() {
+        let mut it = demo_results().items.into_iter().find(|i| i.group == Group::AiTools).unwrap();
+        it.title = "anything".into();
+        it.kind = "Old Sessions";
+        for (dir, want) in [("file-history", "cleanup.bundle.edit_history"), ("uploads", "cleanup.bundle.claude_uploads"), ("projects", "cleanup.bundle.old_chats")] {
+            it.path = PathBuf::from(format!("/Users/me/.claude/{dir}/x"));
+            assert_eq!(bundle_of(&it), Some(crate::i18n::st(t!(want))), "{dir}");
+        }
+        it.path = PathBuf::from("/Users/me/.claude/other/x");
+        assert_eq!(bundle_of(&it), None);
+        assert_eq!(super::super::engine::kind_label("Old Sessions"), "Old Sessions");
+        assert_eq!(super::super::engine::kind_label("Capture History"), "Capture History");
+        assert_eq!(super::super::engine::kind_label("unknown"), "unknown");
+    }
 }
