@@ -47,11 +47,11 @@ fn clock(secs: i64) -> String {
 fn span_text(secs: i64) -> String {
     let m = secs.max(0) / 60;
     if m == 0 && secs > 0 {
-        "<1 m".into()
+        ts!("awake.less_than_min").into()
     } else if m >= 60 {
-        format!("{} h {:02} m", m / 60, m % 60)
+        t!("awake.span_hm", h = m / 60, m = m % 60 : {:02}).into_owned()
     } else {
-        format!("{m} m")
+        t!("awake.span_m", m = m).into_owned()
     }
 }
 
@@ -63,9 +63,9 @@ fn time_of_day(t: i64) -> String {
 /// The big line: "Can sleep", "Awake", "Sleeps in 4:12".
 fn title(st: State) -> String {
     match st {
-        State::Off => "Can sleep".into(),
-        State::On | State::Agent => "Awake".into(),
-        State::WindDown { left } => format!("Sleeps in {}", clock(left)),
+        State::Off => ts!("awake.can_sleep").into(),
+        State::On | State::Agent => ts!("awake.awake").into(),
+        State::WindDown { left } => t!("awake.sleeps_in_time", time = clock(left)).into_owned(),
     }
 }
 
@@ -73,11 +73,11 @@ fn title(st: State) -> String {
 fn detail(e: &Engine, st: State, now: i64) -> String {
     let since = e.awake_since.map(time_of_day).unwrap_or_default();
     match st {
-        State::Off if e.mode() == Mode::Auto => "No agent working".into(),
+        State::Off if e.mode() == Mode::Auto => ts!("awake.no_agent_working").into(),
         State::Off => String::new(),
-        State::Agent => format!("{} working · since {since}", names(&e.working_agents(now))),
-        State::WindDown { .. } => format!("{} finished", names(&e.last_agents)),
-        State::On => format!("Since {since}"),
+        State::Agent => t!("awake.working_since", agents = names(&e.working_agents(now)), since = since).into_owned(),
+        State::WindDown { .. } => t!("awake.agents_finished", agents = names(&e.last_agents)).into_owned(),
+        State::On => t!("awake.since", since = since).into_owned(),
     }
 }
 
@@ -94,17 +94,17 @@ fn names_short(a: &[super::sessions::Source]) -> String {
 fn detail_short(e: &Engine, st: State, now: i64) -> Vec<String> {
     let since = e.awake_since.map(time_of_day).unwrap_or_default();
     match st {
-        State::Off if e.mode() == Mode::Auto => vec!["No agent working".into(), "No agent".into()],
+        State::Off if e.mode() == Mode::Auto => vec![ts!("awake.no_agent_working").into(), ts!("awake.no_agent").into()],
         State::Off => vec![],
         State::Agent => {
             let a = e.working_agents(now);
-            vec![names(&a), names_short(&a), format!("{} agents", a.len())]
+            vec![names(&a), names_short(&a), t!("awake.agent_count", n = a.len()).into_owned()]
         }
         State::WindDown { .. } => {
             let a = &e.last_agents;
-            vec![format!("{} finished", names(a)), format!("{} finished", names_short(a)), "Finished".into()]
+            vec![t!("awake.agents_finished", agents = names(a)).into_owned(), t!("awake.agents_finished", agents = names_short(a)).into_owned(), ts!("awake.finished").into()]
         }
-        State::On => vec![format!("Since {since}")],
+        State::On => vec![t!("awake.since", since = since).into_owned()],
     }
 }
 
@@ -242,7 +242,7 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, _cx: &mut 
             _ => (mode.label().to_string(), if mode == Mode::Off { TEXT_DIM() } else { TEXT_SOFT() }),
         };
         p.text(Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, word, bold(13.0), col);
-        if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
+        if resp.on_hover_text(if mode == Mode::On { ts!("awake.turn_off") } else { ts!("awake.keep_awake") }).clicked() {
             k.toggle(Via::Panel);
         }
         return;
@@ -260,11 +260,11 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, _cx: &mut 
     let cap = caps.iter().find(|t| fits(t)).cloned().unwrap_or_else(|| mode.label().to_string());
     // winding down: "Sleeps in" over the time left, so nothing is cut
     let (label, value) = match st {
-        State::WindDown { left } => ("Sleeps in".to_string(), clock(left)),
-        _ => ("Keep Awake".to_string(), title(st)),
+        State::WindDown { left } => (ts!("awake.sleeps_in").to_string(), clock(left)),
+        _ => (ts!("awake.name").to_string(), title(st)),
     };
     tile::left_text(&p, x0, rect.center().y, &label, &value, &cap, TEXT_DIM(), tw);
-    if resp.on_hover_text(if mode == Mode::On { "Turn off" } else { "Keep awake" }).clicked() {
+    if resp.on_hover_text(if mode == Mode::On { ts!("awake.turn_off") } else { ts!("awake.keep_awake") }).clicked() {
         k.toggle(Via::Panel);
     }
 }
@@ -275,7 +275,7 @@ pub fn page(k: &mut KeepAwake, ui: &mut Ui, r: Rect) {
     let now = k.now();
     let p = ui.painter().clone();
     let id = ui.scope_id().with("awake-page");
-    let btns = page_header(&p, r, "Keep Awake", "", TEXT_DIM());
+    let btns = page_header(&p, r, ts!("awake.name"), "", TEXT_DIM());
     {
         let mut e = k.engine.lock_ok();
         shortcut(ui, &p, btns, &mut e, &mut k.keys, now, id.with("key"));
@@ -330,7 +330,7 @@ fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut Key
     }
     let rec = keys.recording;
     let cur = e.settings.shortcut.clone();
-    let text = if rec { "Press keys".to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| "Record".into()) };
+    let text = if rec { ts!("awake.press_keys").to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| ts!("awake.record").into()) };
     let g = p.layout_no_wrap(text.clone(), font(12.0), TEXT());
     let bw = (g.size().x + 24.0).max(76.0);
     let br = Rect::from_min_max(Pos2::new(btns.right() - bw, btns.top()), btns.max);
@@ -345,11 +345,11 @@ fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut Key
         dashed_rect(p, br, R_SMALL, white(60));
     }
     p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text("Click, then press the keys or a mouse button. Esc cancels, ⌫ removes it.").clicked() {
+    if resp.on_hover_text(ts!("awake.shortcut_tip")).clicked() {
         keys.recording = !rec;
         keys.seen = Some(std::time::Instant::now());
     }
-    let lr = p.text(Pos2::new(br.left() - sp::S, br.center().y), Align2::RIGHT_CENTER, "Shortcut", font(12.0), TEXT_DIM());
+    let lr = p.text(Pos2::new(br.left() - sp::S, br.center().y), Align2::RIGHT_CENTER, ts!("awake.shortcut"), font(12.0), TEXT_DIM());
     if let Some(err) = &keys.error {
         text_fit(p, Pos2::new(lr.left() - sp::M, br.center().y), Align2::RIGHT_CENTER, err, font(11.0), AMBER(), 260.0);
     }
@@ -373,7 +373,7 @@ fn hours(spans: &[Span], day: i64) -> [(i64, i64); 24] {
 /// was switched on is noise.
 fn row_words(s: &Span) -> (String, String) {
     if !s.agent {
-        return ("On".into(), String::new());
+        return (ts!("awake.mode.on").into(), String::new());
     }
     (names(&s.agents()), s.projects().join(", "))
 }
@@ -391,9 +391,9 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
 
     // the section title and the time in each mode
     let ty_ = r.top() + sp::SECTION_H - sp::M;
-    p.text(Pos2::new(r.left(), ty_), Align2::LEFT_BOTTOM, "Today", ty::section(), TEXT());
+    p.text(Pos2::new(r.left(), ty_), Align2::LEFT_BOTTOM, ts!("awake.today"), ty::section(), TEXT());
     let mut lx = r.right();
-    for (label, secs, c) in [("Auto", auto_t, AUTO()), ("On", on_t, ON())] {
+    for (label, secs, c) in [(ts!("awake.mode.auto"), auto_t, AUTO()), (ts!("awake.mode.on"), on_t, ON())] {
         let v = p.text(Pos2::new(lx, ty_), Align2::RIGHT_BOTTOM, span_text(secs), bold(12.0), TEXT_SOFT());
         let l = p.text(Pos2::new(v.left() - sp::XS, ty_), Align2::RIGHT_BOTTOM, label, font(12.0), TEXT_DIM());
         let sw = Rect::from_center_size(Pos2::new(l.left() - 6.0 - 5.0, l.center().y), Vec2::splat(10.0));
@@ -409,7 +409,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
     let hover_key = id.with("row-hover");
     let row_hover: Option<usize> = ui.ctx().data(|d| d.get_temp(hover_key)).flatten();
     let chart = Rect::from_min_size(inner.min, Vec2::new(inner.width() - CHART_LABELS_W, CHART_H));
-    for (f, label) in [(0.0, "60 m"), (0.5, "30 m")] {
+    for (f, label) in [(0.0, t!("awake.span_m", m = 60).into_owned()), (0.5, t!("awake.span_m", m = 30).into_owned())] {
         let ly = chart.top() + chart.height() * f;
         p.extend(Shape::dashed_line(&[Pos2::new(chart.left(), ly), Pos2::new(chart.right(), ly)], Stroke::new(1.0, white(26)), 3.0, 3.0));
         p.text(Pos2::new(inner.right(), ly), Align2::RIGHT_CENTER, label, font(11.0), TEXT_FAINT());
@@ -444,7 +444,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
             p.rect_stroke(Rect::from_min_max(Pos2::new(col.left(), bottom - ho - ha), Pos2::new(col.right(), bottom)), top_r, Stroke::new(1.5, TEXT_SOFT()), egui::StrokeKind::Outside);
         }
         if h <= cur_h {
-            resp.on_hover_text(format!("{:02}:00 · {} awake", h, span_text(on + auto)));
+            resp.on_hover_text(t!("awake.hour_tip", hour = h : {:02}, time = span_text(on + auto)).into_owned());
         }
     }
     let ly = chart.bottom() + 6.0;
@@ -461,7 +461,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
     let list = Rect::from_min_max(Pos2::new(card.left() + 1.0, top), Pos2::new(card.right() - 1.0, top + rows_fit * LOG_ROW_H + 2.0));
     hairline(p, Pos2::new(inner.left(), top), Pos2::new(inner.right(), top));
     if spans.is_empty() {
-        p.text(list.center(), Align2::CENTER_CENTER, "Nothing yet today", ty::body(), TEXT_FAINT());
+        p.text(list.center(), Align2::CENTER_CENTER, ts!("awake.nothing_today"), ty::body(), TEXT_FAINT());
         ui.ctx().data_mut(|d| d.insert_temp::<Option<usize>>(hover_key, None));
         return;
     }
@@ -499,7 +499,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
             let x1 = inner.right();
             let du = p.text(Pos2::new(x1, c.y), Align2::RIGHT_CENTER, span_text(s.end - s.start), ty::title(), TEXT());
             let du_left = du.left().min(x1 - 64.0);
-            let end = if now_row { "now".to_string() } else { time_of_day(s.end) };
+            let end = if now_row { ts!("awake.now").to_string() } else { time_of_day(s.end) };
             let tm = p.text(Pos2::new(du_left - sp::COL_GAP, c.y), Align2::RIGHT_CENTER, format!("{} – {end}", time_of_day(s.start)), font(12.0), TEXT_FAINT());
             let (what, from) = row_words(s);
             let nx = c.x + 10.0 + sp::S + 2.0;

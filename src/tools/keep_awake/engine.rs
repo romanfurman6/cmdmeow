@@ -26,9 +26,9 @@ impl Mode {
 
     pub fn label(self) -> &'static str {
         match self {
-            Mode::Off => "Off",
-            Mode::Auto => "Auto",
-            Mode::On => "On",
+            Mode::Off => ts!("awake.mode.off"),
+            Mode::Auto => ts!("awake.mode.auto"),
+            Mode::On => ts!("awake.mode.on"),
         }
     }
 }

@@ -68,7 +68,7 @@ impl KeyRec {
             self.keys = Keys::new(ctx.clone());
         }
         let Some(keys) = self.keys.as_mut() else {
-            self.error = Some("Shortcuts are unavailable".into());
+            self.error = Some(ts!("awake.no_shortcuts").into());
             return;
         };
         self.error = None;
@@ -252,7 +252,7 @@ impl Tool for KeepAwake {
         ID
     }
     fn name(&self) -> &'static str {
-        "Keep Awake"
+        ts!("awake.name")
     }
     fn badge(&self) -> Badge {
         badge()
@@ -261,10 +261,10 @@ impl Tool for KeepAwake {
         "Utilities"
     }
     fn about(&self) -> &'static str {
-        "Keep the Mac awake"
+        ts!("awake.about")
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: "Keep Awake", about: "Off, Auto or On", sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("awake.name"), about: ts!("awake.widget_about"), sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);
