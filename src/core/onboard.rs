@@ -21,7 +21,7 @@ const COL_W: f32 = 640.0;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
     Welcome,
-    /// Light Meow, Dark Meow or Miami: a click switches the app live.
+    /// Light Classic, Dark Classic or Dark Miami: a click switches the app live.
     Theme,
     Tools,
     Agents,
@@ -857,7 +857,7 @@ const THEME_ART: [&[u8]; 3] = [
 
 /// The Theme step's cards: the choice, the name on the card, and whether
 /// the name is drawn in dark ink (on the light picture).
-const THEMES: [(ThemeChoice, &str, bool); 3] = [(ThemeChoice::Light, "Light Meow", true), (ThemeChoice::Dark, "Dark Meow", false), (ThemeChoice::Miami, "Miami", false)];
+const THEMES: [(ThemeChoice, &str, bool); 3] = [(ThemeChoice::Light, "Light Classic", true), (ThemeChoice::Dark, "Dark Classic", false), (ThemeChoice::Miami, "Dark Miami", false)];
 
 /// A theme card's picture (decoded once, on the step's first frame).
 fn theme_art(ctx: &egui::Context, k: usize) -> Option<egui::TextureHandle> {

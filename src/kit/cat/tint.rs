@@ -18,7 +18,7 @@ pub struct Tint {
     ink: Option<[f64; 3]>,
 }
 
-/// The tint for theme `t`; `None` draws the pictures as they are (Dark Meow).
+/// The tint for theme `t`; `None` draws the pictures as they are (Dark Classic).
 pub fn for_theme(t: Theme) -> Option<Tint> {
     match t {
         Theme::Dark => None,

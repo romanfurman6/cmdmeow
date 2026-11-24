@@ -777,7 +777,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
             theme_choice()
         };
         let labels = ThemeChoice::ALL.map(|c| c.label());
-        let seg_w = 260.0f32.min(w - 120.0);
+        let seg_w = 420.0f32.min(w - 120.0);
         let seg = Rect::from_min_size(Pos2::new(theme_card.right() - 12.0 - seg_w, theme_card.center().y - sp::CONTROL_H / 2.0), Vec2::new(seg_w, sp::CONTROL_H));
         let sel = ThemeChoice::ALL.iter().position(|c| *c == cur).unwrap_or(0);
         if let Some(i) = segmented(ui, seg, ui.scope_id().with("theme"), &labels, sel) {
