@@ -14,6 +14,10 @@ mod grab;
 mod hotkeys;
 mod icons;
 mod mac;
+/// First-run setup warms text recognition: on a fresh Mac or after a macOS
+/// update the system's first OCR can take many seconds (it prepares Vision's
+/// models once), and setup is a good time to pay that in the background.
+pub use mac::warm_ocr;
 mod old;
 pub mod record;
 mod render;

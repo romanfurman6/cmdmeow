@@ -187,6 +187,8 @@ pub struct State {
     pub live: [GroupLive; Group::COUNT],
     /// While scanning: every place to look at has been listed (only measuring is left).
     pub listed: bool,
+    /// When this scan started (the bar creeps from it until real progress comes).
+    pub started: Option<std::time::Instant>,
 }
 
 /// One group's live progress while scanning.
@@ -201,7 +203,33 @@ pub struct GroupLive {
     pub done: usize,
 }
 
+/// Finding what to look at is quick; measuring it is the long part.
+const FIND: f32 = 0.1;
+
+/// Where the scan bar creeps to while the scan is still listing places
+/// (Homebrew, simulators): it never sits still, and real progress takes over
+/// from it without going back.
+const CREEP_TO: f32 = 0.06;
+/// Seconds for the creep to cover ~63% of the way (5.5% after 10 s).
+const CREEP_TAU: f32 = 4.0;
+
+/// The creep `secs` into a scan: eases out towards [`CREEP_TO`], in steps
+/// of 0.1% (the bar's layer eases between steps by itself, so a new value
+/// every pass isn't needed).
+fn creep(secs: f32) -> f32 {
+    let c = CREEP_TO * (1.0 - (-secs.max(0.0) / CREEP_TAU).exp());
+    (c * 1000.0).floor() / 1000.0
+}
+
 impl State {
+    /// The progress to show: while scanning, never below the creep. Both only
+    /// grow, so the bar never steps back when the real count passes it.
+    pub fn shown_progress(&self) -> f32 {
+        match (&self.phase, self.started) {
+            (Phase::Scanning, Some(t0)) if self.progress >= 0.0 => self.progress.max(creep(t0.elapsed().as_secs_f32())),
+            _ => self.progress,
+        }
+    }
     pub fn total(&self) -> u64 {
         self.items.iter().filter(|i| i.verdict != Verdict::Keep).map(|i| i.bytes).sum()
     }
@@ -381,7 +409,8 @@ fn app_open(ids: &HashSet<String>, names: &HashSet<String>, path: &Path, title: 
 /// Drop repeated and nested paths (the outer one stays), then measure what's
 /// left on all cores and drop items too small to matter. Sizing is nearly all
 /// of a scan's time, so nothing is measured twice.
-fn measure(items: &mut Vec<Item>, shared: &Shared, ctx: &egui::Context, from: f32, cancel: &AtomicBool) {
+/// `brew_pending`: Homebrew's answer is still to come (one more Developer place).
+fn measure(items: &mut Vec<Item>, shared: &Shared, ctx: &egui::Context, from: f32, cancel: &AtomicBool, brew_pending: bool) {
     let mut seen = HashSet::new();
     items.retain(|it| seen.insert(it.path.clone()));
     let all: HashSet<PathBuf> = items.iter().map(|i| i.path.clone()).collect();
@@ -396,6 +425,9 @@ fn measure(items: &mut Vec<Item>, shared: &Shared, ctx: &egui::Context, from: f3
         g.live = Default::default();
         for it in items.iter() {
             g.live[gi(it.group)].total += 1;
+        }
+        if brew_pending {
+            g.live[gi(Group::Developer)].total += 1;
         }
         g.listed = true;
     }
@@ -549,11 +581,14 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
     let cancel = begin_run(&shared, agent);
     std::thread::spawn(move || {
         let (running_ids, running_names) = running_apps();
-        let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, brew: false, shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
-        let steps: [ScanStep; 13] = [
+        // `brew cleanup --dry-run` takes ~10 s: it runs alongside the rest
+        // and its answer joins once everything else is measured
+        let brew_tool = brew_path();
+        let brew_job = brew_tool.clone().map(|b| std::thread::spawn(move || brew_dry_run(&b)));
+        let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, brew: brew_tool.is_some(), shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
+        let steps: [ScanStep; 12] = [
             ("Claude", scan_claude),
             ("AI tools", scan_ai_tools),
-            ("Homebrew", scan_brew),
             ("User caches", scan_user_caches),
             ("App caches", scan_app_caches),
             ("Logs", scan_logs),
@@ -565,8 +600,6 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
             ("Captures", super::captures::scan),
             ("Trash", scan_trash),
         ];
-        // finding what to look at is quick; measuring it is the long part
-        const FIND: f32 = 0.1;
         for (i, (_, f)) in steps.iter().enumerate() {
             if c.stopped() {
                 break;
@@ -575,7 +608,10 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
             f(&mut c);
         }
         if !c.stopped() {
-            measure(&mut c.items, &shared, &ctx, FIND, &cancel);
+            measure(&mut c.items, &shared, &ctx, FIND, &cancel, brew_job.is_some());
+        }
+        if let (Some(job), Some(tool)) = (brew_job, brew_tool) {
+            join_brew(&mut c, job, &tool, &shared, &ctx, &cancel);
         }
         c.items.sort_by(|a, b| a.group.cmp(&b.group).then(b.bytes.cmp(&a.bytes)));
         for it in c.items.iter_mut() {
@@ -615,7 +651,7 @@ fn begin_run(shared: &Shared, agent: Option<super::agent::Agent>) -> Arc<AtomicB
     g.cancel.store(true, Ordering::SeqCst);
     static RUNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let run = RUNS.fetch_add(1, Ordering::SeqCst) + 1;
-    *g = State { phase: Phase::Scanning, with_ai: agent.is_some(), agent, run, ..Default::default() };
+    *g = State { phase: Phase::Scanning, with_ai: agent.is_some(), agent, run, started: Some(std::time::Instant::now()), ..Default::default() };
     g.cancel.clone()
 }
 
@@ -892,23 +928,69 @@ fn scan_developer(c: &mut Ctx) {
     }
 }
 // ---- Homebrew: its own cleanup (old versions and downloads) when brew is there
-fn scan_brew(c: &mut Ctx) {
-    let Some(brew) = super::run::find_tool(&["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]) else { return };
-    let Some(o) = super::run::output(
-        std::process::Command::new(&brew).args(["cleanup", "--dry-run", "--prune=all"]).env("HOMEBREW_NO_AUTO_UPDATE", "1").env("HOMEBREW_NO_ENV_HINTS", "1").env("HOMEBREW_NO_ANALYTICS", "1"),
+fn brew_path() -> Option<PathBuf> {
+    super::run::find_tool(&["/opt/homebrew/bin/brew", "/usr/local/bin/brew"])
+}
+
+/// What `brew cleanup` would free, or None when brew didn't answer.
+fn brew_dry_run(brew: &Path) -> Option<u64> {
+    let o = super::run::output(
+        std::process::Command::new(brew).args(["cleanup", "--dry-run", "--prune=all"]).env("HOMEBREW_NO_AUTO_UPDATE", "1").env("HOMEBREW_NO_ENV_HINTS", "1").env("HOMEBREW_NO_ANALYTICS", "1"),
         std::time::Duration::from_secs(60),
-    ) else {
-        return;
-    };
-    if !o.status.success() {
+    )?;
+    o.status.success().then(|| brew_freed(&String::from_utf8_lossy(&o.stdout)))
+}
+
+/// Wait for Homebrew's answer (unless the scan stops) and add it to the
+/// items and the live tallies. Without an answer its download cache is
+/// offered as a plain cache instead, as when brew isn't there.
+fn join_brew(c: &mut Ctx, job: std::thread::JoinHandle<Option<u64>>, brew: &Path, shared: &Shared, ctx: &egui::Context, cancel: &AtomicBool) {
+    while !job.is_finished() {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let freed = job.join().ok().flatten();
+    let before = c.items.len();
+    match freed {
+        Some(bytes) if bytes >= m::MIN_ITEM_BYTES => {
+            let prefix = brew.parent().and_then(|b| b.parent()).map(Path::to_path_buf).unwrap_or_default();
+            c.add_action(Group::Developer, "Homebrew old versions", prefix.join("Cellar"), "Caches", Verdict::Safe, "Old versions and downloads; brew gets them again", Action::BrewCleanup, bytes);
+        }
+        Some(_) => {}
+        None => {
+            let p = home().join("Library/Caches/Homebrew");
+            if p.is_dir() {
+                c.add(Group::AppCaches, "Homebrew", p, "Caches", Verdict::Safe, "Downloaded installers; Homebrew fetches them again");
+                if c.items.len() > before {
+                    let it = c.items.last_mut().expect("just added");
+                    it.bytes = dir_size(&it.path);
+                    if it.bytes < m::MIN_ITEM_BYTES {
+                        c.items.pop();
+                    }
+                }
+            }
+        }
+    }
+    let gi = |g: Group| Group::ALL.iter().position(|x| *x == g).unwrap_or(0);
+    let mut g = shared.lock_ok();
+    if cancel.load(Ordering::SeqCst) {
         return;
     }
-    let bytes = brew_freed(&String::from_utf8_lossy(&o.stdout));
-    c.brew = true;
-    if bytes >= m::MIN_ITEM_BYTES {
-        let prefix = brew.parent().and_then(|b| b.parent()).map(Path::to_path_buf).unwrap_or_default();
-        c.add_action(Group::Developer, "Homebrew old versions", prefix.join("Cellar"), "Caches", Verdict::Safe, "Old versions and downloads; brew gets them again", Action::BrewCleanup, bytes);
+    g.live[gi(Group::Developer)].done += 1;
+    for it in c.items.iter().skip(before) {
+        if it.verdict != Verdict::Keep {
+            let l = &mut g.live[gi(it.group)];
+            l.bytes += it.bytes;
+            l.items += 1;
+        }
     }
+    let weights = group_weights(last_scan().map(|l| l.groups).as_deref());
+    let p = FIND + (1.0 - FIND) * live_progress(&g.live, &weights);
+    g.progress = g.progress.max(p);
+    drop(g);
+    ctx.request_repaint();
 }
 /// What `brew cleanup --dry-run` says it would free ("…free approximately 1.2GB…").
 fn brew_freed(out: &str) -> u64 {
@@ -1564,6 +1646,31 @@ fn empty_trash(p: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn scan_bar_creeps_then_hands_over_without_going_back() {
+        use super::{creep, Phase, State, CREEP_TO};
+        // always moving early on, eased out, never past the cap
+        assert_eq!(creep(0.0), 0.0);
+        assert!(creep(0.5) > 0.0);
+        let mut last = 0.0;
+        for i in 1..=120 {
+            let c = creep(i as f32 * 0.25);
+            assert!(c >= last && c <= CREEP_TO, "{c} after {last}");
+            last = c;
+        }
+        assert!(creep(10.0) > 0.05);
+        // shown = max(real, creep): real progress below the creep doesn't pull it back
+        let t0 = std::time::Instant::now() - std::time::Duration::from_secs(10);
+        let mut st = State { phase: Phase::Scanning, started: Some(t0), progress: 0.015, ..Default::default() };
+        assert!(st.shown_progress() > 0.05);
+        st.progress = 0.3;
+        assert_eq!(st.shown_progress(), 0.3);
+        // judging counts its own way
+        st.phase = Phase::Judging;
+        st.progress = 0.0;
+        assert_eq!(st.shown_progress(), 0.0);
+    }
+
+    #[test]
     fn progress_waits_for_the_last_place_of_each_group() {
         use super::{group_weights, live_progress, GroupLive, Group};
         let w = group_weights(None);
@@ -1793,7 +1900,7 @@ mod tests {
             it(Group::Logs, &p("tiny"), "Logs", Verdict::Safe, Who::Rule),
         ];
         let shared: Shared = Default::default();
-        measure(&mut items, &shared, &egui::Context::default(), 0.0, &AtomicBool::new(false));
+        measure(&mut items, &shared, &egui::Context::default(), 0.0, &AtomicBool::new(false), false);
         assert_eq!(items.len(), 1, "inner, the repeat and the tiny one are gone");
         assert_eq!(items[0].path, base.join("outer"));
         assert_eq!(items[0].group, Group::AppCaches, "the first rule wins");

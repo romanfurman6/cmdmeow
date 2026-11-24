@@ -760,6 +760,33 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     // crash reports: official builds only (screenshots show the row too)
     let crash = app.demo || crate::kit::crash_report::available();
     let n_rows = if crash { 4.0 } else { 3.0 };
+    // Theme: its own card on top (T5)
+    let theme_card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
+    glass_card(&p, theme_card, R_CARD, 0.0, false);
+    p.text(Pos2::new(theme_card.left() + 16.0, theme_card.center().y), Align2::LEFT_CENTER, "Theme", font(13.0), TEXT());
+    {
+        use crate::kit::glass::{set_theme_choice, theme, theme_choice, Theme, ThemeChoice};
+        // screenshots show the theme they are drawn in
+        let cur = if app.demo {
+            match theme() {
+                Theme::Light => ThemeChoice::Light,
+                Theme::Dark => ThemeChoice::Dark,
+                Theme::Miami => ThemeChoice::Miami,
+            }
+        } else {
+            theme_choice()
+        };
+        let labels = ThemeChoice::ALL.map(|c| c.label());
+        let seg_w = 260.0f32.min(w - 120.0);
+        let seg = Rect::from_min_size(Pos2::new(theme_card.right() - 12.0 - seg_w, theme_card.center().y - sp::CONTROL_H / 2.0), Vec2::new(seg_w, sp::CONTROL_H));
+        let sel = ThemeChoice::ALL.iter().position(|c| *c == cur).unwrap_or(0);
+        if let Some(i) = segmented(ui, seg, ui.scope_id().with("theme"), &labels, sel) {
+            if !app.demo {
+                set_theme_choice(ThemeChoice::ALL[i]);
+            }
+        }
+    }
+    y = theme_card.bottom() + sp::L;
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h * n_rows));
     glass_card(&p, card, R_CARD, 0.0, false);
     let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * row_h), Vec2::new(w, row_h));

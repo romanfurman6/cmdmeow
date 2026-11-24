@@ -120,6 +120,12 @@ pub struct App {
     /// previous app and the new window opened behind it.
     panel_hide_after_open: Option<Instant>,
     pending_shape: bool,
+    /// The theme the panel was last painted in. A hidden window keeps its
+    /// last frame, so after a theme switch it is painted once while still
+    /// hidden; otherwise opening it showed the old theme for a frame.
+    panel_theme: Option<glass::Theme>,
+    /// A hidden paint of the panel was asked for: the next pass paints.
+    panel_paint_asked: bool,
     screenshot: Option<PathBuf>,
     frame: u64,
     /// last (ppp, native ppp) logged under CMDMEOW_SCALE_LOG
@@ -160,6 +166,9 @@ impl App {
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
         if !demo {
+            glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::ThemeChoice::Auto));
+        }
+        if !demo {
             crate::kit::sound::prewarm();
         }
         let tools = crate::tools::all(&ToolEnv { ctx: ctx.clone(), demo });
@@ -195,6 +204,13 @@ impl App {
         let stored_off: Option<Vec<String>> = if demo { None } else { cc.storage.and_then(|s| eframe::get_value(s, super::settings::TOOLS_KEY)) };
         // a fresh install shows setup and starts with a few tools off
         let first_run = !demo && !super::onboard::done_marker().exists();
+        if first_run && !cfg!(test) {
+            std::thread::spawn(|| {
+                // after the first frames, so setup opens without competing
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                crate::tools::capture::warm_ocr();
+            });
+        }
         let tools_off: Vec<String> = match stored_off {
             Some(v) => v,
             None if first_run => super::onboard::off_at_first(tools.iter().map(|t| t.id())),
@@ -235,6 +251,8 @@ impl App {
             dock_off_at: None,
             panel_hide_after_open: None,
             pending_shape: true,
+            panel_theme: None,
+            panel_paint_asked: false,
             screenshot: opts.screenshot,
             frame: 0,
             debug_scale: None,
@@ -307,6 +325,7 @@ impl App {
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
             eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
+            eframe::set_value(storage, glass::THEME_KEY, &glass::theme_choice());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
     }
@@ -978,13 +997,28 @@ impl eframe::App for App {
         }
         let opaque = self.screenshot.is_some();
         let t = ctx.input(|i| i.time);
+        // after a theme switch the hidden panel is painted once in the new
+        // theme (TH4): ask for a hidden paint, then build it on that pass
+        let paint_hidden = self.mode == Mode::Panel && !self.visible && self.screenshot.is_none() && self.panel_theme.is_some_and(|t| t != glass::theme());
+        let mut build_hidden = false;
+        if paint_hidden {
+            if self.panel_paint_asked {
+                self.panel_paint_asked = false;
+                build_hidden = true;
+            } else {
+                self.panel_paint_asked = true;
+                ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
+                ctx.request_repaint();
+            }
+        }
         let mut cx = self.cx();
         match self.mode {
             // the root window is the panel; while it's hidden, its pass still
             // runs for the app window and tools' own windows (drawn inside
             // it), but nobody sees the panel: don't build it
-            Mode::Panel if !self.visible && self.screenshot.is_none() => {}
+            Mode::Panel if !self.visible && self.screenshot.is_none() && !build_hidden => {}
             Mode::Panel => {
+                self.panel_theme = Some(glass::theme());
                 glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 let before = self.widgets.clone();
@@ -1036,7 +1070,7 @@ impl eframe::App for App {
                 self.toast = None;
             }
         }
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1045,7 +1079,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open()) != (&off_before.0, off_before.1, off_before.2) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice()) != (&off_before.0, off_before.1, off_before.2, off_before.3) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
@@ -1323,15 +1357,19 @@ fn tray_image() -> tray_icon::Icon {
     tray_icon::Icon::from_rgba(crate::kit::brand::glyph_rgba(n), n, n).expect("tray icon")
 }
 
-/// Follow the system appearance (or `CMDMEOW_THEME=light|dark`). On a
-/// change: new palette, font weights, egui visuals and window material.
+/// Draw the theme picked in Settings › Theme (Auto follows the system's
+/// appearance; `CMDMEOW_THEME=light|dark|miami` overrides it for
+/// screenshots). On a change: new palette, font weights, egui visuals and
+/// window material.
 fn sync_theme(ctx: &egui::Context, live: bool) {
-    let light = match std::env::var("CMDMEOW_THEME").as_deref() {
-        Ok("light") => true,
-        Ok("dark") => false,
-        _ => live && crate::kit::native::system_light(),
+    let theme = match std::env::var("CMDMEOW_THEME").as_deref() {
+        Ok("light") => glass::Theme::Light,
+        Ok("dark") => glass::Theme::Dark,
+        Ok("miami") => glass::Theme::Miami,
+        _ => glass::theme_choice().resolve(live && crate::kit::native::system_light()),
     };
-    if glass::set_light(light) {
+    let light = theme == glass::Theme::Light;
+    if glass::set_theme(theme) {
         install_fonts(ctx);
         if live {
             crate::kit::native::set_appearance(light);

@@ -9,7 +9,7 @@ The one source of truth for how CmdMeow looks, moves and sounds. Every UI thread
 - **Canvas:** https://claude.ai/artifact/QarEbeJ1pB33366Kc8LsY7
 - **Status:** ✅ approved by Roman · ⏳ proposed, waiting on Roman. A ⏳ rule is not built until it turns ✅.
 
-Contents: 1 Tokens · 2 Colour · 3 Type · 4 Spacing and layout · 5 Surfaces · 6 Buttons and controls · 7 Popups and modals · 8 Hover, selection, focus · 9 Motion · 10 Sound · 11 Screen patterns · 12 Writing text
+Contents: 1 Tokens · 2 Colour · 3 Type · 4 Spacing and layout · 5 Surfaces · 6 Buttons and controls · 7 Popups and modals · 8 Hover, selection, focus · 9 Motion · 10 Sound · 11 Screen patterns · 12 Writing text · 13 Themes (read before 2)
 
 ---
 
@@ -27,7 +27,7 @@ Contents: 1 Tokens · 2 Colour · 3 Type · 4 Spacing and layout · 5 Surfaces �
 | Spacing | `sp::XS` 4 · `S` 8 · `M` 12 · `L` 16 · `XL` 24 · `XXL` 32 | glass.rs |
 | Radius | `R_CARD` 12 · `R_BUTTON` 10 · `R_SMALL` 7 | glass.rs |
 
-Every colour is a `pick(dark, light)` pair. Theme follows the system; `CMDMEOW_THEME=light|dark` overrides it for screenshots. ✅
+Every colour answers for the theme (TH2). Theme comes from Settings › Theme; `CMDMEOW_THEME=light|dark|miami` overrides it for screenshots. ✅
 
 ## 2. Colour
 
@@ -35,14 +35,14 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 
 | # | Rule | Status |
 |---|------|---|
-| C1 | No raw colours outside `glass.rs`. Every colour has a dark and a light value (`pick()`). | ✅ |
-| C2 | Lime is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). A selected row's text may be `ACCENT`, its number included (H3). | ✅ |
-| C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender. | ✅ |
+| C1 | No raw colours outside `glass.rs`. Every colour has a value for each theme (TH2). | ✅ |
+| C2 | The action colour (lime; pink in Dark Miami) is only for what you press or select. Never data, except as Clean's group tint (C3). In light mode lime is never text or a thin stroke: use `ACCENT` (`lift()`). Dark Miami text in the action colour uses `ACCENT` #FF9DC6 (`lift()`), never #FF5FA2. A selected row's text may be `ACCENT`, its number included (H3). | ✅ |
+| C3 | A tool uses its group tint for its icon and its main data: Clean lime, Monitor cyan, Create apricot, Utilities lavender (Dark Miami: TH5). | ✅ |
 | C4 | `GREEN` / `AMBER` / `RED` only mean state. Never a category or chart series. A spark or bar chart is one series colour; a tall bar is never `AMBER`. | ✅ |
 | C5 | Chart series: group tint first, then its next steps, at most 3. The rest is Other in `GRAY`. Free / idle / available is the empty track. (`series::*`) | ✅ |
 | C6 | The same thing has the same colour and words on every screen. The disk line under the Disk Map list says what the start ring says ("1.35 TB free of 2.00 TB", disk glyph, `tint::DISK_MAP`). | ✅ |
 | C7 | A legend square only when its colour is on a chart on the same screen. | ✅ |
-| C8 | Contrast in both modes: body text 4.5:1, captions and section titles 3:1, icons and chart marks 3:1. | ✅ |
+| C8 | Contrast in every theme: body text 4.5:1, captions and section titles 3:1, icons and chart marks 3:1. | ✅ |
 | C9 | Neutral marks (You, Other, an app with no icon) use `GRAY`. No system greys. | ✅ |
 | C10 | One neutral letter tile (`letter_tile()`) for apps with no icon. | ✅ |
 | C11 | Links use `ACCENT`, hover included. No system blue. | ✅ |
@@ -52,7 +52,7 @@ Palette: B3 Moss & Lime ✅ (2026-11-11). Canvas for C1–C14: https://claude.ai
 | C15 | AI (AI Check chip, reveal ring, agent marks) has its own token `AI()`, cyan (today the same value as `tint::HEALTH`). | ✅ |
 | C16 | **On-picture overlays.** Anything the app draws over the user's picture or video frame (selection frame, handles, crop and drag-out outlines, blur/eraser previews, the edge of a pinned screenshot) uses fixed colours, never theme tokens: white with a black edge (`overlay::LINE`, `overlay::RING`), the same in both themes, so it shows on light and dark pictures. A selected mark's frame and handles sit 5 pt outside it (`overlay::OUTSET`). Frame: 1 pt white over a 2 pt black 40% band. Corners: 6 pt white squares with a 1 pt black ring, 8 pt on hover or drag. Sides draw no handle but still grab. Arrows: two 6 pt white dots with a dark ring just beyond the tips, no frame. Dashed lines (crop area, drag-out): 1.5 pt white over 3 pt black 50%. Grab zone 24 pt, nearest handle wins (`overlay::GRAB`); a side under 64 pt has no middle grab spot (`overlay::MID_MIN`). | ⏳ code (#283) |
 
-**Light mode** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ✅
+**Light Classic** (from the light audit, https://claude.ai/artifact/4oYGWVYxcUrvtpw7TfLAJQ) ✅
 
 | # | Rule |
 |---|------|
@@ -98,7 +98,7 @@ Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60,
 
 | # | Rule | Status |
 |---|------|---|
-| S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. The glow ellipse starts at the top centre and is never smaller than the default window's: rx = max(w, `APP_WIDTH` 1180) × 0.75, ry = max(h, `APP_HEIGHT` 740) × 1.05, so the 380 pt panel reads as the middle slice of the window's glow. Every window (app, setup, menu bar panel) shows it as a beam of light down the centre to the bottom, darker at the sides: rx = w × 0.85, ry = max(that ry, h × 1.9). No native glass (NSGlassEffectView) on the panel or its cards. | ✅ |
+| S1 | Backdrop: radial moss gradient (dark) / sage (light), 1 pt `HAIRLINE_STRONG` edge. Menu bar panel background is solid, no blur. The glow ellipse starts at the top centre and is never smaller than the default window's: rx = max(w, `APP_WIDTH` 1180) × 0.75, ry = max(h, `APP_HEIGHT` 740) × 1.05, so the 380 pt panel reads as the middle slice of the window's glow. Every window (app, setup, menu bar panel) shows it as a beam of light down the centre to the bottom, darker at the sides: rx = w × 0.85, ry = max(that ry, h × 1.9). No native glass (NSGlassEffectView) on the panel or its cards. Dark Miami: TH6. | ✅ |
 | S2 | Card: `CARD` fill, 1 pt `CARD_EDGE`, radius 12, flat. No frame inside a frame. A card that opens details (P8) is clickable as a whole: "›" in `TEXT_FAINT` after the title, `white(6)` hover fill, pointer cursor. | ✅ |
 | S2w | **Widget card** (`kit::tile` only: panel widgets, the widget editor and gallery; the panel update banner and the Uninstaller inline confirm also use it): the same surface as the quiet keys, e.g. the panel header's Open / Hide / Quit buttons (B4, drawn from `key::Look::quiet(0.06, 0.15)`): ink 6% fill, see-through so the S1 panel glow shows; 1 pt top highlight `TILE_HI` (white 9% dark / 95% light), 1 pt base under the card `TILE_BASE` (black 35% dark / ink 14% light); 1 pt `CARD_EDGE` inside (white 8% dark / ink 12% light); no sheen, no bottom shade. Radius `R_TILE` 10 (selected ring and Dictation live ring follow it). Hover is a light touch: 40% of the key's step (fill toward ink 15%, edge toward ink 18%). A single-action card presses like `kit::key` (34 ms, down 1 pt, base to 0, spring back); a card with buttons or rows inside doesn't move, its inner items press. Page cards keep S2. **Light theme (cards only):** white 90% fill (hover white 98%), 1 pt hairline ink 9%, no ink base and no top highlight, soft shadow `0 1 3` black 7% + `0 4 14` black 5%; quiet keys keep their own surface (B4). Dark unchanged. | ⏳ code |
 | S3 | **R13** A tool's start screen (before its first run) has no cards: content is centred on the backdrop. Cards are only for pages with live data or lists (R2 applies there). Cardless: Cleanup, Disk Map, Uninstaller start. With cards: Mac Health, AI Usage, Fan, Startup, Cleanup results. | ✅ |
@@ -264,6 +264,28 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 | T20 | A control with no label gets one, or goes. | a radio button next to a switch | a column head ("Main") |
 | T21 | Shortcuts are written the macOS way: ⌃⌥⇧⌘, then the key, with no spaces (⇧⌘2, ⌥Space). A mouse button reads Mouse N (3 middle, 4 and 5 the side buttons), with modifiers before it (⌥Mouse 4). Never Back, Forward or Middle: mice map their buttons differently. On keycaps there is one cap per modifier, and Mouse N is one cap. | ⌥ Back, Mouse4, M4 | ⌥Mouse 4 |
 
+## 13. Themes ✅
+
+Read this before §2: every colour rule there holds in each theme.
+
+| # | Rule |
+|---|------|
+| TH1 | Three themes: **Light Classic**, **Dark Classic**, **Dark Miami**. One design system; themes change colours only. Spacing, type, radii, motion, sound and components stay the same in all three. |
+| TH2 | Every colour token answers for the current theme: `pick3(dark, light, miami)`. `pick(dark, light)` stays only for neutrals that follow the ink (Dark Miami uses the dark value). No `is_light()` branches outside `glass.rs`/`key.rs`/`tile.rs`. |
+| TH3 | Base: Light Classic is the light base (dark ink). Dark Classic and Dark Miami are the dark base (white ink, dark-mode weights, dark L-values). |
+| TH4 | **Settings › General › Theme**: its own card on top, one row, segmented control `Auto · Light Classic · Dark Classic · Dark Miami`. Auto follows macOS light/dark (Light Classic / Dark Classic). Default Auto. A switch applies at once, no restart. Saved per user. |
+| TH5 | Dark Miami palette: action and Clean tint hot pink #FF5FA2 (`ACCENT` #FF9DC6), Monitor and AI aqua #4FE3E0, Create burnt orange #FF9A4D, Utilities lavender #C3B0FF; `GREEN` #7EEBA6, `AMBER` #FFC06B, `RED` #FF6B5E, `GRAY` #A49CB8; junk ramp pink→violet #FF5FA2 … #7F63D0; Monitor series #4FE3E0 / #AEF4F2 / #2BB0AE. |
+| TH6 | Dark Miami backdrop (S1): a dusk sky top to bottom, not the radial glow: cobalt #0B1240 → violet #2A1452 → magenta #5E1D57 → burnt-orange horizon #70283C. It replaces the whole glow beam (no rx/ry). Every window (app window, menu bar panel, setup, window-open cover) shows the full sky over its own height. The horizon keeps `ACCENT` text at 5.3:1 and pink/red marks at 3.6:1 (C8). |
+| TH7 | Nothing from the game it is inspired by: no names, logos, fonts or art. The name is "Dark Miami". |
+| TH8 | Every new screen and PR is checked in all three themes (C8 contrast, M1 test). Screenshots: `CMDMEOW_THEME=light|dark|miami`. |
+| TH9 | Widgets follow the theme: the panel widget cards, the widget editor and the gallery draw with the same tokens, so Dark Miami changes them too. Fixed-colour surfaces stay as they are (C13, C16, L5). |
+| TH10 | The desktop cat follows the theme. Its lime fur, stripes and shading take the theme's `ACTION()` (Dark Classic #C8F05A as drawn, Light Classic #A8D83A, Dark Miami #FF5FA2), with lightness kept relative to the pack's lime. Outline: Dark Miami ink #1A0B2E; Light and Dark keep the drawn #0A1009. Eyes, nose, mouth, tongue, bed, bowl and yarn keep their colours. Recoloured once per theme switch (no idle cost). The menu bar cat stays a template icon; the app icon stays lime. |
+| TH11 | **Onboarding step "Pick a theme"**: right after Welcome, before Goals (one step dot). Title "Pick a theme" (bold 22). Three cards in one row, `sp::M` gap, 2:3, r12, filled by the theme's picture (cover), name top left (bold 17, dark ink on Light Classic, white on the dark two), check top right. The picked card gets the 1.5 action ring (H4), hover lifts 1 pt, and the cards fade in one by one like the Goal cards. The default pick is the theme drawn now (Auto shows as Light or Dark Classic). A click sets Settings › Theme. |
+| TH12 | **Theme switch animation ("ripple through blur")**: the old theme is laid over the new one as a picture and blurs to 10 pt (0.48 s ease-out), then a soft round wave from the clicked card (feather 20% of its reach, 0.8 s ease-in-out) cuts it away. Core Animation only (R-anim), no egui frames. No animation with Reduce motion or in screenshots. Onboarding only for now; Settings switches at once. |
+| TH13 | **Theme pictures**: one flat series (same cat, size and place, empty top third). Light Classic: day rooftops with dark roofs. Dark Classic: night rooftops. Dark Miami: dusk beach. The cat is in the theme's action colour with a soft glow. Files `assets/themes/{light,dark,miami}.jpg`, 1024×1536. |
+
+Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glow pink. B6 `DANGER()`, P2 shadows and P4 `SCRIM()` use the dark values. C16 overlays and L5 HUD keep their fixed colours. L1–L8 are Light Classic rules.
+
 ---
 
 ## Decisions log
@@ -329,3 +351,11 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 2026-11-23, Roman: Mac Health v3 (canvas https://claude.ai/artifact/RLBUbQ54MYxGDAYufjnZhy, PR #292): details popup P8, clickable cards (S2), card titles 15/13 (R2), widget sheets retired (SP12), header tips SP14.
 
 2026-11-23, Roman: details popup content has no inner boxes (P8, PR #295).
+
+2026-11-24, Roman: three themes Light Meow, Dark Meow, Miami (canvas https://claude.ai/artifact/EfWjmLd5axdU3BGKNzKRmB): §13 TH1–TH9, C1/C2/C3/C8/S1 wording.
+
+2026-11-24, Roman: TH10 desktop cat per theme (canvas https://claude.ai/artifact/2UCHdgZAiUXjxCu2k1FzSd, L1 + M1).
+
+2026-11-24, Roman: themes renamed Light Classic, Dark Classic, Dark Miami (were Light Meow, Dark Meow, Miami).
+
+2026-11-24, Roman: onboarding theme picker TH11–TH13 (canvas https://claude.ai/artifact/Mc61YS2APhuPzWLE691Bm3; animation H, Light art L2, softest Dark Miami glow).
