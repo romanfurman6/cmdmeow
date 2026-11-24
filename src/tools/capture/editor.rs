@@ -309,6 +309,25 @@ pub struct Editor {
     zoom: f32,
     /// Where the zoomed picture sits, from the canvas centre (points).
     pan: Vec2,
+    /// A middle-button or Space drag is moving the view, not drawing.
+    panning: bool,
+    /// A zoom shortcut waiting for the canvas, which knows the fit scale.
+    zoom_cmd: Option<ZoomCmd>,
+}
+
+/// The view shortcuts, as in Figma.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ZoomCmd {
+    /// ⌘= / ⌘+: twice as close, around the canvas centre.
+    In,
+    /// ⌘-: half as close.
+    Out,
+    /// ⇧1: the whole picture.
+    Fit,
+    /// ⌘0 / ⇧0: true size, one picture pixel per screen pixel.
+    Actual,
+    /// ⇧2: the selected shape or the picked area.
+    Selection,
 }
 
 impl Editor {
@@ -353,6 +372,8 @@ impl Editor {
             edited: false,
             zoom: 1.0,
             pan: Vec2::ZERO,
+            panning: false,
+            zoom_cmd: None,
         }
     }
 
@@ -1065,14 +1086,43 @@ impl Editor {
         let outer = geom.map(|g| g.size).unwrap_or(view.size());
         // fit, but never larger than true size (px_per_pt image pixels per point)
         let fit = (avail.width() / outer.x).min(avail.height() / outer.y).min(1.0 / self.px_per_pt).max(0.01);
-        // ⌘-scroll or pinch zooms toward the pointer; plain scroll pans a zoomed picture
+        let max = (ZOOM_MAX / self.px_per_pt / fit).max(1.0);
+        // ⌘-scroll or pinch zooms toward the pointer; plain scroll (two
+        // fingers, or the wheel; ⇧ for sideways) pans a zoomed picture
         let (pinch, wheel, at) = ctx.input(|i| (i.zoom_delta(), i.smooth_scroll_delta, i.pointer.hover_pos()));
         if let Some(at) = at.filter(|a| area.contains(*a)) {
             if (pinch - 1.0).abs() > 1e-4 {
-                let max = (ZOOM_MAX / self.px_per_pt / fit).max(1.0);
                 (self.zoom, self.pan) = zoom_at(self.zoom, self.pan, pinch, at - avail.center(), max);
             } else if self.zoom > 1.0 {
                 self.pan += wheel;
+            }
+        }
+        // a middle-button or Space drag carries the picture with the pointer
+        let (held, moved) = ctx.input(|i| (i.pointer.middle_down() || i.pointer.primary_down(), i.pointer.delta()));
+        if self.panning && held {
+            self.pan += moved;
+        }
+        if let Some(cmd) = self.zoom_cmd.take() {
+            let actual = 1.0 / self.px_per_pt / fit;
+            let sel = self.selected.and_then(|i| self.doc.marks.get(i)).map(|m| m.bounds()).or(self.area);
+            let target = match cmd {
+                ZoomCmd::In => Some((self.zoom * 2.0, None)),
+                ZoomCmd::Out => Some((self.zoom / 2.0, None)),
+                ZoomCmd::Fit => Some((1.0, None)),
+                ZoomCmd::Actual => Some((actual, None)),
+                ZoomCmd::Selection => sel.map(|b| {
+                    // the shape's centre, from the picture's centre, in fit points
+                    let mid = geom.map(|g| g.inner.min.to_vec2()).unwrap_or(Vec2::ZERO) + (b.center() - view.min) - outer / 2.0;
+                    let z = (avail.width() / (b.width().max(1.0) * fit)).min(avail.height() / (b.height().max(1.0) * fit)) * 0.8;
+                    (z, Some(mid * fit))
+                }),
+            };
+            if let Some((z, mid)) = target {
+                let z = z.clamp(1.0, max);
+                (self.zoom, self.pan) = match mid {
+                    Some(mid) => (z, -mid * z),
+                    None => zoom_at(self.zoom, self.pan, z / self.zoom, Vec2::ZERO, max),
+                };
             }
         }
         self.pan = clamp_pan(self.pan, outer * fit * self.zoom, avail.size());
@@ -1152,140 +1202,159 @@ impl Editor {
         }
 
         let resp = ui.interact(area, ui.scope_id().with("canvas"), Sense::click_and_drag());
+        // Space turns any tool into the hand, as in Figma; the middle button
+        // always pans. Neither draws, picks or selects.
+        let space = self.text.is_none() && !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_down(Key::Space));
+        let idle = self.drag.is_none() && self.pen.is_none() && self.moving.is_none() && self.resizing.is_none() && self.area_resize.is_none();
+        if resp.drag_started_by(egui::PointerButton::Middle) || (space && idle && resp.drag_started_by(egui::PointerButton::Primary)) {
+            self.panning = true;
+        }
+        let hand = self.panning || ctx.input(|i| i.pointer.middle_down()) || (space && idle);
+        // the release frame still belongs to the hand, so no tool sees it
+        if !held {
+            self.panning = false;
+        }
+        if self.panning {
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if hand && resp.hovered() {
+            ctx.set_cursor_icon(egui::CursorIcon::Grab);
+        }
         let hover = resp.hover_pos().filter(|h| shown.contains(*h));
         let at_img = |s: Pos2| {
             let q = to_img(s);
             Pos2::new(q.x.clamp(view.min.x, view.max.x), q.y.clamp(view.min.y, view.max.y))
         };
 
-        // a drag that starts on the selected shape in a drawing tool moves or
-        // resizes it, as in Select; anywhere else it draws a new one
-        let draws = self.tool.drags() || self.tool == Tool::Pen;
-        if draws && resp.drag_started() {
-            self.grab = press_at(&resp).map(to_img).is_some_and(|q| self.on_selected(q, scale));
-        }
-        if draws && resp.clicked() {
-            if let Some(q) = resp.interact_pointer_pos().map(at_img) {
-                let slack = 6.0 / scale;
-                self.selected = self.doc.marks.iter().rposition(|m| m.hit(q, slack));
+        if !hand {
+            // a drag that starts on the selected shape in a drawing tool moves or
+            // resizes it, as in Select; anywhere else it draws a new one
+            let draws = self.tool.drags() || self.tool == Tool::Pen;
+            if draws && resp.drag_started() {
+                self.grab = press_at(&resp).map(to_img).is_some_and(|q| self.on_selected(q, scale));
             }
-        }
-        if draws && !self.grab && resp.hover_pos().is_some_and(|h| self.on_selected(to_img(h), scale)) {
-            ctx.set_cursor_icon(egui::CursorIcon::Move);
-        }
-        let grab = self.grab;
-        // dragging out shapes
-        if self.tool.drags() && !grab {
-            if resp.drag_started() {
-                // only on the picture, not on the frame around it
-                if let Some(s) = resp.interact_pointer_pos().filter(|s| shown.contains(*s)) {
-                    let q = at_img(s);
-                    self.drag = Some((q, q));
+            if draws && resp.clicked() {
+                if let Some(q) = resp.interact_pointer_pos().map(at_img) {
+                    let slack = 6.0 / scale;
+                    self.selected = self.doc.marks.iter().rposition(|m| m.hit(q, slack));
                 }
             }
-            if let (Some((a, _)), Some(s)) = (self.drag, resp.interact_pointer_pos()) {
-                if resp.dragged() || resp.drag_stopped() {
-                    self.drag = Some((a, at_img(s)));
-                }
+            if draws && !self.grab && resp.hover_pos().is_some_and(|h| self.on_selected(to_img(h), scale)) {
+                ctx.set_cursor_icon(egui::CursorIcon::Move);
             }
-            if let Some((a, b)) = self.drag {
-                self.draw_drag_preview(&p, a, b, &to_screen, scale);
-            }
-            if resp.drag_stopped() {
-                if let Some((a, b)) = self.drag.take() {
-                    self.finish_drag(a, b, ui.ctx());
-                }
-            }
-            if hover.is_some_and(|h| !self.on_selected(to_img(h), scale)) {
-                ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-            }
-        }
-        let alt = ctx.input(|i| i.modifiers.alt);
-        match self.tool {
-            Tool::Select => self.select_tool(&resp, &to_img, view, ui.ctx(), scale, alt),
-            _ if grab => self.select_tool(&resp, &to_img, view, ui.ctx(), scale, false),
-            Tool::Pen => {
+            let grab = self.grab;
+            // dragging out shapes
+            if self.tool.drags() && !grab {
                 if resp.drag_started() {
+                    // only on the picture, not on the frame around it
                     if let Some(s) = resp.interact_pointer_pos().filter(|s| shown.contains(*s)) {
-                        self.pen = Some(vec![at_img(s)]);
+                        let q = at_img(s);
+                        self.drag = Some((q, q));
                     }
                 }
-                if let (Some(pts), Some(s)) = (self.pen.as_mut(), resp.interact_pointer_pos()) {
-                    let q = at_img(s);
-                    // a point every 2 screen points keeps the line smooth and light
-                    let far = pts.last().is_none_or(|l| (q - *l).length() * scale >= 2.0);
-                    // the release point too, so the stroke ends where the hand did
-                    if (resp.dragged() && far) || (resp.drag_stopped() && pts.last() != Some(&q)) {
-                        pts.push(q);
+                if let (Some((a, _)), Some(s)) = (self.drag, resp.interact_pointer_pos()) {
+                    if resp.dragged() || resp.drag_stopped() {
+                        self.drag = Some((a, at_img(s)));
                     }
+                }
+                if let Some((a, b)) = self.drag {
+                    self.draw_drag_preview(&p, a, b, &to_screen, scale);
                 }
                 if resp.drag_stopped() {
-                    if let Some(pts) = self.pen.take() {
-                        self.add(Mark::Pen { pts, color: self.color(), width: self.width_px() });
+                    if let Some((a, b)) = self.drag.take() {
+                        self.finish_drag(a, b, ui.ctx());
                     }
                 }
-                if hover.is_some() {
+                if hover.is_some_and(|h| !self.on_selected(to_img(h), scale)) {
                     ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                 }
             }
-            Tool::Text => {
-                if resp.clicked() {
-                    if let Some(s) = resp.interact_pointer_pos() {
-                        self.commit_text();
-                        self.text = Some((at_img(s), String::new()));
+            let alt = ctx.input(|i| i.modifiers.alt);
+            match self.tool {
+                Tool::Select => self.select_tool(&resp, &to_img, view, ui.ctx(), scale, alt),
+                _ if grab => self.select_tool(&resp, &to_img, view, ui.ctx(), scale, false),
+                Tool::Pen => {
+                    if resp.drag_started() {
+                        if let Some(s) = resp.interact_pointer_pos().filter(|s| shown.contains(*s)) {
+                            self.pen = Some(vec![at_img(s)]);
+                        }
                     }
-                }
-                if hover.is_some() {
-                    ctx.set_cursor_icon(egui::CursorIcon::Text);
-                }
-            }
-            Tool::Steps => {
-                if resp.clicked() {
-                    if let Some(s) = resp.interact_pointer_pos() {
-                        let n = self.doc.next_step();
-                        let m = Mark::Step { at: at_img(s), n, color: self.color(), size: STEP_PT[self.stroke] * self.px_per_pt };
-                        self.add(m);
+                    if let (Some(pts), Some(s)) = (self.pen.as_mut(), resp.interact_pointer_pos()) {
+                        let q = at_img(s);
+                        // a point every 2 screen points keeps the line smooth and light
+                        let far = pts.last().is_none_or(|l| (q - *l).length() * scale >= 2.0);
+                        // the release point too, so the stroke ends where the hand did
+                        if (resp.dragged() && far) || (resp.drag_stopped() && pts.last() != Some(&q)) {
+                            pts.push(q);
+                        }
                     }
-                }
-            }
-            Tool::Picker => {
-                if let Some(h) = hover {
-                    let q = to_img(h);
-                    if let Some(c) = self.effects.as_ref().and_then(|img| render::pixel(img, q.x as i64, q.y as i64)) {
-                        loupe(&p, self.effects.as_ref().unwrap(), q, h, c);
+                    if resp.drag_stopped() {
+                        if let Some(pts) = self.pen.take() {
+                            self.add(Mark::Pen { pts, color: self.color(), width: self.width_px() });
+                        }
+                    }
+                    if hover.is_some() {
                         ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-                        if resp.clicked() {
-                            let hex = render::hex(c);
-                            self.requests.push(Request::CopyText(hex.clone()));
-                            self.flash(format!("Copied {hex}"));
+                    }
+                }
+                Tool::Text => {
+                    if resp.clicked() {
+                        if let Some(s) = resp.interact_pointer_pos() {
+                            self.commit_text();
+                            self.text = Some((at_img(s), String::new()));
+                        }
+                    }
+                    if hover.is_some() {
+                        ctx.set_cursor_icon(egui::CursorIcon::Text);
+                    }
+                }
+                Tool::Steps => {
+                    if resp.clicked() {
+                        if let Some(s) = resp.interact_pointer_pos() {
+                            let n = self.doc.next_step();
+                            let m = Mark::Step { at: at_img(s), n, color: self.color(), size: STEP_PT[self.stroke] * self.px_per_pt };
+                            self.add(m);
                         }
                     }
                 }
-            }
-            Tool::Ruler => {
-                if let (Some(h), Some(img)) = (hover, self.effects.as_ref()) {
-                    let q = to_img(h);
-                    if let Some((x0, x1, y0, y1)) = render::edge_span(img, q.x as i64, q.y as i64, 10) {
-                        let (wp, hp) = ((x1 - x0 + 1) as f32 / self.px_per_pt, (y1 - y0 + 1) as f32 / self.px_per_pt);
-                        let yl = Pos2::new(0.0, q.y);
-                        let a = to_screen(Pos2::new(x0 as f32, yl.y));
-                        let b = to_screen(Pos2::new(x1 as f32 + 1.0, yl.y));
-                        let c = to_screen(Pos2::new(q.x, y0 as f32));
-                        let d = to_screen(Pos2::new(q.x, y1 as f32 + 1.0));
-                        let st = Stroke::new(1.5, Color32::from_rgb(255, 214, 10));
-                        p.line_segment([a, b], st);
-                        p.line_segment([c, d], st);
-                        let label = format!("{:.0} × {:.0} pt", wp, hp);
-                        tag(&p, h + Vec2::new(14.0, 14.0), &label);
-                        if resp.clicked() {
-                            self.requests.push(Request::CopyText(format!("{:.0} × {:.0}", wp, hp)));
-                            self.flash(format!("Copied {label}"));
+                Tool::Picker => {
+                    if let Some(h) = hover {
+                        let q = to_img(h);
+                        if let Some(c) = self.effects.as_ref().and_then(|img| render::pixel(img, q.x as i64, q.y as i64)) {
+                            loupe(&p, self.effects.as_ref().unwrap(), q, h, c);
+                            ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                            if resp.clicked() {
+                                let hex = render::hex(c);
+                                self.requests.push(Request::CopyText(hex.clone()));
+                                self.flash(format!("Copied {hex}"));
+                            }
                         }
                     }
-                    ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                 }
+                Tool::Ruler => {
+                    if let (Some(h), Some(img)) = (hover, self.effects.as_ref()) {
+                        let q = to_img(h);
+                        if let Some((x0, x1, y0, y1)) = render::edge_span(img, q.x as i64, q.y as i64, 10) {
+                            let (wp, hp) = ((x1 - x0 + 1) as f32 / self.px_per_pt, (y1 - y0 + 1) as f32 / self.px_per_pt);
+                            let yl = Pos2::new(0.0, q.y);
+                            let a = to_screen(Pos2::new(x0 as f32, yl.y));
+                            let b = to_screen(Pos2::new(x1 as f32 + 1.0, yl.y));
+                            let c = to_screen(Pos2::new(q.x, y0 as f32));
+                            let d = to_screen(Pos2::new(q.x, y1 as f32 + 1.0));
+                            let st = Stroke::new(1.5, Color32::from_rgb(255, 214, 10));
+                            p.line_segment([a, b], st);
+                            p.line_segment([c, d], st);
+                            let label = format!("{:.0} × {:.0} pt", wp, hp);
+                            tag(&p, h + Vec2::new(14.0, 14.0), &label);
+                            if resp.clicked() {
+                                self.requests.push(Request::CopyText(format!("{:.0} × {:.0}", wp, hp)));
+                                self.flash(format!("Copied {label}"));
+                            }
+                        }
+                        ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
         // the label being typed
         if let Some((at, mut s)) = self.text.take() {
@@ -1627,6 +1696,12 @@ impl Editor {
             }
             return;
         }
+        // view shortcuts; taken out of the input so egui does not also zoom
+        // the whole window's interface on ⌘= / ⌘- / ⌘0
+        if let Some(z) = ui.ctx().input_mut(take_zoom_key) {
+            self.zoom_cmd = Some(z);
+            ui.ctx().request_repaint();
+        }
         let (cmd, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
         let pressed = |k: Key| ui.input(|i| i.key_pressed(k));
         let copy_event = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)));
@@ -1864,6 +1939,31 @@ fn nearest(spots: &[(usize, Pos2)], q: Pos2, scale: f32) -> Option<usize> {
         .filter(|(_, d)| *d <= overlay::GRAB)
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(k, _)| k)
+}
+
+/// Takes the first view shortcut out of this frame's keys. Keys match by
+/// their place on the keyboard too, so ⇧1 works on any layout.
+fn take_zoom_key(i: &mut egui::InputState) -> Option<ZoomCmd> {
+    let mut found = None;
+    i.events.retain(|e| {
+        let egui::Event::Key { key, physical_key, pressed: true, modifiers, .. } = e else { return true };
+        if found.is_some() || modifiers.alt || (modifiers.ctrl && !modifiers.mac_cmd) {
+            return true;
+        }
+        let is = |k: Key| *key == k || *physical_key == Some(k);
+        let z = match (modifiers.command, modifiers.shift) {
+            (true, _) if is(Key::Equals) || is(Key::Plus) => Some(ZoomCmd::In),
+            (true, false) if is(Key::Minus) => Some(ZoomCmd::Out),
+            (true, false) if is(Key::Num0) => Some(ZoomCmd::Actual),
+            (false, true) if is(Key::Num0) => Some(ZoomCmd::Actual),
+            (false, true) if is(Key::Num1) => Some(ZoomCmd::Fit),
+            (false, true) if is(Key::Num2) => Some(ZoomCmd::Selection),
+            _ => None,
+        };
+        found = found.or(z);
+        z.is_none()
+    });
+    found
 }
 
 /// Most a picture can zoom: this many times its true size.
@@ -2219,5 +2319,33 @@ mod tests {
         assert_eq!(clamp_pan(Vec2::new(50.0, 50.0), Vec2::new(300.0, 200.0), avail), Vec2::ZERO);
         // 800 wide: at most 200 either way; 250 tall still fits
         assert_eq!(clamp_pan(Vec2::new(500.0, 30.0), Vec2::new(800.0, 250.0), avail), Vec2::new(200.0, 0.0));
+    }
+
+    fn key_event(key: Key, physical: Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key { key, physical_key: Some(physical), pressed: true, repeat: false, modifiers }
+    }
+
+    #[test]
+    fn view_shortcuts_are_taken_from_the_input() {
+        let cmd = egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND;
+        let shift = egui::Modifiers::SHIFT;
+        let take = |e: egui::Event| {
+            let mut i = egui::InputState::default();
+            i.events.push(e);
+            let z = take_zoom_key(&mut i);
+            // a view key never reaches egui's own interface zoom
+            assert_eq!(i.events.is_empty(), z.is_some());
+            z
+        };
+        assert_eq!(take(key_event(Key::Equals, Key::Equals, cmd)), Some(ZoomCmd::In));
+        assert_eq!(take(key_event(Key::Plus, Key::Equals, cmd | shift)), Some(ZoomCmd::In));
+        assert_eq!(take(key_event(Key::Minus, Key::Minus, cmd)), Some(ZoomCmd::Out));
+        assert_eq!(take(key_event(Key::Num0, Key::Num0, cmd)), Some(ZoomCmd::Actual));
+        // ⇧1 reads as "!" on the logical key; its place on the keyboard still counts
+        assert_eq!(take(key_event(Key::Exclamationmark, Key::Num1, shift)), Some(ZoomCmd::Fit));
+        assert_eq!(take(key_event(Key::Num2, Key::Num2, shift)), Some(ZoomCmd::Selection));
+        // plain digits, letters and ⌘Z stay for the tools and undo
+        assert_eq!(take(key_event(Key::Num1, Key::Num1, egui::Modifiers::NONE)), None);
+        assert_eq!(take(key_event(Key::Z, Key::Z, cmd)), None);
     }
 }
