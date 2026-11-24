@@ -5,6 +5,7 @@
 use super::engine::{Ctx, Group, Verdict};
 use super::rules::{catalog, ProjectType};
 use crate::kit::fs::home;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -32,6 +33,9 @@ pub(super) fn scan(c: &mut Ctx) {
     // a root inside another root is walked once
     roots.sort();
     roots.dedup_by(|b, a| b.starts_with(&*a));
+    // "Code" and "code" are one folder on a case-insensitive disk: walk it once
+    let mut ids = std::collections::HashSet::new();
+    roots.retain(|p| p.metadata().is_ok_and(|m| ids.insert((m.dev(), m.ino()))));
     for root in roots {
         if c.stopped() {
             return;
