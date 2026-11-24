@@ -359,9 +359,9 @@ pub fn drop_unflushed() {
 /// main thread. Returns false when the window has no view yet.
 pub fn cover(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
     use crate::kit::glass;
-    let light = glass::is_light();
     let look = native::CoverLook {
         stops: glass::backdrop_stops(glass::theme()),
+        sky: glass::theme() == glass::Theme::Miami,
         glow: glass::backdrop_glow(size, glass::WINDOW_BEAM),
         edge: glass::backdrop_edge(),
         track: glass::white(26),
@@ -1027,6 +1027,8 @@ mod native {
     /// What the open cover looks like (see `super::cover`).
     pub struct CoverLook {
         pub stops: &'static [(f32, Color32)],
+        /// Miami (TH6): the stops run top to bottom, not out from the glow.
+        pub sky: bool,
         pub glow: (f32, f32),
         pub edge: Color32,
         pub track: Color32,
@@ -1090,10 +1092,11 @@ mod native {
             let _: () = msg_send![&*c, setBorderWidth: 1.0f64];
             let _: () = msg_send![&*c, setBorderColor: cg(look.edge)];
 
-            // the backdrop (S1): a radial glow from the top middle
+            // the backdrop (S1): a radial glow from the top middle, or
+            // Miami's sky from top to bottom (TH6)
             let g: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
             let _: () = msg_send![&*g, setContentsScale: scale];
-            let _: () = msg_send![&*g, setType: &*key("radial")];
+            let _: () = msg_send![&*g, setType: &*key(if look.sky { "axial" } else { "radial" })];
             let colors: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
             let stops: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
             for (t, col) in look.stops {
@@ -1103,7 +1106,8 @@ mod native {
             let _: () = msg_send![&*g, setColors: &*colors];
             let _: () = msg_send![&*g, setLocations: &*stops];
             let _: () = msg_send![&*g, setStartPoint: NSPoint::new(0.5, 0.0)];
-            let _: () = msg_send![&*g, setEndPoint: NSPoint::new(0.5 + look.glow.0 as f64 / w, look.glow.1 as f64 / h)];
+            let end = if look.sky { NSPoint::new(0.5, 1.0) } else { NSPoint::new(0.5 + look.glow.0 as f64 / w, look.glow.1 as f64 / h) };
+            let _: () = msg_send![&*g, setEndPoint: end];
             let _: () = msg_send![&*g, setFrame: ns_rect(0.0, 0.0, w, h)];
             let _: () = msg_send![&*g, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
             let _: () = msg_send![&*c, addSublayer: &*g];
@@ -1241,6 +1245,8 @@ mod native {
     #[allow(dead_code)]
     pub struct CoverLook {
         pub stops: &'static [(f32, Color32)],
+        /// Miami (TH6): the stops run top to bottom, not out from the glow.
+        pub sky: bool,
         pub glow: (f32, f32),
         pub edge: Color32,
         pub track: Color32,

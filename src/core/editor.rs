@@ -765,7 +765,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     glass_card(&p, theme_card, R_CARD, 0.0, false);
     p.text(Pos2::new(theme_card.left() + 16.0, theme_card.center().y), Align2::LEFT_CENTER, "Theme", font(13.0), TEXT());
     {
-        use crate::kit::glass::{theme, theme_choice, set_theme_choice, Theme, ThemeChoice};
+        use crate::kit::glass::{set_theme_choice, theme, theme_choice, Theme, ThemeChoice};
         // screenshots show the theme they are drawn in
         let cur = if app.demo {
             match theme() {

@@ -137,18 +137,6 @@ pub fn pick3(dark: Color32, light: Color32, miami: Color32) -> Color32 {
     }
 }
 
-/// Miami's action hue while the canvas compares two (prototype only):
-/// `CMDMEOW_MIAMI=aqua` swaps hot pink for neon aqua.
-fn miami_aqua() -> bool {
-    static A: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *A.get_or_init(|| std::env::var("CMDMEOW_MIAMI").as_deref() == Ok("aqua"))
-}
-
-/// Miami's value: `pink` with the pink action, `aqua` with the aqua one.
-fn miami(pink: u32, aqua: u32) -> Color32 {
-    hex(if miami_aqua() { aqua } else { pink })
-}
-
 const fn hex(v: u32) -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
 }
@@ -216,7 +204,7 @@ pub fn TEXT_MUTED() -> Color32 { ink(if is_light() { 0.50 } else { 0.40 }) }
 /// switches, the active sidebar icon. Only for what you press or select,
 /// never data (C2). Text on it is [`ON_ACTION`].
 #[allow(non_snake_case)]
-pub fn ACTION() -> Color32 { pick3(hex(0xC8F05A), hex(0xA8D83A), miami(0xFF5FA2, 0x3DEBDD)) }
+pub fn ACTION() -> Color32 { pick3(hex(0xC8F05A), hex(0xA8D83A), hex(0xFF5FA2)) }
 /// The recording dot (dictation, screen recording): macOS's own recording
 /// red, the same in both modes. One of the exceptions in C13.
 pub const REC: Color32 = hex(0xFF453A);
@@ -224,7 +212,7 @@ pub const REC: Color32 = hex(0xFF453A);
 pub const ON_ACTION: Color32 = hex(0x0E1405);
 /// Links and lime text on cards.
 #[allow(non_snake_case)]
-pub fn ACCENT() -> Color32 { pick3(hex(0xD9F78A), hex(0x2F5208), miami(0xFF9DC6, 0x8FF5EC)) }
+pub fn ACCENT() -> Color32 { pick3(hex(0xD9F78A), hex(0x2F5208), hex(0xFF9DC6)) }
 /// State: fine. Never a category or chart series (C4).
 #[allow(non_snake_case)]
 pub fn GREEN() -> Color32 { pick3(hex(0x94D45A), hex(0x437A20), hex(0x7EEBA6)) }
@@ -256,17 +244,16 @@ pub fn TRACK() -> Color32 { white(20) }
 /// Chart series (C5): the group tint first, then its next steps; at most
 /// three colours, the rest is [`OTHER`]. Same thing, same step everywhere.
 pub mod series {
-    use super::{hex, miami, pick3};
+    use super::{hex, pick3};
     use egui::Color32;
     /// Monitor charts (memory, storage): cyan, then pale (dark) / deep
     /// (light), then the step on the other side.
     pub fn monitor(i: usize) -> Color32 {
         const DARK: [u32; 3] = [0x6FD6E8, 0xB4EAF3, 0x4FA9BC];
         const LIGHT: [u32; 3] = [0x177A8E, 0x0B4652, 0x3A97AB];
-        const MIAMI_P: [u32; 3] = [0x4FE3E0, 0xAEF4F2, 0x2BB0AE];
-        const MIAMI_A: [u32; 3] = [0x7DB4FF, 0xC2DCFF, 0x4F86D6];
+        const MIAMI: [u32; 3] = [0x4FE3E0, 0xAEF4F2, 0x2BB0AE];
         let i = i.min(2);
-        pick3(hex(DARK[i]), hex(LIGHT[i]), miami(MIAMI_P[i], MIAMI_A[i]))
+        pick3(hex(DARK[i]), hex(LIGHT[i]), hex(MIAMI[i]))
     }
     /// Utilities charts (Keep Awake): lavender, then a deeper (dark) /
     /// deeper-ink (light) step.
@@ -290,11 +277,10 @@ pub mod series {
 pub fn junk_ramp(i: usize) -> Color32 {
     const DARK: [u32; 7] = [0xC8F05A, 0xAEE35A, 0x94D45A, 0x7CC25A, 0x66AE57, 0x549852, 0x4F8E4E];
     const LIGHT: [u32; 7] = [0x5B8A14, 0x507E14, 0x467318, 0x3E6A1A, 0x36601B, 0x2F571C, 0x284F1E];
-    // Miami: hot pink stepping into violet (aqua: aqua into blue)
-    const MIAMI_P: [u32; 7] = [0xFF5FA2, 0xF25BB0, 0xE05ABD, 0xC95BC8, 0xB05ECF, 0x9661D2, 0x7F63D0];
-    const MIAMI_A: [u32; 7] = [0x3DEBDD, 0x3BD6E0, 0x3FC0E2, 0x46A9E2, 0x5092DE, 0x5B7CD8, 0x6468CF];
+    // Miami: hot pink stepping into violet
+    const MIAMI: [u32; 7] = [0xFF5FA2, 0xF25BB0, 0xE05ABD, 0xC95BC8, 0xB05ECF, 0x9661D2, 0x7F63D0];
     let i = i.min(6);
-    pick3(hex(DARK[i]), hex(LIGHT[i]), miami(MIAMI_P[i], MIAMI_A[i]))
+    pick3(hex(DARK[i]), hex(LIGHT[i]), hex(MIAMI[i]))
 }
 
 /// What the app draws over the user's picture or video frame (C16):
@@ -363,16 +349,16 @@ pub mod overlay {
 /// Tool tints by group: Clean (lime), Monitor (cyan), Create (apricot),
 /// Utilities (lavender).
 pub mod tint {
-    use super::{hex, miami, pick3};
+    use super::{hex, pick3};
     use egui::Color32;
     #[allow(non_snake_case)]
-    pub fn CLEANUP() -> Color32 { pick3(hex(0xC8F05A), hex(0x5B8A14), miami(0xFF5FA2, 0x3DEBDD)) }
+    pub fn CLEANUP() -> Color32 { pick3(hex(0xC8F05A), hex(0x5B8A14), hex(0xFF5FA2)) }
     #[allow(non_snake_case)]
     pub fn DISK_MAP() -> Color32 { CLEANUP() }
     #[allow(non_snake_case)]
     pub fn STARTUP() -> Color32 { CLEANUP() }
     #[allow(non_snake_case)]
-    pub fn HEALTH() -> Color32 { pick3(hex(0x6FD6E8), hex(0x177A8E), miami(0x4FE3E0, 0x7DB4FF)) }
+    pub fn HEALTH() -> Color32 { pick3(hex(0x6FD6E8), hex(0x177A8E), hex(0x4FE3E0)) }
     #[allow(non_snake_case)]
     pub fn CLAUDE() -> Color32 { HEALTH() }
     #[allow(non_snake_case)]
@@ -699,7 +685,7 @@ pub fn backdrop_stops(theme: Theme) -> &'static [(f32, Color32)] {
     // deep indigo at the sides
     // Miami is a dusk sky, read top to bottom (see glow_color): cobalt
     // night, violet, magenta, a burnt-orange horizon
-    const MIAMI: &[(f32, Color32)] = &[(0.0, hex(0x0B1240)), (0.45, hex(0x2A1452)), (0.78, hex(0x5E1D57)), (1.0, hex(0x8E3442))];
+    const MIAMI: &[(f32, Color32)] = &[(0.0, hex(0x0B1240)), (0.45, hex(0x2A1452)), (0.78, hex(0x5E1D57)), (1.0, hex(0x70283C))];
     match theme {
         Theme::Dark => DARK,
         Theme::Light => LIGHT,
@@ -2456,6 +2442,27 @@ pub fn human_duration(secs: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_choice_auto_follows_the_system_and_the_rest_pin_a_theme() {
+        assert_eq!(ThemeChoice::Auto.resolve(true), Theme::Light);
+        assert_eq!(ThemeChoice::Auto.resolve(false), Theme::Dark);
+        for system in [true, false] {
+            assert_eq!(ThemeChoice::Light.resolve(system), Theme::Light);
+            assert_eq!(ThemeChoice::Dark.resolve(system), Theme::Dark);
+            assert_eq!(ThemeChoice::Miami.resolve(system), Theme::Miami);
+        }
+        let labels: Vec<_> = ThemeChoice::ALL.iter().map(|c| c.label()).collect();
+        assert_eq!(labels, ["Auto", "Light", "Dark", "Miami"]);
+    }
+
+    #[test]
+    fn every_theme_has_its_own_backdrop() {
+        let [d, l, m] = [Theme::Dark, Theme::Light, Theme::Miami].map(backdrop_stops);
+        assert!(d != l && d != m && l != m);
+        assert_eq!(m.first().map(|s| s.0), Some(0.0));
+        assert_eq!(m.last().map(|s| s.0), Some(1.0));
+    }
 
     #[test]
     fn reveal_holds_then_fades_out() {
