@@ -746,7 +746,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     card.bottom() + 24.0
 }
 
-/// Open at login, sounds, keep the panel open, crash reports, what macOS allows the tools (live), and setup again.
+/// Open at login, show in Dock, sounds, keep the panel open, crash reports, what macOS allows the tools (live), and setup again.
 fn general_tab(app: &mut App, ui: &mut Ui, body: Rect) {
     scroll_body(ui, body, "settings-general", |ui, body| general_list(app, ui, body));
 }
@@ -759,7 +759,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let row_h = 44.0;
     // crash reports: official builds only (screenshots show the row too)
     let crash = app.demo || crate::kit::crash_report::available();
-    let n_rows = if crash { 4.0 } else { 3.0 };
+    let n_rows = if crash { 5.0 } else { 4.0 };
     // Theme: its own card on top (T5)
     let theme_card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
     glass_card(&p, theme_card, R_CARD, 0.0, false);
@@ -799,27 +799,35 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     if switch(ui, sw_in(r0), ui.scope_id().with("open-at-login"), on, true).clicked() && !app.demo {
         app.perm_watch.set_login(!on);
     }
-    p.text(Pos2::new(r1.left() + 16.0, r1.center().y), Align2::LEFT_CENTER, "Sounds", font(13.0), TEXT());
+    // off: a menu bar app only, no Dock icon even with this window open
+    p.text(Pos2::new(r1.left() + 16.0, r1.center().y), Align2::LEFT_CENTER, "Show in Dock", font(13.0), TEXT());
+    let on = crate::kit::native::show_in_dock() || app.demo;
+    if switch(ui, sw_in(r1), ui.scope_id().with("show-in-dock"), on, true).clicked() && !app.demo {
+        crate::kit::native::set_show_in_dock(!on);
+    }
+    let r2 = row(2);
+    hairline(&p, Pos2::new(r2.left() + 16.0, r2.top()), Pos2::new(r2.right() - 16.0, r2.top()));
+    p.text(Pos2::new(r2.left() + 16.0, r2.center().y), Align2::LEFT_CENTER, "Sounds", font(13.0), TEXT());
     let on = crate::kit::sound::on() || app.demo;
-    if switch(ui, sw_in(r1), ui.scope_id().with("sounds"), on, true).clicked() && !app.demo {
+    if switch(ui, sw_in(r2), ui.scope_id().with("sounds"), on, true).clicked() && !app.demo {
         crate::kit::sound::set_on(!on);
         // a taste of what was just turned on
         crate::kit::sound::play(crate::kit::sound::Cue::Ready);
     }
     // the menu bar panel stays up when focus leaves it (for screenshots of it)
-    let r2 = row(2);
-    hairline(&p, Pos2::new(r2.left() + 16.0, r2.top()), Pos2::new(r2.right() - 16.0, r2.top()));
-    p.text(Pos2::new(r2.left() + 16.0, r2.center().y), Align2::LEFT_CENTER, "Keep menu bar panel open", font(13.0), TEXT());
+    let r3 = row(3);
+    hairline(&p, Pos2::new(r3.left() + 16.0, r3.top()), Pos2::new(r3.right() - 16.0, r3.top()));
+    p.text(Pos2::new(r3.left() + 16.0, r3.center().y), Align2::LEFT_CENTER, "Keep menu bar panel open", font(13.0), TEXT());
     let on = super::panel::keep_open();
-    if switch(ui, sw_in(r2), ui.scope_id().with("keep-panel-open"), on, true).clicked() && !app.demo {
+    if switch(ui, sw_in(r3), ui.scope_id().with("keep-panel-open"), on, true).clicked() && !app.demo {
         super::panel::set_keep_open(!on);
     }
     if crash {
-        let r3 = row(3);
-        hairline(&p, Pos2::new(r3.left() + 16.0, r3.top()), Pos2::new(r3.right() - 16.0, r3.top()));
-        p.text(Pos2::new(r3.left() + 16.0, r3.center().y), Align2::LEFT_CENTER, "Send crash reports", font(13.0), TEXT());
+        let r4 = row(4);
+        hairline(&p, Pos2::new(r4.left() + 16.0, r4.top()), Pos2::new(r4.right() - 16.0, r4.top()));
+        p.text(Pos2::new(r4.left() + 16.0, r4.center().y), Align2::LEFT_CENTER, "Send crash reports", font(13.0), TEXT());
         let on = app.demo || crate::kit::crash_report::consent() == Some(true);
-        if switch(ui, sw_in(r3), ui.scope_id().with("crash-reports"), on, true).clicked() && !app.demo {
+        if switch(ui, sw_in(r4), ui.scope_id().with("crash-reports"), on, true).clicked() && !app.demo {
             crate::kit::crash_report::set_consent(!on);
         }
     }

@@ -152,7 +152,10 @@ mod mac {
     }
 
     /// Accessory = menu bar app with no Dock icon; Regular = normal app window.
+    /// With Settings › General "Show in Dock" off it stays Accessory.
     pub fn set_dock_icon(visible: bool) {
+        super::DOCK_WANTED.store(visible, std::sync::atomic::Ordering::Relaxed);
+        let visible = visible && super::show_in_dock();
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
         let policy = if visible { NSApplicationActivationPolicy::Regular } else { NSApplicationActivationPolicy::Accessory };
@@ -508,6 +511,28 @@ pub struct OpenApp {
 /// tool's floating windows that draw everything themselves (pinned images,
 /// overlays).
 pub const PLAIN_WINDOW: &str = "plain-";
+
+/// Settings › General "Show in Dock": off keeps the app a menu bar app
+/// (no Dock icon, no ⌘Tab) even while its window is open. On by default.
+pub const SHOW_IN_DOCK_KEY: &str = "app.show_in_dock";
+static SHOW_IN_DOCK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// What the app last asked for (window open or not), so a switch flip
+/// applies at once.
+static DOCK_WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn show_in_dock() -> bool {
+    SHOW_IN_DOCK.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_show_in_dock(on: bool) {
+    SHOW_IN_DOCK.store(on, std::sync::atomic::Ordering::Relaxed);
+    let wanted = DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed);
+    set_dock_icon(wanted);
+    // leaving the Dock can drop the app's activation: keep its window in front
+    if wanted && !on {
+        activate();
+    }
+}
 
 #[cfg(not(target_os = "macos"))]
 mod other {
