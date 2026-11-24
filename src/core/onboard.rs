@@ -518,16 +518,16 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let mut finish = if restart_now { Finish::Restart } else { Finish::No };
     if step > 0 {
         let r = Rect::from_min_size(Pos2::new(bar.left(), bar.center().y - 16.0), Vec2::new(70.0, 32.0));
-        if ghost_button(ui, r, "Back").clicked() {
+        if ghost_button(ui, r, ts!("setup.back")).clicked() {
             go(app, step - 1);
         }
     }
     let label = match kind {
         // these steps have their own buttons
         Kind::Welcome | Kind::Crash => None,
-        Kind::Theme | Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some("Continue"),
-        Kind::Ready if needs_restart(app) => Some("Restart and open"),
-        Kind::Ready => Some("Open panel"),
+        Kind::Theme | Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some(ts!("setup.continue")),
+        Kind::Ready if needs_restart(app) => Some(ts!("setup.restart_open")),
+        Kind::Ready => Some(ts!("setup.open_panel")),
     };
     if let Some(label) = label {
         let w = button_width(&p, label, BTN_PRIMARY).max(110.0);
@@ -543,7 +543,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         }
         if kind == Kind::Perms && !all_required(app) {
             let r2 = Rect::from_min_size(Pos2::new(r.left() - 80.0, r.top()), Vec2::new(70.0, 32.0));
-            if ghost_button(ui, r2, "Later").clicked() {
+            if ghost_button(ui, r2, ts!("setup.later")).clicked() {
                 next = true;
             }
         }
@@ -677,9 +677,9 @@ fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let clip = Rect::from_min_max(Pos2::new(c.x - size * 0.7, c.y - size), Pos2::new(c.x + size * 0.7, floor));
     crate::kit::brand::draw_mascot(&p.with_clip_rect(clip.intersect(p.clip_rect())), cat, cat_color(), ears);
     let name = p.text(Pos2::new(c.x, c.y + ring + chip + 40.0), Align2::CENTER_TOP, "Cmd+Meow", bold(title), TEXT());
-    let line = p.text(Pos2::new(c.x, name.bottom() + sp::S), Align2::CENTER_TOP, format!("{} tools. One menu bar.", app.tools.len()), font(16.0), TEXT_FAINT());
+    let line = p.text(Pos2::new(c.x, name.bottom() + sp::S), Align2::CENTER_TOP, t!("setup.tagline", n = app.tools.len()), font(16.0), TEXT_FAINT());
     let r = Rect::from_min_size(Pos2::new(c.x - button.x / 2.0, line.bottom() + 36.0), button);
-    pill_button(ui, r, "Set up", BTN_PRIMARY, true).clicked()
+    pill_button(ui, r, ts!("setup.set_up"), BTN_PRIMARY, true).clicked()
 }
 
 /// Welcome waits this long after the window is on screen before anything moves.
@@ -746,9 +746,9 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         p.rect_stroke(mark, 18.0 * z, Stroke::new(1.0, white(24)), StrokeKind::Inside);
         icon(&p, Icon::Shield, mark.shrink(20.0 * z), ACTION());
     }
-    let q = p.text(Pos2::new(c.x, c.y + 62.0), Align2::CENTER_TOP, "Send crash reports?", bold(22.0), TEXT());
+    let q = p.text(Pos2::new(c.x, c.y + 62.0), Align2::CENTER_TOP, ts!("setup.crash_q"), bold(22.0), TEXT());
     // what a report has, and what it never has
-    let facts: [(bool, &str); 3] = [(true, "What went wrong and where in the app"), (true, "App and macOS version"), (false, "Files, names or IP address")];
+    let facts: [(bool, &str); 3] = [(true, ts!("setup.crash_what")), (true, ts!("setup.crash_version")), (false, ts!("setup.crash_never"))];
     let w = 400.0;
     let mut y = q.bottom() + sp::XL;
     // one card, rows touching (S4)
@@ -771,14 +771,14 @@ fn crash_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         y += sp::SETTINGS_ROW_H;
     }
     // the answer
-    let yes = "Send reports";
+    let yes = ts!("setup.send_reports");
     let bw = button_width(&p, yes, BTN_PRIMARY).max(140.0);
     let no_w = 96.0;
     let gap = 12.0;
     let left = c.x - (bw + gap + no_w) / 2.0;
     let by = y + sp::XL;
     let mut picked = None;
-    if ghost_button(ui, Rect::from_min_size(Pos2::new(left, by), Vec2::new(no_w, sp::HEADER_CONTROL_H)), "Don't send").clicked() {
+    if ghost_button(ui, Rect::from_min_size(Pos2::new(left, by), Vec2::new(no_w, sp::HEADER_CONTROL_H)), ts!("setup.dont_send")).clicked() {
         picked = Some(false);
     }
     if pill_button(ui, Rect::from_min_size(Pos2::new(left + no_w + gap, by), Vec2::new(bw, sp::HEADER_CONTROL_H)), yes, BTN_PRIMARY, true).clicked() {
@@ -840,6 +840,19 @@ pub fn off_at_first<'a>(ids: impl Iterator<Item = &'a str>) -> Vec<String> {
     ids.filter(|id| !ON_AT_FIRST.contains(id)).map(str::to_string).collect()
 }
 
+/// What a goal reads as (its `name` stays the id).
+fn goal_label(name: &str) -> &'static str {
+    match name {
+        "Clean my Mac" => ts!("setup.goal_clean"),
+        "Screenshots & video" => ts!("setup.goal_capture"),
+        "Clipboard" => ts!("setup.goal_clip"),
+        "Voice typing" => ts!("setup.goal_voice"),
+        "Watch my Mac" => ts!("setup.goal_watch"),
+        "For developers" => ts!("setup.goal_dev"),
+        _ => "",
+    }
+}
+
 /// Indexes of a goal's tools that this build has.
 fn goal_tools(app: &App, g: &Goal) -> Vec<usize> {
     g.tools.iter().filter_map(|id| app.tool_index(id)).collect()
@@ -862,7 +875,7 @@ fn appear(ctx: &egui::Context, id: egui::Id, now: f64, dur: f32, demo: bool) -> 
     ease(k)
 }
 
-/// The theme cards' pictures, in [`THEMES`] order.
+/// The theme cards' pictures, in [`themes`] order.
 const THEME_ART: [&[u8]; 3] = [
     include_bytes!("../../assets/themes/light.jpg"),
     include_bytes!("../../assets/themes/dark.jpg"),
@@ -871,7 +884,9 @@ const THEME_ART: [&[u8]; 3] = [
 
 /// The Theme step's cards: the choice, the name on the card, and whether
 /// the name is drawn in dark ink (on the light picture).
-const THEMES: [(ThemeChoice, &str, bool); 3] = [(ThemeChoice::Light, "Light Classic", true), (ThemeChoice::Dark, "Dark Classic", false), (ThemeChoice::Miami, "Dark Miami", false)];
+fn themes() -> [(ThemeChoice, &'static str, bool); 3] {
+    [(ThemeChoice::Light, ts!("setup.theme_light"), true), (ThemeChoice::Dark, ts!("setup.theme_dark"), false), (ThemeChoice::Miami, ts!("setup.theme_miami"), false)]
+}
 
 /// A theme card's picture (decoded once, on the step's first frame).
 fn theme_art(ctx: &egui::Context, k: usize) -> Option<egui::TextureHandle> {
@@ -910,12 +925,12 @@ fn theme_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let title_h = 30.0 + 20.0;
     let ch = (cw * 1.5).min(body.height() - title_h - sp::L);
     let head = body.center().y - (title_h + ch) / 2.0;
-    p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "Pick a theme", bold(22.0), TEXT());
+    p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, ts!("setup.pick_theme"), bold(22.0), TEXT());
     let top = head + title_h;
     // a switch waiting for its picture already shows the new card picked
     let cur = crate::kit::theme_fade::pending_choice().unwrap_or_else(shown_theme);
     let mut pick_it = None;
-    for (k, &(choice, name, dark_ink)) in THEMES.iter().enumerate() {
+    for (k, &(choice, name, dark_ink)) in themes().iter().enumerate() {
         let a = ease((t - 0.06 * k as f32) / 0.4);
         let r = Rect::from_min_size(Pos2::new(body.left() + k as f32 * (cw + gap), top + (1.0 - a) * 8.0), Vec2::new(cw, ch));
         let id = ui.scope_id().with(("setup-theme", k));
@@ -973,13 +988,13 @@ fn tools(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let on = (0..app.tools.len()).filter(|&i| app.tool_on(i)).count();
     let left = Rect::from_min_max(body.min, Pos2::new(body.right() - PANEL_W - 28.0, body.bottom()));
     let head = body.top() + 6.0;
-    let g = p.text(Pos2::new(left.left(), head), Align2::LEFT_TOP, "What do you need?", bold(22.0), TEXT());
+    let g = p.text(Pos2::new(left.left(), head), Align2::LEFT_TOP, ts!("setup.what_need"), bold(22.0), TEXT());
     // the count rolls to its new number like an odometer
     let shown = ui.ctx().animate_value_with_time(ui.scope_id().with("setup-tools-on"), on as f32, 0.28);
     rolling_count(&p, Pos2::new(g.right() + 10.0, g.bottom() - 4.0), shown, app.tools.len());
     let all = app.setup.as_ref().is_some_and(|s| s.all_tools);
     let seg = Rect::from_min_size(Pos2::new(left.right() - 150.0, g.center().y - sp::CONTROL_H / 2.0), Vec2::new(150.0, sp::CONTROL_H));
-    if let Some(k) = segmented(ui, seg, ui.scope_id().with("setup-tools-mode"), &["Goals", "All tools"], all as usize) {
+    if let Some(k) = segmented(ui, seg, ui.scope_id().with("setup-tools-mode"), &[ts!("setup.goals"), ts!("setup.all_tools")], all as usize) {
         if let Some(s) = app.setup.as_mut() {
             s.all_tools = k == 1;
         }
@@ -1047,7 +1062,7 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
             let (off, sc) = chip_motion(tid, now);
             let cr = Rect::from_center_size(cr.center() + off, cr.size() * sc * (1.0 + bump));
             tool_chip(&p, cr, b.icon, b.color);
-            tool_hint(ui, cr, id.with(("tool", tid)), app.tools[i].name());
+            tool_hint(ui, cr, id.with(("tool", tid)), app.tools[i].name(), app.tools[i].id());
         }
         // check, then name, bottom left
         let cc = Pos2::new(inner.left() + 9.0, ny);
@@ -1060,7 +1075,7 @@ fn goal_cards(app: &mut App, ui: &mut Ui, area: Rect, t: f32) {
         // what each tool asks macOS for is on the Permissions step, in words
         let px = inner.right();
         let nx = inner.left() + 26.0;
-        text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal.name, ty::title(), TEXT(), px - nx - 6.0);
+        text_fit(&p, Pos2::new(nx, ny), Align2::LEFT_CENTER, goal_label(goal.name), ty::title(), TEXT(), px - nx - 6.0);
         if resp.clicked() {
             flip = Some((idx, !picked));
         }
@@ -1376,11 +1391,11 @@ fn clip_card(p: &egui::Painter, c: Pos2, size: Vec2, ang: f32, kind: usize, al: 
 /// Voice typing: the voice wave runs from the mic and comes out as words.
 fn loop_voice(p: &egui::Painter, f: Rect, mic: Rect, now: f32) {
     use std::f32::consts::TAU;
-    const SAID: [&str; 3] = ["Ship it today", "Call me at 5", "Sounds good!"];
-    let said = SAID[(now / 4.2) as usize % SAID.len()];
+    let said_all = [ts!("setup.said1"), ts!("setup.said2"), ts!("setup.said3")];
+    let said = said_all[(now / 4.2) as usize % said_all.len()];
     let q = (now / 4.2).fract() * 4.2;
     let fnt = font(12.0);
-    let widest = SAID.iter().map(|s| p.layout_no_wrap((*s).into(), fnt.clone(), TEXT()).size().x).fold(0.0, f32::max);
+    let widest = said_all.iter().map(|s| p.layout_no_wrap((*s).into(), fnt.clone(), TEXT()).size().x).fold(0.0, f32::max);
     let n = (((f.width() - 10.0 - widest) / 6.0).floor() as i32).clamp(5, 12) as usize;
     let cy = mic.center().y;
     // the wave is loud while words come, quiet in between
@@ -1774,13 +1789,13 @@ fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let w = body.width().min(640.0);
     let x = body.center().x - w / 2.0;
     let head = body.top() + 6.0;
-    p.text(Pos2::new(x, head), Align2::LEFT_TOP, "Sign-ins", bold(22.0), TEXT());
+    p.text(Pos2::new(x, head), Align2::LEFT_TOP, ts!("setup.signins"), bold(22.0), TEXT());
     // the section, as on AI agents: what it's for
     let y = head + 22.0 + sp::XL;
     let cr = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(42.0));
     tool_chip(&p, cr, Icon::Lock, TEXT_SOFT());
-    p.text(Pos2::new(cr.right() + sp::M, cr.top() + 2.0), Align2::LEFT_TOP, "Keychain", bold(15.0), TEXT());
-    p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, "Limits from your account in AI Usage", ty::body(), TEXT_DIM());
+    p.text(Pos2::new(cr.right() + sp::M, cr.top() + 2.0), Align2::LEFT_TOP, ts!("setup.keychain"), bold(15.0), TEXT());
+    p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, ts!("setup.keychain_what"), ty::body(), TEXT_DIM());
     // one tile per picked agent that keeps it there: today only Claude Code
     let a = ease(t / 0.4);
     // R2: 24 between what it's for and the cards, as on AI agents
@@ -1801,9 +1816,9 @@ fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     } else if busy {
         let c = Pos2::new(right - 8.0, r.center().y);
         spinner(&p, c, 6.0, now, ACTION());
-        p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, "Choose Always Allow", font(12.0), TEXT_FAINT());
+        p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, ts!("setup.always_allow"), font(12.0), TEXT_FAINT());
     } else {
-        let label = if st == Status::Denied || !err.is_empty() { "Try again" } else { "Allow" };
+        let label = if st == Status::Denied || !err.is_empty() { ts!("setup.try_again") } else { ts!("setup.allow") };
         let bw = button_width(&p, label, BTN_SECONDARY);
         let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - 13.0), Vec2::new(bw, 26.0));
         if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() && !app.demo {
@@ -1812,7 +1827,7 @@ fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         if !err.is_empty() {
             p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, err, font(12.0), RED());
         } else if st == Status::Denied {
-            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, "Denied", font(12.0), AMBER());
+            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, ts!("setup.denied"), font(12.0), AMBER());
         }
     }
     // the check pops once when it turns allowed while shown
@@ -1874,7 +1889,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let w = body.width().min(COL_W);
     let x = body.center().x - w / 2.0;
     let head = body.top() + 6.0;
-    p.text(Pos2::new(x, head), Align2::LEFT_TOP, "AI agents", bold(22.0), TEXT());
+    p.text(Pos2::new(x, head), Align2::LEFT_TOP, ts!("setup.ai_agents"), bold(22.0), TEXT());
     let n = ai::PROVIDERS.len();
     let found: Vec<bool> = (0..n).map(|k| app.demo || ai::make(k).data_dir().is_some_and(|d| d.exists())).collect();
     let tile_h = 84.0;
@@ -1893,7 +1908,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 let b = app.tools[i].badge();
                 let r = Rect::from_min_size(Pos2::new(tx - 26.0, cr.center().y - 13.0), Vec2::splat(26.0));
                 tool_chip(&p, r, b.icon, b.color);
-                tool_hint(ui, r, ui.scope_id().with(("setup-ai-tool", name, *id)), app.tools[i].name());
+                tool_hint(ui, r, ui.scope_id().with(("setup-ai-tool", name, *id)), app.tools[i].name(), app.tools[i].id());
                 tx -= 26.0 + 6.0;
             }
         }
@@ -1924,7 +1939,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         agent_mark(&p, mr, m.id, !found[k]);
         p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });
         if !found[k] {
-            p.text(Pos2::new(r.right() - 12.0, r.bottom() - 12.0), Align2::RIGHT_BOTTOM, "Not found", ty::caption(), TEXT_FAINT());
+            p.text(Pos2::new(r.right() - 12.0, r.bottom() - 12.0), Align2::RIGHT_BOTTOM, ts!("setup.not_found"), ty::caption(), TEXT_FAINT());
         }
         if resp.hovered() && found[k] && !on {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1934,7 +1949,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     // AI Check: one agent
     let mut y = head + 22.0 + sp::XL;
     let cleanup_chip = app.tool_index(cleanup::ID).map(|i| app.tools[i].badge().color).unwrap_or(ACTION());
-    y = section(ui, y, Icon::Sparkle, cleanup_chip, "AI Check", "Checks what's safe to remove", &[]);
+    y = section(ui, y, Icon::Sparkle, cleanup_chip, ts!("setup.ai_check"), ts!("setup.ai_check_what"), &[]);
     for k in 0..n {
         let m = &ai::PROVIDERS[k];
         let a = ease((t - 0.05 * k as f32) / 0.4);
@@ -1965,7 +1980,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         // fits with AI Usage on (M1)
         y += tile_h + sp::XL;
         let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, ACTION()));
-        y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
+        y = section(ui, y, usage.0, usage.1, ts!("setup.ai_usage"), ts!("setup.ai_usage_what"), &[]);
         for k in 0..n {
             let m = &ai::PROVIDERS[k];
             let a = ease((t - 0.2 - 0.05 * k as f32) / 0.4);
@@ -1980,7 +1995,7 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 continue;
             }
             let box_ = checkbox(ui, cb, ui.scope_id().with(("setup-track", m.id)), on, true);
-            let box_ = if main { box_.on_hover_text("The AI Check agent is always followed") } else { box_ };
+            let box_ = if main { box_.on_hover_text(ts!("setup.main_followed")) } else { box_ };
             if (box_.clicked() || resp.clicked()) && !main {
                 let id = m.id.to_string();
                 let was_on = set.is_on(m.id);
@@ -2021,14 +2036,14 @@ const DEMO_END: f32 = 0.8;
 /// repaint loop (R-anim). Returns its height.
 fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str, a: f32, t: f32) -> f32 {
     // (name, size, the reason when it needs an OK)
-    const ROWS: [(&str, &str, Option<&str>); 4] = [
-        ("Safari cache", "1.8 GB", None),
-        ("System logs", "1.2 GB", None),
-        ("iPhone backup", "9.4 GB", Some("Your only backup of this iPhone")),
-        ("Spotify cache", "860 MB", None),
+    let rows: [(&str, &str, Option<&str>); 4] = [
+        (ts!("setup.ex_safari"), "1.8 GB", None),
+        (ts!("setup.ex_logs"), "1.2 GB", None),
+        (ts!("setup.ex_backup"), "9.4 GB", Some(ts!("setup.ex_backup_why"))),
+        (ts!("setup.ex_spotify"), "860 MB", None),
     ];
     let head_h = 36.0;
-    let h = sp::XS + head_h + ROWS.iter().map(|r| if r.2.is_some() { sp::ROW2_H } else { sp::ROW_H }).sum::<f32>() + sp::XS;
+    let h = sp::XS + head_h + rows.iter().map(|r| if r.2.is_some() { sp::ROW2_H } else { sp::ROW_H }).sum::<f32>() + sp::XS;
     debug_assert_eq!(h, AI_DEMO_H);
     let r = Rect::from_min_size(top_left, Vec2::new(w, h));
     // an example, not this Mac's findings: no fill, a dashed edge, and
@@ -2046,20 +2061,20 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     let x0 = r.left() + sp::L;
     let x1 = r.right() - sp::L;
     agent_mark(p, Rect::from_center_size(Pos2::new(x0 + 9.0, hy), Vec2::splat(18.0)), agent, false);
-    let title = p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
-    let tag = p.layout_no_wrap("Example".into(), bold(11.0), TEXT_DIM().gamma_multiply(a));
+    let title = p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, ts!("setup.ai_check"), bold(12.0), TEXT().gamma_multiply(a));
+    let tag = p.layout_no_wrap(ts!("setup.example").into(), bold(11.0), TEXT_DIM().gamma_multiply(a));
     let tr = Rect::from_min_size(Pos2::new(title.right() + sp::S, hy - 9.0), Vec2::new(tag.size().x + 2.0 * sp::S, 18.0));
     p.rect_filled(tr, 6.0, white(20).gamma_multiply(a));
     p.galley(Pos2::new(tr.left() + sp::S, hy - tag.size().y / 2.0), tag, TEXT_DIM());
     if done {
-        p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, format!("{} checked", ROWS.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
+        p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, t!("setup.n_checked", n = rows.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
     } else if !done {
-        let t = p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, "Checking", font(12.0), TEXT_DIM().gamma_multiply(a));
+        let t = p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, ts!("setup.checking"), font(12.0), TEXT_DIM().gamma_multiply(a));
         spinner(p, Pos2::new(t.left() - sp::S - 5.0, hy), 5.0, now, ACTION());
     }
     let mut y = r.top() + sp::XS + head_h;
     p.hline(r.left()..=r.right(), y, Stroke::new(1.0, white(15).gamma_multiply(a)));
-    for (k, (name, size, why)) in ROWS.iter().enumerate() {
+    for (k, (name, size, why)) in rows.iter().enumerate() {
         let rh = if why.is_some() { sp::ROW2_H } else { sp::ROW_H };
         let row = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(w, rh));
         if k > 0 {
@@ -2070,7 +2085,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
         let glow = ((c - start) / 0.02).clamp(0.0, 1.0) * (1.0 - ((c - answer) / 0.03).clamp(0.0, 1.0));
         if glow > 0.0 {
             // the last row keeps the card's round bottom corners
-            let rr = if k + 1 == ROWS.len() { CornerRadius { sw: R_CARD as u8, se: R_CARD as u8, ..Default::default() } } else { CornerRadius::ZERO };
+            let rr = if k + 1 == rows.len() { CornerRadius { sw: R_CARD as u8, se: R_CARD as u8, ..Default::default() } } else { CornerRadius::ZERO };
             p.rect_filled(row, rr, with_alpha(ACTION(), 0.06 * glow * a));
         }
         let v = shown(answer);
@@ -2092,7 +2107,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
         let cr = Rect::from_min_size(Pos2::new(x1 - chip_w, row.center().y - 10.0), Vec2::new(chip_w, 20.0));
         p.text(Pos2::new(cr.left() - sp::L, row.center().y), Align2::RIGHT_CENTER, *size, ty::body(), TEXT_DIM().gamma_multiply(a));
         if v > 0.0 {
-            let (bg, fg, label) = if why.is_some() { (AMBER(), AMBER(), "Needs your OK") } else { (ACTION(), ACCENT(), "Safe") };
+            let (bg, fg, label) = if why.is_some() { (AMBER(), AMBER(), ts!("setup.needs_ok")) } else { (ACTION(), ACCENT(), ts!("setup.safe")) };
             p.rect_filled(cr, 6.0, with_alpha(bg, 0.16 * v * a));
             p.text(cr.center(), Align2::CENTER_CENTER, label, bold(11.0), fg.gamma_multiply(v * a));
         }
@@ -2145,7 +2160,7 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let w = body.width().min(COL_W);
     let x = body.center().x - w / 2.0;
     let head = body.top() + 6.0;
-    let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, "Download models", bold(22.0), TEXT());
+    let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, ts!("setup.download_models"), bold(22.0), TEXT());
     let list = models(app);
     let mut y = g.bottom() + sp::XL;
     let mut start: Option<(usize, &'static str)> = None;
@@ -2161,7 +2176,7 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 14.0), Vec2::splat(30.0));
         p.rect_filled(ib, 8.0, white(16));
         icon(&p, app.tools[i].badge().icon, ib.shrink(7.0), if m.state == ModelState::Ready { GREEN() } else { TEXT_SOFT() });
-        tool_hint(ui, ib, ui.scope_id().with(("setup-model-tool", i)), app.tools[i].name());
+        tool_hint(ui, ib, ui.scope_id().with(("setup-model-tool", i)), app.tools[i].name(), app.tools[i].id());
         let tx = ib.right() + 12.0;
         let right = r.right() - 14.0;
         let line1 = r.top() + 19.0;
@@ -2179,11 +2194,11 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let mut button: Option<&str> = None;
         match &m.state {
             ModelState::Ready => {
-                let t = p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "On this Mac", font(12.0), GREEN());
+                let t = p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.on_mac"), font(12.0), GREEN());
                 check(&p, Pos2::new(t.left() - 12.0, side), 12.0, GREEN());
             }
             ModelState::OnFirstUse => {
-                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "Downloads on first use", font(12.0), TEXT_FAINT());
+                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.first_use"), font(12.0), TEXT_FAINT());
             }
             ModelState::Downloading { done, total } => {
                 let total = if *total > 0 { *total } else { m.bytes };
@@ -2193,19 +2208,19 @@ fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 // decorative pace (egui's own easing asked for every frame)
                 let f = glide(ui.ctx(), ui.scope_id().with(("setup-model", m.id)), f, 0.25);
                 p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 3.0, ACTION());
-                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, format!("{} of {} · {:.0}%", human_bytes(*done), human_bytes(total), f * 100.0), font(12.0), TEXT_DIM());
+                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, t!("setup.progress", done = human_bytes(*done), total = human_bytes(total), pct = format!("{:.0}", f * 100.0)), font(12.0), TEXT_DIM());
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
             }
             ModelState::Unpacking => {
                 p.rect_filled(bar, 3.0, ACTION());
-                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, "Unpacking", font(12.0), TEXT_DIM());
+                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.unpacking"), font(12.0), TEXT_DIM());
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
             }
             ModelState::Failed(e) => {
                 text_fit(&p, Pos2::new(tx, bar.center().y), Align2::LEFT_CENTER, e, font(12.0), RED(), right - tx);
-                button = Some("Try again");
+                button = Some(ts!("setup.try_again"));
             }
-            ModelState::Missing => button = Some("Download"),
+            ModelState::Missing => button = Some(ts!("setup.download")),
         }
         if let Some(label) = button {
             let bw = button_width(&p, label, BTN_SECONDARY);
@@ -2293,7 +2308,7 @@ fn permissions_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64) {
         // the ring's arc is the progress; no bare "1/2" inside it
         None => {}
     }
-    p.text(Pos2::new(c.x + 36.0, c.y), Align2::LEFT_CENTER, "Permissions", bold(22.0), TEXT());
+    p.text(Pos2::new(c.x + 36.0, c.y), Align2::LEFT_CENTER, ts!("setup.permissions"), bold(22.0), TEXT());
     let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 56.0), body.max);
     // rows at their smallest; past that the list scrolls (it never runs
     // under the Back / Continue bar)
@@ -2375,7 +2390,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
             if k > 0 {
                 // a section title like the others: 16 above, 12 below (R11)
                 y += sp::L;
-                p.text(Pos2::new(area.left(), y), Align2::LEFT_TOP, "Optional", ty::section(), white(150));
+                p.text(Pos2::new(area.left(), y), Align2::LEFT_TOP, ts!("setup.optional"), ty::section(), white(150));
                 y += PERM_HEAD - sp::L;
             }
         }
@@ -2411,7 +2426,7 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         if !r.tools.is_empty() {
             let names: Vec<&str> = r.tools.iter().map(|&i| app.tools[i].name()).collect();
             let hr = Rect::from_min_max(Pos2::new(ib.left(), rr.top()), Pos2::new(right - 150.0, rr.bottom()));
-            ui.interact(hr, ui.scope_id().with(("perm-used-by", k)), Sense::hover()).on_hover_text(format!("Used by {}", names.join(", ")));
+            ui.interact(hr, ui.scope_id().with(("perm-used-by", k)), Sense::hover()).on_hover_text(t!("setup.used_by", names = names.join(", ")));
         }
         // the status keeps only the room it needs: a check is narrow, a
         // button or the waiting hint wider (never cut the reason, R10)
@@ -2428,9 +2443,9 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
             spinner(&p, c, 6.0, now, ACTION());
             // a tool's own step (an admin prompt, a download) isn't in System Settings
             let hint = match r.perm {
-                Perm::FullDisk => "Switch it on in System Settings",
+                Perm::FullDisk => ts!("setup.switch_on_settings"),
                 Perm::Own { .. } => "",
-                _ => "System Settings",
+                _ => ts!("setup.system_settings"),
             };
             // macOS asks right here; Settings isn't involved
             let hint = if r.perm.answered_in_place() { "" } else { hint };
@@ -2438,9 +2453,9 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         } else {
             let err = app.perm_watch.own_err.get(&r.perm).filter(|e| !e.is_empty());
             let (label, kind) = if err.is_some() {
-                ("Try again", BTN_SECONDARY)
+                (ts!("setup.try_again"), BTN_SECONDARY)
             } else if st == Status::Denied {
-                ("Open Settings", BTN_SECONDARY)
+                (ts!("setup.open_settings"), BTN_SECONDARY)
             } else {
                 (r.perm.ask_label(), BTN_SECONDARY)
             };
@@ -2553,22 +2568,22 @@ fn celebrate(app: &App, p: &egui::Painter, feet: Pos2, t: f32) {
 
 /// What a tool does, in at most five words (T5), for the hover popover on
 /// its icon in setup.
-fn tool_hint_text(name: &str) -> &'static str {
-    match name {
-        "Cleanup" => "Clear caches, logs and Trash",
-        "Disk Map" => "See what fills your disk",
-        "Uninstaller" => "Remove apps and their leftovers",
-        "Startup" => "Apps that open at login",
-        "Mac Health" => "Live CPU, memory and battery",
-        "Fan Control" => "Temperatures and fan speed",
-        "Screenshot" => "Capture and mark up screenshots",
-        "Video" => "Record the screen",
-        "Sharing" => "Upload and copy a link",
-        "Clipboard" => "History of what you copy",
-        "Dictation" => "Type with your voice",
-        "Keep Awake" => "Keep the Mac awake",
-        "Displays" => "External monitor brightness and volume",
-        "AI Usage" => "AI limits and token use",
+fn tool_hint_text(id: &str) -> &'static str {
+    match id {
+        "cleanup" => ts!("setup.hint_cleanup"),
+        "lens" => ts!("setup.hint_lens"),
+        "uninstaller" => ts!("setup.hint_uninstaller"),
+        "startup" => ts!("setup.hint_startup"),
+        "system" => ts!("setup.hint_system"),
+        "fan" => ts!("setup.hint_fan"),
+        "capture" => ts!("setup.hint_capture"),
+        "video" => ts!("setup.hint_video"),
+        "sharing" => ts!("setup.hint_sharing"),
+        "clipboard" => ts!("setup.hint_clipboard"),
+        "dictation" => ts!("setup.hint_dictation"),
+        "keep_awake" => ts!("setup.hint_keep_awake"),
+        "displays" => ts!("setup.hint_displays"),
+        "claude" => ts!("setup.hint_claude"),
         _ => "",
     }
 }
@@ -2576,13 +2591,13 @@ fn tool_hint_text(name: &str) -> &'static str {
 /// A small popover over a tool's icon while the pointer is on it: the
 /// tool's name and what it does. Checked by position, so the card under the
 /// icon keeps its own hover and click.
-fn tool_hint(ui: &Ui, r: Rect, id: egui::Id, name: &str) {
+fn tool_hint(ui: &Ui, r: Rect, id: egui::Id, name: &str, tid: &str) {
     let over = ui.rect_contains_pointer(r);
     let a = ui.ctx().animate_bool_with_time(id.with("hint"), over, 0.12);
     if a <= 0.0 {
         return;
     }
-    let what = tool_hint_text(name);
+    let what = tool_hint_text(tid);
     let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, id.with("hint-layer")));
     let title = p.layout_no_wrap(name.to_string(), bold(12.0), TEXT());
     let body = p.layout_no_wrap(what.to_string(), font(12.0), TEXT_DIM());
@@ -2615,7 +2630,7 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     // the rows and the panel preview share the width evenly
     let left = Rect::from_min_max(body.min, Pos2::new(body.right() - READY_PREVIEW_W - sp::XXL, body.bottom()));
     let mut y = body.center().y - 120.0;
-    p.text(Pos2::new(left.left(), y), Align2::LEFT_TOP, "Ready", bold(22.0), TEXT());
+    p.text(Pos2::new(left.left(), y), Align2::LEFT_TOP, ts!("setup.ready"), bold(22.0), TEXT());
     celebrate(app, &p, Pos2::new(left.left() + 28.0, y - 14.0), t);
     y += 46.0;
     let rows_top = y;
@@ -2624,12 +2639,12 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     // one card under every row (S4), drawn first
     let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
         let ic = app.tools[i].badge().icon;
-        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l.starts_with("Record") { Icon::ScreenRec } else { ic }, l, k))
+        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l == ts!("cap.sc.record") { Icon::ScreenRec } else { ic }, l, k))
     }).collect();
     let n_rows = 1 + keys.len() + needs_restart(app) as usize;
     p.rect_filled(Rect::from_min_size(row.min, Vec2::new(row.width(), n_rows as f32 * sp::ROW_H)), R_CARD, CARD());
     icon(&p, Icon::Power, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT());
-    p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Open at login", bold(13.0), TEXT());
+    p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, ts!("setup.open_login"), bold(13.0), TEXT());
     let now = ui.ctx().input(|i| i.time);
     // on by default; registered when setup finishes
     let on = crate::kit::login::default_pending() || app.perm_watch.login_on(app.demo, now);
@@ -2652,10 +2667,10 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
         hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
         icon(&p, Icon::ScreenRec, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), AMBER());
-        p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, "Screen Recording needs a restart", font(13.0), TEXT());
-        let bw = button_width(&p, "Restart", BTN_PRIMARY);
+        p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, ts!("setup.needs_restart"), font(13.0), TEXT());
+        let bw = button_width(&p, ts!("setup.restart"), BTN_PRIMARY);
         let br = Rect::from_min_size(Pos2::new(row.right() - sp::M - bw, row.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
-        if pill_button(ui, br, "Restart", BTN_PRIMARY, true).clicked() {
+        if pill_button(ui, br, ts!("setup.restart"), BTN_PRIMARY, true).clicked() {
             restart = true;
         }
     }
@@ -2811,10 +2826,10 @@ pub fn help_card(ui: &mut Ui, full: Rect, now: f64, perm: Perm) -> bool {
     let arrow = vec![tip, tip + Vec2::new(0.0, 13.0), tip + Vec2::new(3.5, 9.5), tip + Vec2::new(8.5, 10.0)];
     p.add(egui::Shape::convex_polygon(arrow, Color32::WHITE, Stroke::new(1.0, Color32::BLACK)));
     let y = row.bottom() + 14.0;
-    p.text(Pos2::new(full.left() + 16.0, y), Align2::LEFT_TOP, format!("Switch on {name} in the list"), bold(13.0), TEXT());
+    p.text(Pos2::new(full.left() + 16.0, y), Align2::LEFT_TOP, t!("setup.switch_on_name", name = name), bold(13.0), TEXT());
     let more = match perm {
-        Perm::FullDisk => "Not there? Drag it in from the Finder window.",
-        _ => "macOS may ask for your password next.",
+        Perm::FullDisk => ts!("setup.not_there"),
+        _ => ts!("setup.may_ask"),
     };
     p.text(Pos2::new(full.left() + 16.0, y + 20.0), Align2::LEFT_TOP, more, font(12.0), TEXT_FAINT());
     let x = Rect::from_min_size(Pos2::new(full.right() - 26.0, full.bottom() - 26.0), Vec2::splat(18.0));
@@ -2949,10 +2964,17 @@ mod tests {
     }
 
     #[test]
+    fn every_goal_has_a_label() {
+        for g in &GOALS {
+            assert!(!goal_label(g.name).is_empty(), "{}", g.name);
+        }
+    }
+
+    #[test]
     fn every_tool_has_a_short_hover_hint() {
         let tools = crate::tools::all(&crate::core::tool::ToolEnv { ctx: egui::Context::default(), demo: true });
         for t in tools.iter().filter(|t| t.id() != crate::tools::capture::ID) {
-            let hint = tool_hint_text(t.name());
+            let hint = tool_hint_text(t.id());
             assert!(!hint.is_empty(), "{} has no hint", t.name());
             assert!(hint.split_whitespace().count() <= 5, "{}: more than 5 words (T5)", t.name());
             assert!(!hint.ends_with('.'), "{}: no period (T5)", t.name());
