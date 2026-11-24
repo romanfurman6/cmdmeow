@@ -5,7 +5,7 @@
 use super::control::{speed, Mode, Preset, Settings, Source, CURVE_HI, CURVE_LO, RESUME_C};
 use super::data::{heat, heat_cell, heat_text, rpm_text, Fan, Snapshot, HISTORY};
 use super::{Cmd, HelperState, Live};
-use super::ui::{blades, fan_name, heat_pos, heat_scale, is_block, sparkline, thermal_hint, BLADE, HOT_LINE, LINE};
+use super::ui::{blades, fan_name, heat_pos, heat_scale, is_block, sparkline, BLADE, HOT_LINE, LINE};
 use crate::core::tool::Cx;
 use crate::kit::glass::*;
 use egui::{Align2, Color32, Pos2, Rect, Stroke, Ui, Vec2};
@@ -22,16 +22,7 @@ fn card_title(p: &egui::Painter, inner: Rect, title: &str) {
 
 pub fn page(s: &Snapshot, l: &Live, ui: &mut Ui, r: Rect, _cx: &mut Cx) -> Vec<Cmd> {
     let p = ui.painter().clone();
-    let br = page_header(&p, r, ts!("fan.name"), if s.loaded { "" } else { ts!("fan.reading_sensors") }, TEXT_DIM());
-    if s.loaded && s.thermal > 0 {
-        let (_, col) = thermal_hint(s.thermal);
-        let label = t!("fan.thermal_pressure", level = s.thermal_word().to_lowercase()).into_owned();
-        let w = p.layout_no_wrap(label.clone(), font(12.0), col).size().x + 30.0;
-        let cr = Rect::from_min_size(Pos2::new(br.right() - w, br.center().y - 13.0), Vec2::new(w, 26.0));
-        p.rect_filled(cr, 13.0, with_alpha(col, 0.13));
-        p.circle_filled(Pos2::new(cr.left() + 13.0, cr.center().y), 3.5, col);
-        p.text(Pos2::new(cr.left() + 22.0, cr.center().y), Align2::LEFT_CENTER, label, font(12.0), col);
-    }
+    page_header(&p, r, ts!("fan.name"), if s.loaded { "" } else { ts!("fan.reading_sensors") }, TEXT_DIM());
 
     let x0 = r.left() + 24.0;
     let x1 = r.right() - 24.0;

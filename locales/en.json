@@ -29,7 +29,6 @@
     "no_sensors": "No temperature sensors found",
     "no_sensors_dot": "No temperature sensors found.",
     "reading_sensors": "Reading sensors…",
-    "thermal_pressure": "Thermal pressure: %{level}",
     "no_fans_title": "This Mac has no fans",
     "unavailable_title": "Fan speed isn't available",
     "cools_passively": "Cools passively",

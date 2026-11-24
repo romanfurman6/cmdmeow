@@ -305,16 +305,14 @@ pub fn page(c: &mut Clipboard, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         // the normal state needs no word; only Paused is said
         _ => (format!("{n} item{} · {pinned} pinned · {}", if n == 1 { "" } else { "s" }, human_bytes(c.store.bytes_on_disk())), TEXT_DIM()),
     };
-    let btns = page_header(&p, r, "Clipboard", &sub, sub_col);
-    let mut right = btns.right();
+    // SP16: Pause at the right edge, one width for both labels
     let label = if c.paused() { "Resume" } else { "Pause 15 min" };
-    let w = button_width(&p, label, BTN_SECONDARY);
-    let br = Rect::from_min_max(Pos2::new(right - w, btns.top() - 1.0), Pos2::new(right, btns.bottom() + 1.0));
+    let bw = button_width(&p, "Pause 15 min", BTN_SECONDARY).max(button_width(&p, "Resume", BTN_SECONDARY));
+    let btns = page_header_room(&p, r, "Clipboard", &sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 180.0 - sp::M).0;
+    let (tr, br) = header_controls(btns, 180.0, bw);
     if pill_button(ui, br, label, BTN_SECONDARY, true).clicked() {
         c.toggle_pause(15);
     }
-    right = br.left() - 12.0;
-    let tr = Rect::from_min_max(Pos2::new(right - 180.0, btns.top()), Pos2::new(right, btns.bottom()));
     let cur = (c.tab == Tab::Settings) as usize;
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("clip-tab"), &["History", "Settings"], cur) {
         c.tab = if i == 1 { Tab::Settings } else { Tab::History };

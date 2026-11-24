@@ -142,15 +142,14 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let ai_data = loaded && ai_n > 0;
     let cw = aicheck::ui::chip_width(&s.ai, ui, ai_data);
     // the status ends where search starts (tabs, then a 190 pt field)
-    let n_tabs = if flagged > 0 { 4.0 } else { 3.0 };
+    // Flagged keeps its slot at 0 (SP16), so the search never moves
+    let n_tabs = 4.0;
     let sub_right = r.right() - sp::PAGE_EDGE - 100.0 * n_tabs - 12.0 - 190.0 - 12.0;
     let (btns, chip_at) = page_header_room(&p, r, "Startup", &sub, TEXT_DIM(), cw, sub_right);
 
     // filter + search on the right of the header
     let mut tabs = vec![(Filter::All, format!("All {total}")), (Filter::Suggested, format!("Suggested {}", suggested.len()))];
-    if flagged > 0 {
-        tabs.push((Filter::Flagged, format!("Flagged {flagged}")));
-    }
+    tabs.push((Filter::Flagged, format!("Flagged {flagged}")));
     tabs.push((Filter::Off, format!("Off {off}")));
     let labels: Vec<&str> = tabs.iter().map(|(_, x)| x.as_str()).collect();
     let tr = Rect::from_min_max(Pos2::new(btns.right() - 100.0 * tabs.len() as f32, btns.top()), btns.max);
@@ -607,9 +606,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     } else if j.orphan {
                         tags.push(("app removed", ORPHAN_TEXT()));
                     }
-                    if !trusted_now && changed_labels.contains(&j.label) {
-                        tags.push(("changed", AMBER()));
-                    } else if !trusted_now && new_labels.contains(&j.label) {
+                    if !trusted_now && new_labels.contains(&j.label) {
                         tags.push(("new", ACCENT()));
                     }
                     if j.admin() {

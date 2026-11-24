@@ -591,6 +591,20 @@ impl App {
                 }
                 Action::Toast(msg) => self.toast = Some((msg, Instant::now())),
                 Action::Quit => self.quit(ctx),
+                Action::Restart => {
+                    // the system's own "Restart now?" dialog
+                    std::thread::spawn(|| {
+                        let _ = crate::kit::macos::osascript("tell application \"loginwindow\" to «event aevtrrst»");
+                    });
+                }
+                Action::EmptyTrash => {
+                    if crate::kit::native::confirm("Empty the Trash?", "Items in the Trash are deleted for good.", "Empty Trash") {
+                        std::thread::spawn(|| {
+                            let _ = crate::kit::macos::osascript("tell application \"Finder\" to empty trash");
+                        });
+                        self.toast = Some(("Emptying the Trash…".into(), Instant::now()));
+                    }
+                }
             }
         }
     }

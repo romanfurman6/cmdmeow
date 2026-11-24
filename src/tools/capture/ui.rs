@@ -216,22 +216,19 @@ pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
         Tab::Settings => "".into(),
     };
-    let btns = page_header(&p, r, "Screenshot", &sub, TEXT_DIM());
-    let mut right = btns.right();
-    // before the first capture the big button in the middle is the only one
-    if c.tab != Tab::Settings && !first {
-        let label = "Capture area";
-        let w = button_width(&p, label, BTN_PRIMARY) + 18.0;
-        let br = Rect::from_min_max(Pos2::new(right - w, btns.top() - 1.0), Pos2::new(right, btns.bottom() + 1.0));
-        if pill_button(ui, br, "", BTN_PRIMARY, !c.busy).clicked() {
-            c.queue.push((Command::Area, 0));
-        }
-        icons::draw(&p, Ico::Area, Rect::from_center_size(Pos2::new(br.left() + 18.0, br.center().y), Vec2::splat(15.0)), ON_ACTION);
-        p.text(Pos2::new(br.left() + 31.0, br.center().y), Align2::LEFT_CENTER, label, bold(13.0), ON_ACTION);
-        right = br.left() - 12.0;
+    // SP16: Capture area at the right edge on every tab, the tabs next to it
+    let label = "Capture area";
+    let bw = icon_pill_width(&p, label, BTN_PRIMARY);
+    let btns = page_header_room(&p, r, "Screenshot", &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 246.0 - sp::M).0;
+    let (tr, br) = header_controls(btns, 246.0, bw);
+    let (resp, face) = pill_button_at(ui, br, "", BTN_PRIMARY, !c.busy);
+    if resp.clicked() {
+        c.queue.push((Command::Area, 0));
     }
+    let ink = if c.busy { with_alpha(ON_ACTION, crate::kit::key::disabled_alpha()) } else { ON_ACTION };
+    icons::draw(&p, Ico::Area, Rect::from_center_size(Pos2::new(face.left() + 18.0, face.center().y), Vec2::splat(15.0)), ink);
+    p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, bold(13.0), ink);
     let tabs = [Tab::History, Tab::Folder, Tab::Settings];
-    let tr = Rect::from_min_max(Pos2::new(right - 246.0, btns.top()), Pos2::new(right, btns.bottom()));
     let cur = tabs.iter().position(|t| *t == c.tab).unwrap_or(0);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("capture-tab"), &["History", "Folder", "Settings"], cur) {
         c.tab = tabs[i];
@@ -1411,26 +1408,23 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         VTab::Recordings => format!("{n} recording{} · saving to {}", if n == 1 { "" } else { "s" }, c.shown_folder()),
         VTab::Settings => String::new(),
     };
-    let btns = page_header(&p, r, "Video", &sub, TEXT_DIM());
-    let mut right = btns.right();
-    if c.vtab == VTab::Recordings && !first {
-        let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
-        let label = match &live {
-            Some(t) => format!("Stop · {t}"),
-            None => "Record screen".to_string(),
-        };
-        let w = button_width(&p, &label, BTN_PRIMARY) + 18.0;
-        let br = Rect::from_min_max(Pos2::new(right - w, btns.top() - 1.0), Pos2::new(right, btns.bottom() + 1.0));
-        if pill_button(ui, br, "", BTN_PRIMARY, true).clicked() {
-            c.queue.push((Command::Record, 0));
-        }
-        let dot = Pos2::new(br.left() + 18.0, br.center().y);
-        p.circle_filled(dot, 6.0, if live.is_some() { ON_ACTION } else { RED() });
-        p.text(Pos2::new(br.left() + 31.0, br.center().y), Align2::LEFT_CENTER, label, bold(13.0), ON_ACTION);
-        right = br.left() - 12.0;
+    // SP16: Record screen at the right edge on every tab, one width for
+    // "Record screen" and "Stop · 12:34", so the tabs never move
+    let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
+    let label = match &live {
+        Some(t) => format!("Stop · {t}"),
+        None => "Record screen".to_string(),
+    };
+    let bw = ["Record screen", "Stop · 00:00", label.as_str()].iter().map(|l| icon_pill_width(&p, l, BTN_PRIMARY)).fold(0.0, f32::max);
+    let btns = page_header_room(&p, r, "Video", &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 200.0 - sp::M).0;
+    let (tr, br) = header_controls(btns, 200.0, bw);
+    let (resp, face) = pill_button_at(ui, br, "", BTN_PRIMARY, true);
+    if resp.clicked() {
+        c.queue.push((Command::Record, 0));
     }
+    p.circle_filled(Pos2::new(face.left() + 18.0, face.center().y), 6.0, if live.is_some() { ON_ACTION } else { RED() });
+    p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, bold(13.0), ON_ACTION);
     let tabs = [VTab::Recordings, VTab::Settings];
-    let tr = Rect::from_min_max(Pos2::new(right - 200.0, btns.top()), Pos2::new(right, btns.bottom()));
     let cur = tabs.iter().position(|t| *t == c.vtab).unwrap_or(0);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("video-tab"), &["Recordings", "Settings"], cur) {
         c.vtab = tabs[i];

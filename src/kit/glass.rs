@@ -1672,6 +1672,36 @@ pub fn page_header_room(p: &Painter, r: Rect, title: &str, sub: &str, sub_col: C
     (Rect::from_min_max(Pos2::new(r.right() - sp::PAGE_EDGE, cy - h), Pos2::new(r.right() - sp::PAGE_EDGE, cy + h)), at)
 }
 
+/// SP16: a page header's controls from the right edge: the page action
+/// (`action_w` wide, 0 = none), 12, then the tabs (`tabs_w`). `btns` is
+/// the rect [`page_header`] returns. Returns (tabs, action); the action
+/// keeps its slot on every tab so the tabs never move.
+pub fn header_controls(btns: Rect, tabs_w: f32, action_w: f32) -> (Rect, Rect) {
+    let cy = btns.center().y;
+    let h = sp::HEADER_CONTROL_H / 2.0;
+    let edge = btns.right();
+    let action = Rect::from_min_max(Pos2::new(edge - action_w, cy - h), Pos2::new(edge, cy + h));
+    let right = if action_w > 0.0 { action.left() - sp::M } else { edge };
+    (Rect::from_min_max(Pos2::new(right - tabs_w, cy - h), Pos2::new(right, cy + h)), action)
+}
+
+/// A header button with a glyph before its label (SP16, B1): 15 pt glyph
+/// centred 18 from the left, label from 31. `kind` as [`pill_button`].
+pub fn icon_pill(ui: &mut Ui, rect: Rect, ic: Icon, label: &str, kind: u8, enabled: bool) -> Response {
+    let (resp, face) = pill_button_at(ui, rect, "", kind, enabled);
+    let p = ui.painter();
+    let (f, col) = if kind == BTN_SECONDARY { (font(13.0), TEXT()) } else { (bold(13.0), ON_ACTION) };
+    let col = if enabled { col } else { with_alpha(col, key::disabled_alpha()) };
+    icon(p, ic, Rect::from_center_size(Pos2::new(face.left() + 18.0, face.center().y), Vec2::splat(15.0)), col);
+    p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, f, col);
+    resp
+}
+
+/// Width of an [`icon_pill`] for `label`.
+pub fn icon_pill_width(p: &Painter, label: &str, kind: u8) -> f32 {
+    button_width(p, label, kind) + 18.0
+}
+
 /// A window page's footer strip (darker, with a top hairline). Returns its rect.
 pub fn page_footer(p: &Painter, r: Rect, window_radius: f32) -> Rect {
     let f = Rect::from_min_max(Pos2::new(r.left(), r.bottom() - PAGE_FOOTER_H), r.max);

@@ -44,16 +44,21 @@ fn picker(demo: bool, ui: &mut Ui, area: Rect) -> f32 {
 /// edge of the controls.
 fn header(ui: &mut Ui, r: Rect, sub: &str, sub_col: egui::Color32, loading: bool, demo: bool, cx: &mut Cx) -> f32 {
     let p = ui.painter().clone();
-    let btns = page_header(&p, r, "AI Usage", sub, sub_col);
-    let rb = Rect::from_center_size(Pos2::new(btns.right() - 13.0, btns.center().y), Vec2::splat(26.0));
-    if loading || backend::refreshing() {
-        spinner(&p, rb.center(), 6.0, ui.ctx().input(|i| i.time), TEXT_DIM());
+    // SP16: Refresh at the right edge, the provider switch next to it
+    let rw = icon_pill_width(&p, "Refresh", BTN_SECONDARY);
+    let set = settings::get();
+    let tw = 72.0 * (1 + (0..ai::ALL).filter(|i| set.is_on(ai::PROVIDERS[*i].id)).count()) as f32;
+    let btns = page_header_room(&p, r, "AI Usage", sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - rw - sp::M - tw - sp::M).0;
+    let (tr, rb) = header_controls(btns, tw, rw);
+    let busy = loading || backend::refreshing();
+    if busy {
         crate::kit::glass::poll(ui.ctx());
-    } else if round_button(ui, rb, Icon::Refresh, "Refresh").clicked() {
+    }
+    if icon_pill(ui, rb, Icon::Refresh, "Refresh", BTN_SECONDARY, !busy).clicked() {
         backend::request_refresh();
         cx.toast("Checking your AI tools…");
     }
-    picker(demo, ui, Rect::from_min_max(btns.min, Pos2::new(rb.left() - sp::M, btns.bottom())))
+    picker(demo, ui, tr)
 }
 
 /// The page when the assistant is missing or signed out.
@@ -575,7 +580,7 @@ fn provider_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, show_usd: bool) {
     let (f, fc) = parts::fresh(info);
     let fr = p.text(i.right_top(), Align2::RIGHT_TOP, &f, ty::label(), fc);
     // the time keeps its width; the plan name gives way (and a chip's room)
-    let chips_w = if info.incident.is_some() { 80.0 } else { 0.0 };
+    let chips_w = if info.incident.is_some() { 150.0 } else { 0.0 };
     let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &info.plan_title(), ty::title(), TEXT(), (fr.left() - sp::M - i.left() - chips_w).max(i.width() * 0.3));
     let x = tr.right() + sp::S;
     incident(ui, Pos2::new(x, tr.center().y), Align2::LEFT_CENTER, info);
