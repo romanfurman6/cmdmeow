@@ -283,7 +283,6 @@ impl Settings {
         Command::ALL.iter().filter_map(|&c| self.shortcut(c).map(|s| (c, s.clone()))).collect()
     }
 
-    /// File name for a capture taken at `t`: "Capture 2026-11-08 at 17.41.12.png".
     /// The folder recordings are saved to.
     pub fn rec_folder(&self) -> &Path {
         self.rec.folder.as_deref().unwrap_or(&self.folder)
@@ -294,6 +293,7 @@ impl Settings {
         (self.keep, self.rec.keep)
     }
 
+    /// File name for a capture taken at `t`: "Capture 2026-11-08 at 17.41.12.png".
     pub fn file_name(&self, t: chrono::DateTime<chrono::Local>) -> String {
         format!("Capture {}.{}", t.format("%Y-%m-%d at %H.%M.%S"), self.format.ext())
     }
