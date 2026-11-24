@@ -1124,7 +1124,8 @@
       "one_stayed": "%{app} stayed · %{size} of its files moved",
       "none_removed": "No app removed · %{size} of their files moved",
       "all": "%{who} moved to the Trash · %{size}",
-      "some": "%{g} of %{n} apps moved to the Trash · %{size}"
+      "some_one": "%{g} of %{n} app moved to the Trash · %{size}",
+      "some_other": "%{g} of %{n} apps moved to the Trash · %{size}"
     },
     "stopping": "Stopping %{name}…",
     "asking_quit": "Asking %{name} to quit…",
@@ -1231,7 +1232,8 @@
       "moved": "Moved %{size} to the Trash",
       "from": "From %{who}",
       "removed": "Removed %{who}",
-      "some": "Removed %{g} of %{n} apps"
+      "some_one": "Removed %{g} of %{n} app",
+      "some_other": "Removed %{g} of %{n} apps"
     },
     "dismiss": "Dismiss",
     "undo": "Undo",

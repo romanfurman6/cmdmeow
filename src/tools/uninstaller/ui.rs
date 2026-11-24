@@ -814,7 +814,7 @@ pub fn loader_result(rep: &super::remove::Report) -> crate::kit::loader::Status 
     } else if gone == rep.apps.len() {
         (t!("un.done.removed", who = who).into_owned(), t!("un.done.moved_size", size = size).into_owned())
     } else {
-        (t!("un.done.some", g = gone, n = rep.apps.len()).into_owned(), t!("un.done.moved_size", size = size).into_owned())
+        (tn!("un.done.some", n = rep.apps.len(), g = gone).into_owned(), t!("un.done.moved_size", size = size).into_owned())
     };
     crate::kit::loader::Status::Finished { title, sub, problem: detail, put_back: !rep.moved.is_empty() }
 }
