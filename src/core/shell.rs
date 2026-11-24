@@ -120,6 +120,12 @@ pub struct App {
     /// previous app and the new window opened behind it.
     panel_hide_after_open: Option<Instant>,
     pending_shape: bool,
+    /// The theme the panel was last painted in. A hidden window keeps its
+    /// last frame, so after a theme switch it is painted once while still
+    /// hidden; otherwise opening it showed the old theme for a frame.
+    panel_theme: Option<glass::Theme>,
+    /// A hidden paint of the panel was asked for: the next pass paints.
+    panel_paint_asked: bool,
     screenshot: Option<PathBuf>,
     frame: u64,
     /// last (ppp, native ppp) logged under CMDMEOW_SCALE_LOG
@@ -238,6 +244,8 @@ impl App {
             dock_off_at: None,
             panel_hide_after_open: None,
             pending_shape: true,
+            panel_theme: None,
+            panel_paint_asked: false,
             screenshot: opts.screenshot,
             frame: 0,
             debug_scale: None,
@@ -982,13 +990,28 @@ impl eframe::App for App {
         }
         let opaque = self.screenshot.is_some();
         let t = ctx.input(|i| i.time);
+        // after a theme switch the hidden panel is painted once in the new
+        // theme (TH4): ask for a hidden paint, then build it on that pass
+        let paint_hidden = self.mode == Mode::Panel && !self.visible && self.screenshot.is_none() && self.panel_theme.is_some_and(|t| t != glass::theme());
+        let mut build_hidden = false;
+        if paint_hidden {
+            if self.panel_paint_asked {
+                self.panel_paint_asked = false;
+                build_hidden = true;
+            } else {
+                self.panel_paint_asked = true;
+                ctx.send_viewport_cmd(ViewportCommand::RequestPaintWhileHidden);
+                ctx.request_repaint();
+            }
+        }
         let mut cx = self.cx();
         match self.mode {
             // the root window is the panel; while it's hidden, its pass still
             // runs for the app window and tools' own windows (drawn inside
             // it), but nobody sees the panel: don't build it
-            Mode::Panel if !self.visible && self.screenshot.is_none() => {}
+            Mode::Panel if !self.visible && self.screenshot.is_none() && !build_hidden => {}
             Mode::Panel => {
+                self.panel_theme = Some(glass::theme());
                 glass::backdrop_panel(ui.painter(), full, m::CARD_RADIUS + 2.0, opaque);
                 let panel = Rect::from_min_size(Pos2::new(full.right() - m::PANEL_WIDTH, full.top()), Vec2::new(m::PANEL_WIDTH, full.height()));
                 let before = self.widgets.clone();
