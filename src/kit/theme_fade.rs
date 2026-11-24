@@ -20,8 +20,10 @@ use std::sync::Mutex;
 /// How long the wave takes to clear the window.
 pub const DURATION: f64 = 0.8;
 /// How soft the wave's edge is, as a share of its full reach.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const FEATHER: f64 = 0.2;
 /// The old theme's blur at its strongest, in points.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const BLUR: f64 = 10.0;
 
 struct Pending {
@@ -127,7 +129,9 @@ mod native {
 
     thread_local! {
         /// The cover up now, and when it is done.
-        static UP: RefCell<Option<(Retained<AnyObject>, f64)>> = const { RefCell::new(None) };
+        static UP: RefCell<Option<(Retained<AnyObject>, f64, Retained<AnyObject>)>> = const { RefCell::new(None) };
+        /// The mask's clear and solid colours, made once.
+        static WHITES: RefCell<Option<(Retained<AnyObject>, Retained<AnyObject>)>> = const { RefCell::new(None) };
     }
 
     /// Off for screenshots (they draw with egui alone) and with Reduce motion on.
@@ -144,12 +148,14 @@ mod native {
 
     fn remove() {
         UP.with(|u| {
-            if let Some((l, _)) = u.borrow_mut().take() {
+            if let Some((l, _, view)) = u.borrow_mut().take() {
                 unsafe {
                     let _: () = msg_send![class!(CATransaction), begin];
                     let _: () = msg_send![class!(CATransaction), setDisableActions: true];
                     let _: () = msg_send![&*l, removeFromSuperlayer];
                     let _: () = msg_send![class!(CATransaction), commit];
+                    // Core Image filters were only on for the blur
+                    let _: () = msg_send![&*view, setLayerUsesCoreImageFilters: false];
                 }
             }
         });
@@ -157,7 +163,7 @@ mod native {
 
     /// Take the cover away once its wave is over.
     pub fn tidy(now: f64) {
-        let done = UP.with(|u| u.borrow().as_ref().is_some_and(|(_, end)| now >= *end));
+        let done = UP.with(|u| u.borrow().as_ref().is_some_and(|(_, end, _)| now >= *end));
         if done {
             remove();
         }
@@ -252,8 +258,7 @@ mod native {
             let mask: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
             let _: () = msg_send![&*mask, setContentsScale: scale];
             let _: () = msg_send![&*mask, setType: &*key("radial")];
-            let clear: *const c_void = cg_white(0.0);
-            let solid: *const c_void = cg_white(1.0);
+            let (clear, solid) = whites();
             let colors = NSArray::from_retained_slice(&[Retained::retain(clear as *mut AnyObject).unwrap(), Retained::retain(solid as *mut AnyObject).unwrap()]);
             let _: () = msg_send![&*mask, setColors: &*colors];
             let _: () = msg_send![&*mask, setStartPoint: NSPoint::new(0.5, 0.5)];
@@ -293,7 +298,10 @@ mod native {
             }
             let _: () = msg_send![class!(CATransaction), commit];
             let _: () = msg_send![class!(CATransaction), flush];
-            UP.with(|u| *u.borrow_mut() = Some((holder, now + DURATION)));
+            let view = Retained::retain(view as *const AnyObject as *mut AnyObject);
+            if let Some(view) = view {
+                UP.with(|u| *u.borrow_mut() = Some((holder, now + DURATION, view)));
+            }
         }
     }
 
@@ -312,16 +320,22 @@ mod native {
         const ENCODING: objc2::Encoding = objc2::Encoding::Struct("CGAffineTransform", &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING]);
     }
 
-    /// A white CGColor at `alpha` (the mask only reads alpha); owned by
-    /// the NSColor, which lives as long as the app.
-    fn cg_white(alpha: f64) -> *const c_void {
-        unsafe {
-            let ns: Retained<AnyObject> = msg_send![class!(NSColor), colorWithWhite: 1.0f64, alpha: alpha];
-            let cg: *const c_void = msg_send![&*ns, CGColor];
-            // keep the NSColor (and its CGColor) alive
-            std::mem::forget(ns);
-            cg
-        }
+    /// The mask's colours as CGColors: white, clear and solid (the mask
+    /// only reads alpha). The NSColors that own them are kept for good.
+    fn whites() -> (*const c_void, *const c_void) {
+        WHITES.with(|w| {
+            let mut w = w.borrow_mut();
+            let (clear, solid) = w.get_or_insert_with(|| unsafe {
+                let c: Retained<AnyObject> = msg_send![class!(NSColor), colorWithWhite: 1.0f64, alpha: 0.0f64];
+                let s: Retained<AnyObject> = msg_send![class!(NSColor), colorWithWhite: 1.0f64, alpha: 1.0f64];
+                (c, s)
+            });
+            unsafe {
+                let a: *const c_void = msg_send![&**clear, CGColor];
+                let b: *const c_void = msg_send![&**solid, CGColor];
+                (a, b)
+            }
+        })
     }
 
     fn bytemuck_bytes(px: &[egui::Color32]) -> &[u8] {

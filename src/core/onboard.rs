@@ -108,7 +108,17 @@ fn step_file() -> std::path::PathBuf {
 /// The step setup was on when the app last quit: some permissions make macOS
 /// restart the app, and setup picks up where it was.
 pub fn saved_step() -> usize {
-    std::fs::read_to_string(step_file()).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0).min(MAX_STEPS - 1)
+    std::fs::read_to_string(step_file()).ok().and_then(|s| parse_step(&s)).unwrap_or(0).min(MAX_STEPS - 1)
+}
+
+/// A saved step: "v2:<n>" now; a bare number was saved before the Theme
+/// step (index 1) came in, so every step after Welcome moved one on.
+fn parse_step(s: &str) -> Option<usize> {
+    let s = s.trim();
+    match s.strip_prefix("v2:") {
+        Some(n) => n.parse().ok(),
+        None => s.parse::<usize>().ok().map(|n| if n == 0 { 0 } else { n + 1 }),
+    }
 }
 
 /// Setup was finished (closing the window no longer counts).
@@ -440,6 +450,9 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let steps = kinds.len();
     let step = step.min(steps - 1);
     let kind = kinds[step];
+    // a theme switch from the Theme step finishes on any step: Continue
+    // right after a click still applies it and takes its cover away
+    crate::kit::theme_fade::poll(&ctx);
     // `|` not `||`: both flags are read once and must both be cleared
     let answered = Perm::take_answered();
     if (app.perm_watch.take_refocus() | answered) && !app.demo {
@@ -488,10 +501,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let mut restart_now = false;
     match kind {
         Kind::Welcome => next = welcome(app, ui, body, t),
-        Kind::Theme => {
-            crate::kit::theme_fade::poll(&ctx);
-            theme_step(app, ui, body, t)
-        }
+        Kind::Theme => theme_step(app, ui, body, t),
         Kind::Tools => tools(app, ui, body, t),
         Kind::Agents => agents(app, ui, body, t),
         Kind::SignIns => sign_ins(app, ui, body, t),
@@ -582,7 +592,7 @@ fn go(app: &mut App, step: usize) {
             if let Some(d) = f.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
-            let _ = std::fs::write(f, s.step.to_string());
+            let _ = std::fs::write(f, format!("v2:{}", s.step));
         }
     }
 }
@@ -899,7 +909,7 @@ fn theme_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let title_h = 30.0 + 20.0;
     let ch = (cw * 1.5).min(body.height() - title_h - sp::L);
     let head = body.center().y - (title_h + ch) / 2.0;
-    let g = p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "Pick a theme", bold(22.0), TEXT());
+    p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, "Pick a theme", bold(22.0), TEXT());
     let top = head + title_h;
     // a switch waiting for its picture already shows the new card picked
     let cur = crate::kit::theme_fade::pending_choice().unwrap_or_else(shown_theme);
@@ -2812,6 +2822,14 @@ fn help_wait(cycle: f32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_step_saved_before_the_theme_step_moves_one_on() {
+        assert_eq!(parse_step("v2:3"), Some(3));
+        assert_eq!(parse_step("0"), Some(0));
+        assert_eq!(parse_step("2\n"), Some(3));
+        assert_eq!(parse_step("x"), None);
+    }
 
     #[test]
     fn welcome_cat_rises_smoothly_and_comes_to_rest() {

@@ -152,6 +152,7 @@ pub fn set_allowed(on: bool) {
 
 /// Native layers may be used now (off for screenshots, demo views and
 /// `CMDMEOW_NATIVE_SPIN=0`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn native_allowed() -> bool {
     native_wanted()
 }
