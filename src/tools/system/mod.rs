@@ -125,11 +125,11 @@ impl Tool for System {
             v.push(rec(15, ts!("health.rec.memory").into(), ts!("health.rec.memory_details"), card("memory")));
         }
         if s.uptime_warning() {
-            // no button: a restart is the fix, and the app doesn't do it
-            v.push(rec(10, tn!("health.rec.up_days", n = s.uptime_days()).into_owned(), "", card("cpu")));
+            // macOS asks before it restarts
+            v.push(rec(10, tn!("health.rec.restart", n = s.uptime_days()).into_owned(), ts!("health.rec.restart_action"), Action::Restart));
         }
         if s.trash_overfill() {
-            v.push(rec(m::PRIORITY_TRASH_OVERFILL, t!("health.rec.trash", size = human_bytes(s.trash_bytes.unwrap_or(0))).into_owned(), ts!("health.rec.open_cleanup"), page("cleanup")));
+            v.push(rec(m::PRIORITY_TRASH_OVERFILL, t!("health.rec.trash_full", size = human_bytes(s.trash_bytes.unwrap_or(0))).into_owned(), ts!("health.rec.empty_trash"), Action::EmptyTrash));
         }
         v
     }

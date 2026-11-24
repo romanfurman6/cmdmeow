@@ -55,20 +55,17 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
     };
     // AI Check: a chip after the title, on the overview
     let cw = if show_settings { 0.0 } else { aicheck::ui::chip_width(ai, ui, s.ready) };
-    // a tip without a fix ("Up 14 days") has no button
+    // a tip without a fix has no button
     let rec_btn = recs.first().filter(|rec| !rec.action.is_empty());
-    let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY) + sp::M).unwrap_or(0.0);
-    let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - rec_w - sp::M;
+    let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY)).unwrap_or(0.0);
+    // SP16: the fix at the right edge, the tabs next to it
+    let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - if rec_w > 0.0 { rec_w + sp::M } else { 0.0 };
     let (btns, chip_at) = page_header_room(&p, r, ts!("health.name"), &sub, sub_col, cw, sub_right);
-    let mut right = btns.right();
-    let tr = Rect::from_min_max(Pos2::new(right - 180.0, btns.top()), Pos2::new(right, btns.bottom()));
+    let (tr, br) = header_controls(btns, 180.0, rec_w);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("health-tab"), &[ts!("health.tab.overview"), ts!("health.tab.settings")], show_settings as usize) {
         ui.ctx().data_mut(|d| d.insert_temp(settings_id, i == 1));
     }
-    right = tr.left() - sp::M;
     if let Some(rec) = rec_btn {
-        let bw = button_width(&p, &rec.action, BTN_PRIMARY);
-        let br = Rect::from_min_max(Pos2::new(right - bw, btns.top()), Pos2::new(right, btns.bottom()));
         if pill_button(ui, br, &rec.action, BTN_PRIMARY, true).clicked() {
             cx.push(rec.go.clone());
         }

@@ -29,7 +29,6 @@
     "no_sensors": "No temperature sensors found",
     "no_sensors_dot": "No temperature sensors found.",
     "reading_sensors": "Reading sensors…",
-    "thermal_pressure": "Thermal pressure: %{level}",
     "no_fans_title": "This Mac has no fans",
     "unavailable_title": "Fan speed isn't available",
     "cools_passively": "Cools passively",
@@ -250,7 +249,6 @@
     "tag": {
       "new": "new",
       "suggested": "suggested",
-      "changed": "changed",
       "admin": "admin"
     },
     "state": {
@@ -578,10 +576,11 @@
       "open_disk_map": "Open Disk Map",
       "memory": "Memory pressure high",
       "memory_details": "Memory details",
-      "up_days_one": "Up %{n} day",
-      "up_days_other": "Up %{n} days",
-      "trash": "Trash holds %{size}",
-      "open_cleanup": "Open Cleanup"
+      "restart_one": "Restart recommended · up %{n} day",
+      "restart_other": "Restart recommended · up %{n} days",
+      "restart_action": "Restart…",
+      "trash_full": "Trash is full · %{size}",
+      "empty_trash": "Empty Trash"
     }
   }
 }
