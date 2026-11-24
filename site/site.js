@@ -15,6 +15,17 @@
   const tick = () => { if (clock) clock.textContent = new Date().toLocaleString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', ''); };
   tick(); setInterval(tick, 15000);
 
+
+  // App pictures follow the visitor's theme, like the app does
+  const lightQ = matchMedia('(prefers-color-scheme: light)');
+  const theme = () => { if (!document.documentElement.dataset.pin) document.documentElement.dataset.app = lightQ.matches ? 'light' : 'dark'; };
+  theme(); lightQ.addEventListener('change', theme);
+
+  // Panel header: the round "…" slides out Open, Hide and Quit, and tucks them back
+  document.querySelectorAll('.swh .more').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation(); const hb = b.parentElement; hb.classList.toggle('open'); b.title = hb.classList.contains('open') ? 'Less' : 'More';
+  }));
+
   // Phones can't install a Mac app: send the link to the Mac instead
   if (matchMedia('(hover: none) and (pointer: coarse)').matches) document.querySelectorAll('.get').forEach(get => {
     const url = 'https://cmdmeow.com/';

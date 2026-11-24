@@ -144,3 +144,78 @@
 .hero-pn .sw[data-to] { cursor: pointer; }
 .hero-pn .sw:focus { outline: none; }
 .hero-pn .sw:focus-visible { outline: 2px solid #C8F05A; outline-offset: 2px; }
+
+/* ---- 2026-11-24: the panel as the app draws it now (#272 #274 #279 #287 #289) ----
+   S1 beam: the glow from the top centre, rx = w·0.85, ry = h·1.9, so it runs
+   down the middle to the bottom and the sides stay darker. W1 cards take the
+   header buttons' quiet-key surface. Light theme (L1–L7, S2w light): sage
+   backdrop, white cards, darker tints. */
+.swp, .mpn.swp {
+  --b0: #22401D; --b1: #132610; --b2: #0A150A; --b3: #070D07;
+  --card: rgba(255,255,255,.06); --card-h: rgba(255,255,255,.096);
+  --edge: rgba(255,255,255,.08); --hi: rgba(255,255,255,.09); --base: rgba(0,0,0,.35); --cshadow: 0 0 transparent;
+  --trk: rgba(255,255,255,.1); --line: rgba(255,255,255,.1); --key: rgba(255,255,255,.08);
+  --lime: #C8F05A; --cy: #6FD6E8; --am: #F7B267; --lv: #B9A8FF; --gr: #94D45A; --acc: #D9F78A; --cup: rgba(255,255,255,.92);
+  background: radial-gradient(85% 190% at 50% 0%, var(--b0) 0%, var(--b1) 35%, var(--b2) 70%, var(--b3) 100%);
+  box-shadow: inset 0 0 0 1px var(--line), 0 24px 60px rgba(0,0,0,.55);
+}
+.sw, .mpn.swp .wg { background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--edge), inset 0 1px 0 var(--hi), 0 1px 0 var(--base), var(--cshadow); }
+.sw:hover { background-color: var(--card-h); }
+.mpn.swp .wg.on { background-color: var(--card); }
+.rg .tk, .awr .tk { stroke: var(--trk); }
+.sw.row .right::before { background: var(--line); }
+.bl .bb { background: var(--trk); }
+.bl .bn { color: var(--dim); }
+.clp .th { background: var(--key); }
+.clp .pz { background: var(--key); }
+.clp .lk { color: var(--acc); }
+
+/* header: title, then one round "…" (28, quiet key) 14 from the edge; a click
+   slides out Open, Hide and Quit to its left as the dots turn into "›" */
+.swh { padding: 0 2px 0 4px; }
+.swh .hb { display: flex; align-items: center; gap: 8px; }
+.swh .rb { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; color: var(--soft); cursor: pointer;
+  background: var(--key); box-shadow: inset 0 1px 0 var(--hi), 0 1px 0 var(--base); font: inherit; transition: background-color .15s, color .15s, transform .24s, opacity .24s; }
+.swh .rb:hover { color: var(--tx); background: color-mix(in srgb, var(--tx) 15%, transparent); }
+.swh .rb:active { transform: translateY(1px); }
+.swh .rb svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.swh .more svg { fill: currentColor; stroke: none; transition: transform .24s; }
+.swh .rb.x { opacity: 0; transform: translateX(24px) scale(.6); pointer-events: none; }
+.swh .hb.open .rb.x { opacity: 1; transform: none; pointer-events: auto; }
+.swh .hb.open .rb.x:nth-child(1) { transition-delay: .06s; }
+.swh .hb.open .rb.x:nth-child(2) { transition-delay: .03s; }
+.swh .hb.open .more svg { transform: rotate(90deg); }
+
+/* Keep Awake 1:2 (W3): the scene ring 57 on the left, then name, state, mode */
+.awr { width: 50px; }
+.awr svg { margin: -4px; }
+.awr .lv { stroke: var(--lv); }
+.awr .st { stroke: var(--cup); opacity: .45; }
+.awr .cf { fill: var(--cup); }
+.awr .cs { stroke: var(--cup); }
+
+/* the app's tints in light (darker so text and arcs keep contrast) */
+.swp [stroke="#6FD6E8"] { stroke: var(--cy); } .swp [stroke="#C8F05A"] { stroke: var(--lime); }
+.swp [stroke="#F7B267"] { stroke: var(--am); } .swp [stroke="#E8E1FF"] { stroke: var(--lv); }
+.swp [style*="#C8F05A"] { color: var(--lime) !important; } .swp [style*="#F7B267"] { color: var(--am) !important; }
+.swp [style*="#6FD6E8"] { color: var(--cy) !important; }
+.swp .chip[style*="#F7B267"] { --g: var(--am) !important; }
+
+.swp.lt, html[data-app="light"] .swp {
+  --b0: #FFFFFF; --b1: #EAF2DF; --b2: #D9E8C8; --b3: #D9E8C8;
+  --tx: #14181A; --soft: rgba(20,24,26,.84); --dim: rgba(20,24,26,.68); --faint: rgba(20,24,26,.56); --cap: rgba(20,24,26,.56);
+  --card: rgba(255,255,255,.9); --card-h: rgba(255,255,255,.98);
+  --edge: rgba(20,24,26,.09); --hi: transparent; --base: transparent; --cshadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.05);
+  --trk: rgba(20,24,26,.12); --line: rgba(20,24,26,.12); --key: rgba(20,24,26,.06);
+  --lime: #5B8A14; --cy: #177A8E; --am: #A65A0E; --lv: #6A5AC8; --gr: #437A20; --acc: #2F5208; --cup: #14181A;
+  color: var(--tx);
+  box-shadow: inset 0 0 0 1px rgba(20,24,26,.12), 0 24px 60px rgba(0,0,0,.35);
+}
+html[data-app="light"] .swh .rb { background: rgba(255,255,255,.9); box-shadow: inset 0 0 0 1px rgba(20,24,26,.09), 0 1px 3px rgba(0,0,0,.07); }
+html[data-app="light"] .clp .th.img { box-shadow: inset 0 0 0 1px rgba(20,24,26,.12); }
+.mpn.swp .swh .more { pointer-events: none; }
+.mpn.swp .awr { width: auto; } .mpn.swp .awr svg { margin: 0; }
+.sw .vis.awr { width: 50px; height: 50px; }
+.swp [stroke="#94D45A"] { stroke: var(--gr); }
+.bl .bb i { background: var(--cy); }
