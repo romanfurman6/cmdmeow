@@ -13,7 +13,7 @@ export const Scene: React.FC<{mod: SceneModule; t: number; onDrawn?: (root: HTML
   const inst = useRef<ReturnType<SceneModule['create']> | null>(null);
   const [handle] = useState(() => delayRender('scene fonts + layout'));
   const [ready, setReady] = useState(false);
-  const css = mod.css.split('url(desk.jpg)').join(`url(${staticFile('desk.jpg')})`);
+  const css = mod.css.replace(/url\((desk[\w-]*\.jpg)\)/g, (_m, f) => `url(${staticFile(f)})`);
 
   useLayoutEffect(() => {
     const root = ref.current!;
