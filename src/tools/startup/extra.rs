@@ -24,18 +24,18 @@ pub fn cron_when(spec: &str) -> String {
     let f: Vec<&str> = spec.split_whitespace().collect();
     let num = |s: &str| s.parse::<u32>().is_ok();
     match f.as_slice() {
-        ["@reboot"] => "at startup".into(),
-        ["@hourly"] => "every hour".into(),
-        ["@daily"] | ["@midnight"] => "every day".into(),
-        ["@weekly"] => "every week".into(),
-        ["@monthly"] => "every month".into(),
-        ["@yearly"] | ["@annually"] => "every year".into(),
-        ["*", "*", "*", "*", "*"] => "every minute".into(),
+        ["@reboot"] => ts!("startup.when.at_startup").into(),
+        ["@hourly"] => ts!("startup.when.every_h_one").into(),
+        ["@daily"] | ["@midnight"] => ts!("startup.when.every_day_one").into(),
+        ["@weekly"] => ts!("startup.when.every_week").into(),
+        ["@monthly"] => ts!("startup.when.every_month").into(),
+        ["@yearly"] | ["@annually"] => ts!("startup.when.every_year").into(),
+        ["*", "*", "*", "*", "*"] => ts!("startup.when.every_min_one").into(),
         [m, "*", "*", "*", "*"] if m.starts_with("*/") && num(&m[2..]) => crate::tools::startup::items::every(m[2..].parse::<u64>().unwrap_or(1) * 60),
-        [m, "*", "*", "*", "*"] if num(m) => "every hour".into(),
-        [m, h, "*", "*", "*"] if num(m) && num(h) => "every day".into(),
-        [m, h, "*", "*", d] if num(m) && num(h) && num(d) => "every week".into(),
-        _ => "on a schedule".into(),
+        [m, "*", "*", "*", "*"] if num(m) => ts!("startup.when.every_h_one").into(),
+        [m, h, "*", "*", "*"] if num(m) && num(h) => ts!("startup.when.every_day_one").into(),
+        [m, h, "*", "*", d] if num(m) && num(h) && num(d) => ts!("startup.when.every_week").into(),
+        _ => ts!("startup.when.on_schedule").into(),
     }
 }
 
@@ -141,7 +141,7 @@ pub fn cron_jobs() -> Vec<CronJob> {
 pub fn set_cron(job: &CronJob, on: bool) -> Result<(), String> {
     use std::io::Write;
     let text = read_crontab();
-    let new = switch_line(&text, &job.line, on).ok_or("That cron job is gone")?;
+    let new = switch_line(&text, &job.line, on).ok_or(ts!("startup.cron_gone"))?;
     let mut child = std::process::Command::new("/usr/bin/crontab")
         .arg("-")
         .stdin(std::process::Stdio::piped())

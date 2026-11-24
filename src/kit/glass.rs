@@ -1444,6 +1444,27 @@ pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) ->
     k.resp
 }
 
+/// One permission in a tool's settings card (R17): state dot, name,
+/// "Allowed" / "Not allowed", and a 28 Primary button that asks when it's
+/// missing. `y` is the row's centre.
+pub fn perm_row(ui: &mut Ui, p: &Painter, card: Rect, y: f32, perm: crate::kit::perms::Perm) {
+    let ok = perm.status() == crate::kit::perms::Status::Allowed;
+    p.circle_filled(Pos2::new(card.left() + 18.0, y), 4.0, if ok { GREEN() } else { AMBER() });
+    p.text(Pos2::new(card.left() + 30.0, y), Align2::LEFT_CENTER, perm.name(), font(13.0), TEXT());
+    let mut right = card.right() - 12.0;
+    if !ok {
+        let label = perm.ask_label();
+        let bw = button_width(p, label, BTN_PRIMARY);
+        let br = Rect::from_min_max(Pos2::new(right - bw, y - 14.0), Pos2::new(right, y + 14.0));
+        if pill_button(ui, br, label, BTN_PRIMARY, true).clicked() {
+            perm.ask();
+        }
+        right = br.left() - 10.0;
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+    }
+    p.text(Pos2::new(right, y), Align2::RIGHT_CENTER, if ok { "Allowed" } else { "Not allowed" }, font(12.0), TEXT_DIM());
+}
+
 /// A dashed rounded outline: a drop zone, an empty slot or sample content
 /// (S7: an example card has no fill, this edge and an "Example" tag), never
 /// real data.

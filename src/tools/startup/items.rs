@@ -39,25 +39,25 @@ pub enum When {
 impl When {
     pub fn label(self, scope: Scope) -> String {
         match self {
-            When::KeepsRunning => "keeps running".into(),
+            When::KeepsRunning => ts!("startup.when.keeps_running").into(),
             When::Every(s) => every(s),
-            When::Scheduled => "on a schedule".into(),
-            When::AtLogin if scope == Scope::System => "at startup".into(),
-            When::AtLogin => "at login".into(),
-            When::OnDemand => "on demand".into(),
+            When::Scheduled => ts!("startup.when.on_schedule").into(),
+            When::AtLogin if scope == Scope::System => ts!("startup.when.at_startup").into(),
+            When::AtLogin => ts!("startup.when.at_login").into(),
+            When::OnDemand => ts!("startup.when.on_demand").into(),
         }
     }
 }
 
 /// "every hour", "every 5 min", "every 2 days".
 pub fn every(secs: u64) -> String {
-    let unit = |n: u64, one: &str, many: &str| if n == 1 { format!("every {one}") } else { format!("every {n} {many}") };
     match secs {
-        0..=89 => unit(secs.max(1), "second", "s"),
-        90..=3569 => unit((secs + 30) / 60, "minute", "min"),
-        3570..=84_599 => unit((secs + 1800) / 3600, "hour", "h"),
-        _ => unit((secs + 43_200) / 86_400, "day", "days"),
+        0..=89 => tn!("startup.when.every_s", n = secs.max(1)),
+        90..=3569 => tn!("startup.when.every_min", n = (secs + 30) / 60),
+        3570..=84_599 => tn!("startup.when.every_h", n = (secs + 1800) / 3600),
+        _ => tn!("startup.when.every_day", n = (secs + 43_200) / 86_400),
     }
+    .into_owned()
 }
 
 /// Why a job is suggested to turn off.
@@ -74,9 +74,9 @@ pub enum Why {
 impl Why {
     pub fn short(self) -> &'static str {
         match self {
-            Why::Removed => "app removed",
-            Why::Updater => "updater",
-            Why::NotNeeded => "not needed",
+            Why::Removed => ts!("startup.why.app_removed"),
+            Why::Updater => ts!("startup.why.updater"),
+            Why::NotNeeded => ts!("startup.why.not_needed"),
         }
     }
 }
@@ -527,7 +527,7 @@ pub fn set_jobs(jobs: &[(Job, bool)]) -> Result<(), String> {
     }
     if !admin.is_empty() {
         let cmd: String = admin.iter().map(|(j, on)| switch_cmd(j, *on)).collect::<String>() + "true";
-        macos::run_admin(&cmd, "Cmd+Meow wants to change what starts with your Mac.")?;
+        macos::run_admin(&cmd, ts!("startup.admin_change"))?;
     }
     Ok(())
 }
@@ -550,7 +550,7 @@ pub fn trash_job(job: &Job) -> Result<(), String> {
             dst = macos::sh_quote(&dest.to_string_lossy()),
             uid = macos::uid()
         );
-        macos::run_admin(&cmd, "Cmd+Meow wants to move a leftover startup item to your Trash.").map(|_| ())
+        macos::run_admin(&cmd, ts!("startup.admin_trash")).map(|_| ())
     } else {
         let _ = std::process::Command::new("/bin/sh").arg("-c").arg(format!("/bin/launchctl bootout {target} 2>/dev/null; true")).output();
         crate::kit::fs::move_to_trash(&job.plist)

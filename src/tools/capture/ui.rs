@@ -2,7 +2,7 @@
 //! History and Settings page in the full window.
 
 use super::icons::{self, Ico};
-use super::settings::{After, Command, Format, KEEP_MAX, KEEP_MIN};
+use super::settings::{After, Command, Format, Settings, KEEP_MAX, KEEP_MIN};
 use super::folder::{self, FileShot};
 use super::store::{Kind, Shot};
 use super::{mac, record, Capture, Tab, VTab, ID, SHARING_ID, VIDEO_ID};
@@ -10,6 +10,7 @@ use crate::core::tool::{Cx, Size};
 use crate::kit::tile;
 use crate::kit::glass::*;
 use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2};
+use crate::kit::perms::Perm;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -665,7 +666,7 @@ fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let cw = button_width(&p, "Change folder…", BTN_SECONDARY) - 6.0;
     let cr = Rect::from_min_max(Pos2::new(or.left() - 8.0 - cw, cy - 13.0), Pos2::new(or.left() - 8.0, cy + 13.0));
     if pill_button(ui, cr, "Change folder…", BTN_SECONDARY, true).clicked() {
-        c.choose_folder();
+        c.choose_folder(false);
     }
     text_fit(&p, Pos2::new(x0 + 24.0, cy), Align2::LEFT_CENTER, &c.shown_folder(), mono(12.0), TEXT_SOFT(), cr.left() - x0 - 36.0);
 
@@ -707,8 +708,8 @@ fn card_rows(p: &egui::Painter, x: f32, y: f32, w: f32, rows: usize) -> Rect {
     r
 }
 
-/// Screen recording: frame rate, quality, the countdown, the cursor and
-/// its clicks (drawn by the system, so only where it can), the saved card.
+/// Recording: frame rate, quality, the countdown, the cursor and its
+/// clicks (drawn by the system, so only where it can).
 fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) -> f32 {
     use super::settings::{RecQuality, RECORD_FPS};
     #[derive(Clone, Copy, PartialEq)]
@@ -718,16 +719,14 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
         Countdown,
         Cursor,
         Clicks,
-        Saved,
-        CardSecs,
     }
     let clicks = super::record::engine::clicks_supported();
-    let rows: Vec<(Row, &str)> = [(Row::Fps, "Frame rate"), (Row::Quality, "Quality"), (Row::Countdown, "Countdown"), (Row::Cursor, "Show the cursor"), (Row::Clicks, "Highlight clicks"), (Row::Saved, "When it's saved"), (Row::CardSecs, "Hide the card after")]
+    let rows: Vec<(Row, &str)> = [(Row::Fps, "Frame rate"), (Row::Quality, "Quality"), (Row::Countdown, "Countdown"), (Row::Cursor, "Show the cursor"), (Row::Clicks, "Highlight clicks")]
         .into_iter()
         .filter(|(r, _)| *r != Row::Clicks || clicks)
         .collect();
     let x0 = col.left();
-    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Screen recording");
+    crate::kit::glass::card_title(p, Pos2::new(x0, col.top()), "Recording");
     let card = card_rows(p, x0, col.top() + 28.0, col.width(), rows.len());
     let id = ui.scope_id().with("rec-options");
     let mut s = c.settings.rec.clone();
@@ -765,16 +764,6 @@ fn recording_options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect)
             Row::Clicks => {
                 if switch(ui, sw, id.with(("sw", k)), s.clicks, s.cursor).clicked() {
                     s.clicks = !s.clicks;
-                }
-            }
-            Row::Saved => {
-                if let Some(i) = seg(ui, 190.0, &["Show a card", "Open editor"], s.open_editor as usize) {
-                    s.open_editor = i == 1;
-                }
-            }
-            Row::CardSecs => {
-                if let Some(i) = seg(ui, 200.0, &["5 s", "8 s", "15 s", "Never"], secs_index(s.card_secs, &CARD_SECS)) {
-                    s.card_secs = CARD_SECS.get(i).copied();
                 }
             }
         }
@@ -1190,14 +1179,7 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     // saving
     crate::kit::glass::card_title(p, Pos2::new(x0, y), "Saving");
     let card = card_rows(p, x0, y + 28.0, w, 4);
-    let ry = row_y(card, 0);
-    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Folder", font(13.0), TEXT());
-    let bw = button_width(p, "Change…", BTN_SECONDARY) - 6.0;
-    let br = Rect::from_min_max(Pos2::new(card.right() - 12.0 - bw, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
-    if pill_button(ui, br, "Change…", BTN_SECONDARY, true).clicked() {
-        c.choose_folder();
-    }
-    text_fit(p, Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, &c.shown_folder(), mono(12.0), TEXT_DIM(), br.left() - card.left() - 90.0);
+    folder_row(c, ui, p, card, row_y(card, 0), false);
     let ry = row_y(card, 1);
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Format", font(13.0), TEXT());
     let fr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 110.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
@@ -1209,59 +1191,133 @@ fn options(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "File name", font(13.0), TEXT());
     let example = c.settings.file_name(chrono::Local::now());
     text_fit(p, Pos2::new(card.right() - 12.0, ry), Align2::RIGHT_CENTER, &example, mono(12.0), TEXT_DIM(), card.width() - 110.0);
-    let ry = row_y(card, 3);
+    changed |= history_row(c, ui, p, card, row_y(card, 3), id, false);
+    y = card.bottom() + 16.0;
+
+    // permission
+    permissions(ui, p, x0, y, w, &[Perm::Screen]);
+    if changed {
+        c.save_settings();
+    }
+}
+
+/// The Folder row of a Saving card: where screenshots, or recordings
+/// (`video`), go, and Change….
+fn folder_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: f32, video: bool) {
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Folder", font(13.0), TEXT());
+    let bw = button_width(p, "Change…", BTN_SECONDARY) - 6.0;
+    let br = Rect::from_min_max(Pos2::new(card.right() - 12.0 - bw, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
+    if pill_button(ui, br, "Change…", BTN_SECONDARY, true).clicked() {
+        c.choose_folder(video);
+    }
+    let shown = if video { c.shown_rec_folder() } else { c.shown_folder() };
+    text_fit(p, Pos2::new(br.left() - 10.0, ry), Align2::RIGHT_CENTER, &shown, mono(12.0), TEXT_DIM(), br.left() - card.left() - 90.0);
+}
+
+/// The History keeps row: − N + and Clear history, for screenshots or
+/// recordings (`video`), each with its own limit. True when the limit moved.
+fn history_row(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, card: Rect, ry: f32, id: egui::Id, video: bool) -> bool {
+    let mut changed = false;
     p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "History keeps", font(13.0), TEXT());
-    // − N +   then Clear history
-    let confirming = c.confirm_clear.is_some_and(|t| t.elapsed().as_secs_f32() < 3.0);
+    let confirming = c.confirm_clear.is_some_and(|(v, t)| v == video && t.elapsed().as_secs_f32() < 3.0);
     let clear_label = if confirming { "Click again to clear" } else { "Clear history" };
     let cw = button_width(p, clear_label, BTN_DANGER) - 6.0;
     let cr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - cw, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
-    if pill_button(ui, cr, clear_label, if confirming { BTN_DANGER } else { BTN_SECONDARY }, !c.store.shots.is_empty()).clicked() {
+    let any = c.store.shots.iter().any(|s| (s.kind == Kind::Recording) == video);
+    if pill_button(ui, cr, clear_label, if confirming { BTN_DANGER } else { BTN_SECONDARY }, any).clicked() {
         if confirming {
-            c.store.clear();
+            c.store.clear(video);
             c.forget_dropped_thumbs();
             c.confirm_clear = None;
             c.hud("History cleared");
         } else {
-            c.confirm_clear = Some(Instant::now());
+            c.confirm_clear = Some((video, Instant::now()));
         }
     }
     if confirming {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
     }
+    let keep = if video { c.settings.rec.keep } else { c.settings.keep };
     let plus = Rect::from_center_size(Pos2::new(cr.left() - 24.0, ry), Vec2::new(24.0, 24.0));
     let num = Rect::from_center_size(Pos2::new(plus.left() - 20.0, ry), Vec2::new(40.0, 24.0));
     let minus = Rect::from_center_size(Pos2::new(num.left() - 12.0, ry), Vec2::new(24.0, 24.0));
     for (r, s, delta) in [(minus, "−", -10i64), (plus, "+", 10)] {
-        let resp = ui.interact(r, id.with(("step", s)), Sense::click());
+        let resp = ui.interact(r, id.with(("step", s, video)), Sense::click());
         p.rect_filled(r, 6.0, white(if resp.hovered() { 34 } else { 20 }));
         p.text(r.center(), Align2::CENTER_CENTER, s, bold(13.0), TEXT());
         if resp.clicked() {
-            c.settings.keep = (c.settings.keep as i64 + delta).clamp(KEEP_MIN as i64, KEEP_MAX as i64) as usize;
-            c.store.trim(c.settings.keep);
+            let n = (keep as i64 + delta).clamp(KEEP_MIN as i64, KEEP_MAX as i64) as usize;
+            if video {
+                c.settings.rec.keep = n;
+            } else {
+                c.settings.keep = n;
+            }
+            c.store.trim(c.settings.keeps());
             changed = true;
         }
     }
-    p.text(num.center(), Align2::CENTER_CENTER, c.settings.keep.to_string(), bold(13.0), TEXT());
+    p.text(num.center(), Align2::CENTER_CENTER, keep.to_string(), bold(13.0), TEXT());
+    changed
+}
+
+/// A Permission card at `y` (R17): one row per permission.
+fn permissions(ui: &mut Ui, p: &egui::Painter, x0: f32, y: f32, w: f32, list: &[Perm]) -> f32 {
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Permission");
+    let card = card_rows(p, x0, y + 28.0, w, list.len());
+    for (k, perm) in list.iter().enumerate() {
+        perm_row(ui, p, card, row_y(card, k), *perm);
+    }
+    card.bottom()
+}
+
+/// Video › Settings, right column: what happens after a recording, where
+/// it's saved and how many history keeps, and the permissions it uses.
+fn recording_after(c: &mut Capture, ui: &mut Ui, p: &egui::Painter, col: Rect) {
+    let (x0, w) = (col.left(), col.width());
+    let id = ui.scope_id().with("rec-after");
+    let mut changed = false;
+    let mut y = col.top();
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "After a recording");
+    let card = card_rows(p, x0, y + 28.0, w, 3);
+    let ry = row_y(card, 0);
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Then", font(13.0), TEXT());
+    let sr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 270.0, ry - 13.0), Pos2::new(card.right() - 12.0, ry + 13.0));
+    let cur = match c.settings.rec.after {
+        After::Preview => 0,
+        After::Editor => 1,
+        After::Nothing => 2,
+    };
+    if let Some(i) = segmented(ui, sr, id.with("after"), &["Show preview", "Open editor", "Nothing"], cur) {
+        c.settings.rec.after = [After::Preview, After::Editor, After::Nothing][i];
+        changed = true;
+    }
+    let ry = row_y(card, 1);
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Copy to clipboard", font(13.0), TEXT());
+    let sw = Rect::from_center_size(Pos2::new(card.right() - 27.0, ry), Vec2::new(30.0, 18.0));
+    if switch(ui, sw, id.with("copy"), c.settings.rec.copy, true).clicked() {
+        c.settings.rec.copy = !c.settings.rec.copy;
+        changed = true;
+    }
+    let ry = row_y(card, 2);
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "Hide preview after", font(13.0), TEXT());
+    let hr = Rect::from_min_max(Pos2::new(card.right() - 12.0 - 200.0, ry - 12.0), Pos2::new(card.right() - 12.0, ry + 12.0));
+    if let Some(i) = segmented(ui, hr, id.with("hide"), &["5 s", "8 s", "15 s", "Never"], secs_index(c.settings.rec.card_secs, &CARD_SECS)) {
+        c.settings.rec.card_secs = CARD_SECS.get(i).copied();
+        changed = true;
+    }
     y = card.bottom() + 16.0;
 
-    // permission
-    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Permission");
-    let card = Rect::from_min_size(Pos2::new(x0, y + 28.0), Vec2::new(w, 56.0));
-    glass_card(p, card, R_CARD, 0.0, false);
-    let ok = mac::can_record_screen();
-    p.circle_filled(Pos2::new(card.left() + 18.0, card.top() + 19.0), 4.0, if ok { GREEN() } else { AMBER() });
-    p.text(Pos2::new(card.left() + 30.0, card.top() + 19.0), Align2::LEFT_CENTER, "Screen Recording", font(13.0), TEXT());
-    let status = if ok { "Allowed" } else { "Not allowed: captures show only the desktop" };
-    let bw = button_width(p, "Open System Settings", BTN_SECONDARY) - 6.0;
-    let br = Rect::from_min_max(Pos2::new(card.right() - 12.0 - bw, card.center().y - 13.0), Pos2::new(card.right() - 12.0, card.center().y + 13.0));
-    text_fit(p, Pos2::new(card.left() + 30.0, card.top() + 38.0), Align2::LEFT_CENTER, status, font(12.0), TEXT_DIM(), br.left() - card.left() - 40.0);
-    if pill_button(ui, br, "Open System Settings", if ok { BTN_SECONDARY } else { BTN_PRIMARY }, true).clicked() {
-        if !ok {
-            mac::ask_to_record_screen();
-        }
-        mac::open_privacy_settings();
-    }
+    crate::kit::glass::card_title(p, Pos2::new(x0, y), "Saving");
+    let card = card_rows(p, x0, y + 28.0, w, 3);
+    folder_row(c, ui, p, card, row_y(card, 0), true);
+    let ry = row_y(card, 1);
+    p.text(Pos2::new(card.left() + 12.0, ry), Align2::LEFT_CENTER, "File name", font(13.0), TEXT());
+    let example = Settings::recording_name(chrono::Local::now());
+    text_fit(p, Pos2::new(card.right() - 12.0, ry), Align2::RIGHT_CENTER, &example, mono(12.0), TEXT_DIM(), card.width() - 110.0);
+    changed |= history_row(c, ui, p, card, row_y(card, 2), id, true);
+    y = card.bottom() + 16.0;
+
+    permissions(ui, p, x0, y, w, &[Perm::Screen, Perm::Microphone, Perm::Camera]);
     if changed {
         c.save_settings();
     }
@@ -1404,8 +1460,8 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let n = c.store.shots.iter().filter(|s| s.kind == Kind::Recording).count();
     let first = c.vtab == VTab::Recordings && n == 0 && c.rec.tray().is_none();
     let sub = match c.vtab {
-        VTab::Recordings if first => format!("Saving to {}", c.shown_folder()),
-        VTab::Recordings => format!("{n} recording{} · saving to {}", if n == 1 { "" } else { "s" }, c.shown_folder()),
+        VTab::Recordings if first => format!("Saving to {}", c.shown_rec_folder()),
+        VTab::Recordings => format!("{n} recording{} · saving to {}", if n == 1 { "" } else { "s" }, c.shown_rec_folder()),
         VTab::Settings => String::new(),
     };
     // SP16: Record screen at the right edge on every tab, one width for
@@ -1454,8 +1510,9 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 let colw = (area.width() - 48.0 - gap) / 2.0;
                 let below = shortcuts(c, ui, &p, Rect::from_min_size(Pos2::new(x0, area.top() + 16.0), Vec2::new(colw, area.height())), &VIDEO_KEYS);
                 let ry = below + 28.0;
-                recording_options(c, ui, &p, Rect::from_min_size(Pos2::new(x0, ry), Vec2::new(colw, area.bottom() - ry)));
-                sharing(c, ui, &p, Rect::from_min_size(Pos2::new(x0 + colw + gap, area.top() + 16.0), Vec2::new(colw, area.height())), false, cx);
+                let ry = recording_options(c, ui, &p, Rect::from_min_size(Pos2::new(x0, ry), Vec2::new(colw, area.bottom() - ry)));
+                sharing(c, ui, &p, Rect::from_min_size(Pos2::new(x0, ry), Vec2::new(colw, area.bottom() - ry)), false, cx);
+                recording_after(c, ui, &p, Rect::from_min_size(Pos2::new(x0 + colw + gap, area.top() + 16.0), Vec2::new(colw, area.height())));
             });
         }
     }

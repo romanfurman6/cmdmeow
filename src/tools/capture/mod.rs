@@ -105,7 +105,8 @@ enum Done {
     /// says where in a toast.
     Saved(Option<u64>, Result<PathBuf, String>, bool),
     Thumb(u64, Option<egui::ColorImage>),
-    Folder(Option<PathBuf>),
+    /// A folder picked for recordings (`true`) or screenshots.
+    Folder(bool, Option<PathBuf>),
     Files(PathBuf, Vec<folder::FileShot>),
 }
 
@@ -193,7 +194,8 @@ pub struct Capture {
     /// Recording a new shortcut for this command.
     recording: Option<Command>,
     filter: usize,
-    confirm_clear: Option<Instant>,
+    /// "Click again to clear": for recordings (`true`) or screenshots, since when.
+    confirm_clear: Option<(bool, Instant)>,
     /// Shell requests made outside a ui pass.
     actions: Vec<Action>,
     /// Points → pixels of the main screen.
@@ -473,7 +475,7 @@ impl Capture {
                         return;
                     }
                 }
-                self.rec.folder = self.settings.folder.clone();
+                self.rec.folder = self.settings.rec_folder().to_path_buf();
                 self.rec.begin(&self.settings.rec);
             }
         }
@@ -483,7 +485,7 @@ impl Capture {
     /// the card in the corner.
     fn keep_recording(&mut self, st: record::engine::Stopped) {
         let thumb = st.thumb.unwrap_or_else(|| image::RgbaImage::from_pixel(640, 360, image::Rgba([40, 40, 46, 255])));
-        let id = match self.store.add(&thumb, Kind::Recording, self.settings.keep) {
+        let id = match self.store.add(&thumb, Kind::Recording, self.settings.keeps()) {
             Ok(id) => {
                 self.store.set_video(id, st.path.clone(), st.secs as f32);
                 self.put_thumb(id, &thumb);
@@ -499,9 +501,16 @@ impl Capture {
         if self.settings.share.auto && self.settings.share.set_up(share::VIDEO_ACCOUNT) {
             self.share(st.path.clone());
         }
-        if self.settings.rec.open_editor {
-            self.open_video(st.path);
-            return;
+        if self.settings.rec.copy && !record::sys::copy_file(&st.path) {
+            self.hud("Couldn't copy the video");
+        }
+        match self.settings.rec.after {
+            settings::After::Editor => {
+                self.open_video(st.path);
+                return;
+            }
+            settings::After::Nothing => return,
+            settings::After::Preview => {}
         }
         let bytes = std::fs::metadata(&st.path).map(|m| m.len()).unwrap_or(0);
         let display = self.rec.last_display;
@@ -805,7 +814,11 @@ impl Capture {
                     self.thumbs.tex.insert(id, t);
                 }
             }
-            Done::Folder(Some(p)) => {
+            Done::Folder(true, Some(p)) => {
+                self.settings.rec.folder = Some(p);
+                self.save_settings();
+            }
+            Done::Folder(false, Some(p)) => {
                 self.settings.folder = p;
                 self.folder_ok = false;
                 self.folder_check = None;
@@ -813,7 +826,7 @@ impl Capture {
                 self.files.clear();
                 self.files_at = None;
             }
-            Done::Folder(None) => {}
+            Done::Folder(_, None) => {}
             Done::Files(dir, files) => {
                 self.files_busy = false;
                 if dir == self.settings.folder {
@@ -838,7 +851,7 @@ impl Capture {
             Some(s) => (Some(s.thumb), Some(s.preview)),
             None => (None, None),
         };
-        let id = match self.store.add_png(&png, img.dimensions(), kind, self.settings.keep) {
+        let id = match self.store.add_png(&png, img.dimensions(), kind, self.settings.keeps()) {
             Ok(id) => {
                 let t = thumb.unwrap_or_else(|| thumb_image(&img));
                 self.thumbs.tex.insert(id, self.ctx.load_texture(format!("capture-thumb-{id}"), t, egui::TextureOptions::LINEAR));
@@ -953,7 +966,7 @@ impl Capture {
     /// [`Capture::commit_edit`] with the editor's picture already rendered.
     fn commit_rendered(&mut self, ed: &mut Editor, img: &RgbaImage) -> Option<u64> {
         if ed.edited {
-            match self.store.add(img, Kind::Edited, self.settings.keep) {
+            match self.store.add(img, Kind::Edited, self.settings.keeps()) {
                 Ok(id) => {
                     self.put_thumb(id, img);
                     self.forget_dropped_thumbs();
@@ -1043,19 +1056,31 @@ impl Capture {
     }
 
     fn shown_folder(&self) -> String {
-        let home = dirs::home_dir().map(|h| h.display().to_string()).unwrap_or_default();
-        let f = self.settings.folder.display().to_string();
-        // sample data for screenshots lives in a temp folder
-        if f.contains("cmdmeow-capture-demo") {
-            return "~/Pictures/Screenshots".into();
-        }
-        if !home.is_empty() && f.starts_with(&home) {
-            f.replacen(&home, "~", 1)
-        } else {
-            f
-        }
+        shown(&self.settings.folder)
     }
 
+    /// The recordings folder, home as "~".
+    fn shown_rec_folder(&self) -> String {
+        shown(self.settings.rec_folder())
+    }
+}
+
+/// A folder for the settings and headers, home as "~".
+fn shown(folder: &std::path::Path) -> String {
+    let home = dirs::home_dir().map(|h| h.display().to_string()).unwrap_or_default();
+    let f = folder.display().to_string();
+    // sample data for screenshots lives in a temp folder
+    if f.contains("cmdmeow-capture-demo") {
+        return "~/Pictures/Screenshots".into();
+    }
+    if !home.is_empty() && f.starts_with(&home) {
+        f.replacen(&home, "~", 1)
+    } else {
+        f
+    }
+}
+
+impl Capture {
     /// Re-read the screenshot folder when the list is a few seconds old.
     /// `quiet` (the widget): skip a folder macOS would ask about (Desktop by
     /// default) until a capture was saved there, so the panel and setup
@@ -1109,13 +1134,14 @@ impl Capture {
         }
     }
 
-    fn choose_folder(&mut self) {
+    /// Ask for the folder recordings (`video`) or screenshots go to.
+    fn choose_folder(&mut self, video: bool) {
         let tx = self.tx.clone();
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            let out = std::process::Command::new("osascript").args(["-e", "POSIX path of (choose folder with prompt \"Save captures to\")"]).output();
+            let out = std::process::Command::new("osascript").args(["-e", if video { "POSIX path of (choose folder with prompt \"Save recordings to\")" } else { "POSIX path of (choose folder with prompt \"Save screenshots to\")" }]).output();
             let path = out.ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|s| !s.is_empty()).map(PathBuf::from);
-            let _ = tx.send(Done::Folder(path));
+            let _ = tx.send(Done::Folder(video, path));
             ctx.request_repaint();
         });
     }

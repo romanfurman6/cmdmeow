@@ -4,7 +4,7 @@
 use super::extra::{BtmItem, CronJob, SysExt};
 use super::items::{Job, LoginApp, Scope, Why};
 use super::sign::Flag;
-use super::{plural, trust_key, Filter, Gone, Startup};
+use super::{trust_key, Filter, Gone, Startup};
 use crate::core::tool::{Cx, Size};
 use crate::kit::aicheck::{self, ui::Event};
 use crate::kit::glass::*;
@@ -59,10 +59,10 @@ fn flag_color(f: Flag) -> Color32 {
 fn ago(at: u64) -> String {
     let s = super::now_secs().saturating_sub(at);
     match s {
-        0..=89 => "just now".into(),
-        90..=5399 => format!("{} min ago", (s + 30) / 60),
-        5400..=129_599 => format!("{}h ago", (s + 1800) / 3600),
-        _ => format!("{} days ago", (s + 43_200) / 86_400),
+        0..=89 => ts!("startup.just_now").into(),
+        90..=5399 => t!("startup.min_ago", n = (s + 30) / 60).into_owned(),
+        5400..=129_599 => t!("startup.h_ago", n = (s + 1800) / 3600).into_owned(),
+        _ => t!("startup.days_ago", n = (s + 43_200) / 86_400).into_owned(),
     }
 }
 
@@ -133,9 +133,9 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
     let off = jobs.iter().filter(|j| !j.on).count() + apps.iter().filter(|a| !a.on).count() + cron.iter().filter(|c| !c.on).count();
     let sub = if !loaded {
-        "Reading what starts with your Mac…".to_string()
+        ts!("startup.reading_all").to_string()
     } else {
-        format!("{} · {running} running", plural(total, "item"))
+        t!("startup.items_running", items = tn!("startup.items", n = total), running = running).into_owned()
     };
     // AI Check: a chip after the title
     let ai_n = jobs.iter().filter(|j| j.on).count() + apps.iter().filter(|a| a.on).count();
@@ -145,12 +145,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     // Flagged keeps its slot at 0 (SP16), so the search never moves
     let n_tabs = 4.0;
     let sub_right = r.right() - sp::PAGE_EDGE - 100.0 * n_tabs - 12.0 - 190.0 - 12.0;
-    let (btns, chip_at) = page_header_room(&p, r, "Startup", &sub, TEXT_DIM(), cw, sub_right);
+    let (btns, chip_at) = page_header_room(&p, r, ts!("startup.name"), &sub, TEXT_DIM(), cw, sub_right);
 
     // filter + search on the right of the header
-    let mut tabs = vec![(Filter::All, format!("All {total}")), (Filter::Suggested, format!("Suggested {}", suggested.len()))];
-    tabs.push((Filter::Flagged, format!("Flagged {flagged}")));
-    tabs.push((Filter::Off, format!("Off {off}")));
+    let mut tabs = vec![(Filter::All, t!("startup.tab_all", n = total).into_owned()), (Filter::Suggested, t!("startup.tab_suggested", n = suggested.len()).into_owned())];
+    tabs.push((Filter::Flagged, t!("startup.tab_flagged", n = flagged).into_owned()));
+    tabs.push((Filter::Off, t!("startup.tab_off", n = off).into_owned()));
     let labels: Vec<&str> = tabs.iter().map(|(_, x)| x.as_str()).collect();
     let tr = Rect::from_min_max(Pos2::new(btns.right() - 100.0 * tabs.len() as f32, btns.top()), btns.max);
     let cur = tabs.iter().position(|(f, _)| *f == s.filter).unwrap_or(0);
@@ -159,7 +159,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
     let sr = Rect::from_min_max(Pos2::new(tr.left() - sp::M - 180.0, tr.top()), Pos2::new(tr.left() - sp::M, tr.bottom()));
     let mut q = std::mem::take(&mut s.search);
-    search_field(ui, sr, &mut q, "Search", false);
+    search_field(ui, sr, &mut q, ts!("startup.search"), false);
     s.search = q;
 
     let body = Rect::from_min_max(Pos2::new(r.left() + 24.0, r.top() + PAGE_HEADER_H + 1.0), Pos2::new(r.right() - 24.0, r.bottom()));
@@ -198,7 +198,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
     if !loaded {
         spinner(&p, Pos2::new(body.left() + 8.0, body.top() + 30.0), 7.0, ctx.input(|i| i.time), ACCENT());
-        p.text(Pos2::new(body.left() + 24.0, body.top() + 30.0), Align2::LEFT_CENTER, "Reading what starts with your Mac…", font(13.0), TEXT_DIM());
+        p.text(Pos2::new(body.left() + 24.0, body.top() + 30.0), Align2::LEFT_CENTER, ts!("startup.reading_all"), font(13.0), TEXT_DIM());
         crate::kit::glass::poll(&ctx);
         return;
     }
@@ -237,17 +237,17 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     if all || s.filter == Filter::Off {
         let a: Vec<&LoginApp> = apps.iter().filter(|a| app_ok(a)).collect();
         if !a.is_empty() || (all && needle.is_empty()) {
-            rows.push(Row::Head("Open at login", HeadLink::Settings));
+            rows.push(Row::Head(ts!("startup.head.open_at_login"), HeadLink::Settings));
             match (&apps_err, apps_loaded) {
                 _ if !events_ok => rows.push(Row::Allow),
                 (Some(_), _) => rows.push(Row::Allow),
-                (None, false) => rows.push(Row::Note("Reading…".into())),
-                (None, true) if a.is_empty() => rows.push(Row::Note("None".into())),
+                (None, false) => rows.push(Row::Note(ts!("startup.reading").into())),
+                (None, true) if a.is_empty() => rows.push(Row::Note(ts!("startup.none").into())),
                 _ => rows.extend(a.into_iter().cloned().map(Row::App)),
             }
         }
     }
-    for (scopes, title) in [(&[Scope::User, Scope::AllUsers][..], "Background agents"), (&[Scope::System][..], "System daemons")] {
+    for (scopes, title) in [(&[Scope::User, Scope::AllUsers][..], ts!("startup.head.agents")), (&[Scope::System][..], ts!("startup.head.daemons"))] {
         let js: Vec<&Job> = jobs.iter().filter(|j| scopes.contains(&j.scope) && job_ok(j)).collect();
         if js.is_empty() {
             continue;
@@ -257,13 +257,13 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
     let cs: Vec<&CronJob> = cron.iter().filter(|c| cron_ok(c)).collect();
     if !cs.is_empty() {
-        rows.push(Row::Head("Cron jobs", HeadLink::None));
+        rows.push(Row::Head(ts!("startup.head.cron"), HeadLink::None));
         rows.extend(cs.into_iter().cloned().map(Row::Cron));
     }
     if all {
         let xs: Vec<&SysExt> = sysext.iter().filter(|x| hit(&x.name, &x.bundle_id)).collect();
         if !xs.is_empty() {
-            rows.push(Row::Head("System extensions", HeadLink::Settings));
+            rows.push(Row::Head(ts!("startup.head.extensions"), HeadLink::Settings));
             rows.extend(xs.into_iter().cloned().map(Row::Ext));
         }
         // the full list from macOS, minus what's already above
@@ -272,18 +272,18 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         let app_paths: Vec<PathBuf> = apps.iter().map(|a| a.path.clone()).collect();
         match &btm {
             None if needle.is_empty() => {
-                rows.push(Row::Head("Background items", if btm_busy { HeadLink::None } else { HeadLink::ShowAll }));
+                rows.push(Row::Head(ts!("startup.head.background_items"), if btm_busy { HeadLink::None } else { HeadLink::ShowAll }));
                 if btm_busy {
-                    rows.push(Row::Note("Reading…".into()));
+                    rows.push(Row::Note(ts!("startup.reading").into()));
                 }
             }
             None => {}
             Some(list) => {
                 let extra: Vec<BtmItem> = super::extra::btm_extra(list, macos::uid(), &labels, &programs, &app_paths).into_iter().filter(|b| hit(&b.name, &b.developer)).collect();
                 if !extra.is_empty() || needle.is_empty() {
-                    rows.push(Row::Head("Background items", HeadLink::Settings));
+                    rows.push(Row::Head(ts!("startup.head.background_items"), HeadLink::Settings));
                     if extra.is_empty() {
-                        rows.push(Row::Note("Nothing else".into()));
+                        rows.push(Row::Note(ts!("startup.nothing_else").into()));
                     }
                     rows.extend(extra.into_iter().map(Row::Btm));
                 }
@@ -291,16 +291,16 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
         let gs: Vec<&Gone> = gone.iter().rev().filter(|g| hit(&g.name, &g.label)).collect();
         if !gs.is_empty() {
-            rows.push(Row::Head("Removed", HeadLink::None));
+            rows.push(Row::Head(ts!("startup.head.removed"), HeadLink::None));
             rows.extend(gs.into_iter().cloned().map(Row::Gone));
         }
     }
     if rows.is_empty() {
         rows.push(Row::Note(match s.filter {
-            Filter::Suggested => "Nothing to turn off".into(),
-            Filter::Flagged => "Nothing looks wrong".into(),
-            Filter::Off => "Nothing turned off".into(),
-            Filter::All => "No matches".into(),
+            Filter::Suggested => ts!("startup.empty.suggested").into(),
+            Filter::Flagged => ts!("startup.empty.flagged").into(),
+            Filter::Off => ts!("startup.empty.off").into(),
+            Filter::All => ts!("startup.empty.all").into(),
         }));
     }
 
@@ -346,21 +346,21 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 p.circle_filled(c, 17.0, with_alpha(GREEN(), 0.16));
                 icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(18.0)), GREEN());
                 let br = Rect::from_min_size(Pos2::new(cr.right() - 14.0 - 76.0, cr.center().y - sp::CONTROL_H / 2.0), Vec2::new(76.0, sp::CONTROL_H));
-                if pill_button(ui, br, "Undo", BTN_SECONDARY, true).clicked() {
+                if pill_button(ui, br, ts!("startup.undo"), BTN_SECONDARY, true).clicked() {
                     do_undo = true;
                 }
-                p.text(Pos2::new(cr.left() + 60.0, y1), Align2::LEFT_CENTER, format!("{} turned off", plural(n, "item")), bold(13.0), TEXT());
-                text_fit(&p, Pos2::new(cr.left() + 60.0, y2), Align2::LEFT_CENTER, "The apps still open", font(12.0), TEXT_DIM(), br.left() - cr.left() - 70.0);
+                p.text(Pos2::new(cr.left() + 60.0, y1), Align2::LEFT_CENTER, t!("startup.items_turned_off", items = tn!("startup.items", n = n)).into_owned(), bold(13.0), TEXT());
+                text_fit(&p, Pos2::new(cr.left() + 60.0, y2), Align2::LEFT_CENTER, ts!("startup.apps_still_open"), font(12.0), TEXT_DIM(), br.left() - cr.left() - 70.0);
             } else {
                 glass_card(&p, cr, R_CARD, 0.0, false);
                 tool_chip(&p, Rect::from_center_size(Pos2::new(cr.left() + 30.0, cr.center().y), Vec2::splat(34.0)), Icon::Power, tint::STARTUP());
-                let label = format!("Turn off {}", suggested.len());
+                let label = t!("startup.turn_off_n", n = suggested.len()).into_owned();
                 let bw = button_width(&p, &label, BTN_PRIMARY);
                 let br = Rect::from_min_size(Pos2::new(cr.right() - 14.0 - bw, cr.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
                 if pill_button(ui, br, &label, BTN_PRIMARY, true).clicked() {
                     turn_off_all = true;
                 }
-                let title = if suggested.len() == 1 { "1 item you likely don't need".to_string() } else { format!("{} items you likely don't need", suggested.len()) };
+                let title = tn!("startup.likely_dont_need", n = suggested.len()).into_owned();
                 p.text(Pos2::new(cr.left() + 60.0, y1), Align2::LEFT_CENTER, title, bold(13.0), TEXT());
                 text_fit(&p, Pos2::new(cr.left() + 60.0, y2), Align2::LEFT_CENTER, &why_line(&suggested), font(12.0), TEXT_SOFT(), br.left() - cr.left() - 70.0);
             }
@@ -401,12 +401,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     let at = Pos2::new(a.right() - 4.0, cy);
                     match l {
                         HeadLink::Settings => {
-                            if link(ui, at, Align2::RIGHT_CENTER, "Open in System Settings", 12.0).clicked() {
+                            if link(ui, at, Align2::RIGHT_CENTER, ts!("startup.open_system_settings"), 12.0).clicked() {
                                 super::items::open_settings();
                             }
                         }
                         HeadLink::ShowAll => {
-                            if link(ui, at, Align2::RIGHT_CENTER, "Show all", 12.0).on_hover_text("Asks for your password").clicked() {
+                            if link(ui, at, Align2::RIGHT_CENTER, ts!("startup.show_all"), 12.0).on_hover_text(ts!("startup.asks_password")).clicked() {
                                 show_btm = true;
                             }
                         }
@@ -426,25 +426,25 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     app_icon(s, &ctx, &p, cols.icon, None, &name, !c.on, &mut budget);
                     let mut tags: Vec<(&str, Color32)> = fl.iter().map(|f| (f.label(), flag_color(*f))).collect();
                     if new_cron.contains(&c.line) {
-                        tags.push(("new", ACCENT()));
+                        tags.push((ts!("startup.tag.new"), ACCENT()));
                     }
                     name_line(&p, &cols, &name, if c.on { TEXT() } else { TEXT_DIM() }, &tags);
                     let dr = detail_line(&p, &cols, &c.command);
                     ui.interact(dr, ui.scope_id().with(("su-cron-tip", &c.line)), Sense::hover()).on_hover_text(&c.line);
                     when_cell(&p, &cols, r.center().y, Icon::Clock, &c.when);
                     if !c.on {
-                        state_cell(&p, cols.state, r.center().y, Some("off"), false);
+                        state_cell(&p, cols.state, r.center().y, Some(ts!("startup.state.off")), false);
                     }
                     let sw = cols.sw;
                     let mr = icon_dots(ui, cols.more, ui.scope_id().with(("su-cron-more", &c.line)));
                     menu::popup(&mr).show(|ui| {
                         menu::note(ui, &c.line, true);
                         menu::separator(ui);
-                        if menu::item(ui, "Copy command").clicked() {
+                        if menu::item(ui, ts!("startup.copy_command")).clicked() {
                             ui.ctx().copy_text(c.command.clone());
                         }
                     });
-                    if switch(ui, sw, ui.scope_id().with(("su-cron", &c.line)), c.on, busy.is_none()).on_hover_text(if c.on { "Turn off" } else { "Turn on" }).clicked() {
+                    if switch(ui, sw, ui.scope_id().with(("su-cron", &c.line)), c.on, busy.is_none()).on_hover_text(if c.on { ts!("startup.turn_off") } else { ts!("startup.turn_on") }).clicked() {
                         flip_cron = Some(c.clone());
                     }
                     y += ROW_H + ROW_GAP;
@@ -463,10 +463,10 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     menu::popup(&mr).show(|ui| {
                         menu::note(ui, &x.state, false);
                         menu::separator(ui);
-                        if menu::item(ui, "Open in System Settings").clicked() {
+                        if menu::item(ui, ts!("startup.open_system_settings")).clicked() {
                             super::items::open_settings();
                         }
-                        if menu::item(ui, "Copy bundle ID").clicked() {
+                        if menu::item(ui, ts!("startup.copy_bundle_id")).clicked() {
                             ui.ctx().copy_text(x.bundle_id.clone());
                         }
                     });
@@ -483,15 +483,15 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     detail_line(&p, &cols, &detail);
                     when_cell(&p, &cols, r.center().y, Icon::Power, &b.kind);
                     if !b.on {
-                        state_cell(&p, cols.state, r.center().y, Some("off"), false);
+                        state_cell(&p, cols.state, r.center().y, Some(ts!("startup.state.off")), false);
                     }
                     let mr = icon_dots(ui, cols.more, ui.scope_id().with(("su-btm-more", &b.identifier)));
                     menu::popup(&mr).show(|ui| {
-                        if menu::item(ui, "Open in System Settings").clicked() {
+                        if menu::item(ui, ts!("startup.open_system_settings")).clicked() {
                             super::items::open_settings();
                         }
                         if let Some(f) = b.program.as_ref().or(b.path.as_ref()) {
-                            if menu::item(ui, "Show in Finder").clicked() {
+                            if menu::item(ui, ts!("startup.show_in_finder")).clicked() {
                                 macos::reveal(f);
                             }
                         }
@@ -506,7 +506,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     name_line(&p, &cols, &g.name, TEXT_DIM(), &[]);
                     detail_line(&p, &cols, &g.label);
                     when_cell(&p, &cols, r.center().y, Icon::Clock, &ago(g.at));
-                    state_cell(&p, cols.state, r.center().y, Some("removed"), false);
+                    state_cell(&p, cols.state, r.center().y, Some(ts!("startup.state.removed")), false);
                     y += ROW_H + ROW_GAP;
                 }
                 Row::Note(t) => {
@@ -521,16 +521,16 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     glass_card(&p, r, R_CARD, 0.0, false);
                     icon(&p, Icon::Script, Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::splat(18.0)), TEXT_SOFT());
                     let denied = s.events.0 == Status::Denied;
-                    let label = if denied { "Open Settings" } else { "Allow access" };
+                    let label = if denied { ts!("startup.open_settings") } else { ts!("startup.allow_access") };
                     let bw = button_width(&p, label, BTN_PRIMARY);
                     let br = Rect::from_min_size(Pos2::new(r.right() - 12.0 - bw, r.center().y - 14.0), Vec2::new(bw, 28.0));
                     let tw = br.left() - r.left() - 44.0 - 12.0;
                     let (ly1, ly2) = two_lines_y(&p, r.center().y, &bold(13.0), &font(12.0));
-                    text_fit(&p, Pos2::new(r.left() + 44.0, ly1), Align2::LEFT_CENTER, "Can't see the apps that open at login", bold(13.0), TEXT(), tw);
+                    text_fit(&p, Pos2::new(r.left() + 44.0, ly1), Align2::LEFT_CENTER, ts!("startup.cant_see_apps"), bold(13.0), TEXT(), tw);
                     let why = if denied {
-                        "Turn on System Events for Cmd+Meow in Privacy & Security › Automation"
+                        ts!("startup.events_denied")
                     } else {
-                        "macOS lists them through System Events; allow it once to see and switch them"
+                        ts!("startup.events_ask")
                     };
                     text_fit(&p, Pos2::new(r.left() + 44.0, ly2), Align2::LEFT_CENTER, why, font(12.0), TEXT_FAINT(), tw);
                     if pill_button(ui, br, label, BTN_PRIMARY, true).clicked() {
@@ -555,13 +555,13 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     let cols = columns(&p, r, true);
                     app_icon(s, &ctx, &p, cols.icon, Some(&la.path), &la.name, !la.on, &mut budget);
                     name_line(&p, &cols, &la.name, if la.on { TEXT() } else { TEXT_DIM() }, &[]);
-                    detail_line(&p, &cols, if la.hidden { "Opens hidden" } else { "Opens its window" });
-                    when_cell(&p, &cols, r.center().y, Icon::Power, "at login");
+                    detail_line(&p, &cols, if la.hidden { ts!("startup.opens_hidden") } else { ts!("startup.opens_window") });
+                    when_cell(&p, &cols, r.center().y, Icon::Power, ts!("startup.when.at_login"));
                     if !la.on {
-                        state_cell(&p, cols.state, r.center().y, Some("off"), false);
+                        state_cell(&p, cols.state, r.center().y, Some(ts!("startup.state.off")), false);
                     }
                     let sw = cols.sw;
-                    if switch(ui, sw, ui.scope_id().with(("su-app", &la.path)), la.on, busy.is_none()).on_hover_text(if la.on { "Don't open at login" } else { "Open at login" }).clicked() {
+                    if switch(ui, sw, ui.scope_id().with(("su-app", &la.path)), la.on, busy.is_none()).on_hover_text(if la.on { ts!("startup.dont_open_at_login") } else { ts!("startup.head.open_at_login") }).clicked() {
                         flip_app = Some(la.clone());
                     }
                     y += ROW_H + ROW_GAP;
@@ -587,7 +587,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     let mut right_btn = more.left() - sp::S;
                     if j.orphan {
                         let rb = Rect::from_min_max(Pos2::new(right_btn - 74.0, r.center().y - 12.0), Pos2::new(right_btn, r.center().y + 12.0));
-                        if pill_button(ui, rb, "Remove", BTN_SECONDARY, busy.is_none()).on_hover_text("Stop it and move its file to the Trash").clicked() {
+                        if pill_button(ui, rb, ts!("startup.remove"), BTN_SECONDARY, busy.is_none()).on_hover_text(ts!("startup.remove_tip")).clicked() {
                             trash = Some(j.clone());
                         }
                         right_btn = rb.left() - sp::COL_GAP;
@@ -602,15 +602,15 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     }
                     let mut tags: Vec<(&str, Color32)> = fl.iter().map(|f| (f.label(), flag_color(*f))).collect();
                     if let Some(w) = why {
-                        tags.push((if w == Why::Removed { "app removed" } else { "suggested" }, why_color(w)));
+                        tags.push((if w == Why::Removed { ts!("startup.why.app_removed") } else { ts!("startup.tag.suggested") }, why_color(w)));
                     } else if j.orphan {
-                        tags.push(("app removed", ORPHAN_TEXT()));
+                        tags.push((ts!("startup.why.app_removed"), ORPHAN_TEXT()));
                     }
                     if !trusted_now && new_labels.contains(&j.label) {
-                        tags.push(("new", ACCENT()));
+                        tags.push((ts!("startup.tag.new"), ACCENT()));
                     }
                     if j.admin() {
-                        tags.push(("admin", TEXT_DIM()));
+                        tags.push((ts!("startup.tag.admin"), TEXT_DIM()));
                     }
                     name_line(&p, &cols, &j.name, if j.on { TEXT() } else { TEXT_DIM() }, &tags);
                     let detail = match (j.owner_name(), why) {
@@ -620,12 +620,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     };
                     let dr = detail_line(&p, &cols, &detail);
                     let tip = match &j.program {
-                        Some(pr) => format!("{}\nRuns {}", j.plist.display(), pr.display()),
+                        Some(pr) => t!("startup.runs_path", plist = j.plist.display(), program = pr.display()).into_owned(),
                         None => j.plist.display().to_string(),
                     };
                     ui.interact(dr, ui.scope_id().with(("su-tip", &j.label, j.scope as u8)), Sense::hover()).on_hover_text(tip);
                     when_cell(&p, &cols, r.center().y, when_icon(j), &j.when.label(j.scope));
-                    state_cell(&p, cols.state, r.center().y, if !j.on { Some("off") } else if j.pid.is_some() { None } else { Some("idle") }, j.on && j.pid.is_some());
+                    state_cell(&p, cols.state, r.center().y, if !j.on { Some(ts!("startup.state.off")) } else if j.pid.is_some() { None } else { Some(ts!("startup.state.idle")) }, j.on && j.pid.is_some());
                     let mr = icon_dots(ui, more, ui.scope_id().with(("su-more", &j.label, j.scope as u8)));
                     menu::popup(&mr).show(|ui| {
                         if let Some(sg) = &j.sig {
@@ -638,38 +638,38 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                         menu::separator(ui);
                         if let Some(app) = uninstallable(&j.owner) {
                             let n = app.file_stem().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
-                            if menu::item(ui, &format!("Open {n} in Uninstaller")).clicked() {
+                            if menu::item(ui, &t!("startup.open_in_uninstaller", name = n)).clicked() {
                                 cx.open_page("uninstaller", &format!("app:{}", app.display()));
                             }
                         }
-                        if menu::item(ui, "Show file in Finder").clicked() {
+                        if menu::item(ui, ts!("startup.show_file")).clicked() {
                             macos::reveal(&j.plist);
                         }
-                        if menu::item(ui, "Copy label").clicked() {
+                        if menu::item(ui, ts!("startup.copy_label")).clicked() {
                             ui.ctx().copy_text(j.label.clone());
                         }
-                        if !cmd.is_empty() && menu::item(ui, "Copy command").clicked() {
+                        if !cmd.is_empty() && menu::item(ui, ts!("startup.copy_command")).clicked() {
                             ui.ctx().copy_text(cmd.clone());
                         }
-                        if j.vt_file().is_some_and(|f| f.is_file()) && menu::item(ui, "Check on VirusTotal").on_hover_text("Opens virustotal.com with the file's hash; the file isn't uploaded").clicked() {
+                        if j.vt_file().is_some_and(|f| f.is_file()) && menu::item(ui, ts!("startup.check_vt")).on_hover_text(ts!("startup.vt_tip")).clicked() {
                             vt = Some(j.clone());
                         }
                         if trusted_now {
-                            if menu::item(ui, "Don't trust").clicked() {
+                            if menu::item(ui, ts!("startup.dont_trust")).clicked() {
                                 trust = Some((j.clone(), false));
                             }
-                        } else if (!j.flags().is_empty() || j.why().is_some() || new_labels.contains(&j.label) || changed_labels.contains(&j.label)) && menu::item(ui, "Trust").clicked() {
+                        } else if (!j.flags().is_empty() || j.why().is_some() || new_labels.contains(&j.label) || changed_labels.contains(&j.label)) && menu::item(ui, ts!("startup.trust")).clicked() {
                             trust = Some((j.clone(), true));
                         }
                         // a bundled job's file is part of its app
                         if !j.bundled {
                             menu::separator(ui);
-                            if menu::danger(ui, "Move file to Trash…", busy.is_none()).clicked() {
+                            if menu::danger(ui, ts!("startup.move_to_trash"), busy.is_none()).clicked() {
                                 trash = Some(j.clone());
                             }
                         }
                     });
-                    if switch(ui, sw, ui.scope_id().with(("su-job", &j.label, j.scope as u8)), j.on, busy.is_none()).on_hover_text(if j.on { "Turn off" } else { "Turn on" }).clicked() {
+                    if switch(ui, sw, ui.scope_id().with(("su-job", &j.label, j.scope as u8)), j.on, busy.is_none()).on_hover_text(if j.on { ts!("startup.turn_off") } else { ts!("startup.turn_on") }).clicked() {
                         flip_job = Some(j.clone());
                     }
                     y += ROW_H + ROW_GAP;
@@ -681,7 +681,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         y += sp::L;
         let nr = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), sp::SETTINGS_ROW_H));
         glass_card(&p, nr, R_CARD, 0.0, false);
-        p.text(Pos2::new(nr.left() + sp::L, nr.center().y), Align2::LEFT_CENTER, "Tell me when an app adds itself to startup", font(13.0), TEXT());
+        p.text(Pos2::new(nr.left() + sp::L, nr.center().y), Align2::LEFT_CENTER, ts!("startup.notify_new"), font(13.0), TEXT());
         let sw = Rect::from_min_size(Pos2::new(nr.right() - 42.0, nr.center().y - 9.0), Vec2::new(30.0, 18.0));
         if switch(ui, sw, ui.scope_id().with("su-notify"), crate::kit::notify::shown(notify), true).clicked() {
             let mut v = notify;
@@ -734,9 +734,9 @@ fn trash_loader(s: &mut Startup, ui: &mut Ui, r: Rect) {
         return;
     };
     let status = match res {
-        None => Status::Working { title: format!("Removing {name}…"), count: Count::Unknown, current: file, can_stop: false },
-        Some(Ok(())) => Status::Finished { title: format!("Removed {name}"), sub: "Moved to the Trash".into(), problem: None, put_back: false },
-        Some(Err(e)) => Status::Failed { title: format!("{name} couldn't be removed"), problem: e },
+        None => Status::Working { title: t!("startup.removing", name = name).into_owned(), count: Count::Unknown, current: file, can_stop: false },
+        Some(Ok(())) => Status::Finished { title: t!("startup.removed_name", name = name).into_owned(), sub: ts!("startup.moved_to_trash").into(), problem: None, put_back: false },
+        Some(Err(e)) => Status::Failed { title: t!("startup.couldnt_remove", name = name).into_owned(), problem: e },
     };
     if let Some(Click::Done | Click::Ended | Click::PutBack) = loader::show(ui, r, "startup-trash", &status) {
         s.state().trashing = None;
@@ -774,8 +774,8 @@ fn startup_ask(jobs: &[Job], apps: &[LoginApp]) -> aicheck::Ask {
     aicheck::Ask {
         task: "This is the Startup list: apps and background jobs that start with the user's Mac. Point out what can be turned off without breaking anything the user relies on (updaters that run when the app opens anyway, helpers of apps they rarely use, agents of removed apps). Say plainly when turning something off would break a feature.".into(),
         actions: vec![
-            ("turn_off", "stop it starting with the Mac (the user can turn it back on)", "Turn off"),
-            ("remove", "move the job's file to the Trash; only for jobs whose app is gone", "Remove"),
+            ("turn_off", "stop it starting with the Mac (the user can turn it back on)", ts!("startup.turn_off")),
+            ("remove", "move the job's file to the Trash; only for jobs whose app is gone", ts!("startup.remove")),
         ],
         items,
         facts: Vec::new(),
@@ -788,8 +788,7 @@ fn why_line(list: &[&Job]) -> String {
     let mut parts = Vec::new();
     match n(Why::Updater) {
         0 => {}
-        1 => parts.push("1 updater that checks in the background".to_string()),
-        k => parts.push(format!("{k} updaters that check in the background")),
+        k => parts.push(tn!("startup.updaters", n = k).into_owned()),
     }
     let extra: Vec<String> = list.iter().filter(|j| j.why() == Some(Why::NotNeeded)).map(|j| j.name.clone()).collect();
     if !extra.is_empty() {
@@ -797,13 +796,12 @@ fn why_line(list: &[&Job]) -> String {
     }
     match n(Why::Removed) {
         0 => {}
-        1 => parts.push("1 agent of an app you removed".to_string()),
-        k => parts.push(format!("{k} agents of apps you removed")),
+        k => parts.push(tn!("startup.removed_agents", n = k).into_owned()),
     }
     let s = match parts.len() {
         0 => String::new(),
         1 => parts[0].clone(),
-        _ => format!("{}, and {}", parts[..parts.len() - 1].join(", "), parts[parts.len() - 1]),
+        _ => t!("startup.list_and", list = parts[..parts.len() - 1].join(", "), last = parts[parts.len() - 1]).into_owned(),
     };
     let mut c = s.chars();
     let s: String = c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default();
@@ -889,7 +887,7 @@ fn when_cell(p: &egui::Painter, c: &Cols, cy: f32, ic: Icon, label: &str) {
 /// `label` None = running (green dot).
 fn state_cell(p: &egui::Painter, x: f32, cy: f32, label: Option<&str>, running: bool) {
     p.circle_filled(Pos2::new(x + 4.0, cy), 3.5, if running { GREEN() } else { white(56) });
-    p.text(Pos2::new(x + 8.0 + sp::S, cy), Align2::LEFT_CENTER, label.unwrap_or("running"), font(12.0), TEXT_DIM());
+    p.text(Pos2::new(x + 8.0 + sp::S, cy), Align2::LEFT_CENTER, label.unwrap_or(ts!("startup.state.running")), font(12.0), TEXT_DIM());
 }
 
 /// The ⋯ button of a row.
@@ -903,7 +901,7 @@ fn icon_dots(ui: &mut Ui, r: Rect, id: egui::Id) -> egui::Response {
     for dx in [-5.0, 0.0, 5.0] {
         p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_FAINT());
     }
-    resp.on_hover_text("More")
+    resp.on_hover_text(ts!("startup.more"))
 }
 
 // ---------------------------------------------------------------- panel widget
@@ -918,11 +916,11 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
     match size {
         // W4, W3, W7: the count and what can go; no button in the panel, the card opens Startup
         Size::S11 | Size::S12 => {
-            let value = if loaded { plural(total, "item") } else { "…".into() };
+            let value = if loaded { tn!("startup.items", n = total).into_owned() } else { "…".into() };
             let (cap, cap_col) = match undo {
-                Some(k) => (format!("{k} turned off"), GREEN()),
-                None if n > 0 => (format!("{n} suggested"), AMBER()),
-                None => (format!("{running} running"), ty::caption_color()),
+                Some(k) => (t!("startup.n_turned_off", n = k).into_owned(), GREEN()),
+                None if n > 0 => (t!("startup.n_suggested", n = n).into_owned(), AMBER()),
+                None => (t!("startup.n_running", n = running).into_owned(), ty::caption_color()),
             };
             let resp = if size == Size::S11 {
                 let resp = tile::card(ui, rect, id, false);
@@ -930,14 +928,14 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
                 icon(p, Icon::Power, Rect::from_min_size(rect.min + Vec2::new(tile::SMALL_SIDE, tile::PAD), Vec2::splat(20.0)), lift(tint::STARTUP()));
                 // what can go matters more than the count; the count is in the tip then
                 if n > 0 && undo.is_none() {
-                    tile::small_text(p, rect, "Startup", &cap, AMBER());
+                    tile::small_text(p, rect, ts!("startup.name"), &cap, AMBER());
                     resp.on_hover_text(value)
                 } else {
-                    tile::small_text(p, rect, "Startup", &value, TEXT_DIM());
+                    tile::small_text(p, rect, ts!("startup.name"), &value, TEXT_DIM());
                     resp.on_hover_text(cap)
                 }
             } else {
-                tile::wide_full(ui, rect, id, Icon::Power, tint::STARTUP(), None, "Startup", &value, &cap, cap_col, false)
+                tile::wide_full(ui, rect, id, Icon::Power, tint::STARTUP(), None, ts!("startup.name"), &value, &cap, cap_col, false)
             };
             if resp.clicked() {
                 cx.open_page(super::ID, if n > 0 { "suggested" } else { "" });
@@ -946,13 +944,13 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
         _ => {
             let resp = tile::card(ui, rect, id, false);
             let p = ui.painter().clone();
-            let note = if loaded { format!("{} · {running} running", plural(total, "item")) } else { "Reading…".into() };
+            let note = if loaded { t!("startup.items_running", items = tn!("startup.items", n = total), running = running).into_owned() } else { ts!("startup.reading").into() };
             let (x0, x1) = (rect.left() + tile::PAD, rect.right() - tile::PAD);
             let cy = rect.top() + tile::PAD + 10.0;
-            let tr = p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, "Startup", ty::title(), TEXT());
+            let tr = p.text(Pos2::new(x0, cy), Align2::LEFT_CENTER, ts!("startup.name"), ty::title(), TEXT());
             let mut right = x1;
             if undo.is_none() && n > 0 {
-                let label = format!("Turn off {n}");
+                let label = t!("startup.turn_off_n", n = n).into_owned();
                 let bw = button_width(&p, &label, BTN_SECONDARY) - 6.0;
                 let br = Rect::from_min_max(Pos2::new(x1 - bw, cy - 12.0), Pos2::new(x1, cy + 12.0));
                 // W7: a quiet button; no lime in the panel
@@ -968,14 +966,14 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
                 p.circle_filled(c, 18.0, with_alpha(GREEN(), 0.16));
                 icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(18.0)), GREEN());
                 let br = Rect::from_min_max(Pos2::new(body.right() - 64.0, c.y - 13.0), Pos2::new(body.right(), c.y + 13.0));
-                if pill_button(ui, br, "Undo", BTN_SECONDARY, !busy).clicked() {
+                if pill_button(ui, br, ts!("startup.undo"), BTN_SECONDARY, !busy).clicked() {
                     s.undo();
                 }
                 let (y1, y2) = two_lines_y(&p, c.y, &bold(13.0), &font(12.0));
-                p.text(Pos2::new(c.x + 30.0, y1), Align2::LEFT_CENTER, format!("{} turned off", plural(k, "item")), bold(13.0), TEXT());
-                text_fit(&p, Pos2::new(c.x + 30.0, y2), Align2::LEFT_CENTER, "The apps still open", font(12.0), TEXT_DIM(), br.left() - c.x - 40.0);
+                p.text(Pos2::new(c.x + 30.0, y1), Align2::LEFT_CENTER, t!("startup.items_turned_off", items = tn!("startup.items", n = k)).into_owned(), bold(13.0), TEXT());
+                text_fit(&p, Pos2::new(c.x + 30.0, y2), Align2::LEFT_CENTER, ts!("startup.apps_still_open"), font(12.0), TEXT_DIM(), br.left() - c.x - 40.0);
             } else if n == 0 {
-                let msg = if loaded { "Nothing to turn off" } else { "Reading what starts with your Mac…" };
+                let msg = if loaded { ts!("startup.empty.suggested") } else { ts!("startup.reading_all") };
                 tile::empty_note(&p, body.shrink2(Vec2::new(0.0, 6.0)), msg);
             } else {
                 let lh = 28.0;
@@ -996,7 +994,7 @@ pub fn widget(s: &mut Startup, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx)
                     }
                 }
                 if n > 3 {
-                    p.text(Pos2::new(body.left(), body.bottom() - 4.0), Align2::LEFT_BOTTOM, format!("+{} more · open Startup", n - 3), font(11.0), TEXT_FAINT());
+                    p.text(Pos2::new(body.left(), body.bottom() - 4.0), Align2::LEFT_BOTTOM, t!("startup.more_open", n = n - 3).into_owned(), font(11.0), TEXT_FAINT());
                 }
             }
             if resp.clicked() {
