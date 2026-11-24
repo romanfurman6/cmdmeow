@@ -264,6 +264,11 @@ pub trait Tool {
     fn tray_title(&self) -> Option<String> {
         None
     }
+    /// A click on the menu bar icon: true when the tool took it (a
+    /// recording stops), and then the panel doesn't open.
+    fn tray_clicked(&mut self) -> bool {
+        false
+    }
 
     // ---- background
     /// Called on every frame, and also while every shell window is hidden
