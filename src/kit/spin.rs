@@ -361,7 +361,7 @@ pub fn cover(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
     use crate::kit::glass;
     let light = glass::is_light();
     let look = native::CoverLook {
-        stops: glass::backdrop_stops(light),
+        stops: glass::backdrop_stops(glass::theme()),
         glow: glass::backdrop_glow(size, glass::WINDOW_BEAM),
         edge: glass::backdrop_edge(),
         track: glass::white(26),

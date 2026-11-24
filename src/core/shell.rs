@@ -160,6 +160,9 @@ impl App {
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
         if !demo {
+            glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::ThemeChoice::Auto));
+        }
+        if !demo {
             crate::kit::sound::prewarm();
         }
         let tools = crate::tools::all(&ToolEnv { ctx: ctx.clone(), demo });
@@ -307,6 +310,7 @@ impl App {
             eframe::set_value(storage, super::settings::TOOLS_KEY, &self.tools_off);
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
             eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
+            eframe::set_value(storage, glass::THEME_KEY, &glass::theme_choice());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
     }
@@ -1036,7 +1040,7 @@ impl eframe::App for App {
                 self.toast = None;
             }
         }
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1045,7 +1049,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open()) != (&off_before.0, off_before.1, off_before.2) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice()) != (&off_before.0, off_before.1, off_before.2, off_before.3) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
@@ -1323,15 +1327,19 @@ fn tray_image() -> tray_icon::Icon {
     tray_icon::Icon::from_rgba(crate::kit::brand::glyph_rgba(n), n, n).expect("tray icon")
 }
 
-/// Follow the system appearance (or `CMDMEOW_THEME=light|dark`). On a
-/// change: new palette, font weights, egui visuals and window material.
+/// Draw the theme picked in Settings › Theme (Auto follows the system's
+/// appearance; `CMDMEOW_THEME=light|dark|miami` overrides it for
+/// screenshots). On a change: new palette, font weights, egui visuals and
+/// window material.
 fn sync_theme(ctx: &egui::Context, live: bool) {
-    let light = match std::env::var("CMDMEOW_THEME").as_deref() {
-        Ok("light") => true,
-        Ok("dark") => false,
-        _ => live && crate::kit::native::system_light(),
+    let theme = match std::env::var("CMDMEOW_THEME").as_deref() {
+        Ok("light") => glass::Theme::Light,
+        Ok("dark") => glass::Theme::Dark,
+        Ok("miami") => glass::Theme::Miami,
+        _ => glass::theme_choice().resolve(live && crate::kit::native::system_light()),
     };
-    if glass::set_light(light) {
+    let light = theme == glass::Theme::Light;
+    if glass::set_theme(theme) {
         install_fonts(ctx);
         if live {
             crate::kit::native::set_appearance(light);
