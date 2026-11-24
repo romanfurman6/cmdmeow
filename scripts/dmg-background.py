@@ -4,8 +4,9 @@
     python3 scripts/dmg-background.py path/to/art.png   (3:2, e.g. 3072x2048)
 
 Finder draws the icon labels in black on any picture background, in light
-and dark mode alike, so each label gets a light pill under it. Pill centres
-follow the icon places in scripts/dmg-settings.py (label = icon y + 83 pt).
+and dark mode alike, so the app and the Applications alias each sit on a
+light card that holds the icon and its label. Card centres follow the icon
+places in scripts/dmg-settings.py.
 """
 import sys
 from pathlib import Path
@@ -13,9 +14,11 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 W, H = 660, 440
-LABELS = [(150, 263), (505, 263)]  # label centres, points
-PILL_W, PILL_H = 116, 22
-PILL = (0xEE, 0xF3, 0xE6, 235)     # light moss ink, near opaque
+ICONS = [(150, 180), (505, 180)]   # icon centres, points (dmg-settings.py)
+CARD_W, CARD_TOP, CARD_BOTTOM = 160, 96, 286   # card spans icon + label
+RADIUS = 22
+CARD = (0xEE, 0xF3, 0xE6, 230)     # light moss ink, near opaque
+EDGE = (0xFF, 0xFF, 0xFF, 150)
 
 
 def build(art, scale):
@@ -24,9 +27,9 @@ def build(art, scale):
     layer = Image.new("RGBA", (W * scale * ss, H * scale * ss), (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
     k = scale * ss
-    for cx, cy in LABELS:
-        box = [(cx - PILL_W / 2) * k, (cy - PILL_H / 2) * k, (cx + PILL_W / 2) * k, (cy + PILL_H / 2) * k]
-        d.rounded_rectangle(box, radius=PILL_H / 2 * k, fill=PILL)
+    for cx, cy in ICONS:
+        box = [(cx - CARD_W / 2) * k, (cy - 180 + CARD_TOP) * k, (cx + CARD_W / 2) * k, (cy - 180 + CARD_BOTTOM) * k]
+        d.rounded_rectangle(box, radius=RADIUS * k, fill=CARD, outline=EDGE, width=k)
     layer = layer.resize(img.size, Image.LANCZOS)
     return Image.alpha_composite(img, layer).convert("RGB")
 
