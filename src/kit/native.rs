@@ -536,6 +536,41 @@ mod mac {
         out.and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())).ok_or_else(|| "Moved, but the Trash didn't say where".to_string())
     }
 
+    /// Debug (CMDMEOW_TRAY_LOG=1): log every left press/release our app
+    /// receives, with the window and the view under it, to see whether a
+    /// click on the menu bar icon reaches the app at all.
+    pub fn log_left_clicks() {
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        let block = block2::RcBlock::new(move |e: std::ptr::NonNull<AnyObject>| -> *mut AnyObject {
+            unsafe {
+                let ev = e.as_ref();
+                let kind = (*(e.as_ptr() as *const objc2_app_kit::NSEvent)).r#type().0;
+                let window: Option<Retained<AnyObject>> = msg_send![ev, window];
+                let loc: objc2_foundation::NSPoint = msg_send![ev, locationInWindow];
+                let (num, wclass, hit) = match &window {
+                    Some(w) => {
+                        let num: isize = msg_send![&**w, windowNumber];
+                        let content: Option<Retained<AnyObject>> = msg_send![&**w, contentView];
+                        let sup: Option<Retained<AnyObject>> = content.as_ref().and_then(|c| msg_send![&**c, superview]);
+                        let hit: Option<Retained<AnyObject>> = sup.as_ref().or(content.as_ref()).and_then(|v| msg_send![&**v, hitTest: loc]);
+                        (num, (**w).class().name().to_string_lossy().into_owned(), hit.map(|h| (*h).class().name().to_string_lossy().into_owned()).unwrap_or_default())
+                    }
+                    None => (-1, String::new(), String::new()),
+                };
+                eprintln!("[tray-log] mouse type {kind} window #{num} {wclass} at ({:.1},{:.1}) hit {hit}", loc.x, loc.y);
+            }
+            e.as_ptr()
+        });
+        unsafe {
+            // NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp
+            let mask: u64 = (1 << 1) | (1 << 2);
+            let token: Option<Retained<AnyObject>> = msg_send![class!(NSEvent), addLocalMonitorForEventsMatchingMask: mask, handler: &*block];
+            std::mem::forget(token);
+        }
+        std::mem::forget(block);
+    }
+
     /// Call `f` (on the main thread) when the system switches between light
     /// and dark. Our windows pin their own appearance, so they get no event
     /// of their own for it.
@@ -621,6 +656,7 @@ mod other {
         None
     }
     pub fn panel_follows_spaces(_id: egui::ViewportId) {}
+    pub fn log_left_clicks() {}
     pub fn key_window_title() -> Option<String> {
         None
     }

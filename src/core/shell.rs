@@ -180,7 +180,14 @@ impl App {
         // the menu bar icon
         let (tx, tray_rx): (Sender<tray_icon::TrayIconEvent>, _) = std::sync::mpsc::channel();
         let c2 = ctx.clone();
-        tray_icon::TrayIconEvent::set_event_handler(Some(move |e| {
+        let tray_log = std::env::var_os("CMDMEOW_TRAY_LOG").is_some();
+        if tray_log {
+            crate::kit::native::log_left_clicks();
+        }
+        tray_icon::TrayIconEvent::set_event_handler(Some(move |e: tray_icon::TrayIconEvent| {
+            if tray_log && !matches!(e, tray_icon::TrayIconEvent::Move { .. }) {
+                eprintln!("[tray-log] tray event {e:?}");
+            }
             let _ = tx.send(e);
             c2.request_repaint();
         }));
@@ -715,6 +722,9 @@ impl App {
 
     fn handle_tray(&mut self, ctx: &egui::Context) {
         while let Ok(ev) = self.tray_rx.try_recv() {
+            if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() && !matches!(ev, tray_icon::TrayIconEvent::Move { .. }) {
+                eprintln!("[tray-log] handle_tray {ev:?} visible {} mode {:?} since hide {} ms setup {}", self.visible, self.mode, self.last_hide.elapsed().as_millis(), self.setup.is_some());
+            }
             if let tray_icon::TrayIconEvent::Click { rect, button: tray_icon::MouseButton::Left, button_state: tray_icon::MouseButtonState::Up, .. } = ev {
                 if !self.read_menu_icon() {
                     // the click's rect is in the icon display's pixels
