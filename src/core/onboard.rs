@@ -1960,7 +1960,9 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     // (ticking agents for a tool left off did nothing, M1)
     let usage_on = app.demo || app.tool_index(claude::ID).is_some_and(|i| app.tool_on(i));
     if usage_on {
-        y += tile_h + sp::XL + sp::M;
+        // 24 like the step's other gaps: the AI Check sample below still
+        // fits with AI Usage on (M1)
+        y += tile_h + sp::XL;
         let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, ACTION()));
         y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
         for k in 0..n {
@@ -1994,13 +1996,16 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let after = y + tile_h;
     let demo_top = after + sp::XL;
     let a = ease((t - 0.35) / 0.5);
-    if body.bottom() - demo_top >= 232.0 && a > 0.0 {
+    if body.bottom() - demo_top >= AI_DEMO_H && a > 0.0 {
         ai_check_demo(ui, &p, Pos2::new(x, demo_top + (1.0 - a) * 8.0), w, &set.main, a, t);
     }
     if let Some(f) = change {
         settings::update(!app.demo, f);
     }
 }
+
+/// The AI Check sample's height: a 36 header, three 44 rows, one 52, 4 above and below.
+const AI_DEMO_H: f32 = sp::XS + 36.0 + 3.0 * sp::ROW_H + sp::ROW2_H + sp::XS;
 
 /// How long one round of the AI Check demo takes, in seconds.
 const DEMO_LOOP: f32 = 7.0;
@@ -2023,6 +2028,7 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     ];
     let head_h = 36.0;
     let h = sp::XS + head_h + ROWS.iter().map(|r| if r.2.is_some() { sp::ROW2_H } else { sp::ROW_H }).sum::<f32>() + sp::XS;
+    debug_assert_eq!(h, AI_DEMO_H);
     let r = Rect::from_min_size(top_left, Vec2::new(w, h));
     // an example, not this Mac's findings: no fill, a dashed edge, and
     // "Example" by its title (Roman, M5 clean install)
