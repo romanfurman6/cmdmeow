@@ -546,25 +546,34 @@ mod mac {
         use objc2::{class, msg_send};
         let Some(_mtm) = MainThreadMarker::new() else { return false };
         let Some(item) = (unsafe { Retained::retain(item as *mut AnyObject) }) else { return false };
+        // a release whose press never came by (seen once in ten on the
+        // M1) counts as the click
+        let pressed = std::cell::Cell::new(false);
         let block = block2::RcBlock::new(move |e: std::ptr::NonNull<AnyObject>| -> *mut AnyObject {
             unsafe {
+                use objc2_app_kit::NSEventType;
                 let kind = (*(e.as_ptr() as *const objc2_app_kit::NSEvent)).r#type();
-                if kind == objc2_app_kit::NSEventType::LeftMouseDown {
-                    let window: Option<Retained<AnyObject>> = msg_send![e.as_ref(), window];
-                    let button: Option<Retained<AnyObject>> = msg_send![&*item, button];
-                    let icon_window: Option<Retained<AnyObject>> = button.and_then(|b| msg_send![&*b, window]);
-                    if let (Some(w), Some(iw)) = (&window, &icon_window) {
-                        if Retained::as_ptr(w) == Retained::as_ptr(iw) {
-                            f();
-                        }
+                let window: Option<Retained<AnyObject>> = msg_send![e.as_ref(), window];
+                let button: Option<Retained<AnyObject>> = msg_send![&*item, button];
+                let icon_window: Option<Retained<AnyObject>> = button.and_then(|b| msg_send![&*b, window]);
+                let on_icon = matches!((&window, &icon_window), (Some(w), Some(iw)) if Retained::as_ptr(w) == Retained::as_ptr(iw));
+                if kind == NSEventType::LeftMouseDown {
+                    pressed.set(on_icon);
+                    if on_icon {
+                        f();
                     }
+                } else if kind == NSEventType::LeftMouseUp {
+                    if on_icon && !pressed.get() {
+                        f();
+                    }
+                    pressed.set(false);
                 }
             }
             e.as_ptr()
         });
         unsafe {
-            // NSEventMaskLeftMouseDown
-            let mask: u64 = 1 << 1;
+            // NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp
+            let mask: u64 = (1 << 1) | (1 << 2);
             let token: Option<Retained<AnyObject>> = msg_send![class!(NSEvent), addLocalMonitorForEventsMatchingMask: mask, handler: &*block];
             let ok = token.is_some();
             // watched for the app's whole life
