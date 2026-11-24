@@ -2734,7 +2734,7 @@ pub fn perm_helper(app: &mut App, ctx: &egui::Context) {
     let scene = crate::kit::settings_window::scene();
     let at = match (scene.settings, scene.screen) {
         _ if scene.prompt => None,
-        (Some(set), Some(screen)) => Some(crate::kit::settings_window::place(set, screen, size)),
+        (Some(set), Some(screen)) => Some(crate::kit::settings_window::place_clear(set, scene.finder, screen, size)),
         // a demo has no Settings window to stand by
         _ if app.demo => {
             let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
@@ -2762,6 +2762,9 @@ pub fn perm_helper(app: &mut App, ctx: &egui::Context) {
         .with_transparent(true)
         .with_resizable(false)
         .with_has_shadow(true)
+        // opening it must not bring the app forward: that raised setup over
+        // System Settings and Finder, which had just come up (M5, v0.2.0)
+        .with_active(false)
         .with_window_level(egui::WindowLevel::AlwaysOnTop);
     let mut close = false;
     crate::kit::viewport::show(ctx, id, builder, |ui, _class| {
