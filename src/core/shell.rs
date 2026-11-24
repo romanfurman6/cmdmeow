@@ -100,6 +100,8 @@ pub struct App {
     icon_rx: Option<Receiver<()>>,
     /// Presses that went to other apps (`native::watch_clicks_elsewhere`).
     elsewhere_rx: Receiver<()>,
+    /// The menu bar icon shows pressed (the panel is open).
+    icon_lit: bool,
     tray_title: String,
     anchor: Option<Pos2>,
     /// The usable part of the menu bar icon's display (below the menu bar),
@@ -283,6 +285,7 @@ impl App {
             tray_rx,
             icon_rx,
             elsewhere_rx,
+            icon_lit: false,
             tray_title: String::new(),
             anchor: None,
             menu_screen: None,
@@ -718,12 +721,14 @@ impl App {
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(true));
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Focus);
         crate::kit::native::activate();
+        self.light_icon();
     }
 
     pub fn hide(&mut self, ctx: &egui::Context) {
         self.visible = false;
         self.last_hide = Instant::now();
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(false));
+        self.light_icon();
     }
 
     /// When the panel last hid.
@@ -798,6 +803,19 @@ impl App {
                 eprintln!("[tray-log] click elsewhere: hide panel");
             }
             self.hide(ctx);
+        }
+    }
+
+    /// The icon looks pressed while the panel is open.
+    fn light_icon(&mut self) {
+        let want = self.visible && self.mode == Mode::Panel && self.screenshot.is_none();
+        if want == self.icon_lit {
+            return;
+        }
+        self.icon_lit = want;
+        #[cfg(target_os = "macos")]
+        if let Some(item) = self.tray.as_ref().and_then(|t| t.ns_status_item()) {
+            crate::kit::native::set_menu_icon_lit(objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void, want);
         }
     }
 
@@ -989,6 +1007,7 @@ impl eframe::App for App {
             self.hide(ctx);
         }
         self.handle_tray(ctx);
+        self.light_icon();
         self.find_tray_anchor(ctx);
         self.update_tray_title();
         if self.pending_shape {

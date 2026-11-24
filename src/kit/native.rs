@@ -588,6 +588,21 @@ mod mac {
         }
     }
 
+    /// Show the menu bar icon pressed (while the panel is open), as the
+    /// system's own menu bar items do.
+    pub fn set_menu_icon_lit(item: *mut std::ffi::c_void, on: bool) {
+        use objc2::msg_send;
+        use objc2::runtime::{AnyObject, Bool};
+        let Some(_mtm) = MainThreadMarker::new() else { return };
+        let Some(item) = (unsafe { (item as *const AnyObject).as_ref() }) else { return };
+        unsafe {
+            let button: Option<Retained<AnyObject>> = msg_send![item, button];
+            if let Some(b) = button {
+                let _: () = msg_send![&*b, highlight: Bool::new(on)];
+            }
+        }
+    }
+
     /// Call `f` on every press that goes to another app (a click outside
     /// our windows). The panel hides on it: it can't count on losing focus,
     /// since macOS may not make the app active when the panel opens.
@@ -727,6 +742,7 @@ mod other {
     pub fn panel_follows_spaces(_id: egui::ViewportId) {}
     pub fn log_left_clicks() {}
     pub fn watch_clicks_elsewhere(_f: impl Fn() + 'static) {}
+    pub fn set_menu_icon_lit(_item: *mut std::ffi::c_void, _on: bool) {}
     pub fn watch_menu_icon_presses(_item: *mut std::ffi::c_void, _f: impl Fn() + 'static) -> bool {
         false
     }
