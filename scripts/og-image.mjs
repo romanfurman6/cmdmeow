@@ -12,11 +12,13 @@ const site = path.join(root, 'site');
 const icon = pathToFileURL(path.join(root, 'docs/images/icon.png')).href;
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, reducedMotion: 'reduce', colorScheme: 'dark' });
 await page.goto(pathToFileURL(path.join(site, 'index.html')).href, { waitUntil: 'networkidle' });
 await page.evaluate((icon) => {
   document.querySelector('main').remove();
   document.querySelector('footer').remove();
+  document.querySelector('.tseg')?.remove();
+  document.documentElement.dataset.app = 'dark';
   const hero = document.querySelector('.hero');
   hero.querySelectorAll('.cta, .alt, .facts').forEach((e) => e.remove());
   hero.insertAdjacentHTML('afterbegin', `<div class="og-id"><img src="${icon}" alt=""><span>Cmd+Meow</span></div>`);
