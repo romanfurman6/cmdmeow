@@ -1660,6 +1660,16 @@ fn install_fonts(ctx: &egui::Context) {
     });
 }
 
+/// A toast from a worker thread, shown on the next frame.
+static LATER_TOAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn later_toast(ctx: &egui::Context, msg: &str) {
+    if let Ok(mut t) = LATER_TOAST.lock() {
+        *t = Some(msg.to_string());
+    }
+    ctx.request_repaint();
+}
+
 #[cfg(test)]
 mod tests {
     use super::{link_matches, max_panel_height, m, open_link, panel_place, OpenCover};
@@ -1743,14 +1753,4 @@ mod tests {
         let p = panel_place(Some(Pos2::new(3000.0, 2000.0)), built_in, Vec2::new(w, 400.0));
         assert!(built_in.contains(p) && p.y + 400.0 <= 1117.0, "{p:?}");
     }
-}
-
-/// A toast from a worker thread, shown on the next frame.
-static LATER_TOAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-fn later_toast(ctx: &egui::Context, msg: &str) {
-    if let Ok(mut t) = LATER_TOAST.lock() {
-        *t = Some(msg.to_string());
-    }
-    ctx.request_repaint();
 }
