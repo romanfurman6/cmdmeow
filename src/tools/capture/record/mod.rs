@@ -191,7 +191,7 @@ impl Recorder {
         self.saved = None;
         self.displays = sys::displays();
         if self.displays.is_empty() {
-            self.hud("No display to record");
+            self.hud(ts!("cap.no_display"));
             return;
         }
         self.mics = sys::devices(Media::Mic);
@@ -256,12 +256,12 @@ impl Recorder {
                         self.camera = Some(c);
                         self.camera_warned = false;
                     }
-                    Err(e) => self.hud(format!("Camera: {e}")),
+                    Err(e) => self.hud(t!("cap.camera_err", e = e).into_owned()),
                 }
             }
             Access::Ask => self.ask(Media::Camera),
             Access::Denied => {
-                self.hud("Allow the camera in System Settings");
+                self.hud(ts!("cap.allow_cam"));
                 sys::open_privacy(Media::Camera);
             }
         }
@@ -295,7 +295,7 @@ impl Recorder {
                 Access::Ask => self.ask(Media::Mic),
                 Access::Denied => {
                     s.mic = false;
-                    self.hud("Allow the microphone in System Settings");
+                    self.hud(ts!("cap.allow_mic"));
                     sys::open_privacy(Media::Mic);
                 }
             }
@@ -335,8 +335,8 @@ impl Recorder {
 
     pub fn device_name(&self, m: Media, s: &RecSettings) -> String {
         let (list, cur, none) = match m {
-            Media::Camera => (&self.cams, &s.camera_device, "Default camera"),
-            Media::Mic => (&self.mics, &s.mic_device, "Default microphone"),
+            Media::Camera => (&self.cams, &s.camera_device, ts!("cap.default_cam")),
+            Media::Mic => (&self.mics, &s.mic_device, ts!("cap.default_mic")),
         };
         cur.as_ref().and_then(|id| list.iter().find(|d| &d.id == id)).or_else(|| list.first()).map(|d| d.name.clone()).unwrap_or_else(|| none.to_string())
     }
@@ -421,7 +421,7 @@ impl Recorder {
             self.choose(chosen, s);
         } else {
             self.camera = None;
-            self.hud("Recording deleted");
+            self.hud(ts!("cap.rec_deleted"));
         }
     }
 
@@ -499,14 +499,14 @@ impl Recorder {
                         self.phase = Phase::Idle;
                         self.camera = None;
                     }
-                    self.hud(format!("Couldn't record: {e}"));
+                    self.hud(t!("cap.cant_record", e = e).into_owned());
                 }
                 Event::Stopped(r) => {
                     eprintln!("[rec] stopped: {:?}", r.as_ref().map(|st| (&st.path, st.secs)));
                     self.phase = Phase::Idle;
                     match r {
                         Ok(st) => self.out.push(Out::Saved(st)),
-                        Err(e) => self.hud(format!("Couldn't save the recording: {e}")),
+                        Err(e) => self.hud(t!("cap.cant_save_rec", e = e).into_owned()),
                     }
                 }
                 Event::Access(m, ok) => match (m, ok) {
@@ -518,7 +518,7 @@ impl Recorder {
                         }
                         self.camera = if m == Media::Camera { None } else { self.camera.take() };
                         self.out.push(Out::SaveSettings);
-                        self.hud(if m == Media::Camera { "Camera not allowed" } else { "Microphone not allowed" });
+                        self.hud(if m == Media::Camera { ts!("cap.cam_denied") } else { ts!("cap.mic_denied") });
                     }
                     _ => {}
                 },
@@ -537,17 +537,17 @@ impl Recorder {
                 l.mic_warned = true;
             }
             eprintln!("[rec] the microphone sends only silence");
-            self.hud("The microphone hears nothing: is the lid closed, or are the AirPods out?");
+            self.hud(ts!("cap.mic_silent"));
         }
         if !self.camera_warned && self.camera.as_ref().is_some_and(|c| c.stalled()) {
             self.camera_warned = true;
             eprintln!("[rec] the camera sends no picture");
-            self.hud("The camera sends no picture: is the lid closed, or is another app using it?");
+            self.hud(ts!("cap.cam_blank"));
         }
         let failed = self.live().and_then(|l| l.session.failure());
         if let Some(why) = failed {
             eprintln!("[rec] failed: {why}");
-            self.hud(format!("Recording stopped: {why}"));
+            self.hud(t!("cap.rec_stopped", why = why).into_owned());
             self.stop();
         }
         if let (Some(sv), Some(secs)) = (&self.saved, s.card_secs) {

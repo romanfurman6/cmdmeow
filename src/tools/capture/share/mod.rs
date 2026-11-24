@@ -515,10 +515,10 @@ impl Uploads {
     pub fn start(&mut self, s: &Settings, account: &str, path: PathBuf, ctx: &egui::Context) -> Result<(), String> {
         let b = s.bucket(account);
         if !b.ready() {
-            return Err(if is_image(&path) { "Set up sharing in Screenshot settings first".into() } else { "Set up sharing in Video settings first".into() });
+            return Err(if is_image(&path) { ts!("cap.setup_shot").into() } else { ts!("cap.setup_video").into() });
         }
         if s.link == LinkKind::Public && !b.public_ready() {
-            return Err("Add the bucket's Public URL on the Sharing page".into());
+            return Err(ts!("cap.need_public_url").into());
         }
         self.stop(&path);
         let key = load_store().get(&path.display().to_string()).map(|x| x.key.clone()).unwrap_or_else(|| new_key(&s.folder, &path));
@@ -575,7 +575,7 @@ impl Uploads {
                 false
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                done.push((j.path.clone(), Err("The upload stopped".into())));
+                done.push((j.path.clone(), Err(ts!("cap.upload_stopped").into())));
                 false
             }
             Err(_) => true,

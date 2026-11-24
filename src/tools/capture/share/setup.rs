@@ -17,7 +17,7 @@ pub fn chat_name(a: Agent) -> &'static str {
 
 /// The button's label.
 pub fn label(a: Agent) -> String {
-    format!("Ask {} to set up", chat_name(a))
+    t!("cap.ask_setup", agent = chat_name(a)).into_owned()
 }
 
 /// Where the button sends them: Claude's desktop app (a Cowork task with
