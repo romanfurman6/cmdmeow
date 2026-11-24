@@ -383,7 +383,7 @@ impl Viewer {
     pub fn copy_text(&mut self) {
         let t = speech::txt(&self.edited_lines());
         self.out.push(Out::CopyText(t));
-        self.flash("Copied the text");
+        self.flash(ts!("cap.copied_text"));
     }
 
     /// Write captions (.srt) or text (.txt) beside the video.
@@ -392,8 +392,8 @@ impl Viewer {
         let (body, ext) = if srt { (speech::srt(&lines), "srt") } else { (speech::txt(&lines), "txt") };
         let path = self.path.with_extension(ext);
         match std::fs::write(&path, body) {
-            Ok(()) => self.flash(format!("Saved {}", path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
-            Err(e) => self.flash(format!("Couldn't save: {e}")),
+            Ok(()) => self.flash(t!("cap.saved_name", name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).into_owned()),
+            Err(e) => self.flash(t!("cap.cant_save", e = e).into_owned()),
         }
     }
 
@@ -507,7 +507,7 @@ impl Viewer {
                 self.seek(n);
             }
         } else {
-            self.flash("Can't cut all of it");
+            self.flash(ts!("cap.cant_cut_all"));
         }
     }
 
@@ -642,7 +642,7 @@ impl Viewer {
                         if !lines.is_empty() {
                             speech::store(&w.path, &lines);
                         }
-                        self.flash(format!("Saved a copy: {}", w.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
+                        self.flash(t!("cap.saved_copy", name = w.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).into_owned());
                         self.out.push(Out::Saved { path: w.path, secs, copy: true });
                         continue;
                     }
@@ -657,19 +657,19 @@ impl Viewer {
                                 speech::store(&self.path, &lines);
                             }
                             self.load();
-                            self.flash("Saved");
+                            self.flash(ts!("cap.saved"));
                             self.out.push(Out::Saved { path: self.path.clone(), secs: self.edl.duration, copy: false });
                         }
                         Err(e) => {
                             self.load();
-                            self.flash(format!("Couldn't save: {e}"));
+                            self.flash(t!("cap.cant_save", e = e).into_owned());
                         }
                     }
                 }
                 Event::Saved(Err(e)) => {
                     self.saving = false;
                     self.rendering = None;
-                    self.flash(format!("Couldn't save: {e}"));
+                    self.flash(t!("cap.cant_save", e = e).into_owned());
                 }
                 Event::Peaks(n, p) => {
                     self.tracks = n;
@@ -690,7 +690,7 @@ impl Viewer {
                         Ok(lines) => {
                             speech::store(&self.path, &lines);
                             if lines.is_empty() {
-                                self.job_error = Some((Tab::Transcript, "No speech found".into()));
+                                self.job_error = Some((Tab::Transcript, ts!("cap.no_speech").into()));
                             }
                             self.lines = lines;
                             self.picked = None;
@@ -706,7 +706,7 @@ impl Viewer {
                             self.clean_peaks = peaks;
                             self.voice_on = false;
                             self.set_voice_on(true);
-                            self.flash("Voice cleaned up: Save puts it in the video");
+                            self.flash(ts!("cap.voice_done"));
                         }
                         Err(e) => self.job_error = Some((Tab::Audio, e)),
                     }

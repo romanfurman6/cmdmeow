@@ -155,47 +155,47 @@ fn header(v: &mut Viewer, ui: &mut Ui, r: Rect, upload: Option<f32>) -> bool {
         pill_button(ui, br, label, kind, on).clicked()
     };
     if v.asking {
-        if button(ui, "Save", BTN_PRIMARY, !v.saving) {
+        if button(ui, ts!("cap.save"), BTN_PRIMARY, !v.saving) {
             v.asking = false;
             v.save(false);
         }
-        if button(ui, "Discard", BTN_DANGER, true) {
+        if button(ui, ts!("cap.discard"), BTN_DANGER, true) {
             close = true;
         }
-        if button(ui, "Keep editing", BTN_SECONDARY, true) {
+        if button(ui, ts!("cap.keep_editing"), BTN_SECONDARY, true) {
             v.asking = false;
         }
-        p.text(Pos2::new(x - 4.0, y), Align2::RIGHT_CENTER, "Close without saving?", font(12.0), AMBER());
+        p.text(Pos2::new(x - 4.0, y), Align2::RIGHT_CENTER, ts!("cap.close_unsaved"), font(12.0), AMBER());
         return close;
     }
     let can = !v.saving && !v.busy();
     let saving = match &v.rendering {
-        Some(pr) => format!("Saving {}%", pr.done.load(std::sync::atomic::Ordering::Relaxed) / 10),
-        None if v.saving => "Saving".into(),
-        None => "Save  ⌘S".into(),
+        Some(pr) => t!("cap.saving_pct", pct = pr.done.load(std::sync::atomic::Ordering::Relaxed) / 10).into_owned(),
+        None if v.saving => ts!("cap.saving_plain").into(),
+        None => ts!("cap.save_key").into(),
     };
     if button(ui, &saving, BTN_PRIMARY, v.dirty() && can) {
         v.save(false);
     }
-    if button(ui, "Save copy", BTN_SECONDARY, v.player.is_some() && can) {
+    if button(ui, ts!("cap.save_copy"), BTN_SECONDARY, v.player.is_some() && can) {
         v.save(true);
     }
     // Share uploads the saved file; unsaved edits go up after Save
     let shared = crate::tools::capture::share::link_for(&v.path).is_some();
     let label = match upload {
-        Some(f) => format!("Uploading {:.0}%", f * 100.0),
-        None if shared => "Copy link".into(),
-        None => "Share".into(),
+        Some(f) => t!("cap.uploading", pct = format!("{:.0}", f * 100.0)).into_owned(),
+        None if shared => ts!("cap.copy_link").into(),
+        None => ts!("cap.share").into(),
     };
     if button(ui, &label, BTN_SECONDARY, upload.is_none() && !v.saving) {
         v.out.push(Out::Share(v.path.clone()));
     }
     if v.dirty() {
         let what = match (v.edited(), v.voice_on && v.voice.is_some()) {
-            (true, true) => "Unsaved cuts and voice",
-            (true, false) => "Unsaved cuts",
-            (false, true) => "Unsaved voice cleanup",
-            _ => "Unsaved frame",
+            (true, true) => ts!("cap.unsaved.both"),
+            (true, false) => ts!("cap.unsaved.cuts"),
+            (false, true) => ts!("cap.unsaved.voice"),
+            _ => ts!("cap.unsaved.frame"),
         };
         chip(&p, Pos2::new(x - 2.0, y), Align2::RIGHT_CENTER, what, CHIP_ASK());
     }
@@ -207,7 +207,7 @@ fn picture(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let p = ui.painter_at(r);
     p.rect_filled(r, 0.0, Color32::from_rgb(0x0E, 0x0E, 0x10));
     if let Some(e) = &v.error {
-        p.text(r.center(), Align2::CENTER_CENTER, format!("Can't play this video: {e}"), font(13.0), TEXT_DIM());
+        p.text(r.center(), Align2::CENTER_CENTER, t!("cap.cant_play", e = e), font(13.0), TEXT_DIM());
         return;
     }
     if let Some(f) = v.player.as_ref().and_then(|pl| pl.frame()) {
@@ -244,7 +244,7 @@ fn picture(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     // a cut piece shows dimmed, so it's clear it won't be in the file
     if v.player.is_some() && !v.edl.kept(v.time()) && v.time() < v.duration() - 1e-3 {
         p.rect_filled(outer, 0.0, Color32::from_black_alpha(150));
-        p.text(fit.center(), Align2::CENTER_CENTER, "Cut", bold(15.0), TEXT_SOFT());
+        p.text(fit.center(), Align2::CENTER_CENTER, ts!("cap.cut"), bold(15.0), TEXT_SOFT());
     }
     if let Some(text) = v.caption() {
         let wrap = (fit.width() * 0.8).max(120.0);
@@ -283,7 +283,7 @@ fn transport(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     p.circle_filled(pr.center(), 17.0, white(if presp.hovered() { 40 } else { 26 }));
     let playing = v.playing();
     icons::draw(&p, if playing { Ico::Pause } else { Ico::Play }, Rect::from_center_size(pr.center() + Vec2::new(if playing { 0.0 } else { 1.5 }, 0.0), Vec2::splat(15.0)), TEXT());
-    if presp.on_hover_text(if playing { "Pause (Space)" } else { "Play (Space)" }).clicked() {
+    if presp.on_hover_text(if playing { ts!("cap.pause") } else { ts!("cap.play") }).clicked() {
         v.toggle_play();
     }
     // time in the edited video
@@ -303,25 +303,25 @@ fn transport(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let has_sel = v.sel.is_some();
     let cut_w = 150.0;
     let cr = Rect::from_min_max(Pos2::new(x - cut_w, y - 15.0), Pos2::new(x, y + 15.0));
-    if pill_button(ui, cr, "", BTN_PRIMARY, has_sel).on_hover_text("Cut the chosen stretch out (⌫)").clicked() {
+    if pill_button(ui, cr, "", BTN_PRIMARY, has_sel).on_hover_text(ts!("cap.cut_tip")).clicked() {
         v.cut_selection();
     }
     let col = if has_sel { Color32::WHITE } else { with_alpha(Color32::WHITE, 0.5) };
     icons::draw(&p, Ico::Scissors, Rect::from_center_size(Pos2::new(cr.left() + 22.0, y), Vec2::splat(14.0)), col);
-    p.text(Pos2::new(cr.left() + 36.0, y), Align2::LEFT_CENTER, "Cut selection", bold(13.0), col);
+    p.text(Pos2::new(cr.left() + 36.0, y), Align2::LEFT_CENTER, ts!("cap.cut_sel"), bold(13.0), col);
     x = cr.left() - 8.0;
-    let kw = button_width(&p, "Keep only this", BTN_SECONDARY);
+    let kw = button_width(&p, ts!("cap.keep_only"), BTN_SECONDARY);
     let kr = Rect::from_min_max(Pos2::new(x - kw, y - 15.0), Pos2::new(x, y + 15.0));
-    if pill_button(ui, kr, "Keep only this", BTN_SECONDARY, has_sel).on_hover_text("Trim to the chosen stretch").clicked() {
+    if pill_button(ui, kr, ts!("cap.keep_only"), BTN_SECONDARY, has_sel).on_hover_text(ts!("cap.trim_tip")).clicked() {
         v.keep_selection();
     }
     x = kr.left() - 16.0;
     let rr = Rect::from_min_size(Pos2::new(x - 30.0, y - 15.0), Vec2::splat(30.0));
-    if plain_icon(ui, rr, Ico::Redo, "Redo (⇧⌘Z)", !v.redo.is_empty()) {
+    if plain_icon(ui, rr, Ico::Redo, ts!("cap.redo_tip"), !v.redo.is_empty()) {
         v.redo();
     }
     let ur = rr.translate(Vec2::new(-34.0, 0.0));
-    if plain_icon(ui, ur, Ico::Undo, "Undo (⌘Z)", !v.undo.is_empty()) {
+    if plain_icon(ui, ur, Ico::Undo, ts!("cap.undo_tip"), !v.undo.is_empty()) {
         v.undo();
     }
 }
@@ -572,7 +572,7 @@ fn frame_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         if k > 0 {
             hairline(&p, row.left_top(), row.right_top());
         }
-        let label = ["Padding", "Shape", "Round corners", "Shadow"][k];
+        let label = [ts!("cap.padding"), ts!("cap.shape"), ts!("cap.round_corners"), ts!("cap.shadow")][k];
         p.text(Pos2::new(row.left(), row.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT());
         let seg_at = |labels: &[&str]| {
             let w = labels.iter().map(|l| p.layout_no_wrap(l.to_string(), font(12.0), TEXT()).size().x + 2.0 * sp::M).fold(0.0f32, f32::max) * labels.len() as f32 + 4.0;
@@ -631,7 +631,7 @@ fn job_row(v: &mut Viewer, ui: &mut Ui, r: Rect, label: &str) -> f32 {
     p.text(Pos2::new(r.right(), r.top() + 10.0), Align2::RIGHT_CENTER, detail, font(12.0), TEXT_FAINT());
     crate::kit::spin::bar(&p, "video-job-bar", Rect::from_min_size(Pos2::new(r.left(), r.top() + 26.0), Vec2::new(r.width(), 6.0)), frac, ACCENT());
     let stop = Rect::from_min_size(Pos2::new(r.left(), r.top() + 42.0), Vec2::new(70.0, 26.0));
-    if pill_button(ui, stop, "Stop", BTN_SECONDARY, true).clicked() {
+    if pill_button(ui, stop, ts!("cap.stop"), BTN_SECONDARY, true).clicked() {
         v.cancel_job();
     }
     stop.bottom() + 12.0
@@ -655,8 +655,8 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let busy_here = matches!(v.job.as_ref().map(|j| j.kind), Some(JobKind::Download(_) | JobKind::Transcribe));
     if busy_here {
         let label = match v.job.as_ref().map(|j| j.kind) {
-            Some(JobKind::Download(m)) => format!("Downloading the {} model", m.name().to_lowercase()),
-            _ => "Transcribing on this Mac".to_string(),
+            Some(JobKind::Download(m)) => t!("cap.downloading_model", model = m.name().to_lowercase()).into_owned(),
+            _ => ts!("cap.transcribing").to_string(),
         };
         y = job_row(v, ui, Rect::from_min_max(Pos2::new(r.left(), y), r.max), &label);
     }
@@ -666,7 +666,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         }
         y = error_row(v, &p, r, y);
         // what's needed to start: a model (downloaded once), then Transcribe
-        p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, "Speech to text, on this Mac", bold(13.0), TEXT());
+        p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, ts!("cap.stt_title"), bold(13.0), TEXT());
         y += 22.0;
         y += 12.0;
         for m in Model::ALL {
@@ -681,7 +681,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             } else {
                 p.rect_filled(row, 8.0, white(if resp.hovered() { 8 + ROW_HOVER } else { 8 }));
             }
-            let size = if m.ready() { "Downloaded".to_string() } else { human_bytes(m.bytes()) };
+            let size = if m.ready() { ts!("cap.downloaded").to_string() } else { human_bytes(m.bytes()) };
             p.text(Pos2::new(row.left() + 12.0, row.top() + 16.0), Align2::LEFT_CENTER, m.name(), bold(13.0), if on { ACCENT() } else { TEXT() });
             p.text(Pos2::new(row.right() - 12.0, row.top() + 16.0), Align2::RIGHT_CENTER, size, font(12.0), if m.ready() { GREEN() } else { TEXT_FAINT() });
             p.galley(Pos2::new(row.left() + 12.0, row.top() + 27.0), about, TEXT_DIM());
@@ -692,12 +692,12 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             y = row.bottom() + 8.0;
         }
         let go = Rect::from_min_size(Pos2::new(r.left(), y + 4.0), Vec2::new(r.width(), 32.0));
-        let label = if v.prefs.model.ready() { "Transcribe".to_string() } else { format!("Download ({}) and transcribe", human_bytes(v.prefs.model.bytes())) };
+        let label = if v.prefs.model.ready() { ts!("cap.transcribe").to_string() } else { t!("cap.download_transcribe", size = human_bytes(v.prefs.model.bytes())).into_owned() };
         if pill_button(ui, go, &label, BTN_PRIMARY, !v.busy() && v.player.is_some()).clicked() {
             v.transcribe();
         }
         y = go.bottom() + 10.0;
-        if v.prefs.model.ready() && link(ui, Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, &format!("Remove the {} model", v.prefs.model.name().to_lowercase()), 12.0).clicked() {
+        if v.prefs.model.ready() && link(ui, Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, &t!("cap.remove_model", model = v.prefs.model.name().to_lowercase()), 12.0).clicked() {
             v.prefs.model.remove();
         }
         return;
@@ -752,13 +752,13 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         v.prefs.captions = !v.prefs.captions;
         v.save_prefs();
     }
-    p.text(Pos2::new(cb.right() + 8.0, cb.center().y), Align2::LEFT_CENTER, "Captions", font(12.0), TEXT_SOFT());
+    p.text(Pos2::new(cb.right() + 8.0, cb.center().y), Align2::LEFT_CENTER, ts!("cap.captions"), font(12.0), TEXT_SOFT());
     let mut x = r.right();
-    for (label, k) in [(".txt", 2), (".srt", 1), ("Copy", 0)] {
+    for (label, k) in [(".txt", 2), (".srt", 1), (ts!("cap.copy"), 0)] {
         let w = button_width(&p, label, BTN_SECONDARY) - 6.0;
         let br = Rect::from_min_max(Pos2::new(x - w, by), Pos2::new(x, by + 28.0));
         x = br.left() - 6.0;
-        let tip = ["Copy the text", "Save captions (.srt) beside the video", "Save the text (.txt) beside the video"][k];
+        let tip = [ts!("cap.copy_text"), ts!("cap.save_srt"), ts!("cap.save_txt")][k];
         if pill_button(ui, br, label, BTN_SECONDARY, true).on_hover_text(tip).clicked() {
             match k {
                 0 => v.copy_text(),
@@ -767,7 +767,7 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             }
         }
     }
-    if !v.busy() && link(ui, Pos2::new(x - 6.0, by + 14.0), Align2::RIGHT_CENTER, "Redo", 11.5).on_hover_text("Transcribe again").clicked() {
+    if !v.busy() && link(ui, Pos2::new(x - 6.0, by + 14.0), Align2::RIGHT_CENTER, ts!("cap.redo"), 11.5).on_hover_text(ts!("cap.transcribe_again")).clicked() {
         v.lines.clear();
         v.picked = None;
     }
@@ -776,24 +776,24 @@ fn transcript(v: &mut Viewer, ui: &mut Ui, r: Rect) {
 fn voice_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let mut y = r.top();
-    p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, "Clean up voice", bold(13.0), TEXT());
+    p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, ts!("cap.clean_voice"), bold(13.0), TEXT());
     y += 22.0;
     if v.tracks == 0 {
-        y += paragraph(&p, Pos2::new(r.left(), y), "This video has no sound", font(12.0), TEXT_DIM(), r.width());
+        y += paragraph(&p, Pos2::new(r.left(), y), ts!("cap.no_sound"), font(12.0), TEXT_DIM(), r.width());
     }
     y += 14.0;
     if v.tracks == 0 {
         return;
     }
     if matches!(v.job.as_ref().map(|j| j.kind), Some(JobKind::Clean)) {
-        y = job_row(v, ui, Rect::from_min_max(Pos2::new(r.left(), y), r.max), "Cleaning up the voice");
+        y = job_row(v, ui, Rect::from_min_max(Pos2::new(r.left(), y), r.max), ts!("cap.cleaning_voice"));
     }
     y = error_row(v, &p, r, y);
 
     // strength
-    p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, "Strength", font(12.0), TEXT_SOFT());
+    p.text(Pos2::new(r.left(), y + 8.0), Align2::LEFT_CENTER, ts!("cap.strength"), font(12.0), TEXT_SOFT());
     let pct = v.prefs.strength;
-    p.text(Pos2::new(r.right(), y + 8.0), Align2::RIGHT_CENTER, if pct >= 0.99 { "Full".to_string() } else { format!("{:.0} dB", super::voice::atten_db(pct)) }, font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(r.right(), y + 8.0), Align2::RIGHT_CENTER, if pct >= 0.99 { ts!("cap.full").to_string() } else { format!("{:.0} dB", super::voice::atten_db(pct)) }, font(12.0), TEXT_FAINT());
     y += 22.0;
     let track = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 20.0));
     let resp = ui.interact(track, ui.scope_id().with("strength"), Sense::click_and_drag());
@@ -808,11 +808,11 @@ fn voice_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
         v.save_prefs();
     }
     y = track.bottom() + 4.0;
-    p.text(Pos2::new(r.left(), y + 6.0), Align2::LEFT_CENTER, "Gentle", font(11.0), TEXT_FAINT());
-    p.text(Pos2::new(r.right(), y + 6.0), Align2::RIGHT_CENTER, "Strong", font(11.0), TEXT_FAINT());
+    p.text(Pos2::new(r.left(), y + 6.0), Align2::LEFT_CENTER, ts!("cap.gentle"), font(11.0), TEXT_FAINT());
+    p.text(Pos2::new(r.right(), y + 6.0), Align2::RIGHT_CENTER, ts!("cap.strong"), font(11.0), TEXT_FAINT());
     y += 22.0;
     let go = Rect::from_min_size(Pos2::new(r.left(), y), Vec2::new(r.width(), 32.0));
-    let label = if v.voice.is_some() { "Clean up again" } else { "Clean up voice" };
+    let label = if v.voice.is_some() { ts!("cap.clean_again") } else { ts!("cap.clean_voice") };
     if pill_button(ui, go, label, BTN_PRIMARY, !v.busy() && v.player.is_some()).clicked() {
         v.clean_voice();
     }
@@ -825,7 +825,7 @@ fn voice_tab(v: &mut Viewer, ui: &mut Ui, r: Rect) {
             v.set_voice_on(k == 1);
         }
         y = seg.bottom() + 12.0;
-        for (label, peaks, on) in [("Before", &v.peaks, !v.voice_on), ("After", &v.clean_peaks, v.voice_on)] {
+        for (label, peaks, on) in [(ts!("cap.before"), &v.peaks, !v.voice_on), (ts!("cap.after"), &v.clean_peaks, v.voice_on)] {
             p.text(Pos2::new(r.left(), y + 6.0), Align2::LEFT_CENTER, label, font(11.0), if on { TEXT() } else { TEXT_FAINT() });
             let w = Rect::from_min_size(Pos2::new(r.left(), y + 14.0), Vec2::new(r.width(), 36.0));
             p.rect_filled(w, 4.0, Color32::from_rgb(0x1E, 0x24, 0x20));

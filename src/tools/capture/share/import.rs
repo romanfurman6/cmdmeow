@@ -82,7 +82,7 @@ pub fn short_host(host: &str) -> String {
         format!("{}…{}", c[..n].iter().collect::<String>(), c[c.len() - n..].iter().collect::<String>())
     };
     match host.strip_suffix(R2) {
-        Some(account) => format!("Cloudflare R2, account {}", cut(account, 4)),
+        Some(account) => t!("cap.r2_account", id = cut(account, 4)).into_owned(),
         None => cut(host, 14),
     }
 }

@@ -106,7 +106,7 @@ fn device_menu(ui: &mut Ui, p: &egui::Painter, at: Pos2, w: f32, m: Media, devs:
     // swallow clicks on the card itself
     let _ = ui.interact(r, id, Sense::click());
     if list.is_empty() {
-        let none = if m == Media::Mic { "No microphone found" } else { "No camera found" };
+        let none = if m == Media::Mic { ts!("cap.no_mic") } else { ts!("cap.no_cam") };
         p.text(Pos2::new(r.left() + 14.0, r.top() + 4.0 + MENU_ROW / 2.0), Align2::LEFT_CENTER, none, font(12.0), TEXT_DIM());
     }
     for (i, dev) in list.iter().enumerate() {
@@ -228,7 +228,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                         p.galley(lr.center() - g.size() / 2.0, g, TEXT());
                         let hr = Rect::from_center_size(wr.center() + Vec2::new(0.0, 16.0), Vec2::new(110.0, 22.0));
                         p.rect_filled(hr, 11.0, ACTION());
-                        p.text(hr.center(), Align2::CENTER_CENTER, "Click to record", bold(11.0), ON_ACTION);
+                        p.text(hr.center(), Align2::CENTER_CENTER, ts!("cap.click_record"), bold(11.0), ON_ACTION);
                     }
                     None => {
                         p.rect_filled(r, 0.0, DIM);
@@ -283,7 +283,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                                 let sb = tr.shrink(5.0);
                                 let sr = ui.interact(sb, ui.scope_id().with("area-start"), Sense::click());
                                 p.rect_filled(sb, sb.height() / 2.0, if sr.hovered() { lerp_color(ACTION(), Color32::WHITE, 0.15) } else { ACTION() });
-                                p.text(sb.center(), Align2::CENTER_CENTER, "Start  Enter", bold(13.0), ON_ACTION);
+                                p.text(sb.center(), Align2::CENTER_CENTER, ts!("cap.start_enter"), bold(13.0), ON_ACTION);
                                 if sr.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     todo.push(Do::Start(ch));
                                 }
@@ -292,7 +292,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                     }
                     None => {
                         p.rect_filled(r, 0.0, DIM);
-                        let g = p.layout_no_wrap("Drag over what to record".into(), bold(15.0), TEXT());
+                        let g = p.layout_no_wrap(ts!("cap.drag_record").into(), bold(15.0), TEXT());
                         p.galley(r.center() - g.size() / 2.0, g, TEXT());
                     }
                 }
@@ -366,7 +366,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         let nr = Rect::from_center_size(Pos2::new(card.center().x, y + 12.0), Vec2::new(x1 - x0, 28.0));
         let nresp = ui.interact(nr, id.with("name"), if many { Sense::click() } else { Sense::hover() });
         text_fit(p, nr.center(), Align2::CENTER_CENTER, &name, bold(22.0), TEXT(), nr.width());
-        if many && nresp.on_hover_text("Record another display").clicked() {
+        if many && nresp.on_hover_text(ts!("cap.another_display")).clicked() {
             todo.push(Do::Display);
         }
         y += 28.0;
@@ -386,9 +386,9 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         let rows = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 3.0 * ROW));
         p.rect_filled(rows, 12.0, ROWS());
         let list: [(Ico, &str, String, bool, Option<Media>); 3] = [
-            (Ico::Camera, "Camera", cam.to_string(), s.camera, Some(Media::Camera)),
-            (Ico::Mic, "Microphone", mic.to_string(), s.mic, Some(Media::Mic)),
-            (Ico::Speaker, "System audio", "Everything you hear".into(), s.system_audio, None),
+            (Ico::Camera, ts!("cap.camera"), cam.to_string(), s.camera, Some(Media::Camera)),
+            (Ico::Mic, ts!("cap.microphone"), mic.to_string(), s.mic, Some(Media::Mic)),
+            (Ico::Speaker, ts!("cap.system_audio"), ts!("cap.hear_all").into(), s.system_audio, None),
         ];
         for (k, (ico, label, dev, on, media)) in list.into_iter().enumerate() {
             let rr = Rect::from_min_size(Pos2::new(x0, y + k as f32 * ROW), Vec2::new(x1 - x0, ROW));
@@ -448,7 +448,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
             todo.push(Do::Source(Source::ALL[i]));
         }
         let mut x = br.left() + 262.0;
-        for (k, (on, ico_on, ico_off, tip)) in [(s.camera, Ico::Camera, Ico::Camera, "Camera"), (s.mic, Ico::Mic, Ico::MicOff, "Microphone"), (s.system_audio, Ico::Speaker, Ico::Speaker, "System audio")].into_iter().enumerate() {
+        for (k, (on, ico_on, ico_off, tip)) in [(s.camera, Ico::Camera, Ico::Camera, ts!("cap.camera")), (s.mic, Ico::Mic, Ico::MicOff, ts!("cap.microphone")), (s.system_audio, Ico::Speaker, Ico::Speaker, ts!("cap.system_audio"))].into_iter().enumerate() {
             let b = Rect::from_min_size(Pos2::new(x, br.top() + 8.0), Vec2::splat(32.0));
             let color = if on { ON_ACTION } else { TEXT_FAINT() };
             if on {
@@ -479,7 +479,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
                 chevron(p, cr.center(), TEXT_SOFT());
-                let tip = if k == 0 { "Choose the camera" } else { "Choose the microphone" };
+                let tip = if k == 0 { ts!("cap.choose_cam") } else { ts!("cap.choose_mic") };
                 if resp.on_hover_text(tip).clicked() {
                     todo.push(Do::Menu(if devs.menu == Some(m) { None } else { Some(m) }));
                 }
@@ -656,7 +656,7 @@ fn bar(c: &mut Capture, ctx: &egui::Context) {
         if sresp.hovered() {
             vctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        if sresp.on_hover_text("Stop and save").clicked() {
+        if sresp.on_hover_text(ts!("cap.stop_and_save")).clicked() {
             todo = Some(Do::Stop);
         }
         let mut x = sr.right() + 8.0;
@@ -665,19 +665,19 @@ fn bar(c: &mut Capture, ctx: &egui::Context) {
         let b = |x: f32| Rect::from_min_size(Pos2::new(x, r.center().y - 19.0), Vec2::splat(38.0));
         match confirm {
             Some(what) => {
-                let q = if what == Confirm::Delete { format!("Delete {}?", timeline::clock_label(length)) } else { "Start over?".into() };
+                let q = if what == Confirm::Delete { t!("cap.delete_q", len = timeline::clock_label(length)).into_owned() } else { ts!("cap.start_over").into() };
                 p.text(Pos2::new(x + 4.0, r.center().y), Align2::LEFT_CENTER, q, bold(13.0), TEXT());
                 let dr = Rect::from_min_size(Pos2::new(r.right() - 8.0 - 74.0, r.center().y - 15.0), Vec2::new(74.0, 30.0));
                 let kr = Rect::from_min_size(Pos2::new(dr.left() - 8.0 - 76.0, dr.top()), Vec2::new(76.0, 30.0));
-                if pill_button(ui, kr, "Keep", BTN_SECONDARY, true).clicked() {
+                if pill_button(ui, kr, ts!("cap.keep"), BTN_SECONDARY, true).clicked() {
                     todo = Some(Do::Keep);
                 }
-                if pill_button(ui, dr, if what == Confirm::Delete { "Delete" } else { "Restart" }, BTN_DANGER, true).clicked() {
+                if pill_button(ui, dr, if what == Confirm::Delete { ts!("cap.delete") } else { ts!("cap.restart_rec") }, BTN_DANGER, true).clicked() {
                     todo = Some(Do::Sure(what));
                 }
             }
             None => {
-                let mic_tip = if !has_mic { "Microphone is off for this recording" } else if muted { "Unmute the microphone" } else { "Mute the microphone" };
+                let mic_tip = if !has_mic { ts!("cap.mic_off") } else if muted { ts!("cap.unmute") } else { ts!("cap.mute") };
                 if icon_button(ui, b(x), id.with("mic"), if has_mic && !muted { Ico::Mic } else { Ico::MicOff }, mic_tip, if has_mic { TEXT_SOFT() } else { TEXT_MUTED() }, false) && has_mic {
                     todo = Some(Do::Mute);
                 }
@@ -784,16 +784,16 @@ fn camera_controls(c: &mut Capture, ctx: &egui::Context) {
         let line = |p: &egui::Painter, a: Pos2, b: Pos2, col: Color32| {
             p.line_segment([a, b], Stroke::new(2.0, col));
         };
-        if glyph(ui, b(0.0), "smaller", "Smaller", k > 0, &|p, c0, col| line(p, c0 - Vec2::new(6.0, 0.0), c0 + Vec2::new(6.0, 0.0), col)) {
+        if glyph(ui, b(0.0), "smaller", ts!("cap.smaller"), k > 0, &|p, c0, col| line(p, c0 - Vec2::new(6.0, 0.0), c0 + Vec2::new(6.0, 0.0), col)) {
             todo = Some(-1);
         }
-        if glyph(ui, b(1.0), "bigger", "Bigger", k + 1 < sizes.len(), &|p, c0, col| {
+        if glyph(ui, b(1.0), "bigger", ts!("cap.bigger"), k + 1 < sizes.len(), &|p, c0, col| {
             line(p, c0 - Vec2::new(6.0, 0.0), c0 + Vec2::new(6.0, 0.0), col);
             line(p, c0 - Vec2::new(0.0, 6.0), c0 + Vec2::new(0.0, 6.0), col);
         }) {
             todo = Some(1);
         }
-        if glyph(ui, b(2.0), "close", "Hide the camera (bring it back in the bar's settings)", true, &|p, c0, col| {
+        if glyph(ui, b(2.0), "close", ts!("cap.hide_cam"), true, &|p, c0, col| {
             line(p, c0 - Vec2::splat(5.0), c0 + Vec2::splat(5.0), col);
             line(p, c0 + Vec2::new(-5.0, 5.0), c0 + Vec2::new(5.0, -5.0), col);
         }) {
@@ -846,24 +846,24 @@ fn bar_settings(c: &mut Capture, ctx: &egui::Context) {
         let x0 = r.left() + 14.0;
         let x1 = r.right() - 14.0;
         let mut y = r.top() + 12.0;
-        p.text(Pos2::new(x0, y + 6.0), Align2::LEFT_CENTER, "Recording", bold(11.0), TEXT_FAINT());
+        p.text(Pos2::new(x0, y + 6.0), Align2::LEFT_CENTER, ts!("cap.recording"), bold(11.0), TEXT_FAINT());
         y += 22.0;
         let row = |p: &egui::Painter, y: f32, label: &str| {
             p.text(Pos2::new(x0, y + 15.0), Align2::LEFT_CENTER, label, font(13.0), TEXT());
         };
         let seg = |ui: &mut Ui, y: f32, w: f32, key: &str, labels: &[&str], cur: usize| segmented(ui, Rect::from_min_size(Pos2::new(x1 - w, y + 3.0), Vec2::new(w, 24.0)), id.with(key), labels, cur);
-        row(&p, y, "Frame rate");
+        row(&p, y, ts!("cap.frame_rate"));
         if let Some(i) = seg(ui, y, 100.0, "fps", &["30", "60"], if s.fps == 30 { 0 } else { 1 }) {
             s.fps = crate::tools::capture::settings::RECORD_FPS[i];
         }
         y += 34.0;
         use crate::tools::capture::settings::{CameraSize, RecQuality};
-        row(&p, y, "Quality");
-        if let Some(i) = seg(ui, y, 130.0, "q", &["Smaller", "High"], if s.quality == RecQuality::Smaller { 0 } else { 1 }) {
+        row(&p, y, ts!("cap.quality"));
+        if let Some(i) = seg(ui, y, 130.0, "q", &[ts!("cap.q_small"), ts!("cap.q_high")], if s.quality == RecQuality::Smaller { 0 } else { 1 }) {
             s.quality = if i == 0 { RecQuality::Smaller } else { RecQuality::High };
         }
         y += 34.0;
-        row(&p, y, "Camera");
+        row(&p, y, ts!("cap.camera"));
         match cam_shown {
             Some(on) => {
                 if small_switch(ui, Rect::from_min_size(Pos2::new(x1 - 36.0, y + 5.0), Vec2::new(36.0, 20.0)), id.with("camera"), on) {
@@ -871,11 +871,11 @@ fn bar_settings(c: &mut Capture, ctx: &egui::Context) {
                 }
             }
             None => {
-                p.text(Pos2::new(x1, y + 15.0), Align2::RIGHT_CENTER, "Turn on before recording", font(12.0), TEXT_FAINT());
+                p.text(Pos2::new(x1, y + 15.0), Align2::RIGHT_CENTER, ts!("cap.turn_on_before"), font(12.0), TEXT_FAINT());
             }
         }
         y += 34.0;
-        row(&p, y, "Camera size");
+        row(&p, y, ts!("cap.cam_size"));
         let cur = match s.camera_size {
             CameraSize::S => 0,
             CameraSize::M => 1,
@@ -885,23 +885,23 @@ fn bar_settings(c: &mut Capture, ctx: &egui::Context) {
             s.camera_size = [CameraSize::S, CameraSize::M, CameraSize::L][i];
         }
         y += 34.0;
-        row(&p, y, "Countdown");
+        row(&p, y, ts!("cap.countdown"));
         let cur = match s.countdown {
             0 => 0,
             5 => 2,
             _ => 1,
         };
-        if let Some(i) = seg(ui, y, 130.0, "cd", &["Off", "3 s", "5 s"], cur) {
+        if let Some(i) = seg(ui, y, 130.0, "cd", &[ts!("cap.off"), ts!("cap.s3"), ts!("cap.s5")], cur) {
             s.countdown = [0, 3, 5][i];
         }
         y += 34.0;
-        row(&p, y, "Show cursor");
+        row(&p, y, ts!("cap.show_cursor_short"));
         if small_switch(ui, Rect::from_min_size(Pos2::new(x1 - 36.0, y + 5.0), Vec2::new(36.0, 20.0)), id.with("cursor"), s.cursor) {
             s.cursor = !s.cursor;
         }
         if clicks {
             y += 34.0;
-            row(&p, y, "Highlight clicks");
+            row(&p, y, ts!("cap.highlight_clicks"));
             if small_switch(ui, Rect::from_min_size(Pos2::new(x1 - 36.0, y + 5.0), Vec2::new(36.0, 20.0)), id.with("clicks"), s.clicks) {
                 s.clicks = !s.clicks;
             }
@@ -954,8 +954,8 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
     let shared = uploading.is_none() && crate::tools::capture::share::link_for(&sv.path).is_some();
     let link_label = match uploading {
         Some(f) => format!("{:.0}%", f * 100.0),
-        None if shared => "Copy link".to_string(),
-        None => "Share".to_string(),
+        None if shared => ts!("cap.copy_link").to_string(),
+        None => ts!("cap.share").to_string(),
     };
     crate::kit::viewport::show(ctx, vid, floating(title, pos, size).with_active(false), |ui, _| {
         sys::lift(title, None);
@@ -976,7 +976,7 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
         let presp = ui.interact(pic, id.with("play"), Sense::click());
         p.circle_filled(play.center(), 26.0, Color32::from_rgba_unmultiplied(28, 28, 31, if presp.hovered() { 230 } else { 200 }));
         icons::draw(&p, Ico::Play, play.shrink(16.0), Color32::WHITE);
-        if presp.on_hover_text("Play and edit").clicked() {
+        if presp.on_hover_text(ts!("cap.play_edit")).clicked() {
             todo = Some(Do::Open);
         }
         let len = timeline::clock_label(sv.secs);
@@ -991,9 +991,9 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
         }
         let y = pic.bottom() + 14.0;
         icons::draw(&p, Ico::Check, Rect::from_center_size(Pos2::new(r.left() + 18.0, y), Vec2::splat(13.0)), GREEN());
-        p.text(Pos2::new(r.left() + 30.0, y), Align2::LEFT_CENTER, format!("Saved · {}", megabytes(sv.bytes)), font(12.0), TEXT());
+        p.text(Pos2::new(r.left() + 30.0, y), Align2::LEFT_CENTER, t!("cap.saved_size", size = megabytes(sv.bytes)), font(12.0), TEXT());
         p.text(Pos2::new(r.right() - 12.0, y), Align2::RIGHT_CENTER, format!("{}×{}", sv.size.0, sv.size.1), font(12.0), TEXT_FAINT());
-        let acts = [(Ico::Scissors, "Edit", Do::Open), (Ico::Link, link_label.as_str(), Do::Link), (Ico::Folder, "Finder", Do::Reveal), (Ico::Copy, "Copy", Do::Copy), (Ico::Trash, "Delete", Do::Delete)];
+        let acts = [(Ico::Scissors, ts!("cap.edit"), Do::Open), (Ico::Link, link_label.as_str(), Do::Link), (Ico::Folder, ts!("cap.finder"), Do::Reveal), (Ico::Copy, ts!("cap.copy"), Do::Copy), (Ico::Trash, ts!("cap.delete"), Do::Delete)];
         let bw = (r.width() - 16.0 - 16.0) / 5.0;
         for (k, (ico, label, act)) in acts.into_iter().enumerate() {
             let br = Rect::from_min_size(Pos2::new(r.left() + 8.0 + k as f32 * (bw + 4.0), y + 14.0), Vec2::new(bw, 44.0));
@@ -1026,9 +1026,9 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
         Some(Do::Reveal) => sys::reveal(&path),
         Some(Do::Copy) => {
             if sys::copy_file(&path) {
-                c.hud("Copied the video, paste it into any chat");
+                c.hud(ts!("cap.copied_video_paste"));
             } else {
-                c.hud("Couldn't copy");
+                c.hud(ts!("cap.cant_copy"));
             }
         }
         Some(Do::Delete) => {
@@ -1040,9 +1040,9 @@ fn saved(c: &mut Capture, ctx: &egui::Context) {
                         c.forget_dropped_thumbs();
                     }
                     c.files_at = None;
-                    c.hud("Moved to Trash");
+                    c.hud(ts!("cap.moved_trash"));
                 }
-                Err(e) => c.hud(format!("Couldn't move it to the Trash: {e}")),
+                Err(e) => c.hud(t!("cap.trash_fail", e = e).into_owned()),
             }
         }
         Some(Do::Close) => c.rec.saved = None,
