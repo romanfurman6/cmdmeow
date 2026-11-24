@@ -1266,13 +1266,13 @@ fn parse_verdicts(text: &str) -> Vec<(usize, Verdict, String)> {
 
 // ---------------------------------------------------------------- removal
 
-/// What a clean removes, in order: the Trash is emptied first, so what this
-/// clean moves there can still be put back.
 /// The item is in the group a clean is limited to (any, when `None`).
 pub fn in_scope(it: &Item, only: Option<Group>) -> bool {
     only.is_none_or(|g| it.group == g)
 }
 
+/// What a clean removes, in order: the Trash is emptied first, so what this
+/// clean moves there can still be put back.
 fn clean_order(items: &[Item]) -> Vec<Item> {
     let mut t: Vec<Item> = items.iter().filter(|i| i.selected && i.verdict != Verdict::Keep && !i.hard_keep).cloned().collect();
     t.sort_by_key(|i| i.group != Group::Trash);
