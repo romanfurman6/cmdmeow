@@ -159,3 +159,25 @@ impl Tool for System {
         Some(View::Page)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restart_and_trash_tips_read_in_english() {
+        let mut s = monitor::demo_snapshot();
+        s.uptime_secs = 9 * m::SECONDS_PER_DAY;
+        s.trash_bytes = Some(m::TRASH_SIZE_THRESHOLD + 1);
+        let sys = System { mon: Arc::new(Mutex::new(s.clone())), ai: crate::kit::aicheck::Check::new(ID, true), route: None };
+        let recs = sys.recommendations();
+        let restart = recs.iter().find(|r| r.go == Action::Restart).unwrap();
+        assert_eq!((restart.title.as_str(), restart.action.as_str()), ("Restart recommended · up 9 days", "Restart…"));
+        let trash = recs.iter().find(|r| r.go == Action::EmptyTrash).unwrap();
+        assert_eq!(trash.title, format!("Trash is full · {}", human_bytes(m::TRASH_SIZE_THRESHOLD + 1)));
+        assert_eq!(trash.action, "Empty Trash");
+        assert_eq!(tn!("health.rec.restart", n = 1u64), "Restart recommended · up 1 day");
+        // the device row menu
+        assert_eq!([ts!("health.alert_below"), ts!("health.never"), ts!("health.hide"), ts!("health.forget")], ["Alert below", "Never", "Hide", "Forget"]);
+    }
+}
