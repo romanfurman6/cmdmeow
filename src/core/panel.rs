@@ -245,14 +245,24 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     if let Some(since) = armed {
         let idle = ctx.data(|d| d.get_temp::<std::time::Instant>(id.with("idle"))).unwrap_or(since);
         let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-        if app.last_hide() > since || esc || (!app.demo && idle.elapsed().as_secs_f32() > ARM_IDLE) {
+        let hid = app.last_hide() > since;
+        let idle_out = !app.demo && idle.elapsed().as_secs_f32() > ARM_IDLE;
+        if hid || esc || idle_out {
+            quit_log(&format!("disarm: hid {hid} esc {esc} idle {idle_out} after {} ms", since.elapsed().as_millis()));
             disarm(&ctx);
             armed = None;
         } else {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
     }
-    let t = ctx.animate_bool_with_time(id.with("t"), armed.is_some(), ARM);
+    let mut t = ctx.animate_bool_with_time(id.with("t"), armed.is_some(), ARM);
+    if app.demo && armed.is_some() {
+        // a still picture shows it fully out
+        t = 1.0;
+    }
+    if t > 0.0 && t < 1.0 {
+        ctx.request_repaint();
+    }
     let x0 = rect.left() + 16.0;
     let quit_w = button_width(&p, "Quit", BTN_DANGER).max(56.0);
     let mut clicked_quit = false;
@@ -264,7 +274,12 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         title_line(app, &p, x0, rect.top(), r.left() - x0 - 10.0);
         if t < 0.01 {
             if round_button_in(ui, r, Icon::Close, "Quit Cmd+Meow").clicked() {
-                ctx.data_mut(|d| d.insert_temp(id, std::time::Instant::now()));
+                quit_log("arm");
+                ctx.data_mut(|d| {
+                    d.insert_temp(id, std::time::Instant::now());
+                    d.remove::<std::time::Instant>(id.with("idle"));
+                });
+                ctx.request_repaint();
             }
         } else {
             let k = crate::kit::key::press(ui, r, id.with("key"), true, Some(crate::kit::sound::Click::Danger));
@@ -295,6 +310,7 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     }
     if let Some(since) = armed {
         if clicked_quit && since.elapsed().as_secs_f32() > ARM_GUARD {
+            quit_log("quit");
             disarm(&ctx);
             if !app.demo {
                 app.quit(&ctx);
@@ -302,9 +318,17 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         } else if !clicked_quit && ctx.input(|i| i.pointer.any_click()) && since.elapsed().as_secs_f32() > ARM_GUARD {
             // a click anywhere else puts it back
             if ctx.input(|i| i.pointer.interact_pos()).is_some_and(|pos| !hot.contains(pos)) {
+                quit_log("disarm: click elsewhere");
                 disarm(&ctx);
             }
         }
+    }
+}
+
+/// CMDMEOW_TRAY_LOG=1: say when Quit arms and why it folds back.
+fn quit_log(what: &str) {
+    if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {
+        eprintln!("[panel-quit] {what}");
     }
 }
 
