@@ -160,7 +160,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
 .wt .dm { color: rgba(255,255,255,.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wt b { font-size: 13px; font-weight: 500; color: #fff; white-space: nowrap; }
 .wbtn { margin-left: auto; padding: 6px 10px; border-radius: 8px; background: var(--lime); color: #10140c; font-size: 11.5px; }
-.rec { position: absolute; right: -2px; top: -2px; width: 7px; height: 7px; border-radius: 50%; background: #FF6B5A; }
+.rec { position: absolute; right: -2px; top: -2px; width: 7px; height: 7px; border-radius: 50%; background: #FF453A; }
 .wg.on .rec { animation: blink 1.2s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .25; } }
 .wg.on .wi .i[viewBox] { transform-origin: center; }
@@ -254,7 +254,7 @@ h1 { font: 500 68px/72px var(--sans); letter-spacing: -.035em; text-shadow: 0 2p
    Light = the app's light backdrop (#FFFFFF → #EAF2DF → #D9E8C8), ink #14181A, darker tints for text (C9/L8).
    The first screen and the menu bar picture are photos of a desktop, so they keep white text in both. */
 :root { --ik: 255,255,255; --lime-tx: var(--lime); --lime-rgb: 200,240,90; --acc-tx: #D9F78A; }
-html[data-app="light"] { --bg: #EAF2DF; --ink: #14181A; --ink2: rgba(20,24,26,.66); --hair: rgba(20,24,26,.1); --ik: 20,24,26; --lime-tx: #4E7A10; color-scheme: light; }
+html[data-app="light"] { --bg: #EAF2DF; --ink: #14181A; --ink2: rgba(20,24,26,.66); --hair: rgba(20,24,26,.1); --ik: 20,24,26; --lime-tx: #2F5208; --acc-tx: #2F5208; --lime: #A8D83A; --lime-rgb: 168,216,58; color-scheme: light; }
 html[data-app="light"] body { background: linear-gradient(to bottom, #EAF2DF 0, #EAF2DF 1000px, #E2EDD5 2400px, #D9E8C8 100%) var(--bg); }
 .desk, .mbx { --ink: #FFFFFF; --ink2: rgba(255,255,255,.64); --hair: rgba(255,255,255,.08); --ik: 255,255,255; color: #fff; }
 html[data-app="light"] .desk::after { background: linear-gradient(to bottom, transparent 62%, rgba(255,255,255,.9)); }
@@ -269,19 +269,19 @@ html[data-app="light"] .foot .tm { color: rgba(20,24,26,.56); }
 /* light: a daytime photo of the same valley (Magnific, 2026-11-24), and the light macOS menu bar */
 html[data-app="light"] .desk {
   --ink: #14181A; --ink2: rgba(20,24,26,.66); --ik: 20,24,26; color: #14181A; }
-html[data-app="light"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(255,255,255,.3), rgba(255,255,255,.1) 55%, transparent 80%); }
+html[data-app="light"] .desk::before { background: radial-gradient(ellipse 980px 640px at calc(max(0px, (100% - 1360px) / 2) + 330px) 46%, rgba(234,242,223,0), transparent 80%); }
 html[data-app="light"] .desk::after { background: linear-gradient(to bottom, rgba(234,242,223,0) 40%, rgba(234,242,223,.35) 60%, rgba(234,242,223,.8) 80%, #EAF2DF 97%); }
 html[data-app="light"] .desk { margin-bottom: -1px; }
 html[data-app="light"] h1 { text-shadow: 0 1px 24px rgba(255,255,255,.5); }
 html[data-app="light"] .hero .sub { color: #14181A; text-shadow: 0 1px 18px rgba(255,255,255,.7); }
 html[data-app="light"] .facts { color: #14181A; }
 html[data-app="light"] .facts > span, html[data-app="light"] .facts .ver { background: rgba(255,255,255,.72); box-shadow: inset 0 0 0 1px rgba(20,24,26,.09); }
-html[data-app="light"] .facts .ver, html[data-app="light"] .facts > span::before { color: #4E7A10; } html[data-app="light"] .facts > span::before { background: #5B8A14; }
+html[data-app="light"] .facts .ver, html[data-app="light"] .facts > span::before { color: #2F5208; } html[data-app="light"] .facts > span::before { background: #5B8A14; }
 html[data-app="light"] .desk .btn.ghost { background: rgba(255,255,255,.72); color: #14181A; box-shadow: inset 0 0 0 1px rgba(20,24,26,.1); }
 html[data-app="light"] .desk .btn.ghost:hover { background: rgba(255,255,255,.92); }
 html[data-app="light"] .mbar { background: rgba(255,255,255,.5); color: #14181A; }
 html[data-app="light"] .mbar .mi { color: rgba(20,24,26,.85); }
-html[data-app="light"] .mbar .cup .ph { color: #4E7A10; }
+html[data-app="light"] .mbar .cup .ph { color: #2F5208; }
 html[data-app="light"] .mbar .cat.on { background: rgba(20,24,26,.12); }
 html[data-app="light"] .mbx { background-image: url(desk-day.jpg); --ink: #14181A; --ik: 20,24,26; color: #14181A; }
 html[data-app="light"] .mbx::before { background: rgba(255,255,255,.5); }
@@ -365,5 +365,6 @@ html[data-app="light"] .tseg button[aria-checked="true"] { box-shadow: inset 0 0
 html[data-app="miami"] .tseg { background: rgba(14,10,40,.62); }
 @media (max-width: 600px) { .tseg { right: 12px; bottom: 12px; } }
 
-html[data-app="light"] .dimg i { filter: saturate(1.45) contrast(1.14) brightness(.95); }
+html[data-app="light"] .dimg i { filter: saturate(1.5) contrast(1.18) brightness(.8); }
 html[data-app="light"] .dimg { -webkit-mask-image: linear-gradient(to bottom,#000 0,#000 55%,rgba(0,0,0,.7) 72%,rgba(0,0,0,.3) 86%,transparent 100%); mask-image: linear-gradient(to bottom,#000 0,#000 55%,rgba(0,0,0,.7) 72%,rgba(0,0,0,.3) 86%,transparent 100%); }
+html[data-app="light"] .btn.pri:hover { background: #B6E052; }
