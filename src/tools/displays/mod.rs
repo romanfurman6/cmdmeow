@@ -167,7 +167,7 @@ impl Tool for Displays {
         ID
     }
     fn name(&self) -> &'static str {
-        "Displays"
+        ts!("disp.name")
     }
     fn badge(&self) -> Badge {
         Badge { icon: Icon::Display, color: tint::DISPLAYS() }
@@ -176,14 +176,14 @@ impl Tool for Displays {
         "Utilities"
     }
     fn about(&self) -> &'static str {
-        "Brightness and volume of external monitors from the menu bar"
+        ts!("disp.about")
     }
     fn needs(&self) -> Vec<Need> {
         // only the brightness and volume keys need it
         vec![Need::may(Perm::Accessibility)]
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: LEVELS, title: "Displays", about: "Brightness and volume of your monitors.", sizes: &[Size::S14, Size::S24], size: Size::S14, default_on: false }]
+        vec![WidgetSpec { id: LEVELS, title: ts!("disp.name"), about: ts!("disp.widget_about"), sizes: &[Size::S14, Size::S24], size: Size::S14, default_on: false }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);

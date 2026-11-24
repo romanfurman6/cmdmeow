@@ -1966,5 +1966,20 @@
     "hint_keep_awake": "Keep the Mac awake",
     "hint_displays": "External monitor brightness and volume",
     "hint_claude": "AI limits and token use"
+  },
+  "disp": {
+    "unmute": "Unmute",
+    "mute": "Mute",
+    "none": "None",
+    "connected_one": "%{n} connected",
+    "connected_other": "%{n} connected",
+    "name": "Displays",
+    "no_external": "No external display",
+    "use_keys": "Use keyboard keys for these displays",
+    "settings": "Display Settings",
+    "about": "Brightness and volume of external monitors from the menu bar",
+    "widget_about": "Brightness and volume of your monitors.",
+    "builtin": "Built-in Display",
+    "display": "Display"
   }
 }
