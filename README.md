@@ -44,7 +44,7 @@ Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, 
 | **Mac Health** | CPU, memory, disk, battery, Wi-Fi speed test, Bluetooth batteries |
 | **AI Usage** | Claude, Codex, Gemini and OpenCode limits, pace and cost |
 | **Fan Control** | Fan speeds, chip heat map, fixed speed or your own curve |
-| **Screenshot** | Area, window or screen, an editor with arrows, blur and text |
+| **Screenshot** | Area, window or screen, an editor with arrows, blur, text and zoom |
 | **Video** | Screen recording with camera, mic and system audio |
 | **Sharing** | Upload a shot or a recording to your own S3 and copy a link |
 | **Dictation** | ⌥D types what you say at the caret; speech stays on the Mac |
@@ -53,7 +53,8 @@ Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, 
 | **Displays** | Brightness and volume of external monitors from your keys |
 
 Every tool can be turned off, and the panel is a grid of widgets you arrange
-yourself.
+yourself. Three themes: Light Classic, Dark Classic and Dark Miami (pick one
+during setup or in Settings › Theme).
 
 ![Disk Map](docs/images/app-disk-map.png)
 
@@ -180,10 +181,9 @@ users must right-click › Open.
 The signed app runs with the hardened runtime and `assets/CmdMeow.entitlements`
 (microphone, camera, Apple Events).
 
-Current releases (0.1.0, 0.1.1) are Developer ID signed but not notarized:
-Apple hasn't finished setting up the developer account yet, and
-`release.yml` publishes without notarization (the release name says so) until
-it can. See [Install](#install) for the first launch.
+If notarization fails (0.1.0 and 0.1.1: Apple hadn't finished setting up the
+developer account), `release.yml` still publishes the Developer ID signed
+build and the release name says "(not notarized)". See [Install](#install) for the first launch.
 
 Coming from CleanMeBro (the old name; bundle id is now
 `com.romanfurman6.cmdmeow`): the new bundle id makes it a new app to macOS. Grant
