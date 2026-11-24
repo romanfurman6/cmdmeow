@@ -35,11 +35,11 @@ impl Mode {
     pub const ALL: [Mode; 5] = [Mode::Auto, Mode::Quiet, Mode::Fixed, Mode::Curve, Mode::Max];
     pub fn label(self) -> &'static str {
         match self {
-            Mode::Auto => "Auto",
-            Mode::Quiet => "Quiet",
-            Mode::Fixed => "Fixed",
-            Mode::Curve => "Curve",
-            Mode::Max => "Max",
+            Mode::Auto => ts!("fan.mode.auto"),
+            Mode::Quiet => ts!("fan.mode.quiet"),
+            Mode::Fixed => ts!("fan.mode.fixed"),
+            Mode::Curve => ts!("fan.mode.curve"),
+            Mode::Max => ts!("fan.mode.max"),
         }
     }
     pub fn index(self) -> usize {
@@ -60,9 +60,9 @@ impl Source {
     pub const ALL: [Source; 3] = [Source::Hottest, Source::Cpu, Source::Gpu];
     pub fn label(self) -> &'static str {
         match self {
-            Source::Hottest => "Hottest",
-            Source::Cpu => "CPU",
-            Source::Gpu => "GPU",
+            Source::Hottest => ts!("fan.source.hottest"),
+            Source::Cpu => ts!("fan.source.cpu"),
+            Source::Gpu => ts!("fan.source.gpu"),
         }
     }
     /// The temperature this source reads now, falling back to the hottest part.
@@ -136,9 +136,9 @@ impl Preset {
     pub const ALL: [Preset; 3] = [Preset::Quiet, Preset::Balanced, Preset::Cool];
     pub fn label(self) -> &'static str {
         match self {
-            Preset::Quiet => "Quiet",
-            Preset::Balanced => "Balanced",
-            Preset::Cool => "Cool",
+            Preset::Quiet => ts!("fan.preset.quiet"),
+            Preset::Balanced => ts!("fan.preset.balanced"),
+            Preset::Cool => ts!("fan.preset.cool"),
         }
     }
     pub fn points(self) -> [(f32, f32); 3] {

@@ -79,10 +79,10 @@ pub fn sparkline(p: &egui::Painter, r: Rect, values: &[f32], lo: f32, hi: f32, c
 /// "Left" and "Right" for two fans, otherwise "Fan 1", "Fan 2" …
 pub fn fan_name(i: usize, n: usize) -> String {
     match (n, i) {
-        (1, _) => "Fan".into(),
-        (2, 0) => "Left".into(),
-        (2, 1) => "Right".into(),
-        _ => format!("Fan {}", i + 1),
+        (1, _) => ts!("fan.fan").into(),
+        (2, 0) => ts!("fan.left").into(),
+        (2, 1) => ts!("fan.right").into(),
+        _ => t!("fan.numbered", n = i + 1).into_owned(),
     }
 }
 
@@ -106,11 +106,11 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let x1 = rect.right() - 12.0;
         let y0 = rect.top() + CARD_H + 4.0;
         hairline(p, Pos2::new(x0, y0 - 6.0), Pos2::new(x1, y0 - 6.0));
-        p.text(Pos2::new(x0, y0 + 4.0), Align2::LEFT_TOP, "Temperatures", font(11.0), TEXT_FAINT());
+        p.text(Pos2::new(x0, y0 + 4.0), Align2::LEFT_TOP, ts!("fan.temperatures"), font(11.0), TEXT_FAINT());
         let groups = s.groups();
         let lh = 24.0;
         let fit = ((rect.bottom() - 10.0 - (y0 + 22.0)) / lh).floor().max(0.0) as usize;
-        let shown: Vec<(&str, String)> = groups.iter().take(fit).map(|g| (g.group.label(), format!("{:.0} °C", g.max))).collect();
+        let shown: Vec<(&str, String)> = groups.iter().take(fit).map(|g| (g.group.label(), t!("unit.celsius", c = g.max : {:.0}).into_owned())).collect();
         let cols = tile::bar_cols(p, &shown.iter().map(|(l, v)| (*l, v.as_str())).collect::<Vec<_>>());
         for (i, (g, (label, v))) in groups.iter().zip(&shown).enumerate() {
             let lr = Rect::from_min_size(Pos2::new(x0, y0 + 22.0 + i as f32 * lh), Vec2::new(x1 - x0, lh));
@@ -123,14 +123,14 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let value = if !s.loaded {
         "…".to_string()
     } else if let Some(r) = rpm {
-        format!("{} rpm", rpm_text(r))
+        t!("fan.rpm_value", rpm = rpm_text(r)).into_owned()
     } else if let Some((_, c)) = s.hottest() {
-        format!("{c:.0} °C")
+        t!("unit.celsius", c = c : {:.0}).into_owned()
     } else {
-        "No data".into()
+        ts!("fan.no_data").into()
     };
     let frac = s.avg_frac().unwrap_or(0.0);
-    let hot = hottest_text(s).map(|(g, c)| format!("{g} {c:.0} °C")).unwrap_or_default();
+    let hot = hottest_text(s).map(|(g, c)| t!("fan.part_temp", part = g, c = c : {:.0}).into_owned()).unwrap_or_default();
     // a warm part's caption takes its state colour (C12); a calm one stays a caption
     let hot_col = match s.hottest() {
         Some((_, c)) if c >= super::data::WARM_C => heat_text(c),
@@ -148,13 +148,13 @@ pub fn widget(s: &Snapshot, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             text_fit(p, Pos2::new(rect.center().x, rect.bottom() - 10.0), Align2::CENTER_BOTTOM, &value, bold(13.0), TEXT(), rect.width() - 10.0);
             if hot.is_empty() { resp } else { resp.on_hover_text(hot.clone()) }
         }
-        Size::S12 => tile::wide_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, false),
+        Size::S12 => tile::wide_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), ts!("fan.widget_title"), &value, &hot, hot_col, false),
         _ => {
             // the hottest part is a line on the right; the left says how hard the fans work
-            let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), "Fans", &value, &hot, hot_col, false);
+            let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Fan, tint::FAN(), rpm.map(|_| (frac.max(0.02), LINE())), ts!("fan.widget_title"), &value, &hot, hot_col, false);
             // each fan; the hottest part is already the caption on the left
-            let lines: Vec<(String, Option<(f32, Color32)>, String)> = s.fans.iter().take(3).enumerate().map(|(i, f)| (fan_name(i, s.fans.len()), Some((f.frac().max(0.02), LINE())), format!("{} rpm", rpm_text(f.rpm)))).collect();
-            let empty = if !s.loaded { "Reading…" } else if s.has_smc { "No fans · cools passively" } else { "Fan speed unavailable" };
+            let lines: Vec<(String, Option<(f32, Color32)>, String)> = s.fans.iter().take(3).enumerate().map(|(i, f)| (fan_name(i, s.fans.len()), Some((f.frac().max(0.02), LINE())), t!("fan.rpm_value", rpm = rpm_text(f.rpm)).into_owned())).collect();
+            let empty = if !s.loaded { ts!("fan.reading") } else if s.has_smc { ts!("fan.no_fans_passive") } else { ts!("fan.unavailable") };
             tile::lines(ui.painter(), right, &lines, empty);
             resp
         }
@@ -192,8 +192,8 @@ pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let x0 = rect.left() + 12.0;
     let x1 = rect.right() - 12.0;
     let hy = rect.top() + 20.0;
-    p.text(Pos2::new(x0, hy), Align2::LEFT_CENTER, "Fans", ty::title(), TEXT());
-    let mode = if s.fanless() { "No fans" } else { "Auto" };
+    p.text(Pos2::new(x0, hy), Align2::LEFT_CENTER, ts!("fan.widget_title"), ty::title(), TEXT());
+    let mode = if s.fanless() { ts!("fan.no_fans") } else { ts!("fan.mode.auto") };
     p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, mode, font(12.0), TEXT_DIM());
 
     // fans
@@ -205,7 +205,7 @@ pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     } else if s.fans.is_empty() {
         // a line on the card, no plate inside it (S2)
         let r = Rect::from_min_size(Pos2::new(x0, fy), Vec2::new(x1 - x0, fh));
-        let msg = if s.has_smc { "No fans. Cools passively" } else { "Fan speed isn't available on this Mac." };
+        let msg = if s.has_smc { ts!("fan.no_fans_card") } else { ts!("fan.unavailable_here") };
         text_fit(&p, Pos2::new(r.left(), r.center().y), Align2::LEFT_CENTER, msg, font(12.0), TEXT_DIM(), r.width());
     } else {
         let n = s.fans.len().min(2);
@@ -221,8 +221,8 @@ pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let ty = fy + fh + 12.0;
     match hottest_text(s) {
         Some((g, c)) => {
-            p.text(Pos2::new(x0, ty + 7.0), Align2::LEFT_CENTER, format!("Hottest · {g}"), font(12.0), TEXT_DIM());
-            p.text(Pos2::new(x1, ty + 7.0), Align2::RIGHT_CENTER, format!("{c:.0} °C"), bold(13.0), heat_text(c));
+            p.text(Pos2::new(x0, ty + 7.0), Align2::LEFT_CENTER, t!("fan.hottest_part", part = g).into_owned(), font(12.0), TEXT_DIM());
+            p.text(Pos2::new(x1, ty + 7.0), Align2::RIGHT_CENTER, t!("unit.celsius", c = c : {:.0}).into_owned(), bold(13.0), heat_text(c));
             let br = Rect::from_min_max(Pos2::new(x0, ty + 20.0), Pos2::new(x1, ty + 26.0));
             heat_scale(&p, br);
             let mx = br.left() + br.width() * heat_pos(c);
@@ -236,7 +236,7 @@ pub fn card(s: &Snapshot, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
             sparkline(&p, Rect::from_min_max(Pos2::new(x0, ty + 34.0), Pos2::new(x1, bottom)), &hot, lo, hi, HOT_LINE(), None);
         }
         None if s.loaded => {
-            p.text(Pos2::new(x0, ty + 7.0), Align2::LEFT_CENTER, "No temperature sensors found", font(12.0), TEXT_DIM());
+            p.text(Pos2::new(x0, ty + 7.0), Align2::LEFT_CENTER, ts!("fan.no_sensors"), font(12.0), TEXT_DIM());
         }
         None => {}
     }
@@ -256,7 +256,7 @@ fn mini_fan(p: &egui::Painter, r: Rect, f: &Fan, name: &str) {
     let (ly1, ly2) = two_lines_y(&p, r.center().y, &font(11.0), &bold(15.0));
     p.text(Pos2::new(x, ly1), Align2::LEFT_CENTER, name, font(11.0), TEXT_DIM());
     let g = p.text(Pos2::new(x, ly2), Align2::LEFT_CENTER, rpm_text(f.rpm), bold(15.0), TEXT());
-    p.text(Pos2::new(g.right() + 4.0, g.bottom() - 2.0), Align2::LEFT_BOTTOM, "rpm", font(11.0), TEXT_FAINT());
+    p.text(Pos2::new(g.right() + 4.0, g.bottom() - 2.0), Align2::LEFT_BOTTOM, ts!("fan.rpm"), font(11.0), TEXT_FAINT());
 }
 
 // ---------------------------------------------------------------- sheet
@@ -264,18 +264,10 @@ fn mini_fan(p: &egui::Painter, r: Rect, f: &Fan, name: &str) {
 /// Hint line and colour for a thermal pressure level.
 pub fn thermal_hint(level: u8) -> (&'static str, Color32) {
     match level {
-        0 => ("No slowdown", GREEN()),
-        1 => ("Slightly slowed", AMBER()),
-        2 => ("Slowed to cool down", AMBER()),
-        _ => ("Heavily slowed", RED()),
-    }
-}
-
-pub fn plural(n: usize, word: &str) -> String {
-    if n == 1 {
-        format!("1 {word}")
-    } else {
-        format!("{n} {word}s")
+        0 => (ts!("fan.thermal.no_slowdown"), GREEN()),
+        1 => (ts!("fan.thermal.slightly"), AMBER()),
+        2 => (ts!("fan.thermal.cooling"), AMBER()),
+        _ => (ts!("fan.thermal.heavily"), RED()),
     }
 }
 
