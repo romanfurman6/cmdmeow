@@ -865,7 +865,8 @@ impl WgpuWinitRunning<'_> {
                         true
                     }
                 });
-                painter.paint_and_update_textures(
+                let shot = !screenshot_commands.is_empty();
+                let secs = painter.paint_and_update_textures(
                     viewport_id,
                     pixels_per_point,
                     app.clear_color(&egui_ctx.global_style().visuals),
@@ -873,7 +874,18 @@ impl WgpuWinitRunning<'_> {
                     pending_deltas,
                     screenshot_commands,
                     window,
-                )
+                );
+                // CmdMeow: a screenshot reaches its callback only when the
+                // device is polled, and frame pacing above may skip every
+                // following paint (and with it the poll inside submit), so
+                // the callback would never run. Wait for this frame here.
+                if shot && let Some(rs) = painter.render_state() {
+                    let _ = rs.device.poll(egui_wgpu::wgpu::PollType::Wait {
+                        submission_index: None,
+                        timeout: Some(std::time::Duration::from_millis(250)),
+                    });
+                }
+                secs
             };
 
             for action in viewport.actions_requested.drain(..) {

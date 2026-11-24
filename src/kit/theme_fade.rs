@@ -81,14 +81,17 @@ pub fn poll(ctx: &egui::Context) {
     if p.viewport != ctx.viewport_id() {
         return;
     }
-    let Some(p) = lock.take_if(|p| p.shot.is_some() || now - p.asked > 0.5) else {
+    // the picture comes back within the frame that painted it; past a
+    // quarter second something went wrong, so switch without the wave
+    let Some(p) = lock.take_if(|p| p.shot.is_some() || now - p.asked > 0.25) else {
         // still waiting for the picture
         ctx.request_repaint();
         return;
     };
     drop(lock);
-    if let Some(shot) = &p.shot {
-        native::start(p.viewport, shot, p.from, now);
+    match &p.shot {
+        Some(shot) => native::start(p.viewport, shot, p.from, now),
+        None => eprintln!("[theme] no window picture, switching without the wave"),
     }
     set_theme_choice(p.choice);
     ctx.request_repaint();
