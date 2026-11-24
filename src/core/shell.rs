@@ -96,6 +96,9 @@ pub struct App {
     tray_rx: Receiver<tray_icon::TrayIconEvent>,
     tray_title: String,
     anchor: Option<Pos2>,
+    /// The usable part of the menu bar icon's display (below the menu bar),
+    /// from the icon itself: the panel stays inside it.
+    menu_screen: Option<Rect>,
     visible: bool,
     had_focus: bool,
     last_hide: Instant,
@@ -238,6 +241,7 @@ impl App {
             tray_rx,
             tray_title: String::new(),
             anchor: None,
+            menu_screen: None,
             visible: true,
             had_focus: false,
             last_hide: Instant::now(),
@@ -545,8 +549,29 @@ impl App {
     }
 
     pub fn max_panel_height(&self, ctx: &egui::Context) -> f32 {
-        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
-        (screen.y - 40.0).max(400.0)
+        max_panel_height(self.panel_screen(ctx))
+    }
+
+    /// Where the panel may go: below the menu bar of the icon's display.
+    /// Before the icon has said where it is, the window's display.
+    fn panel_screen(&self, ctx: &egui::Context) -> Rect {
+        self.menu_screen.unwrap_or_else(|| {
+            let screen = ctx.input(|i| i.viewport().monitor_size).filter(|s| s.x > 100.0).unwrap_or(Vec2::new(1512.0, 982.0));
+            Rect::from_min_max(Pos2::new(0.0, 24.0), screen.to_pos2())
+        })
+    }
+
+    /// Ask the menu bar icon where it is now (the displays may have moved,
+    /// or the icon moved to another display). False while it can't say.
+    fn read_menu_icon(&mut self) -> bool {
+        #[cfg(target_os = "macos")]
+        let Some(ptr) = self.tray.as_ref().and_then(|t| t.ns_status_item()).map(|i| objc2::rc::Retained::as_ptr(i) as *mut std::ffi::c_void) else { return false };
+        #[cfg(not(target_os = "macos"))]
+        let ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        let Some(place) = crate::kit::native::menu_icon_place(ptr) else { return false };
+        self.anchor = Some(Pos2::new(place.icon.center().x, place.icon.max.y));
+        self.menu_screen = Some(place.visible);
+        true
     }
 
     pub fn window_size(&self, ctx: &egui::Context) -> Vec2 {
@@ -576,10 +601,7 @@ impl App {
     /// Where the panel's top-left corner goes: under the menu bar icon,
     /// kept on screen.
     fn panel_pos(&self, ctx: &egui::Context, size: Vec2) -> Pos2 {
-        let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
-        let anchor = self.anchor.unwrap_or(Pos2::new(screen.x - m::PANEL_WIDTH / 2.0 - 16.0, 30.0));
-        let right = (anchor.x + m::PANEL_WIDTH / 2.0).clamp(m::PANEL_WIDTH, screen.x - 8.0);
-        Pos2::new((right - size.x).max(8.0), anchor.y + 6.0)
+        panel_place(self.anchor, self.panel_screen(ctx), size)
     }
 
     /// The panel drifted from its spot (macOS moves it down 26 pt now and
@@ -606,20 +628,12 @@ impl App {
         if self.anchor.is_some() || self.mode != Mode::Panel || !self.visible {
             return;
         }
-        let Some(rect) = self.tray.as_ref().and_then(|t| t.rect()) else { return };
-        if rect.size.width == 0 || rect.size.height == 0 {
-            return;
-        }
-        let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
-        let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
-        let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
         // right after launch the icon isn't in the menu bar yet (it sits
         // at the screen's bottom-left): ask again in a moment
-        if rect.position.x <= 0.0 || bottom > 60.0 {
+        if !self.read_menu_icon() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
             return;
         }
-        self.anchor = Some(Pos2::new(cx, bottom));
         self.pending_shape = true;
     }
 
@@ -688,6 +702,8 @@ impl App {
 
     pub fn open_panel(&mut self, ctx: &egui::Context) {
         self.mode = Mode::Panel;
+        self.read_menu_icon();
+        crate::kit::native::panel_follows_spaces(egui::ViewportId::ROOT);
         self.reshape(ctx);
         self.show(ctx);
     }
@@ -695,10 +711,13 @@ impl App {
     fn handle_tray(&mut self, ctx: &egui::Context) {
         while let Ok(ev) = self.tray_rx.try_recv() {
             if let tray_icon::TrayIconEvent::Click { rect, button: tray_icon::MouseButton::Left, button_state: tray_icon::MouseButtonState::Up, .. } = ev {
-                let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
-                let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
-                let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
-                self.anchor = Some(Pos2::new(cx, bottom));
+                if !self.read_menu_icon() {
+                    // the click's rect is in the icon display's pixels
+                    let ppp = ctx.input(|i| i.viewport().native_pixels_per_point).unwrap_or(2.0);
+                    let cx = (rect.position.x + rect.size.width as f64 / 2.0) as f32 / ppp;
+                    let bottom = (rect.position.y + rect.size.height as f64) as f32 / ppp;
+                    self.anchor = Some(Pos2::new(cx, bottom));
+                }
                 let just_hid = self.last_hide.elapsed().as_millis() < 350;
                 if self.setup.is_some() && self.mode == Mode::Panel {
                     // until setup is finished the menu bar only leads back to it
@@ -1352,6 +1371,22 @@ fn save_png(img: &egui::ColorImage, path: &std::path::Path) {
 
 /// The menu bar icon: the Cmd+Meow keycap cat with ⌘ cut out, drawn from
 /// vector paths at 36 px (18 pt @2x) and set as a template so macOS tints it.
+/// The panel's tallest height on a display whose usable part is `screen`.
+fn max_panel_height(screen: Rect) -> f32 {
+    (screen.height() - 16.0).max(300.0)
+}
+
+/// The panel's top-left corner: under the menu bar icon at `anchor` (its
+/// bottom centre), inside `screen`, the usable part of the icon's display.
+fn panel_place(anchor: Option<Pos2>, screen: Rect, size: Vec2) -> Pos2 {
+    let anchor = anchor.unwrap_or(Pos2::new(screen.max.x - m::PANEL_WIDTH / 2.0 - 16.0, screen.min.y));
+    // right edge under the icon's right half, 8 pt from the display's edges
+    let right = (anchor.x + m::PANEL_WIDTH / 2.0).min(screen.max.x - 8.0).max(screen.min.x + 8.0 + size.x);
+    let x = (right - size.x).max(screen.min.x + 8.0);
+    let y = (anchor.y + 6.0).max(screen.min.y).min((screen.max.y - 8.0 - size.y).max(screen.min.y));
+    Pos2::new(x, y)
+}
+
 fn tray_image() -> tray_icon::Icon {
     let n = 36;
     tray_icon::Icon::from_rgba(crate::kit::brand::glyph_rgba(n), n, n).expect("tray icon")
@@ -1467,7 +1502,8 @@ fn install_fonts(ctx: &egui::Context) {
 
 #[cfg(test)]
 mod tests {
-    use super::{link_matches, open_link, OpenCover};
+    use super::{link_matches, max_panel_height, m, open_link, panel_place, OpenCover};
+    use egui::{Pos2, Rect, Vec2};
     use std::time::Duration;
 
     /// Passes every `step` ms from the cover's start, with the main thread
@@ -1521,5 +1557,30 @@ mod tests {
         assert!(link_matches("keep_awake", "Keep Awake", "keep_awake"));
         assert!(link_matches("claude", "AI Usage", "ai-usage"));
         assert!(!link_matches("lens", "Disk Map", "disk"));
+    }
+
+    #[test]
+    fn panel_stays_on_the_icons_display() {
+        let w = m::PANEL_WIDTH;
+        // built-in 1728x1117, menu bar 37 pt
+        let built_in = Rect::from_min_max(Pos2::new(0.0, 37.0), Pos2::new(1728.0, 1117.0));
+        let h = max_panel_height(built_in);
+        assert!(h <= built_in.height());
+        let p = panel_place(Some(Pos2::new(1500.0, 37.0)), built_in, Vec2::new(w, h));
+        assert!(p.x >= 8.0 && p.x + w <= 1720.0 && p.y >= 37.0 && p.y + h <= 1117.0);
+        // icon at the far right: pulled in
+        let p = panel_place(Some(Pos2::new(1720.0, 37.0)), built_in, Vec2::new(w, 400.0));
+        assert_eq!(p.x + w, 1720.0);
+        // a display left of the main one (negative x) keeps the panel there
+        let left = Rect::from_min_max(Pos2::new(-1920.0, 25.0), Pos2::new(0.0, 1080.0));
+        let p = panel_place(Some(Pos2::new(-200.0, 25.0)), left, Vec2::new(w, 500.0));
+        assert!(p.x >= -1912.0 && p.x + w <= -8.0, "{p:?}");
+        // a display above the main one (negative y)
+        let above = Rect::from_min_max(Pos2::new(0.0, -1055.0), Pos2::new(1920.0, 0.0));
+        let p = panel_place(Some(Pos2::new(1800.0, -1055.0)), above, Vec2::new(w, max_panel_height(above)));
+        assert!(p.y >= -1055.0 && p.y + max_panel_height(above) <= 0.0, "{p:?}");
+        // a stale anchor from another display: still lands on this one
+        let p = panel_place(Some(Pos2::new(3000.0, 2000.0)), built_in, Vec2::new(w, 400.0));
+        assert!(built_in.contains(p) && p.y + 400.0 <= 1117.0, "{p:?}");
     }
 }

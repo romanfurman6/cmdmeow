@@ -286,6 +286,54 @@ mod mac {
         other.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps)
     }
 
+    /// Where the menu bar icon is, in points with a top-left origin on the
+    /// main display (the space window positions use). Asks the icon's own
+    /// window, so it is right on any display, at any scale, in any
+    /// arrangement. None while the icon isn't in a menu bar yet.
+    pub fn menu_icon_place(item: *mut std::ffi::c_void) -> Option<super::MenuIconPlace> {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        use objc2_app_kit::{NSScreen, NSWindow};
+        let mtm = MainThreadMarker::new()?;
+        let item = unsafe { (item as *const AnyObject).as_ref()? };
+        let button: Option<Retained<AnyObject>> = unsafe { msg_send![item, button] };
+        let button = button?;
+        let window: Option<Retained<NSWindow>> = unsafe { msg_send![&*button, window] };
+        let window = window?;
+        let screen = window.screen()?;
+        let top = NSScreen::screens(mtm).firstObject()?.frame().size.height;
+        let flip = |f: objc2_foundation::NSRect| {
+            egui::Rect::from_min_size(egui::pos2(f.origin.x as f32, (top - (f.origin.y + f.size.height)) as f32), egui::vec2(f.size.width as f32, f.size.height as f32))
+        };
+        let icon = flip(window.frame());
+        let (frame, visible) = (flip(screen.frame()), flip(screen.visibleFrame()));
+        // right after launch the icon sits off the menu bar (bottom-left)
+        if icon.width() < 1.0 || icon.height() < 1.0 || icon.max.y - frame.min.y > 60.0 {
+            return None;
+        }
+        // below the menu bar; the panel floats over the Dock, as before
+        let visible = egui::Rect::from_min_max(egui::pos2(frame.min.x, visible.min.y), frame.max);
+        Some(super::MenuIconPlace { icon, visible })
+    }
+
+    /// The menu bar panel shows on whatever Space is in front, a full-screen
+    /// app's too. Without this macOS kept it on the Space it last showed on,
+    /// or behind a full-screen app, so a click on the icon showed nothing.
+    pub fn panel_follows_spaces(id: egui::ViewportId) {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+        let Some(_mtm) = MainThreadMarker::new() else { return };
+        let Some(view) = eframe::viewport_ns_view(id) else { return };
+        let Some(view) = (unsafe { (view as *const AnyObject).as_ref() }) else { return };
+        let window: Option<Retained<NSWindow>> = unsafe { msg_send![view, window] };
+        let Some(window) = window else { return };
+        let want = NSWindowCollectionBehavior::MoveToActiveSpace | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        if window.collectionBehavior() != want {
+            window.setCollectionBehavior(want);
+        }
+    }
+
     pub fn activate() {
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
@@ -509,6 +557,14 @@ pub struct OpenApp {
 /// overlays).
 pub const PLAIN_WINDOW: &str = "plain-";
 
+/// The menu bar icon and the part of its display below the menu bar, in
+/// points, top-left origin on the main display.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuIconPlace {
+    pub icon: egui::Rect,
+    pub visible: egui::Rect,
+}
+
 #[cfg(not(target_os = "macos"))]
 mod other {
     pub fn apply_glass(_r: f64) {}
@@ -524,6 +580,10 @@ mod other {
     pub fn install_window_menu() {}
     pub fn bring_app_window_front() {}
     pub fn activate() {}
+    pub fn menu_icon_place(_item: *mut std::ffi::c_void) -> Option<super::MenuIconPlace> {
+        None
+    }
+    pub fn panel_follows_spaces(_id: egui::ViewportId) {}
     pub fn key_window_title() -> Option<String> {
         None
     }
