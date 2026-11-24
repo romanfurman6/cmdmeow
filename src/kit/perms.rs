@@ -151,7 +151,7 @@ impl Perm {
         if before == Status::Denied || matches!(self, Perm::FullDisk) {
             open_settings(self);
             if self == Perm::FullDisk {
-                reveal_app();
+                reveal_after_settings();
             }
             return;
         }
@@ -177,6 +177,24 @@ pub fn reveal_app() {
     if let Some(app) = app_bundle() {
         let _ = std::process::Command::new("open").arg("-R").arg(app).spawn();
     }
+}
+
+/// Show the app in Finder once System Settings is up, so Finder comes in
+/// front of it (both opened at once raced, M5 v0.2.0). Gives up waiting
+/// after 3 s and shows it anyway.
+pub fn reveal_after_settings() {
+    std::thread::spawn(|| {
+        let _pool = crate::kit::macos::pool();
+        for _ in 0..30 {
+            if crate::kit::settings_window::settings_up() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        // Settings draws its pane a moment after the window shows
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        reveal_app();
+    });
 }
 
 /// The .app this binary runs from, if any.
@@ -530,7 +548,7 @@ mod imp {
             }
             Perm::FullDisk => {
                 super::open_settings(p);
-                super::reveal_app();
+                super::reveal_after_settings();
             }
             Perm::SystemEvents => {
                 std::thread::spawn(|| {

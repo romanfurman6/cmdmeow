@@ -412,15 +412,33 @@ fn app_open(ids: &HashSet<String>, names: &HashSet<String>, path: &Path, title: 
     })
 }
 
+/// Drops repeated and nested items, so nothing is listed or counted twice.
+/// The same folder can come under two spellings: "~/Code" and "~/code" are one
+/// folder on a case-insensitive disk, so files are also matched by what they are on disk.
+fn drop_repeats(items: &mut Vec<Item>) {
+    use std::os::unix::fs::MetadataExt;
+    let mut seen = HashSet::new();
+    items.retain(|it| seen.insert(it.path.clone()));
+    let mut ids = HashSet::new();
+    items.retain(|it| {
+        if it.action != Action::Files {
+            return true;
+        }
+        match it.path.symlink_metadata() {
+            Ok(md) => ids.insert((md.dev(), md.ino())),
+            Err(_) => true,
+        }
+    });
+    let all: HashSet<PathBuf> = items.iter().map(|i| i.path.clone()).collect();
+    items.retain(|it| !it.path.ancestors().skip(1).any(|a| all.contains(a)));
+}
+
 /// Drop repeated and nested paths (the outer one stays), then measure what's
 /// left on all cores and drop items too small to matter. Sizing is nearly all
 /// of a scan's time, so nothing is measured twice.
 /// `brew_pending`: Homebrew's answer is still to come (one more Developer place).
 fn measure(items: &mut Vec<Item>, shared: &Shared, ctx: &egui::Context, from: f32, cancel: &AtomicBool, brew_pending: bool) {
-    let mut seen = HashSet::new();
-    items.retain(|it| seen.insert(it.path.clone()));
-    let all: HashSet<PathBuf> = items.iter().map(|i| i.path.clone()).collect();
-    items.retain(|it| !it.path.ancestors().skip(1).any(|a| all.contains(a)));
+    drop_repeats(items);
     let n = items.len();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let sizes: Vec<std::sync::atomic::AtomicU64> = (0..n).map(|_| std::sync::atomic::AtomicU64::new(0)).collect();
@@ -1996,6 +2014,26 @@ mod tests {
             app_running: false,
             action,
         }
+    }
+
+    #[test]
+    fn one_folder_under_two_spellings_is_listed_once() {
+        let base = std::env::temp_dir().join(format!("cmdmeow-repeats-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("Code/app/.venv")).unwrap();
+        std::os::unix::fs::symlink(base.join("Code"), base.join("code-link")).unwrap();
+        let a = base.join("Code/app/.venv");
+        let b = base.join("code-link/app/.venv");
+        let s = |p: &Path| p.to_string_lossy().into_owned();
+        let mut items = vec![
+            plain(Group::Projects, &s(&a), "Build Data", Verdict::Ask, Action::Files),
+            plain(Group::Projects, &s(&b), "Build Data", Verdict::Ask, Action::Files),
+            plain(Group::Projects, &s(&a), "Build Data", Verdict::Ask, Action::Files),
+        ];
+        drop_repeats(&mut items);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path, a);
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

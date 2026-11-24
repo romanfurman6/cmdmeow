@@ -347,6 +347,7 @@ impl PermWatch {
         self.asked.insert(p, now);
         self.polled = 0.0;
         if self.demo.is_none() {
+            crate::kit::settings_window::begin();
             p.ask();
         }
     }
@@ -1782,7 +1783,8 @@ fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, "Limits from your account in AI Usage", ty::body(), TEXT_DIM());
     // one tile per picked agent that keeps it there: today only Claude Code
     let a = ease(t / 0.4);
-    let r = Rect::from_min_size(Pos2::new(x, cr.bottom() + sp::M + (1.0 - a) * 8.0), Vec2::new(w, 84.0));
+    // R2: 24 between what it's for and the cards, as on AI agents
+    let r = Rect::from_min_size(Pos2::new(x, cr.bottom() + sp::XL + (1.0 - a) * 8.0), Vec2::new(w, 84.0));
     let st = if app.demo { Status::NotAsked } else { keychain::status() };
     let ok = st == Status::Allowed;
     let s = ctx.animate_bool_with_time(egui::Id::new("signin-tile"), ok, 0.18);
@@ -1895,7 +1897,8 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
                 tx -= 26.0 + 6.0;
             }
         }
-        cr.bottom() + sp::M
+        // room between what it's for and the agent cards (Roman, M5)
+        cr.bottom() + sp::XL
     };
     // a ping round the main agent's mark when it changes
     let now = ui.ctx().input(|i| i.time);
@@ -1958,7 +1961,9 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     // (ticking agents for a tool left off did nothing, M1)
     let usage_on = app.demo || app.tool_index(claude::ID).is_some_and(|i| app.tool_on(i));
     if usage_on {
-        y += tile_h + sp::XL + sp::M;
+        // 24 like the step's other gaps: the AI Check sample below still
+        // fits with AI Usage on (M1)
+        y += tile_h + sp::XL;
         let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, ACTION()));
         y = section(ui, y, usage.0, usage.1, "AI Usage", "Limits and tokens in your panel", &[]);
         for k in 0..n {
@@ -1992,13 +1997,16 @@ fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let after = y + tile_h;
     let demo_top = after + sp::XL;
     let a = ease((t - 0.35) / 0.5);
-    if body.bottom() - demo_top >= 232.0 && a > 0.0 {
+    if body.bottom() - demo_top >= AI_DEMO_H && a > 0.0 {
         ai_check_demo(ui, &p, Pos2::new(x, demo_top + (1.0 - a) * 8.0), w, &set.main, a, t);
     }
     if let Some(f) = change {
         settings::update(!app.demo, f);
     }
 }
+
+/// The AI Check sample's height: a 36 header, three 44 rows, one 52, 4 above and below.
+const AI_DEMO_H: f32 = sp::XS + 36.0 + 3.0 * sp::ROW_H + sp::ROW2_H + sp::XS;
 
 /// How long one round of the AI Check demo takes, in seconds.
 const DEMO_LOOP: f32 = 7.0;
@@ -2021,8 +2029,11 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     ];
     let head_h = 36.0;
     let h = sp::XS + head_h + ROWS.iter().map(|r| if r.2.is_some() { sp::ROW2_H } else { sp::ROW_H }).sum::<f32>() + sp::XS;
+    debug_assert_eq!(h, AI_DEMO_H);
     let r = Rect::from_min_size(top_left, Vec2::new(w, h));
-    p.rect_filled(r, R_CARD, CARD().gamma_multiply(a));
+    // an example, not this Mac's findings: no fill, a dashed edge, and
+    // "Example" by its title (Roman, M5 clean install)
+    crate::kit::glass::dashed_rect(p, r, R_CARD, white(56).gamma_multiply(a));
     let now = ui.ctx().input(|i| i.time);
     // the round's fraction, stopped once every row has its answer
     let c = ((t - DEMO_DELAY) / DEMO_LOOP).clamp(0.0, DEMO_END);
@@ -2035,7 +2046,11 @@ fn ai_check_demo(ui: &Ui, p: &egui::Painter, top_left: Pos2, w: f32, agent: &str
     let x0 = r.left() + sp::L;
     let x1 = r.right() - sp::L;
     agent_mark(p, Rect::from_center_size(Pos2::new(x0 + 9.0, hy), Vec2::splat(18.0)), agent, false);
-    p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
+    let title = p.text(Pos2::new(x0 + 18.0 + sp::S, hy), Align2::LEFT_CENTER, "AI Check", bold(12.0), TEXT().gamma_multiply(a));
+    let tag = p.layout_no_wrap("Example".into(), bold(11.0), TEXT_DIM().gamma_multiply(a));
+    let tr = Rect::from_min_size(Pos2::new(title.right() + sp::S, hy - 9.0), Vec2::new(tag.size().x + 2.0 * sp::S, 18.0));
+    p.rect_filled(tr, 6.0, white(20).gamma_multiply(a));
+    p.galley(Pos2::new(tr.left() + sp::S, hy - tag.size().y / 2.0), tag, TEXT_DIM());
     if done {
         p.text(Pos2::new(x1, hy), Align2::RIGHT_CENTER, format!("{} checked", ROWS.len()), font(12.0), TEXT_DIM().gamma_multiply(a));
     } else if !done {
@@ -2734,7 +2749,7 @@ pub fn perm_helper(app: &mut App, ctx: &egui::Context) {
     let scene = crate::kit::settings_window::scene();
     let at = match (scene.settings, scene.screen) {
         _ if scene.prompt => None,
-        (Some(set), Some(screen)) => Some(crate::kit::settings_window::place(set, screen, size)),
+        (Some(set), Some(screen)) => Some(crate::kit::settings_window::place_clear(set, scene.finder, screen, size)),
         // a demo has no Settings window to stand by
         _ if app.demo => {
             let screen = ctx.input(|i| i.viewport().monitor_size).unwrap_or(Vec2::new(1512.0, 982.0));
@@ -2762,6 +2777,9 @@ pub fn perm_helper(app: &mut App, ctx: &egui::Context) {
         .with_transparent(true)
         .with_resizable(false)
         .with_has_shadow(true)
+        // opening it must not bring the app forward: that raised setup over
+        // System Settings and Finder, which had just come up (M5, v0.2.0)
+        .with_active(false)
         .with_window_level(egui::WindowLevel::AlwaysOnTop);
     let mut close = false;
     crate::kit::viewport::show(ctx, id, builder, |ui, _class| {

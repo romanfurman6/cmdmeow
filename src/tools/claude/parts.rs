@@ -113,6 +113,9 @@ pub fn incident_chip(p: &egui::Painter, pos: Pos2, align: Align2, i: &UsageInfo)
     Some(chip(p, pos, align, s, (with_alpha(c, 0.16), c)))
 }
 
+/// The caption's top under a stat's number in the day chart's readout.
+const STAT_CAP_Y: f32 = 20.0;
+
 /// What the chart shows per day.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Measure {
@@ -120,15 +123,16 @@ pub enum Measure {
     Usd,
 }
 
-/// Bars per day with a hover readout above them: date, $, tokens and
-/// requests of the day under the pointer (today when none). `pace` draws a
+/// Bars per day with a hover readout above them: $ (when `show_usd`),
+/// tokens and requests of the day under the pointer (today when none), each a number over a
+/// caption, the date under the dollars. `pace` draws a
 /// dashed line at that many dollars a day (a budget's even share).
-pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, salt: &str) {
+pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, show_usd: bool, salt: &str) {
     let p = ui.painter().clone();
     if days.is_empty() {
         return;
     }
-    let head = 18.0;
+    let head = STAT_CAP_Y + 14.0;
     let foot = 16.0;
     let plot = Rect::from_min_max(Pos2::new(r.left(), r.top() + head + sp::S), Pos2::new(r.right(), r.bottom() - foot));
     let val = |d: &Day| match m {
@@ -164,27 +168,22 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     let d = &days[sel];
     let today = days.last().map(|l| l.date) == Some(d.date);
     let date = if today { "Today".to_string() } else { d.date.format("%a %b %-d").to_string() };
-    // one line in two sizes on one baseline: laid out as a single job, so
-    // the small grey parts don't ride up next to the bold ones
-    let mut job = egui::text::LayoutJob::default();
-    job.wrap.max_width = r.width();
-    job.wrap.max_rows = 1;
-    job.wrap.break_anywhere = true;
-    for (s, f, c) in [
-        (date, ty::title(), TEXT()),
-        (usd(d.usd), ty::title(), TEXT()),
-        (format!("{} tok", crate::kit::ai::human_tokens(d.tokens)), ty::label(), TEXT_DIM()),
-        (if d.requests > 0 { format!("{} req", d.requests) } else { String::new() }, ty::label(), TEXT_DIM()),
-    ] {
-        if s.is_empty() {
-            continue;
-        }
-        let lead = if job.sections.is_empty() { 0.0 } else { sp::M };
-        job.append(&s, lead, egui::TextFormat { font_id: f, color: c, valign: egui::Align::BOTTOM, ..Default::default() });
+    // three stats, number over caption (Roman 2026-11-24, variant A): the
+    // date names the dollars, so no line of mixed sizes sits over the bars
+    let mut x = r.left();
+    // with cost off, tokens lead and carry the date; requests always show
+    // (0 on an empty day) so the readout keeps its width while hovering
+    let tokens = crate::kit::ai::human_tokens(d.tokens);
+    let stats = if show_usd {
+        vec![(usd(d.usd), date), (tokens, "tokens".to_string()), (d.requests.to_string(), "requests".to_string())]
+    } else {
+        vec![(format!("{tokens} tok"), date), (d.requests.to_string(), "requests".to_string())]
+    };
+    for (v, cap) in stats {
+        let vr = p.text(Pos2::new(x, r.top()), Align2::LEFT_TOP, v, ty::lead(), TEXT());
+        let cr = p.text(Pos2::new(x, r.top() + STAT_CAP_Y), Align2::LEFT_TOP, cap, ty::caption(), TEXT_DIM());
+        x = vr.right().max(cr.right()) + sp::XL;
     }
-    let g = p.layout_job(job);
-    let h = g.size().y;
-    p.galley(Pos2::new(r.left(), r.top() + (head - h) / 2.0), g, TEXT());
     // first and last day under the bars
     let lab = |d: &Day| d.date.format("%b %-d").to_string();
     p.text(Pos2::new(plot.left(), r.bottom()), Align2::LEFT_BOTTOM, lab(&days[0]), ty::caption(), ty::caption_color());
@@ -226,13 +225,25 @@ pub fn share_lines(p: &egui::Painter, r: Rect, rows: &[crate::kit::ai::Share], s
     let n = rows.len().min((r.height() / sp::LEGEND_H).floor().max(0.0) as usize);
     let paths: Vec<&str> = rows.iter().take(n).map(|s| s.name.as_str()).collect();
     let names = if paths.iter().any(|p| p.starts_with('/')) { project_names(&paths, home) } else { paths.iter().map(|p| p.to_string()).collect() };
-    let values: Vec<String> = rows.iter().take(n).map(|s| if show_usd { format!("{} tok · {}", human_tokens(s.tokens), usd(s.usd)) } else { format!("{} tok", human_tokens(s.tokens)) }).collect();
-    let (lw, vw) = crate::kit::tile::bar_cols(p, &names.iter().zip(&values).map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
-    let cols = (lw.min(r.width() * 0.4), vw);
-    for (k, s) in rows.iter().take(n).enumerate() {
-        let lr = Rect::from_min_size(Pos2::new(r.left(), r.top() + k as f32 * sp::LEGEND_H), Vec2::new(r.width(), sp::LEGEND_H));
-        let frac = ((measure(s) / top) as f32).max(0.01);
-        crate::kit::tile::bar_line(p, lr, &names[k], Some((frac, tint::CLAUDE())), &values[k], cols);
+    let toks: Vec<String> = rows.iter().take(n).map(|s| human_tokens(s.tokens)).collect();
+    let line = |k: usize| Rect::from_min_size(Pos2::new(r.left(), r.top() + k as f32 * sp::LEGEND_H), Vec2::new(r.width(), sp::LEGEND_H));
+    let frac = |s: &crate::kit::ai::Share| Some((((measure(s) / top) as f32).max(0.01), tint::CLAUDE()));
+    if show_usd {
+        // tokens dim, dollars bright, each in its own column (variant A)
+        let dollars: Vec<String> = rows.iter().take(n).map(|s| usd(s.usd)).collect();
+        let lines: Vec<(&str, &str, &str)> = (0..n).map(|k| (names[k].as_str(), toks[k].as_str(), dollars[k].as_str())).collect();
+        let (lw, dw, vw) = crate::kit::tile::bar_cols_pair(p, &lines);
+        let cols = (lw.min(r.width() * 0.4), dw, vw);
+        for (k, s) in rows.iter().take(n).enumerate() {
+            crate::kit::tile::bar_line_pair(p, line(k), &names[k], frac(s), (&toks[k], &dollars[k]), cols);
+        }
+    } else {
+        let values: Vec<String> = toks.iter().map(|t| format!("{t} tok")).collect();
+        let (lw, vw) = crate::kit::tile::bar_cols(p, &names.iter().zip(&values).map(|(a, b)| (a.as_str(), b.as_str())).collect::<Vec<_>>());
+        let cols = (lw.min(r.width() * 0.4), vw);
+        for (k, s) in rows.iter().take(n).enumerate() {
+            crate::kit::tile::bar_line(p, line(k), &names[k], frac(s), &values[k], cols);
+        }
     }
 }
 

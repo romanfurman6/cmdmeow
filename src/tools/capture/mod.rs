@@ -52,6 +52,25 @@ pub const SHARING_ID: ToolId = "sharing";
 const VIDEO_CARD: &str = "record";
 pub use tools::tools;
 
+/// What waits on the Keychain card (docs/ui-rules.md, Keychain access).
+#[derive(Default)]
+pub(crate) struct KeychainAsk {
+    /// macOS's own dialog is up: the card hides meanwhile.
+    busy: bool,
+    /// macOS said no (or the password was cancelled).
+    denied: bool,
+    pending: Vec<KeychainPending>,
+}
+
+pub(crate) enum KeychainPending {
+    Share(PathBuf),
+    Delete(PathBuf, String),
+    /// A new key typed, in place of an older item.
+    Save(String),
+    /// A storage file and its key, in place of an older item.
+    Import(PathBuf, String),
+}
+
 /// What a grab is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Purpose {
@@ -192,6 +211,11 @@ pub struct Capture {
     /// Whether a secret key is in the Keychain: read once, off the frame loop
     /// (and never in demo mode, where a Keychain prompt would block).
     pub(crate) has_secret: Option<bool>,
+    /// The Keychain card: macOS would ask before the sharing key can be
+    /// used, and this waits on the person's say.
+    keychain: Option<KeychainAsk>,
+    /// Put the cursor in the Secret key field on the next Sharing page pass.
+    focus_secret: bool,
     /// Storage files opened from Finder, waiting for the app to come to the
     /// front (a cold launch) so their alert isn't hidden behind Finder.
     storage_files: Vec<(PathBuf, Instant)>,
@@ -277,6 +301,8 @@ impl Capture {
             uploads: share::Uploads::default(),
             share_secret: String::new(),
             has_secret: if env.demo { Some(false) } else { None },
+            keychain: None,
+            focus_secret: false,
             storage_files: Vec::new(),
         };
         c.apply_keys();
@@ -352,10 +378,21 @@ impl Capture {
         if !crate::kit::native::confirm("Use this storage for sharing?", &format!("{}\n{}", st.bucket, share::import::short_host(&st.endpoint)), "Use") {
             return;
         }
-        if let Err(e) = share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key) {
-            self.hud(format!("Couldn't save to the Keychain: {e}"));
-            return;
+        match share::secret::set(share::VIDEO_ACCOUNT, &st.secret_key, false) {
+            Ok(()) => {}
+            // an older key is in the way: the Keychain card asks first, and
+            // nothing changes (the file stays) until the key is saved
+            Err(None) => return self.need_keychain(KeychainPending::Import(path.to_path_buf(), st.secret_key)),
+            Err(Some(e)) => {
+                self.hud(format!("Couldn't save to the Keychain: {e}"));
+                return;
+            }
         }
+        self.import_finish(path, st);
+    }
+
+    /// The key is in the Keychain: point sharing at the storage, trash the file.
+    fn import_finish(&mut self, path: &std::path::Path, st: share::import::Storage) {
         let s = &mut self.settings.share;
         s.endpoint = st.endpoint;
         s.bucket = st.bucket;
@@ -366,8 +403,6 @@ impl Capture {
         s.secret_saved = true;
         self.has_secret = Some(true);
         self.save_settings();
-        // read it straight back: any Keychain approval happens now
-        share::secret::approve_now(share::VIDEO_ACCOUNT);
         // the keys shouldn't stay in Downloads
         if let Err(e) = crate::kit::fs::move_to_trash(path) {
             eprintln!("[share] couldn't trash {}: {e}", path.display());
@@ -484,6 +519,10 @@ impl Capture {
     /// [`Capture::share`] that hands a failure back instead of a toast.
     fn try_share(&mut self, path: PathBuf) -> Result<(), String> {
         let (s, account) = self.share_for(&path);
+        if share::secret::quiet(account) == share::secret::Access::Ask {
+            self.need_keychain(KeychainPending::Share(path));
+            return Ok(());
+        }
         self.uploads.start(&s, account, path, &self.ctx)
     }
 
@@ -500,6 +539,10 @@ impl Capture {
 
     /// Remove a shared file from the storage, then forget it here.
     fn delete_shared(&mut self, path: PathBuf, key: String) {
+        if share::secret::quiet(share::VIDEO_ACCOUNT) == share::secret::Access::Ask {
+            self.need_keychain(KeychainPending::Delete(path, key));
+            return;
+        }
         let b = self.settings.share.bucket(share::VIDEO_ACCOUNT);
         self.in_background(move || match share::s3::delete(&b, &key) {
             Ok(()) => {
@@ -508,6 +551,74 @@ impl Capture {
             }
             Err(e) => Some(Done::Note(e)),
         });
+    }
+
+    /// Show the Keychain card; `p` runs once macOS allows.
+    fn need_keychain(&mut self, p: KeychainPending) {
+        let k = self.keychain.get_or_insert_with(KeychainAsk::default);
+        if !k.busy {
+            k.denied = false;
+        }
+        k.pending.push(p);
+        self.ctx.request_repaint();
+    }
+
+    /// The Keychain card closed without a yes: drop what waited, and let the
+    /// editor's Share work again (it waits on its upload otherwise).
+    fn keychain_drop(&mut self) {
+        let Some(k) = self.keychain.take() else { return };
+        for p in k.pending {
+            if let KeychainPending::Share(path) = p {
+                if let Some(ew) = self.editor.as_mut().filter(|ew| ew.share.as_deref() == Some(path.as_path())) {
+                    ew.share = None;
+                }
+            }
+        }
+    }
+
+    /// The Keychain card's Continue / Try again: let macOS ask now.
+    fn keychain_continue(&mut self) {
+        let Some(k) = self.keychain.as_mut() else { return };
+        k.busy = true;
+        k.denied = false;
+        let save = k.pending.iter().rev().find_map(|p| match p {
+            KeychainPending::Save(v) | KeychainPending::Import(_, v) => Some(v.clone()),
+            _ => None,
+        });
+        share::secret::ask(share::VIDEO_ACCOUNT, save, &self.ctx);
+    }
+
+    /// macOS answered: run what waited, or show the card as denied.
+    fn keychain_answer(&mut self) {
+        let Some(ok) = share::secret::asked() else { return };
+        let Some(k) = self.keychain.as_mut() else { return };
+        k.busy = false;
+        if !ok {
+            k.denied = true;
+            return;
+        }
+        let pending = std::mem::take(&mut k.pending);
+        self.keychain = None;
+        // the key is kept in memory now, so what waited runs without asking
+        for p in pending {
+            match p {
+                KeychainPending::Save(v) => {
+                    let has = !v.is_empty();
+                    self.has_secret = Some(has);
+                    self.settings.share.secret_saved = has;
+                    self.save_settings();
+                    if has {
+                        self.hud("Secret key saved in the Keychain");
+                    }
+                }
+                KeychainPending::Import(path, _) => match share::import::read(&path) {
+                    Some(st) => self.import_finish(&path, st),
+                    None => self.hud("Not a Cmd+Meow sharing file"),
+                },
+                KeychainPending::Share(path) => self.share(path),
+                KeychainPending::Delete(path, key) => self.delete_shared(path, key),
+            }
+        }
     }
 
     /// Copy the link of `path`: shared already, or upload it first.
@@ -1229,7 +1340,7 @@ impl Tool for Capture {
         if !self.queue.is_empty() || !self.actions.is_empty() {
             ctx.request_repaint();
         }
-        let windows = !self.pins.is_empty() || self.editor.is_some() || self.video.is_some() || self.overlay.is_some() || self.perm_card.is_some() || self.rec.busy();
+        let windows = !self.pins.is_empty() || self.editor.is_some() || self.video.is_some() || self.overlay.is_some() || self.perm_card.is_some() || self.keychain.is_some() || self.rec.busy();
         timed || windows || !self.queue.is_empty() || !self.actions.is_empty()
     }
     fn windows(&mut self, ctx: &egui::Context, cx: &mut Cx) {
@@ -1242,6 +1353,7 @@ impl Tool for Capture {
         for (c, d) in std::mem::take(&mut self.queue) {
             self.run(c, d, cx);
         }
+        self.keychain_answer();
         windows::show(self, ctx, cx);
         record::ui::show(self, ctx, cx);
         video::show(self, ctx);

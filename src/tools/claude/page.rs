@@ -500,7 +500,7 @@ fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, de
             if days.iter().all(|d| d.tokens == 0) {
                 return empty_note(&p, body, "No spend this month yet");
             }
-            parts::day_chart(ui, body, &days, Measure::Usd, pace, id);
+            parts::day_chart(ui, body, &days, Measure::Usd, pace, show_usd, id);
         }
         other => {
             let days: Vec<Day> = cl.local.days.iter().rev().take(30).rev().copied().collect();
@@ -508,7 +508,7 @@ fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, de
                 return empty_note(&p, body, "No usage in the last 30 days");
             }
             let m = if other == "Tokens" { Measure::Tokens } else { Measure::Usd };
-            parts::day_chart(ui, body, &days, m, None, id);
+            parts::day_chart(ui, body, &days, m, None, show_usd, id);
         }
     }
 }
@@ -566,7 +566,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
     }
     days.sort_by_key(|d| d.date);
-    parts::day_chart(ui, Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::M), i.max), &days, Measure::Usd, None, "all");
+    parts::day_chart(ui, Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::M), i.max), &days, Measure::Usd, None, true, "all");
 }
 
 /// One provider in the "All" view.
