@@ -828,6 +828,21 @@ pub fn data_card(p: &Painter, rect: Rect) {
     crate::kit::tile::paint_card(p, rect, 0.0, false);
 }
 
+/// A [`data_card`] that opens something on click (Mac Health cards, AI
+/// Usage limits): it hovers like a panel widget card (W1, eased, same
+/// face), never with a flat overlay that pops the card's background.
+/// Call before drawing the card's content.
+pub fn data_card_button(ui: &mut Ui, rect: Rect, id: egui::Id) -> Response {
+    let resp = ui.interact(rect, id, Sense::click());
+    // the whole card hovers, its own buttons too (W12); a popup over it doesn't
+    let h = ui.ctx().animate_bool(id.with("h"), ui.rect_contains_pointer(rect));
+    crate::kit::tile::paint_card(ui.painter(), rect, h, false);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
 
 /// Button kinds for [`pill_button`].
 pub const BTN_SECONDARY: u8 = 0;

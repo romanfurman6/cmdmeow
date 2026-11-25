@@ -143,12 +143,7 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             // each card opens its details; the card's own buttons sit on top
             const KINDS: [Sheet; 6] = [Sheet::Cpu, Sheet::Storage, Sheet::Memory, Sheet::Battery, Sheet::Network, Sheet::Devices];
             for (rr, kind) in rects.iter().zip(KINDS) {
-                let resp = ui.interact(*rr, ui.scope_id().with(("health-card", kind as u8)), Sense::click());
-                data_card(&p, *rr);
-                if resp.hovered() {
-                    p.rect_filled(*rr, tile::R_TILE, white(6));
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                }
+                let resp = data_card_button(ui, *rr, ui.scope_id().with(("health-card", kind as u8)));
                 if resp.clicked() {
                     open_details(ui.ctx(), Some(kind));
                 }
