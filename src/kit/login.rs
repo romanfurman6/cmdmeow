@@ -70,7 +70,7 @@ mod imp {
     }
 
     pub fn set(on: bool) -> Result<(), String> {
-        let s = service().ok_or("Needs macOS 13 or later")?;
+        let s = service().ok_or(ts!("kit.login.needs_13"))?;
         let r: Result<(), Retained<NSError>> = unsafe {
             if on {
                 msg_send![&*s, registerAndReturnError: _]

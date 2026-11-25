@@ -109,7 +109,7 @@ pub fn install() -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    Err("The helper was installed but didn't start.".into())
+    Err(ts!("kit.helper.no_start").into())
 }
 
 /// The root script that (re)installs the helper. An update has to:
@@ -196,7 +196,7 @@ fn run_admin(script: &str, prompt: &str) -> Result<(), String> {
     if err.contains("-128") {
         return Err(String::new());
     }
-    Err(if err.is_empty() { "The helper couldn't be installed.".into() } else { err })
+    Err(if err.is_empty() { ts!("kit.helper.not_installed").into() } else { err })
 }
 
 #[cfg(test)]

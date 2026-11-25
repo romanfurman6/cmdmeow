@@ -135,7 +135,7 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
     if have > 0 {
         req = req.header("Range", format!("bytes={have}-"));
     }
-    let resp = req.call().map_err(|e| format!("Couldn't reach the download: {e}"))?;
+    let resp = req.call().map_err(|e| t!("kit.dl.unreachable", e = e).into_owned())?;
     let status = resp.status().as_u16();
     if status == 416 && have > 0 {
         // the part is already whole (or the file changed): start over
@@ -144,7 +144,7 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
     }
     let resumed = status == 206;
     if status != 200 && !resumed {
-        return Err(format!("The download answered {status}"));
+        return Err(t!("kit.dl.answered", status = status).into_owned());
     }
     let len = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
     let start = if resumed { have } else { 0 };
@@ -160,7 +160,7 @@ fn fetch(m: Model, p: &Progress) -> Result<(), String> {
         if p.cancelled() {
             return Err("Stopped".into());
         }
-        let n = reader.read(&mut buf).map_err(|e| format!("The download broke off: {e}"))?;
+        let n = reader.read(&mut buf).map_err(|e| t!("kit.dl.broke_off", e = e).into_owned())?;
         if n == 0 {
             break;
         }
@@ -194,7 +194,7 @@ impl Loaded {
     #[cfg(target_os = "macos")]
     pub fn load(m: Model) -> Result<Loaded, String> {
         use whisper_rs::{WhisperContext, WhisperContextParameters};
-        let ctx = WhisperContext::new_with_params(m.path(), WhisperContextParameters::default()).map_err(|e| format!("The speech model didn't load: {e}"))?;
+        let ctx = WhisperContext::new_with_params(m.path(), WhisperContextParameters::default()).map_err(|e| t!("kit.dl.model_didnt_load", e = e).into_owned())?;
         Ok(Loaded { ctx })
     }
 
@@ -239,7 +239,7 @@ impl Loaded {
             }
         }
         let cancelled = || p.is_some_and(|p| p.cancelled());
-        state.full(params, pcm).map_err(|e| if cancelled() { "Stopped".to_string() } else { format!("Transcribing failed: {e}") })?;
+        state.full(params, pcm).map_err(|e| if cancelled() { "Stopped".to_string() } else { t!("kit.dl.transcribe_failed", e = e).into_owned() })?;
         Ok((0..state.full_n_segments())
             .filter_map(|i| state.get_segment(i))
             .map(|s| {

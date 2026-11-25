@@ -69,6 +69,7 @@ impl Perm {
             Perm::Camera => ts!("kit.perm.camera"),
             Perm::Bluetooth => ts!("kit.perm.bluetooth"),
             Perm::Notifications => ts!("kit.perm.notifications"),
+            Perm::Own { id: "fan-helper", .. } => ts!("kit.perm.fan_helper"),
             Perm::Own { name, .. } => name,
         }
     }

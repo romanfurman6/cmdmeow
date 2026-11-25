@@ -2208,7 +2208,8 @@
       "mic": "Microphone",
       "camera": "Camera",
       "bluetooth": "Bluetooth",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "fan_helper": "Fan helper"
     },
     "why": {
       "screen": "Screenshots and recordings",
@@ -2268,7 +2269,14 @@
       "early": "The download ended early; try again to pick it up",
       "not_model": "That wasn't a speech model; try again",
       "not_the_model": "That wasn't the speech model; try again",
-      "missing": "The model archive is missing files; try again"
+      "missing": "The model archive is missing files; try again",
+      "unreachable": "Couldn't reach the download: %{e}",
+      "answered": "The download answered %{status}",
+      "broke_off": "The download broke off: %{e}",
+      "damaged": "The model archive is damaged: %{e}",
+      "unpack_failed": "Unpacking the model failed: %{e}",
+      "model_didnt_load": "The speech model didn't load: %{e}",
+      "transcribe_failed": "Transcribing failed: %{e}"
     },
     "cc": {
       "how_off": "Turn Claude on in Settings → Tools.",
@@ -2349,7 +2357,20 @@
       "h12_short": "%{h}%{ap}",
       "then": "%{date} %{time}",
       "comma": "%{date}, %{time}"
-    }
+    },
+    "loader": {
+      "stop": "Stop",
+      "put_back": "Put back",
+      "done": "Done"
+    },
+    "helper": {
+      "no_start": "The helper was installed but didn't start.",
+      "not_installed": "The helper couldn't be installed."
+    },
+    "login": {
+      "needs_13": "Needs macOS 13 or later"
+    },
+    "trash_where": "Moved, but the Trash didn't say where"
   },
   "rules": {
     "keep": {

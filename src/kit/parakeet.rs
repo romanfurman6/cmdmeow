@@ -72,7 +72,7 @@ fn fetch(p: &Progress) -> Result<(), String> {
     if have > 0 {
         req = req.header("Range", format!("bytes={have}-"));
     }
-    let resp = req.call().map_err(|e| format!("Couldn't reach the download: {e}"))?;
+    let resp = req.call().map_err(|e| t!("kit.dl.unreachable", e = e).into_owned())?;
     let status = resp.status().as_u16();
     if status == 416 && have > 0 {
         // the part is already whole (or the file changed): start over
@@ -81,7 +81,7 @@ fn fetch(p: &Progress) -> Result<(), String> {
     }
     let resumed = status == 206;
     if status != 200 && !resumed {
-        return Err(format!("The download answered {status}"));
+        return Err(t!("kit.dl.answered", status = status).into_owned());
     }
     let len = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
     let start = if resumed { have } else { 0 };
@@ -96,7 +96,7 @@ fn fetch(p: &Progress) -> Result<(), String> {
         if p.cancelled() {
             return Err("Stopped".into());
         }
-        let n = reader.read(&mut buf).map_err(|e| format!("The download broke off: {e}"))?;
+        let n = reader.read(&mut buf).map_err(|e| t!("kit.dl.broke_off", e = e).into_owned())?;
         if n == 0 {
             break;
         }
@@ -127,18 +127,18 @@ fn unpack(p: &Progress, tmp: &std::path::Path) -> Result<(), String> {
     let f = std::fs::File::open(archive()).map_err(|e| e.to_string())?;
     let mut tar = tar::Archive::new(bzip2::read::BzDecoder::new(std::io::BufReader::new(f)));
     let mut got = 0;
-    for entry in tar.entries().map_err(|e| format!("The model archive is damaged: {e}"))? {
+    for entry in tar.entries().map_err(|e| t!("kit.dl.damaged", e = e).into_owned())? {
         if p.cancelled() {
             let _ = std::fs::remove_dir_all(&tmp);
             return Err("Stopped".into());
         }
-        let mut entry = entry.map_err(|e| format!("The model archive is damaged: {e}"))?;
+        let mut entry = entry.map_err(|e| t!("kit.dl.damaged", e = e).into_owned())?;
         let path = entry.path().map_err(|e| e.to_string())?.into_owned();
         let Some(name) = path.file_name().and_then(|n| n.to_str()).map(str::to_string) else { continue };
         if !FILES.contains(&name.as_str()) {
             continue;
         }
-        entry.unpack(tmp.join(&name)).map_err(|e| format!("Unpacking the model failed: {e}"))?;
+        entry.unpack(tmp.join(&name)).map_err(|e| t!("kit.dl.unpack_failed", e = e).into_owned())?;
         got += 1;
     }
     if got < FILES.len() {
