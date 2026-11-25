@@ -460,3 +460,22 @@ html[data-app="miami"] .dm2 .bub [stroke="#C8F05A"] { stroke: #FF5FA2; }
 html[data-app="miami"] .dm2 .bub circle[fill="rgba(200,240,90,.32)"] { fill: rgba(255,95,162,.3); }
 html[data-app="miami"] .dm2 .bub circle[fill="rgba(200,240,90,.12)"] { fill: rgba(255,95,162,.1); }
 html[data-app="miami"] .dm2 .bub circle[stroke="rgba(200,240,90,.5)"] { stroke: rgba(255,95,162,.5); }
+/* phones: goal tabs keep their icon plate, short label for the capture goal */
+.dm2 .ttab .ic { flex: none; }
+.dm2 .ttab .sml { display: none; }
+@media (max-width: 600px) {
+  .dm2 .ttab .lgl { display: none; }
+  .dm2 .ttab .sml { display: inline; }
+  .dm2 .gtabs .ttab { overflow: hidden; }
+  /* tool steps: equal columns, no sideways scroll */
+  .dm2 .steps2 { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; overflow: visible; }
+  .dm2 .st2 { flex-direction: column; justify-content: center; gap: 6px; height: 68px; padding: 0 4px; font-size: 13px; text-align: center; white-space: nowrap; }
+  .dm2 .st2 .ic { width: 28px; height: 28px; }
+  /* share link row fits the card */
+  .dm2 .lnk { gap: 8px; padding-left: 12px; }
+  .dm2 .lnk code { min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; }
+  .dm2 .lnk .go { flex: none; padding: 0 12px; }
+  /* No catch: centred */
+  .nc1 li { align-items: center; text-align: center; }
+  .nc1 .k { justify-content: center; }
+}

@@ -3,11 +3,20 @@
   var lb = document.getElementById("vlb");
   if (!lb) return;
   var v = lb.querySelector("video"), last = null;
+  // phones in portrait get the 9:16 cut of the same promo
+  var tallMq = window.matchMedia("(max-width: 600px) and (orientation: portrait)");
+  var wide = { src: v.getAttribute("src"), poster: v.getAttribute("poster") };
+  function pick() {
+    var tall = tallMq.matches, src = tall ? v.dataset.tall : wide.src;
+    lb.classList.toggle("tall", tall);
+    if (v.getAttribute("src") !== src) { v.setAttribute("src", src); v.setAttribute("poster", tall ? v.dataset.tallPoster : wide.poster); }
+  }
   // keep keyboard focus inside the window while it is open
   function bg(on) { document.querySelectorAll("body > :not(#vlb)").forEach(function (el) { el.inert = on; }); }
   function open(e) {
     if (e) e.preventDefault();
     last = document.activeElement;
+    pick();
     lb.classList.add("on"); lb.setAttribute("aria-hidden", "false");
     document.documentElement.style.overflow = "hidden";
     bg(true);
