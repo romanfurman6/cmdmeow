@@ -1639,10 +1639,14 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     rows.sort_by(|a, b| b.2.cmp(&a.2));
     // cards fit their content (no stretched empty boxes); the log gets the full height
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
-    let left_h = 2.0 * sp::L + 44.0 + sp::L + 34.0 + sp::XS + 16.0 + sp::XL + 34.0 + if ok { 0.0 } else { 16.0 + sp::S + st.failed.len().min(FAILED_SHOWN) as f32 * (34.0 + sp::S) + if st.failed.len() > FAILED_SHOWN { 20.0 } else { 0.0 } + sp::L };
+    // the failures wrap, so the card measures them at its own width
+    let left_w = 340.0f32.min(body.width() * 0.4);
+    let fail_w = left_w - 2.0 * sp::L;
+    let fails_h: f32 = st.failed.iter().take(FAILED_SHOWN).map(|(name, err)| p.layout(name.clone(), ty::body(), TEXT(), fail_w).size().y + p.layout(err.clone(), ty::caption(), TEXT(), fail_w).size().y + sp::S).sum();
+    let left_h = 2.0 * sp::L + 44.0 + sp::L + 34.0 + sp::XS + 16.0 + sp::XL + 34.0 + if ok { 0.0 } else { 16.0 + sp::S + fails_h + if st.failed.len() > FAILED_SHOWN { 20.0 } else { 0.0 } + sp::L };
     let right_h = 2.0 * sp::L + 34.0 + sp::S + rows.len().max(1) as f32 * sp::ROW2_H;
     let h = if app.clean_log { body.height() } else { left_h.max(right_h).min(body.height()) };
-    let left = Rect::from_min_size(body.min, Vec2::new(340.0f32.min(body.width() * 0.4), h));
+    let left = Rect::from_min_size(body.min, Vec2::new(left_w, h));
     let right = Rect::from_min_size(Pos2::new(left.right() + sp::L, body.top()), Vec2::new(body.right() - left.right() - sp::L, h));
     glass_card(&p, left, R_CARD, 0.0, false);
     glass_card(&p, right, R_CARD, 0.0, false);
