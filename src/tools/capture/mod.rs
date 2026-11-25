@@ -1407,7 +1407,7 @@ impl Tool for Capture {
                 Some(View::Page)
             }
             "capture-editor" => {
-                let mut ed = Editor::new(None, "Capture from 5:41 pm".into(), grab::sample(1588, 892), 2.0, self.settings.blur, self.settings.cover, true, self.settings.frame);
+                let mut ed = Editor::new(None, ts!("cap.ui.demo_title").into(), grab::sample(1588, 892), 2.0, self.settings.blur, self.settings.cover, true, self.settings.frame);
                 ed.demo_marks();
                 // screenshots only: CMB_DEMO_EDITOR_TOOL picks the tool shown
                 ed.tool = match std::env::var("CMB_DEMO_EDITOR_TOOL").unwrap_or_default().as_str() {

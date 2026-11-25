@@ -162,7 +162,7 @@ mod imp {
                 add(vm, &v, v.isEnabled())?;
             }
             let (oa, sa) = (orig.tracksWithMediaType(am), snd.tracksWithMediaType(am));
-            let mix = sa.firstObject().ok_or("the cleaned sound is empty")?;
+            let mix = sa.firstObject().ok_or(ts!("cap.err.clean_empty"))?;
             add(am, &mix, true)?;
             if oa.count() >= 3 {
                 add(am, &oa.objectAtIndex(1), false)?;
@@ -188,12 +188,12 @@ mod imp {
         pub fn open(path: &Path, voice: Option<&Path>) -> Result<Player, String> {
             let mtm = MainThreadMarker::new().ok_or("not on the main thread")?;
             if !path.exists() {
-                return Err("The file isn't there any more".into());
+                return Err(ts!("cap.err.file_gone").into());
             }
             unsafe {
                 let a = source(path, voice)?;
                 let duration = secs(a.duration());
-                let (w, h) = video_size(&a).ok_or("No video in this file")?;
+                let (w, h) = video_size(&a).ok_or(ts!("cap.err.no_video_file"))?;
                 let scale = (super::VIEW_W / w).min(1.0);
                 let (ow, oh) = (((w * scale) as u32 & !1).max(2), ((h * scale) as u32 & !1).max(2));
                 let fmt = NSNumber::new_u32(u32::from_be_bytes(*b"BGRA"));
@@ -327,7 +327,7 @@ mod imp {
                         t.setEnabled(st.isEnabled());
                     }
                 }
-                let session = AVAssetExportSession::exportSessionWithAsset_presetName(&comp, AVAssetExportPresetPassthrough).ok_or("This video can't be saved that way")?;
+                let session = AVAssetExportSession::exportSessionWithAsset_presetName(&comp, AVAssetExportPresetPassthrough).ok_or(ts!("cap.err.cant_save_way"))?;
                 let _ = std::fs::remove_file(&dest);
                 session.setOutputURL(Some(&url(&dest)));
                 session.setOutputFileType(AVFileTypeMPEG4);
@@ -346,7 +346,7 @@ mod imp {
                 done(Ok(dest));
             } else {
                 let _ = std::fs::remove_file(&dest);
-                done(Err(unsafe { session.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| "the video couldn't be written".into())));
+                done(Err(unsafe { session.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.video_not_written2").into())));
             }
         });
         unsafe { session.exportAsynchronouslyWithCompletionHandler(&block) };
@@ -368,7 +368,7 @@ mod other {
 
     impl Player {
         pub fn open(_path: &Path, _voice: Option<&Path>) -> Result<Player, String> {
-            Err("Video playback needs macOS".into())
+            Err(ts!("cap.err.play_macos").into())
         }
         pub fn time(&self) -> f64 {
             0.0
@@ -393,7 +393,7 @@ mod other {
     }
 
     pub fn export(_src: &Path, _voice: Option<&Path>, _edl: &Edl, _dest: PathBuf, done: Reply<PathBuf>) {
-        done(Err("Saving video needs macOS".into()))
+        done(Err(ts!("cap.err.save_macos").into()))
     }
 }
 

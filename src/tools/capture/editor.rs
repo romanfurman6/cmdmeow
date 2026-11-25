@@ -177,13 +177,25 @@ impl BarLayout {
 }
 
 pub const COLORS: [(&str, Rgba8); 6] = [
-    ("Red", [255, 69, 58, 255]),
-    ("Amber", [255, 179, 64, 255]),
-    ("Green", [48, 209, 88, 255]),
-    ("Blue", [77, 163, 255, 255]),
-    ("White", [255, 255, 255, 255]),
-    ("Black", [28, 28, 31, 255]),
+    ("red", [255, 69, 58, 255]),
+    ("amber", [255, 179, 64, 255]),
+    ("green", [48, 209, 88, 255]),
+    ("blue", [77, 163, 255, 255]),
+    ("white", [255, 255, 255, 255]),
+    ("black", [28, 28, 31, 255]),
 ];
+
+/// A mark color's name on screen, by its id in [`COLORS`].
+fn color_name(id: &str) -> &'static str {
+    match id {
+        "red" => ts!("cap.ed.color.red"),
+        "amber" => ts!("cap.ed.color.amber"),
+        "green" => ts!("cap.ed.color.green"),
+        "blue" => ts!("cap.ed.color.blue"),
+        "white" => ts!("cap.ed.color.white"),
+        _ => ts!("cap.ed.color.black"),
+    }
+}
 /// Stroke widths (pt): thin, medium, thick, extra thick.
 const STROKES: [f32; 4] = [2.0, 4.0, 7.0, 11.0];
 /// Label text size (pt) per stroke size.
@@ -221,11 +233,11 @@ impl AreaAct {
 
     fn label(self) -> (Ico, &'static str, &'static str) {
         match self {
-            AreaAct::Crop => (Ico::Crop, "Crop", "Enter"),
-            AreaAct::CopyText => (Ico::ScanText, "Copy text", "O"),
-            AreaAct::Blur => (Ico::Blur, "Blur", "B"),
-            AreaAct::Erase => (Ico::Eraser, "Erase", "⌫"),
-            AreaAct::Copy => (Ico::Copy, "Copy", "⌘C"),
+            AreaAct::Crop => (Ico::Crop, ts!("cap.ed.act.crop"), "Enter"),
+            AreaAct::CopyText => (Ico::ScanText, ts!("cap.ed.act.copy_text"), "O"),
+            AreaAct::Blur => (Ico::Blur, ts!("cap.ed.act.blur"), "B"),
+            AreaAct::Erase => (Ico::Eraser, ts!("cap.ed.act.erase"), "⌫"),
+            AreaAct::Copy => (Ico::Copy, ts!("cap.ed.act.copy"), "⌘C"),
         }
     }
 }
@@ -407,7 +419,7 @@ impl Editor {
             Mark::Step { at: p(186.0, 168.0), n: 1, color: red, size: 26.0 * s },
             Mark::Step { at: p(186.0, 242.0), n: 2, color: red, size: 26.0 * s },
             Mark::Arrow { a: p(620.0, 380.0), b: p(342.0, 322.0), color: red, width: 4.0 * s, heads: Heads::End },
-            Mark::Text { at: p(560.0, 386.0), text: "then press Save".into(), color: red, size: 17.0 * s },
+            Mark::Text { at: p(560.0, 386.0), text: ts!("cap.ed.demo_label").into(), color: red, size: 17.0 * s },
         ];
         self.tool = Tool::Blur;
     }
@@ -521,8 +533,8 @@ impl Editor {
         let foot = Rect::from_min_max(Pos2::new(full.left(), full.bottom() - 32.0), full.max);
         hairline(&p, foot.left_top(), foot.right_top());
         let marks = self.doc.marks.len();
-        p.text(foot.left_center() + Vec2::new(14.0, 0.0), Align2::LEFT_CENTER, format!("{w}×{h} px · {marks} mark{}", if marks == 1 { "" } else { "s" }), font(12.0), TEXT_FAINT());
-        p.text(foot.right_center() - Vec2::new(14.0, 0.0), Align2::RIGHT_CENTER, "⌘C copy · ⌘S save · ⌘Z undo · Esc close", font(12.0), TEXT_FAINT());
+        p.text(foot.left_center() + Vec2::new(14.0, 0.0), Align2::LEFT_CENTER, tn!("cap.ed.foot", n = marks, w = w, h = h), font(12.0), TEXT_FAINT());
+        p.text(foot.right_center() - Vec2::new(14.0, 0.0), Align2::RIGHT_CENTER, ts!("cap.ed.foot_keys"), font(12.0), TEXT_FAINT());
 
         let canvas = Rect::from_min_max(Pos2::new(full.left(), top), Pos2::new(full.right(), foot.top()));
         p.rect_filled(canvas, 0.0, pick(Color32::from_rgb(0x0B, 0x12, 0x0A), Color32::from_rgb(0xD5, 0xDE, 0xCC)));
@@ -550,14 +562,14 @@ impl Editor {
     fn toolbar(&mut self, ui: &mut Ui, bar: Rect) {
         let p = ui.painter().clone();
         let y = bar.center().y;
-        const RIGHT: [(&str, u8, Ico, &str); 4] = [
-            ("Save  ⌘S", BTN_PRIMARY, Ico::Save, "Save to your captures folder (⌘S)"),
-            ("Copy  ⌘C", BTN_SECONDARY, Ico::Copy, "Copy the picture with your marks (⌘C)"),
-            ("Share", BTN_SECONDARY, Ico::Link, "Upload it and copy the link (set up in Sharing)"),
-            ("Pin", BTN_SECONDARY, Ico::Pin, "Pin: keep it floating on top"),
+        let right: [(&str, u8, Ico, &str); 4] = [
+            (ts!("cap.ed.save_btn"), BTN_PRIMARY, Ico::Save, ts!("cap.ed.save_tip")),
+            (ts!("cap.ed.copy_btn"), BTN_SECONDARY, Ico::Copy, ts!("cap.ed.copy_tip")),
+            (ts!("cap.share"), BTN_SECONDARY, Ico::Link, ts!("cap.ed.share_tip")),
+            (ts!("cap.pin"), BTN_SECONDARY, Ico::Pin, ts!("cap.ed.pin_tip")),
         ];
         let labeled_w = |p: &egui::Painter, (label, kind, ic, _): (&str, u8, Ico, &str)| button_width(p, label, kind) - 6.0 + if matches!(ic, Ico::Pin | Ico::Link) { 18.0 } else { 0.0 };
-        let labeled_total: f32 = RIGHT.iter().map(|b| labeled_w(&p, *b)).sum::<f32>() + 2.0 * 8.0;
+        let labeled_total: f32 = right.iter().map(|b| labeled_w(&p, *b)).sum::<f32>() + 2.0 * 8.0;
         let lay = BarLayout::fit(bar.width(), labeled_total);
 
         // left: the tools
@@ -590,7 +602,7 @@ impl Editor {
 
         // right: Save, Copy, Pin (from the right edge), then undo/redo
         let mut rx = bar.right() - BAR_PAD;
-        for (k, b) in RIGHT.iter().enumerate() {
+        for (k, b) in right.iter().enumerate() {
             let (label, kind, ic, tip) = *b;
             let w = if lay.icons_only { ICON_BTN } else { labeled_w(&p, *b) };
             let r = Rect::from_min_max(Pos2::new(rx - w, y - ICON_BTN / 2.0), Pos2::new(rx, y + ICON_BTN / 2.0));
@@ -626,10 +638,10 @@ impl Editor {
         }
         let rr = Rect::from_min_size(Pos2::new(rx + 8.0 - UNDO_GAP - ICON_BTN, y - ICON_BTN / 2.0), Vec2::splat(ICON_BTN));
         let ur = rr.translate(Vec2::new(-(ICON_BTN + 2.0), 0.0));
-        if plain_icon(ui, ur, Ico::Undo, "Undo (⌘Z)", !self.undo.is_empty(), Some(tip_top)).clicked() {
+        if plain_icon(ui, ur, Ico::Undo, ts!("cap.ed.undo"), !self.undo.is_empty(), Some(tip_top)).clicked() {
             self.undo();
         }
-        if plain_icon(ui, rr, Ico::Redo, "Redo (⇧⌘Z)", !self.redo.is_empty(), Some(tip_top)).clicked() {
+        if plain_icon(ui, rr, Ico::Redo, ts!("cap.ed.redo"), !self.redo.is_empty(), Some(tip_top)).clicked() {
             self.redo();
         }
     }
@@ -641,19 +653,19 @@ impl Editor {
         let y = strip.center().y;
         let mut x = strip.left() + BAR_PAD;
         let name = match self.tool {
-            Tool::Select => "Select",
-            Tool::Arrow => "Arrow",
-            Tool::Rect => "Box",
-            Tool::Ellipse => "Circle",
-            Tool::Pen => "Pen",
-            Tool::Text => "Label",
-            Tool::Highlight => "Highlighter",
-            Tool::Blur => "Blur",
-            Tool::Eraser => "Eraser",
-            Tool::Steps => "Steps",
-            Tool::Picker => "Pick a color",
-            Tool::Ruler => "Ruler",
-            Tool::Frame => "Frame",
+            Tool::Select => ts!("cap.ed.tool.select"),
+            Tool::Arrow => ts!("cap.ed.tool.arrow"),
+            Tool::Rect => ts!("cap.ed.tool.box"),
+            Tool::Ellipse => ts!("cap.ed.tool.circle"),
+            Tool::Pen => ts!("cap.ed.tool.pen"),
+            Tool::Text => ts!("cap.ed.tool.label"),
+            Tool::Highlight => ts!("cap.ed.tool.highlighter"),
+            Tool::Blur => ts!("cap.ed.tool.blur"),
+            Tool::Eraser => ts!("cap.ed.tool.eraser"),
+            Tool::Steps => ts!("cap.ed.tool.steps"),
+            Tool::Picker => ts!("cap.ed.tool.picker"),
+            Tool::Ruler => ts!("cap.ed.tool.ruler"),
+            Tool::Frame => ts!("cap.ed.tool.frame"),
         };
         x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, name, ty::title(), TEXT()).right() + sp::L;
         let hint: String = match self.tool {
@@ -670,21 +682,21 @@ impl Editor {
             }
             Tool::Blur | Tool::Eraser => {
                 if self.tool == Tool::Blur {
-                    x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, "Style", font(12.0), TEXT_DIM()).right() + 8.0;
+                    x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, ts!("cap.ed.style"), font(12.0), TEXT_DIM()).right() + 8.0;
                     let r = Rect::from_min_size(Pos2::new(x, y - sp::CONTROL_H / 2.0), Vec2::new(200.0, sp::CONTROL_H));
                     let cur = match self.blur {
                         BlurStyle::Pixelate => 0,
                         BlurStyle::Blur => 1,
                         BlurStyle::Solid => 2,
                     };
-                    if let Some(i) = segmented(ui, r, ui.scope_id().with("style"), &["Pixelate", "Blur", "Solid"], cur) {
+                    if let Some(i) = segmented(ui, r, ui.scope_id().with("style"), &[ts!("cap.ed.pixelate"), ts!("cap.ed.blur"), ts!("cap.ed.solid")], cur) {
                         self.blur = [BlurStyle::Pixelate, BlurStyle::Blur, BlurStyle::Solid][i];
                     }
                     x = r.right() + 16.0;
                 }
-                x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, "Cover", font(12.0), TEXT_DIM()).right() + 8.0;
+                x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, ts!("cap.ed.cover"), font(12.0), TEXT_DIM()).right() + 8.0;
                 let r = Rect::from_min_size(Pos2::new(x, y - sp::CONTROL_H / 2.0), Vec2::new(170.0, sp::CONTROL_H));
-                if let Some(i) = segmented(ui, r, ui.scope_id().with("cover"), &["Whole box", "Only text"], (self.cover == Cover::Text) as usize) {
+                if let Some(i) = segmented(ui, r, ui.scope_id().with("cover"), &[ts!("cap.ed.whole_box"), ts!("cap.ed.only_text")], (self.cover == Cover::Text) as usize) {
                     self.cover = if i == 1 { Cover::Text } else { Cover::Box };
                 }
                 x = r.right() + 16.0;
@@ -737,14 +749,14 @@ impl Editor {
         }
         p.line_segment([Pos2::new(x + 2.0, y - 9.0), Pos2::new(x + 2.0, y + 9.0)], Stroke::new(1.0, white(26)));
         x += 14.0;
-        x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, "Padding", font(12.0), TEXT_DIM()).right() + 8.0;
+        x = p.text(Pos2::new(x, y), Align2::LEFT_CENTER, ts!("cap.padding"), font(12.0), TEXT_DIM()).right() + 8.0;
         let r = Rect::from_min_size(Pos2::new(x, y - sp::CONTROL_H / 2.0), Vec2::new(FRAME_PAD_W, sp::CONTROL_H));
         if let Some(i) = segmented(ui, r, ui.scope_id().with("pad"), &["S", "M", "L"], style.pad) {
             style.pad = i;
             next = Some(style);
         }
         x = r.right() + 16.0;
-        for (k, (label, on)) in [("Round", style.round), ("Shadow", style.shadow)].into_iter().enumerate() {
+        for (k, (label, on)) in [(ts!("cap.ed.round"), style.round), (ts!("cap.shadow"), style.shadow)].into_iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(x, y - sp::CONTROL_H / 2.0), Vec2::new(FRAME_CHIP_W, sp::CONTROL_H));
             if chip(ui, r, label, on && cur.is_some()).clicked() {
                 if k == 0 {
@@ -812,7 +824,7 @@ impl Editor {
                 d.crop = Some(r);
                 d.frame = None;
                 self.requests.push(Request::CopyPart(render::render(&self.base, &d)));
-                self.flash("Copied");
+                self.flash(ts!("cap.copied"));
             }
         }
     }
@@ -909,7 +921,7 @@ impl Editor {
                 };
                 for (k, (cname, c)) in COLORS.iter().enumerate() {
                     let r = Rect::from_center_size(Pos2::new(x + SWATCH_W * k as f32 + SWATCH_W / 2.0, y), Vec2::splat(20.0));
-                    let resp = ui.interact(r.expand(3.0), id.with(("color", k)), Sense::click()).on_hover_text(*cname);
+                    let resp = ui.interact(r.expand(3.0), id.with(("color", k)), Sense::click()).on_hover_text(color_name(cname));
                     let on = cur == Some(k);
                     if on {
                         crate::kit::glass::stroke_circle(&p, r.center(), 12.5, Stroke::new(1.5, ACTION()));
@@ -935,7 +947,7 @@ impl Editor {
                 p.rect_filled(plate, R_SMALL, white(15));
                 for k in 0..4 {
                     let r = Rect::from_min_size(Pos2::new(plate.left() + 2.0 + SEG_W * k as f32, plate.top() + 2.0), Vec2::new(SEG_W, sp::CONTROL_H - 4.0));
-                    let tip = if sized { ["Small", "Medium", "Large", "Extra large"][k] } else { ["Thin", "Medium", "Thick", "Extra thick"][k] };
+                    let tip = if sized { [ts!("cap.ed.size.s"), ts!("cap.ed.size.m"), ts!("cap.ed.size.l"), ts!("cap.ed.size.xl")][k] } else { [ts!("cap.ed.stroke.thin"), ts!("cap.ed.stroke.medium"), ts!("cap.ed.stroke.thick"), ts!("cap.ed.stroke.xthick")][k] };
                     let (key, _) = crate::kit::glass::segment(ui, &p, r, id.with(("size", k)), cur == k, true);
                     let resp = key.resp.on_hover_text(tip);
                     let t = SIZE_BARS[k];
@@ -957,7 +969,7 @@ impl Editor {
                 p.rect_filled(plate, R_SMALL, white(15));
                 for (k, h) in Heads::ALL.iter().enumerate() {
                     let r = Rect::from_min_size(Pos2::new(plate.left() + 2.0 + SEG_W * k as f32, plate.top() + 2.0), Vec2::new(SEG_W, sp::CONTROL_H - 4.0));
-                    let tip = ["One head", "Both ends", "Line"][k];
+                    let tip = [ts!("cap.ed.heads.one"), ts!("cap.ed.heads.both"), ts!("cap.ed.heads.line")][k];
                     let on = cur == *h;
                     let (key, _) = crate::kit::glass::segment(ui, &p, r, id.with(("heads", k)), on, true);
                     let resp = key.resp.on_hover_text(tip);
@@ -993,7 +1005,7 @@ impl Editor {
                 };
                 let at = [BlurStyle::Pixelate, BlurStyle::Blur, BlurStyle::Solid].iter().position(|b| *b == cur).unwrap_or(0);
                 let r = Rect::from_min_size(Pos2::new(x, y - sp::CONTROL_H / 2.0), Vec2::new(w, sp::CONTROL_H));
-                if let Some(i) = segmented(ui, r, id.with("style"), &["Pixelate", "Blur", "Solid"], at) {
+                if let Some(i) = segmented(ui, r, id.with("style"), &[ts!("cap.ed.pixelate"), ts!("cap.ed.blur"), ts!("cap.ed.solid")], at) {
                     let b = [BlurStyle::Pixelate, BlurStyle::Blur, BlurStyle::Solid][i];
                     self.blur = b;
                     if on_mark {
@@ -1007,7 +1019,7 @@ impl Editor {
             }
             Piece::Delete => {
                 let r = Rect::from_min_size(Pos2::new(x, y - 14.0), Vec2::new(w, 28.0));
-                if plain_icon(ui, r, Ico::Trash, "Delete (⌫)", true, None).clicked() {
+                if plain_icon(ui, r, Ico::Trash, ts!("cap.ed.delete"), true, None).clicked() {
                     self.delete_selected();
                 }
             }
@@ -1370,7 +1382,7 @@ impl Editor {
                 .font(egui::FontId::proportional(size.max(8.0)))
                 .text_color(Color32::from_rgb(ink[0], ink[1], ink[2]))
                 .background_color(col)
-                .hint_text("Type, then Enter")
+                .hint_text(ts!("cap.ed.type_hint"))
                 .desired_width(tw);
             let r = child.add(te);
             if !r.has_focus() && !r.lost_focus() {
@@ -1487,19 +1499,19 @@ impl Editor {
             match job {
                 Ocr::Copy(r) => {
                     if lines.is_empty() {
-                        self.flash("No text found in that box");
+                        self.flash(ts!("cap.ed.no_text_box"));
                         continue;
                     }
                     let _ = r;
                     let text = mac::join_lines(&lines, self.keep_breaks);
                     self.requests.push(Request::CopyText(text));
                     let n = lines.len();
-                    self.flash(format!("Copied {n} line{}", if n == 1 { "" } else { "s" }));
+                    self.flash(tn!("cap.copied_lines", n = n));
                 }
                 Ocr::Mark(mut m) => {
                     let boxes: Vec<Rect> = lines.iter().map(|l| l.rect).collect();
                     if boxes.is_empty() {
-                        self.flash("No text found, so the whole box is covered");
+                        self.flash(ts!("cap.ed.no_text_cover"));
                     }
                     match &mut m {
                         Mark::Blur { boxes: b, .. } | Mark::Erase { boxes: b, .. } => *b = boxes,

@@ -376,7 +376,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
 
         // the kit hero button (B2: 44), the Enter key as its cap (SF has no ↩)
         let start = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + crate::kit::empty::HERO_H));
-        let sr = crate::kit::empty::hero_button(ui, start.center(), id.with("start"), "Start recording", Some("Enter"), crate::kit::empty::Lead::Dot(LIVE), Some(ACTION()), true, start.width());
+        let sr = crate::kit::empty::hero_button(ui, start.center(), id.with("start"), ts!("cap.ui.start_recording"), Some("Enter"), crate::kit::empty::Lead::Dot(LIVE), Some(ACTION()), true, start.width());
         if sr.clicked() {
             todo.push(Do::Start(super::chose_display(d, s)));
         }
@@ -415,7 +415,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
             if let (Some(Media::Mic), Some(l)) = (media, devs.level) {
                 let mr = Rect::from_min_size(Pos2::new(sw.left() - 42.0, rr.center().y - 8.0), Vec2::new(28.0, 16.0));
                 meter_bars(p, mr, l);
-                ui.interact(mr, id.with("meter"), Sense::hover()).on_hover_text("Microphone level: say something to test it");
+                ui.interact(mr, id.with("meter"), Sense::hover()).on_hover_text(ts!("cap.ui.mic_level"));
             }
             if small_switch(ui, sw, id.with(("sw", k)), on) {
                 todo.push(match k {
@@ -427,7 +427,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         }
         y += 3.0 * ROW + 14.0;
         let gr = Rect::from_min_size(Pos2::new(x1 - 28.0, y), Vec2::splat(28.0));
-        if icon_button(ui, gr, id.with("gear"), Ico::Gear, "Recording settings", TEXT_SOFT(), true) {
+        if icon_button(ui, gr, id.with("gear"), Ico::Gear, ts!("cap.ui.rec_settings"), TEXT_SOFT(), true) {
             todo.push(Do::Settings);
         }
         if let Some(m) = devs.menu {
@@ -545,7 +545,7 @@ fn countdown(c: &mut Capture, ctx: &egui::Context) {
             p.add(egui::epaint::PathShape::line(arc_points(c0, 66.0, a0, a0 + frac * std::f32::consts::TAU, 64), egui::epaint::PathStroke::new(5.0, ACTION())));
         }
         p.text(c0, Align2::CENTER_CENTER, format!("{}", left.ceil().max(1.0) as u32), bold(52.0), TEXT());
-        if ui.interact(r, ui.scope_id().with("skip"), Sense::click()).on_hover_text("Click to start now · Esc to cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
+        if ui.interact(r, ui.scope_id().with("skip"), Sense::click()).on_hover_text(ts!("cap.ui.skip_countdown")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
             skip = true;
         }
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -686,11 +686,11 @@ fn bar(c: &mut Capture, ctx: &egui::Context) {
                     todo = Some(Do::Pause);
                 }
                 x += 42.0;
-                if icon_button(ui, b(x), id.with("restart"), Ico::Restart, "Start over", TEXT_SOFT(), false) {
+                if icon_button(ui, b(x), id.with("restart"), Ico::Restart, ts!("cap.ui.start_over"), TEXT_SOFT(), false) {
                     todo = Some(Do::Ask(Confirm::Restart));
                 }
                 x += 42.0;
-                if icon_button(ui, b(x), id.with("delete"), Ico::Trash, "Delete this recording", TEXT_SOFT(), false) {
+                if icon_button(ui, b(x), id.with("delete"), Ico::Trash, ts!("cap.ui.delete_rec"), TEXT_SOFT(), false) {
                     todo = Some(Do::Ask(Confirm::Delete));
                 }
                 x += 42.0;

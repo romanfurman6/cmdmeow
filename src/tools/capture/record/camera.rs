@@ -12,7 +12,7 @@ pub struct Camera;
 #[cfg(not(target_os = "macos"))]
 impl Camera {
     pub fn open(_device: Option<&str>, _diameter: f32, _center: egui::Pos2) -> Result<Camera, String> {
-        Err("The camera needs macOS".into())
+        Err(ts!("cap.err.camera_macos").into())
     }
     pub fn window_number(&self) -> u32 {
         0
@@ -120,11 +120,11 @@ mod imp {
                 let dev = device
                     .and_then(|id| AVCaptureDevice::deviceWithUniqueID(&NSString::from_str(id)))
                     .or_else(|| AVCaptureDevice::defaultDeviceWithMediaType(media))
-                    .ok_or("No camera found")?;
+                    .ok_or(ts!("cap.err.no_camera"))?;
                 let input = AVCaptureDeviceInput::deviceInputWithDevice_error(&dev).map_err(|e| e.localizedDescription().to_string())?;
                 let session = AVCaptureSession::new();
                 if !session.canAddInput(&input) {
-                    return Err("The camera is busy".into());
+                    return Err(ts!("cap.err.camera_busy").into());
                 }
                 session.addInput(&input);
                 // 720p is plenty for a bubble, and the recorder's track is that size

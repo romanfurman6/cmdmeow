@@ -204,7 +204,7 @@ pub use imp::render;
 /// Render `job`: blocks (run it on its own thread). Gives the video's size.
 #[cfg(not(target_os = "macos"))]
 pub fn render(_job: &Job, _progress: &Progress) -> Result<(u32, u32), String> {
-    Err("Saving a framed video needs macOS".into())
+    Err(ts!("cap.err.frame_macos").into())
 }
 
 #[cfg(target_os = "macos")]
@@ -457,14 +457,14 @@ mod imp {
             let (vm, am) = (AVMediaTypeVideo.ok_or("no video")?, AVMediaTypeAudio.ok_or("no audio")?);
             let duration = secs(asset.duration());
             if duration <= 0.0 {
-                return Err("The video is empty".into());
+                return Err(ts!("cap.err.video_empty").into());
             }
-            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or("No picture in the video")?;
+            let track: Retained<AVAssetTrack> = asset.tracksWithMediaType(vm).firstObject().ok_or(ts!("cap.err.no_picture"))?;
             let ns = track.naturalSize();
             let src = ((ns.width.round() as u32).max(2), (ns.height.round() as u32).max(2));
             let lay = scene::layout(src, Some(&job.frame));
             let (ow, oh) = lay.out;
-            let chrome = scene::chrome(&job.frame, &lay).ok_or("The frame couldn't be drawn")?;
+            let chrome = scene::chrome(&job.frame, &lay).ok_or(ts!("cap.err.frame_not_drawn"))?;
             // a screen recording sends frames only when something moved:
             // the rate is a hint for the encoder, the frames keep their times
             let fps = if track.nominalFrameRate() > 31.0 { 60 } else { 30 };
@@ -475,8 +475,8 @@ mod imp {
             let ctx_opts = NSDictionary::from_slices(&[kCIContextWorkingColorSpace, kCIContextOutputColorSpace, kCIContextCacheIntermediates], &[any(&*null), any(&*null), any(&*no)]);
             let ctx = CIContext::contextWithOptions(Some(&ctx_opts));
             let img_opts = NSDictionary::from_slices(&[kCIImageColorSpace], &[any(&*null)]);
-            let under = still(&chrome.under, &img_opts).ok_or("No memory for the frame")?;
-            let over = still(&chrome.over, &img_opts).ok_or("No memory for the frame")?;
+            let under = still(&chrome.under, &img_opts).ok_or(ts!("cap.err.no_memory_frame"))?;
+            let over = still(&chrome.over, &img_opts).ok_or(ts!("cap.err.no_memory_frame"))?;
             // the picture's place, in Core Image's space (y up from the bottom)
             let s = lay.screen;
             let hole = CGRect::new(CGPoint::new(s.left() as f64, (oh as f32 - s.bottom()) as f64), CGSize::new(s.width() as f64, s.height() as f64));
@@ -486,7 +486,7 @@ mod imp {
             let video_out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(&gpu_attrs(YUV, None)));
             video_out.setAlwaysCopiesSampleData(false);
             if !reader.canAddOutput(&video_out) {
-                return Err("The video can't be read".into());
+                return Err(ts!("cap.err.video_cant_read").into());
             }
             reader.addOutput(&video_out);
 
@@ -503,7 +503,7 @@ mod imp {
             let video = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(vm, Some(&vset));
             video.setExpectsMediaDataInRealTime(false);
             if !writer.canAddInput(&video) {
-                return Err("This Mac can't encode video at that size".into());
+                return Err(ts!("cap.err.cant_encode").into());
             }
             writer.addInput(&video);
             let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(&video, Some(&gpu_attrs(if knobs.yuv { YUV } else { BGRA }, Some((ow, oh)))));
@@ -526,17 +526,17 @@ mod imp {
             }
 
             if !reader.startReading() {
-                return Err(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video can't be read".into()));
+                return Err(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.video_cant_read").into()));
             }
             if !writer.startWriting() {
                 reader.cancelReading();
-                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into()));
+                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.cant_start_file").into()));
             }
             writer.startSessionAtSourceTime(cm(0.0));
             let Some(pool) = adaptor.pixelBufferPool() else {
                 reader.cancelReading();
                 writer.cancelWriting();
-                return Err("No frames to draw into".into());
+                return Err(ts!("cap.err.no_frames").into());
             };
             let pool_ptr = Retained::as_ptr(&pool) as *const c_void;
 
@@ -555,10 +555,10 @@ mod imp {
                     return fail("Cancelled".into());
                 }
                 if writer.status() == AVAssetWriterStatus::Failed {
-                    return fail(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be written".into()));
+                    return fail(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.video_not_written").into()));
                 }
                 if reader.status() == AVAssetReaderStatus::Failed {
-                    return fail(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be read".into()));
+                    return fail(reader.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.video_not_read").into()));
                 }
                 let mut moved = false;
                 // keep the GPU busy: a few frames drawing while the encoder
@@ -597,7 +597,7 @@ mod imp {
                         let frame = over.img.imageByCompositingOverImage(&pic.imageByCompositingOverImage(&under.img));
                         let mut out: *mut c_void = std::ptr::null_mut();
                         if CVPixelBufferPoolCreatePixelBuffer(std::ptr::null(), pool_ptr, &mut out) != 0 || out.is_null() {
-                            return Err("Out of memory for frames".into());
+                            return Err(ts!("cap.err.oom_frames").into());
                         }
                         // the recording's colour tags, and the matrix a 420v
                         // frame is converted with
@@ -608,7 +608,7 @@ mod imp {
                             Ok(task) => task,
                             Err(e) => {
                                 CFRelease(out);
-                                return Err(format!("The frame couldn't be drawn: {}", ns_err(&e)));
+                                return Err(t!("cap.err.frame_not_drawn_why", why = ns_err(&e)).into_owned());
                             }
                         };
                         spent.draw += t1.elapsed().as_secs_f64();
@@ -632,13 +632,13 @@ mod imp {
                         let drawn = f.task.waitUntilCompletedAndReturnError();
                         spent.gpu += t0.elapsed().as_secs_f64();
                         if let Err(e) = drawn {
-                            return Err(format!("The frame couldn't be drawn: {}", ns_err(&e)));
+                            return Err(t!("cap.err.frame_not_drawn_why", why = ns_err(&e)).into_owned());
                         }
                         let t1 = std::time::Instant::now();
                         let ok = adaptor.appendPixelBuffer_withPresentationTime(&*(f.out as *const CVPixelBuffer), f.at);
                         spent.write += t1.elapsed().as_secs_f64();
                         if !ok {
-                            return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "A frame couldn't be written".into()));
+                            return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.frame_not_written").into()));
                         }
                         Ok(())
                     });
@@ -658,7 +658,7 @@ mod imp {
                         match l.out.copyNextSampleBuffer() {
                             Some(sb) => {
                                 if !l.input.appendSampleBuffer(&sb) {
-                                    return fail(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The sound couldn't be written".into()));
+                                    return fail(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.sound_not_written").into()));
                                 }
                             }
                             None => {
@@ -676,7 +676,7 @@ mod imp {
                 }
             }
             if frames == 0 {
-                return fail("No picture in the video".into());
+                return fail(ts!("cap.err.no_picture").into());
             }
             reader.cancelReading();
             writer.endSessionAtSourceTime(cm(duration));
@@ -708,7 +708,7 @@ mod imp {
             if writer.status() == AVAssetWriterStatus::Completed {
                 Ok(((ow, oh), frames, duration))
             } else {
-                Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "The video couldn't be finished".into()))
+                Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.video_not_finished").into()))
             }
         }
     }

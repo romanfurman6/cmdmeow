@@ -590,7 +590,7 @@ fn first_capture(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let key = |cmd: Command| c.settings.shortcut(cmd).map(|s| s.display());
     let (area, window, screen) = (key(Command::Area), key(Command::Window), key(Command::Screen));
     let hc = Pos2::new(cx0, tr.bottom() + sp::XXL + HERO_H / 2.0);
-    if hero_button(ui, hc, id.with("area"), "Capture area", area.as_deref(), Lead::None, Some(ACTION()), !c.busy, 200.0).clicked() {
+    if hero_button(ui, hc, id.with("area"), ts!("cap.ui.capture_area"), area.as_deref(), Lead::None, Some(ACTION()), !c.busy, 200.0).clicked() {
         c.queue.push((Command::Area, 0));
     }
     let sy = hc.y + HERO_H / 2.0 + sp::L + 17.0;
@@ -626,7 +626,7 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let foot = scr.bottom() + 12.0;
     p.line_segment([Pos2::new(scr.center().x, scr.bottom()), Pos2::new(scr.center().x, foot)], Stroke::new(2.5, tint));
     p.line_segment([Pos2::new(scr.center().x - 12.0, foot), Pos2::new(scr.center().x + 12.0, foot)], Stroke::new(2.5, tint));
-    let g = p.layout_no_wrap("REC".into(), bold(11.0), RED());
+    let g = p.layout_no_wrap(ts!("cap.ui.rec").into(), bold(11.0), RED());
     let rec = Rect::from_center_size(scr.center(), Vec2::new(8.0 + 5.0 + g.size().x + 16.0, 20.0));
     p.rect_filled(rec, 8.0, with_alpha(RED(), 0.18));
     let on = (t * 0.7).fract() < 0.6;
@@ -636,7 +636,7 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
 
     let key = c.settings.shortcut(Command::Record).map(|s| s.display());
     let hc = Pos2::new(cx0, tr.bottom() + sp::XXL + HERO_H / 2.0);
-    if hero_button(ui, hc, id.with("record"), "Record screen", key.as_deref(), Lead::Dot(RED()), Some(ACTION()), true, 220.0).clicked() {
+    if hero_button(ui, hc, id.with("record"), ts!("cap.ui.record_screen"), key.as_deref(), Lead::Dot(RED()), Some(ACTION()), true, 220.0).clicked() {
         c.queue.push((Command::Record, 0));
     }
     // sound: what you hear and your voice
@@ -644,8 +644,8 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
     let (aw, mw) = (toggle_width(&p, ts!("cap.system_audio")), toggle_width(&p, ts!("cap.microphone")));
     let x = cx0 - (aw + sp::S + mw) / 2.0;
     let (sys, mic) = (c.settings.rec.system_audio, c.settings.rec.mic);
-    let (r1, _) = toggle_chip(ui, Pos2::new(x, sy), id.with("sys"), "System audio", sys, |p, r, col| icons::draw(p, Ico::Speaker, r, col));
-    let (r2, _) = toggle_chip(ui, Pos2::new(x + aw + sp::S, sy), id.with("mic"), "Microphone", mic, |p, r, col| icons::draw(p, if mic { Ico::Mic } else { Ico::MicOff }, r, col));
+    let (r1, _) = toggle_chip(ui, Pos2::new(x, sy), id.with("sys"), ts!("cap.system_audio"), sys, |p, r, col| icons::draw(p, Ico::Speaker, r, col));
+    let (r2, _) = toggle_chip(ui, Pos2::new(x + aw + sp::S, sy), id.with("mic"), ts!("cap.microphone"), mic, |p, r, col| icons::draw(p, if mic { Ico::Mic } else { Ico::MicOff }, r, col));
     if r1.clicked() {
         c.settings.rec.system_audio = !sys;
         c.save_settings();
@@ -942,7 +942,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
         k += 1;
     }
     let ly = row_y(card, k);
-    if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - 210.0, ly - 12.0), Pos2::new(card.right() - 12.0, ly + 12.0)), id.with("link"), &["Public", "Expires in 7 days"], (s.link == LinkKind::Week) as usize) {
+    if let Some(i) = segmented(ui, Rect::from_min_max(Pos2::new(card.right() - 12.0 - 210.0, ly - 12.0), Pos2::new(card.right() - 12.0, ly + 12.0)), id.with("link"), &[ts!("cap.ui.public"), ts!("cap.ui.expires_7")], (s.link == LinkKind::Week) as usize) {
         s.link = if i == 1 { LinkKind::Week } else { LinkKind::Public };
     }
     y = card.bottom() + 24.0;
