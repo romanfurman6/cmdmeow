@@ -17,10 +17,10 @@
 
 
   // App pictures follow the visitor's theme, like the app does
-  // The visitor's macOS theme, unless they picked one in the menu bar's theme menu (kept in localStorage)
+  // Dark Miami until the visitor picks one in the menu bar's theme menu (kept in localStorage; Auto follows macOS)
   const root = document.documentElement, lightQ = matchMedia('(prefers-color-scheme: light)');
-  const THEMES = ['light', 'dark', 'miami'];
-  const choice = () => { try { const t = localStorage.getItem('theme'); return THEMES.includes(t) ? t : 'auto'; } catch { return 'auto'; } };
+  const THEMES = ['auto', 'light', 'dark', 'miami'];
+  const choice = () => { try { const t = localStorage.getItem('theme'); return THEMES.includes(t) ? t : 'miami'; } catch { return 'miami'; } };
   const thm = $('thm'), menu = $('tmenu');
   // First-screen photo: a blurred inline copy paints first, the real file fades in once loaded
   const dimg = document.querySelector('.dimg i');
@@ -47,7 +47,7 @@
   if (thm) thm.addEventListener('click', e => { e.stopPropagation(); open(menu.hidden); });
   if (menu) menu.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    try { if (b.dataset.t === 'auto') localStorage.removeItem('theme'); else localStorage.setItem('theme', b.dataset.t); } catch {}
+    try { localStorage.setItem('theme', b.dataset.t); } catch {}
     theme(); open(false); thm.focus();
   });
   // the dots pill sits on <html> so no wrapper's transform can unpin it

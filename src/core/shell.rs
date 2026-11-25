@@ -185,7 +185,7 @@ impl App {
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
         crate::kit::native::set_show_in_dock(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_DOCK_KEY)).unwrap_or(true));
         if !demo {
-            glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::ThemeChoice::Auto));
+            glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::DEFAULT_THEME));
         }
         if !demo {
             crate::kit::sound::prewarm();

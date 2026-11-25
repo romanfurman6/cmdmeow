@@ -28,7 +28,7 @@
 <link rel="stylesheet" href="widgets.css?v=91">
 <link rel="preload" as="image" href="desk.jpg" imagesrcset="desk-1376.jpg 1376w, desk.jpg 2752w" imagesizes="100vw" media="(prefers-color-scheme: dark)" fetchpriority="high">
 <link rel="preload" as="image" href="desk-day.jpg" imagesrcset="desk-day-1376.jpg 1376w, desk-day.jpg 2752w" imagesizes="100vw" media="(prefers-color-scheme: light)" fetchpriority="high">
-<script>try{var t=localStorage.getItem("theme");document.documentElement.dataset.app=(t==="light"||t==="dark"||t==="miami")?t:(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){}</script>
+<script>var t;try{t=localStorage.getItem("theme")}catch(e){}document.documentElement.dataset.app=(t==="light"||t==="dark"||t==="miami")?t:t==="auto"?(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):"miami"</script>
 </head>
 <body>
 <section class="desk">
