@@ -52,6 +52,8 @@ pub struct History {
     pub days: Vec<SavedDay>,
     /// The `COUNTING` the days were saved under.
     pub counting: u32,
+    /// Every old log was read once into `days` (`Provider::old_tokens`).
+    pub backfilled: bool,
 }
 
 /// Goes up when replies are counted differently, so days saved under the

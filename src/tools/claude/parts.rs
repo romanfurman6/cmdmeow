@@ -247,6 +247,7 @@ pub fn period_days(archive: &[DayRecord], period: Period, today: NaiveDate) -> i
 ///
 /// With `grain` Week or Month each bar is a week or a month starting at its
 /// date, and the readout names it ("This week", "Week of Nov 17", "Oct 2026").
+#[allow(clippy::too_many_arguments)]
 pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, show_usd: bool, salt: &str, grain: Grain) {
     let p = ui.painter().clone();
     if days.is_empty() {

@@ -134,9 +134,22 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             // changes what's drawn; the cache reads only what was added since.
             // Hidden, it waits until the panel or window opens (the nap ends then)
             if (activity::visible() || local_at[i].age().is_none()) && local_at[i].due(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS)) {
+                let today = chrono::Local::now().date_naive();
+                // once: every old log into the saved days, read outside the
+                // history lock (it can take a while)
+                if !history::with(id, |h| (h.backfilled, false)) {
+                    let mut old = p.old_tokens();
+                    history::with(id, |h| {
+                        if let Some(old) = old.as_mut() {
+                            h.merge_days(old, today);
+                        }
+                        h.backfilled = true;
+                        ((), true)
+                    });
+                }
                 let mut local = p.local_tokens();
                 // saved only when a day changed: the file holds every day kept
-                history::with(id, |h| ((), h.merge_days(&mut local, chrono::Local::now().date_naive())));
+                history::with(id, |h| ((), h.merge_days(&mut local, today)));
                 let mut g = s.lock_ok();
                 g.local = local;
             }

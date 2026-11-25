@@ -152,6 +152,11 @@ pub trait Provider: Send {
     fn fetch_account(&mut self, s: &Shared);
     /// Token counts from local session logs.
     fn local_tokens(&mut self) -> LocalTokens;
+    /// Every log there is, older than `LOG_DAYS` too, read once to fill the
+    /// saved history (`History::backfilled`). None: nothing older to read.
+    fn old_tokens(&mut self) -> Option<LocalTokens> {
+        None
+    }
     /// The folder where the assistant keeps its data; settings use it to
     /// tell whether the assistant is on this Mac.
     fn data_dir(&self) -> Option<PathBuf> {
@@ -442,9 +447,18 @@ pub fn recent_jsonl(dir: &Path, depth: usize) -> Vec<PathBuf> {
     recent_files(dir, depth, "jsonl")
 }
 
+/// Every `.jsonl` file under `dir` (down to `depth` folder levels), however old.
+pub fn all_jsonl(dir: &Path, depth: usize) -> Vec<PathBuf> {
+    files_since(dir, depth, "jsonl", 0)
+}
+
 /// Files with extension `ext` under `dir` (down to `depth` levels) changed in the last `LOG_DAYS`.
 pub fn recent_files(dir: &Path, depth: usize, ext: &str) -> Vec<PathBuf> {
-    let since = Utc::now().timestamp() - LOG_DAYS * 86_400;
+    files_since(dir, depth, ext, Utc::now().timestamp() - LOG_DAYS * 86_400)
+}
+
+/// Files with extension `ext` under `dir` (down to `depth` levels) changed at `since` (unix time) or later.
+fn files_since(dir: &Path, depth: usize, ext: &str, since: i64) -> Vec<PathBuf> {
     let mut out = Vec::new();
     fn walk(d: &Path, depth: usize, since: i64, ext: &str, out: &mut Vec<PathBuf>) {
         let Ok(rd) = std::fs::read_dir(d) else { return };
@@ -564,12 +578,6 @@ pub struct DayRecord {
     pub projects: Vec<Share>,
 }
 
-impl DayRecord {
-    pub fn day(&self) -> Day {
-        Day { date: self.date, tokens: self.tokens, usd: self.usd, requests: self.requests }
-    }
-}
-
 /// A model as a list shows it: "Opus 4.5" for "claude-opus-4-5-20251101".
 pub fn model_label(raw: &str) -> String {
     if raw.is_empty() { ts!("ai.other_model").into() } else { price::display_name(raw) }
@@ -633,7 +641,8 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
     let mut models: HashMap<u32, Share> = HashMap::new();
     let mut projects: HashMap<u32, Share> = HashMap::new();
     // every day the logs have, with its models and projects by id
-    let mut records: std::collections::BTreeMap<NaiveDate, (Day, HashMap<u32, Share>, HashMap<u32, Share>)> = Default::default();
+    type ByDay = std::collections::BTreeMap<NaiveDate, (Day, HashMap<u32, Share>, HashMap<u32, Share>)>;
+    let mut records: ByDay = Default::default();
     for e in entries {
         if e.ts > now_ts + 3600 {
             continue;
