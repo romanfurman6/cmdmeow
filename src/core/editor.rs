@@ -964,6 +964,8 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         // a few files and a zip: off the UI thread, a toast when it's done
         let _ = std::thread::Builder::new().name("logs-export".into()).spawn(|| match crate::kit::logs::export() {
             Ok(_) => crate::kit::toast::say(ts!("app.saved_desktop")),
+            // a second click while the first still saves: that one's toast says it
+            Err(e) if e == "already saving" => {}
             Err(e) => crate::kit::toast::say(t!("app.cant_export", why = e).to_string()),
         });
     }
