@@ -12,7 +12,7 @@
     document.documentElement.style.overflow = "hidden";
     bg(true);
     v.currentTime = 0; var p = v.play(); if (p && p.catch) p.catch(function () {});
-    lb.querySelector(".tl button").focus({ preventScroll: true });
+    requestAnimationFrame(function () { lb.querySelector(".tl button").focus({ preventScroll: true }); });
   }
   function close() {
     lb.classList.remove("on"); lb.setAttribute("aria-hidden", "true");
@@ -23,5 +23,5 @@
   }
   document.querySelectorAll("[data-watch]").forEach(function (b) { b.addEventListener("click", open); });
   lb.addEventListener("click", function (e) { if (e.target === lb || e.target.closest(".tl button")) close(); });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && lb.classList.contains("on")) close(); });
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape" && lb.classList.contains("on")) { e.preventDefault(); close(); } }, true);
 })();
