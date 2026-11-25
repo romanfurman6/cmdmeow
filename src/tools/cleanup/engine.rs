@@ -883,7 +883,7 @@ fn scan_user_caches(c: &mut Ctx) {
             continue;
         }
         if let Some(k) = keep.iter().find(|k| k.matches(&n)) {
-            c.add(Group::AppCaches, &pretty(&n), p.clone(), "Caches", Verdict::Keep, &k.reason);
+            c.add(Group::AppCaches, &pretty(&n), p.clone(), "Caches", Verdict::Keep, k.reason());
             // neither Claude nor a click turns these into junk
             if let Some(it) = c.items.last_mut().filter(|i| i.path == p) {
                 it.hard_keep = true;
@@ -905,7 +905,7 @@ fn scan_user_caches(c: &mut Ctx) {
 fn scan_app_caches(c: &mut Ctx) {
     let h = home();
     for r in &super::rules::catalog().app_caches {
-        c.add(Group::AppCaches, &r.title, h.join(&r.path), "Caches", r.verdict(), &r.reason);
+        c.add(Group::AppCaches, &r.title, h.join(&r.path), "Caches", r.verdict(), r.reason());
     }
     // Electron / Chromium app caches (CMElectronAppsCacheScanTask)
     let support = h.join("Library/Application Support");
@@ -964,7 +964,7 @@ fn scan_logs(c: &mut Ctx) {
 fn scan_developer(c: &mut Ctx) {
     let h = home();
     for r in &super::rules::catalog().developer {
-        c.add(Group::Developer, &r.title, h.join(&r.path), "Caches", r.verdict(), &r.reason);
+        c.add(Group::Developer, &r.title, h.join(&r.path), "Caches", r.verdict(), r.reason());
     }
 }
 // ---- Homebrew: its own cleanup (old versions and downloads) when brew is there

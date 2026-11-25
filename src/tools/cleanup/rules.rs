@@ -1,6 +1,8 @@
 //! Cleanup's catalog: the fixed places to look, the caches never to touch and
 //! the project types whose build output can go. Kept as data (rules.json, built
 //! into the app) so adding an app or a tool is a one-line change with a test.
+//! The reasons shown are texts in the locale, under `rules.place.<id>` and
+//! `rules.keep.<id>`.
 
 use super::engine::Verdict;
 use serde::Deserialize;
@@ -23,12 +25,16 @@ pub struct Place {
     pub path: String,
     pub title: String,
     verdict: String,
-    pub reason: String,
+    /// Its reason is `rules.place.<id>` in the locale.
+    id: String,
 }
 
 impl Place {
     pub fn verdict(&self) -> Verdict {
         parse_verdict(&self.verdict)
+    }
+    pub fn reason(&self) -> &'static str {
+        crate::i18n::data(&format!("rules.place.{}", self.id))
     }
 }
 
@@ -38,10 +44,14 @@ pub struct KeepCache {
     name: String,
     #[serde(rename = "match")]
     how: String,
-    pub reason: String,
+    /// Its reason is `rules.keep.<id>` in the locale.
+    id: String,
 }
 
 impl KeepCache {
+    pub fn reason(&self) -> &'static str {
+        crate::i18n::data(&format!("rules.keep.{}", self.id))
+    }
     pub fn matches(&self, folder: &str) -> bool {
         let (f, n) = (folder.to_lowercase(), self.name.to_lowercase());
         match self.how.as_str() {
@@ -116,7 +126,7 @@ mod tests {
         for p in c.app_caches.iter().chain(c.developer.iter()) {
             assert!(!p.path.starts_with('/') && !p.path.contains(".."), "{} must be relative to home", p.path);
             assert!(["safe", "ask", "keep"].contains(&p.verdict.as_str()), "{}: verdict {}", p.title, p.verdict);
-            assert!(!p.title.is_empty() && !p.reason.is_empty());
+            assert!(!p.title.is_empty() && !p.id.is_empty());
             // personal folders are never offered
             assert!(crate::kit::fs::is_protected(&crate::kit::fs::home().join(&p.path)).is_none(), "{} is protected", p.path);
         }
@@ -131,6 +141,31 @@ mod tests {
             }
         }
         assert!(c.installers.min_age_days >= 1);
+    }
+
+    /// Every rule's reason is in en.json, and every `rules.*` text belongs
+    /// to a rule.
+    #[test]
+    fn reasons_are_in_the_locale() {
+        let c = catalog();
+        let en: serde_json::Value = serde_json::from_str(include_str!("../../../locales/en.json")).unwrap();
+        let texts = |sec: &str| en["rules"][sec].as_object().cloned().unwrap_or_default();
+        let (place, keep) = (texts("place"), texts("keep"));
+        for p in c.app_caches.iter().chain(c.developer.iter()) {
+            assert!(place.contains_key(&p.id), "rules.place.{} isn't in en.json", p.id);
+            assert_eq!(p.reason(), place[&p.id].as_str().unwrap());
+        }
+        for k in &c.keep_caches {
+            assert!(keep.contains_key(&k.id), "rules.keep.{} isn't in en.json", k.id);
+            assert_eq!(k.reason(), keep[&k.id].as_str().unwrap());
+        }
+        for id in place.keys() {
+            assert!(c.app_caches.iter().chain(c.developer.iter()).any(|p| &p.id == id), "rules.place.{id} isn't used");
+        }
+        for id in keep.keys() {
+            assert!(c.keep_caches.iter().any(|k| &k.id == id), "rules.keep.{id} isn't used");
+        }
+        assert_eq!(en.as_object().unwrap().keys().filter(|k| *k == "rules").count(), 1);
     }
 
     #[test]
