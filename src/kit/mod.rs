@@ -23,6 +23,7 @@ pub mod hotkeys;
 pub mod mouse_keys;
 pub mod loader;
 pub mod login;
+pub mod logs;
 pub mod macos;
 pub mod mechanics;
 pub mod menu;

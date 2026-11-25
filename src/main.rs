@@ -98,6 +98,11 @@ fn main() -> eframe::Result {
         tools::cleanup::scan_report(std::env::args().any(|a| a == "--ai"));
         return Ok(());
     }
+    // the app itself (no switches), release build: stderr to
+    // ~/Library/Logs/CmdMeow/cmdmeow.log for Settings › About › Logs
+    if std::env::args().len() == 1 {
+        kit::logs::start_run_log();
+    }
     let mut screenshot = None;
     let mut view = "storage".to_string();
     let mut args = std::env::args().skip(1);
