@@ -346,7 +346,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let g = app.clean.lock_ok();
         (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_in(app.clean_group))
     };
-    let mut sub = t!("cleanup.n_found", n = human_bytes(total)).into_owned();
+    // after cleaning a group: what's left (the rail shows what went)
+    let back = !app.clean.lock_ok().cleaned_groups.is_empty();
+    let mut sub = if back { t!("cleanup.n_left", n = human_bytes(total)) } else { t!("cleanup.n_found", n = human_bytes(total)) }.into_owned();
     if let Some(e) = &ai_error {
         sub = format!("{sub} · {e}");
     }
@@ -562,6 +564,8 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let mut rows: Vec<(Option<Group>, &'static str, u64, usize, Color32)> = vec![];
+    // groups cleaned since the scan with nothing left in them: a quiet row with a check
+    let mut gone: Vec<(Group, u64)> = vec![];
     {
         let g = app.clean.lock_ok();
         let asks = |f: &dyn Fn(&Item) -> bool| g.items.iter().filter(|i| f(i) && is_question(i)).count();
@@ -569,14 +573,28 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
         for (k, grp) in Group::ALL.iter().enumerate() {
             if g.items.iter().any(|i| i.group == *grp) {
                 rows.push((Some(*grp), grp.label(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
+            } else if let Some(c) = g.cleaned_groups.iter().find(|c| c.0 == *grp) {
+                gone.push(*c);
             }
         }
     }
     if !rows.iter().any(|t| t.0 == app.clean_group) {
         app.clean_group = None;
     }
-    let card = Rect::from_min_size(rail.min, Vec2::new(rail.width(), (rows.len() as f32 * GROUP_ROW_H + 2.0 * sp::XS).min(rail.height())));
+    let card = Rect::from_min_size(rail.min, Vec2::new(rail.width(), ((rows.len() + gone.len()) as f32 * GROUP_ROW_H + 2.0 * sp::XS).min(rail.height())));
     glass_card(&p, card, R_CARD, 0.0, false);
+    for (k, (grp, bytes)) in gone.iter().enumerate() {
+        let rr = Rect::from_min_size(Pos2::new(card.left() + sp::XS, card.top() + sp::XS + (rows.len() + k) as f32 * GROUP_ROW_H), Vec2::new(card.width() - 2.0 * sp::XS, GROUP_ROW_H));
+        if rr.bottom() > card.bottom() + 0.5 {
+            break;
+        }
+        let c = Pos2::new(rr.left() + sp::M + 12.0, rr.center().y);
+        p.circle_filled(c, 12.0, with_alpha(GREEN(), 0.14));
+        icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(14.0)), GREEN());
+        let size = p.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(*bytes), ty::body(), TEXT_FAINT());
+        let x = c.x + 12.0 + sp::M;
+        text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, grp.label(), ty::body(), TEXT_DIM(), size.left() - sp::S - x);
+    }
     for (k, (grp, title, bytes, q, col)) in rows.iter().enumerate() {
         let rr = Rect::from_min_size(Pos2::new(card.left() + sp::XS, card.top() + sp::XS + k as f32 * GROUP_ROW_H), Vec2::new(card.width() - 2.0 * sp::XS, GROUP_ROW_H));
         if rr.bottom() > card.bottom() + 0.5 {
@@ -1358,21 +1376,35 @@ fn quit_one(app: &mut App, k: usize, now: f64) {
 fn poll_quits(app: &mut App, ctx: &egui::Context, now: f64) {
     let demo = app.demo;
     let mut waiting = false;
+    let mut stuck = false;
     for row in &mut app.quit {
-        if let Quit::Quitting(t) = row.state {
-            let gone = if demo { now - t > 0.9 } else { !crate::kit::native::app_alive(row.app.pid) };
-            row.state = if gone {
-                Quit::Closed
-            } else if now - t > QUIT_WAIT {
-                Quit::Stuck
-            } else {
-                waiting = true;
-                Quit::Quitting(t)
-            };
+        match row.state {
+            Quit::Quitting(t) => {
+                let gone = if demo { now - t > 0.9 } else { !crate::kit::native::app_alive(row.app.pid) };
+                row.state = if gone {
+                    Quit::Closed
+                } else if now - t > QUIT_WAIT {
+                    Quit::Stuck
+                } else {
+                    waiting = true;
+                    Quit::Quitting(t)
+                };
+            }
+            // an app slow to quit (or quit from the Dock) still turns Closed
+            Quit::Stuck if !demo => {
+                if crate::kit::native::app_alive(row.app.pid) {
+                    stuck = true;
+                } else {
+                    row.state = Quit::Closed;
+                }
+            }
+            _ => {}
         }
     }
     if waiting {
         ctx.request_repaint_after(std::time::Duration::from_millis(200));
+    } else if stuck {
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
 }
 
@@ -1587,6 +1619,9 @@ pub(crate) fn demo_apps() -> Vec<OpenApp> {
 
 // ---------------------------------------------------------------- done
 
+/// Failures listed on the Done card; "Show all" opens the log for the rest.
+const FAILED_SHOWN: usize = 3;
+
 fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let st = app.clean.lock_ok().clone();
@@ -1604,10 +1639,14 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     rows.sort_by(|a, b| b.2.cmp(&a.2));
     // cards fit their content (no stretched empty boxes); the log gets the full height
     let body = Rect::from_min_max(Pos2::new(r.left() + sp::PAGE_EDGE, r.top() + PAGE_HEADER_H + 1.0 + sp::L), Pos2::new(r.right() - sp::PAGE_EDGE, r.bottom() - sp::L));
-    let left_h = 2.0 * sp::L + 44.0 + sp::L + 34.0 + sp::XS + 16.0 + sp::XL + 34.0 + if ok { 0.0 } else { 16.0 + sp::S + st.failed.len().min(4) as f32 * 18.0 + 20.0 + sp::L };
+    // the failures wrap, so the card measures them at its own width
+    let left_w = 340.0f32.min(body.width() * 0.4);
+    let fail_w = left_w - 2.0 * sp::L;
+    let fails_h: f32 = st.failed.iter().take(FAILED_SHOWN).map(|(name, err)| p.layout(name.clone(), ty::body(), TEXT(), fail_w).size().y + p.layout(err.clone(), ty::caption(), TEXT(), fail_w).size().y + sp::S).sum();
+    let left_h = 2.0 * sp::L + 44.0 + sp::L + 34.0 + sp::XS + 16.0 + sp::XL + 34.0 + if ok { 0.0 } else { 16.0 + sp::S + fails_h + if st.failed.len() > FAILED_SHOWN { 20.0 } else { 0.0 } + sp::L };
     let right_h = 2.0 * sp::L + 34.0 + sp::S + rows.len().max(1) as f32 * sp::ROW2_H;
     let h = if app.clean_log { body.height() } else { left_h.max(right_h).min(body.height()) };
-    let left = Rect::from_min_size(body.min, Vec2::new(340.0f32.min(body.width() * 0.4), h));
+    let left = Rect::from_min_size(body.min, Vec2::new(left_w, h));
     let right = Rect::from_min_size(Pos2::new(left.right() + sp::L, body.top()), Vec2::new(body.right() - left.right() - sp::L, h));
     glass_card(&p, left, R_CARD, 0.0, false);
     glass_card(&p, right, R_CARD, 0.0, false);
@@ -1642,13 +1681,20 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
         let n = st.failed.len();
         p.text(Pos2::new(li.left(), y), Align2::LEFT_TOP, tn!("cleanup.failed", n = n), ty::title(), AMBER());
         y += 16.0 + sp::S;
-        for (name, err) in st.failed.iter().take(4) {
-            text_fit(&p, Pos2::new(li.left(), y), Align2::LEFT_TOP, &format!("{name}: {err}"), mono(11.0), TEXT_SOFT(), li.width());
-            y += 18.0;
+        // name over its reason, both whole (never cut with "…"); the rest
+        // is one click away in the log
+        for (name, err) in st.failed.iter().take(FAILED_SHOWN) {
+            let g = p.layout(name.clone(), ty::body(), TEXT(), li.width());
+            let h = g.size().y;
+            p.galley(Pos2::new(li.left(), y), g, TEXT());
+            y += h;
+            let g = p.layout(err.clone(), ty::caption(), ty::caption_color(), li.width());
+            let h = g.size().y;
+            p.galley(Pos2::new(li.left(), y), g, ty::caption_color());
+            y += h + sp::S;
         }
-        // only when an open app was in the way
-        if st.in_way || st.failed.iter().any(|(_, e)| e.contains("open") || e.contains("in use")) {
-            text_fit(&p, Pos2::new(li.left(), y + sp::XS), Align2::LEFT_TOP, ts!("cleanup.quit_and_rescan"), ty::caption(), ty::caption_color(), li.width());
+        if n > FAILED_SHOWN && !app.clean_log && crate::kit::glass::link(ui, Pos2::new(li.left(), y), Align2::LEFT_TOP, &t!("cleanup.show_all_n", n = n), 12.0).clicked() {
+            app.clean_log = true;
         }
     }
     let db = Rect::from_min_size(Pos2::new(li.left(), li.bottom() - 34.0), Vec2::new(li.width(), 34.0));
