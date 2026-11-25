@@ -756,7 +756,13 @@ impl App {
         self.light_icon();
     }
 
+    #[track_caller]
     pub fn hide(&mut self, ctx: &egui::Context) {
+        if crate::kit::fs::is_dev() && self.visible {
+            // which of the many hide paths fired (a panel that closed by itself)
+            let at = std::panic::Location::caller();
+            eprintln!("[panel] hide from {}:{} (had focus {}, since hide {} ms)", at.file(), at.line(), self.had_focus, self.last_hide.elapsed().as_millis());
+        }
         self.visible = false;
         self.last_hide = Instant::now();
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(false));
@@ -797,6 +803,9 @@ impl App {
     }
 
     pub fn open_panel(&mut self, ctx: &egui::Context) {
+        if crate::kit::fs::is_dev() {
+            eprintln!("[panel] open (app window open {})", self.app_open);
+        }
         self.mode = Mode::Panel;
         self.read_menu_icon();
         crate::kit::native::panel_follows_spaces(egui::ViewportId::ROOT);
