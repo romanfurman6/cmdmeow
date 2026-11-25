@@ -193,6 +193,9 @@ pub struct Dictation {
     actions: Vec<Action>,
     ctx: egui::Context,
     demo: bool,
+    /// The history was read with the Keychain's key (false after "Deny":
+    /// it lives in memory and isn't saved).
+    keyed: bool,
     /// The take was started from the page's try-it field (no history
     /// yet): its words land in that field instead of being pasted.
     trying: bool,
@@ -275,6 +278,7 @@ impl Dictation {
             actions: Vec::new(),
             ctx: env.ctx.clone(),
             demo: env.demo,
+            keyed: env.demo || crate::kit::vault::ready(),
             trying: false,
             try_seen: None,
             try_last: None,
@@ -302,10 +306,30 @@ impl Dictation {
         self.history = settings::load_history(&dir);
         // newest first
         self.history.items.splice(0..0, mine);
+        self.keyed = crate::kit::vault::ready();
         self.save_history();
     }
 
+    /// Ask the Keychain again.
+    pub(crate) fn unlock_history(&mut self) {
+        crate::kit::vault::retry();
+        self.adopt_key();
+    }
+
+    /// The key came after all (Allow here or in Clipboard, they share it).
+    /// Never asks.
+    pub(crate) fn adopt_key(&mut self) {
+        if !self.keyed && crate::kit::vault::ready() {
+            self.reload_history();
+        }
+    }
+
     fn save_history(&self) {
+        // not read with the key yet: saving would write this run's list
+        // over the saved one
+        if !self.keyed {
+            return;
+        }
         if let Some(d) = &self.dir {
             settings::save_history(d, &self.history);
         }
@@ -925,6 +949,7 @@ impl Tool for Dictation {
         if self.demo {
             return false;
         }
+        self.adopt_key();
         // a tool left on is never told so; it is on once it ticks
         self.on = true;
         self.step(ctx);

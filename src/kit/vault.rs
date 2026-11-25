@@ -99,10 +99,9 @@ pub fn shared() -> Option<Arc<Vault>> {
     g.get_or_insert_with(ask_keychain).clone()
 }
 
-/// The Keychain was asked and gave no key (the person pressed Deny): the
-/// histories aren't saved. Never asks.
-pub fn locked() -> bool {
-    matches!(*SHARED.lock().unwrap_or_else(|e| e.into_inner()), Some(None))
+/// The key is here. Never asks.
+pub fn ready() -> bool {
+    matches!(*SHARED.lock().unwrap_or_else(|e| e.into_inner()), Some(Some(_)))
 }
 
 /// Ask the Keychain again after a refusal (macOS shows its question once

@@ -124,12 +124,19 @@ pub struct Clipboard {
 impl Clipboard {
     /// The Keychain refused the history's key: nothing is saved this run.
     pub(crate) fn history_locked(&self) -> bool {
-        !self.demo && !self.store.saves() && crate::kit::vault::locked()
+        !self.demo && !self.store.saves()
     }
 
     /// Ask the Keychain again; with the key, open the saved history.
     pub(crate) fn unlock_history(&mut self) {
-        if crate::kit::vault::retry() {
+        crate::kit::vault::retry();
+        self.adopt_key();
+    }
+
+    /// The key came after all (Allow here or in Dictation, they share it):
+    /// open the saved history. Never asks.
+    pub(crate) fn adopt_key(&mut self) {
+        if self.history_locked() && crate::kit::vault::ready() {
             self.store = Store::open(settings::data_dir().join("history"), crate::kit::vault::shared());
         }
     }
@@ -469,6 +476,7 @@ impl Tool for Clipboard {
         ui::page(self, ui, rect, cx);
     }
     fn tick(&mut self, ctx: &egui::Context) -> bool {
+        self.adopt_key();
         while let Ok(installed) = self.installed_rx.try_recv() {
             self.scanned = true;
             self.app_paths.extend(installed.iter().map(|f| (f.bundle.to_lowercase(), f.path.clone())));

@@ -765,6 +765,7 @@ fn left_col(c: &mut Clipboard, ui: &mut Ui, p: &egui::Painter, col: Rect) -> boo
     crate::kit::glass::card_title(p, Pos2::new(x0, y), ts!("clip.history"));
     // the history is sealed with a key from the Keychain: after "Deny"
     // nothing is saved, and the card says so (R17); Allow asks again
+    c.adopt_key();
     let locked = c.history_locked();
     let card = card_rows(p, x0, y + 28.0, w, 5 + locked as usize);
     if locked && access_row(ui, p, card, row_y(card, 5), ts!("kit.keychain"), ts!("kit.allow")) {
