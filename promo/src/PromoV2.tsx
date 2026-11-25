@@ -184,21 +184,22 @@ const Body: React.FC = () => {
     );
   }
   if (t < Bt(26)) {
-    const i = Math.floor((t - Bt(10)) / (2 * BEAT));
-    const t0 = Bt(10) + i * 2 * BEAT;
-    const [s, r] = CUTS[Math.min(i, CUTS.length - 1)];
-    // blur-through: each cut leaves by zooming in + blurring, the next arrives from blur (landing "rise" feel)
-    const D = 0.2, t1 = t0 + 2 * BEAT;
-    const inP = eo5(P(t, t0, t0 + D + 0.12));
-    const outP = i < CUTS.length - 1 ? Math.pow(P(t, t1 - D, t1), 2) : 0;
-    const first = i === 0;
-    const sc = lerp(first ? 1 : 0.94, 1, inP) * lerp(1, 1.12, outP);
-    const bl = (first ? 0 : (1 - inP) * 26) + outP * 26;
-    const br = 1 + (first ? 0 : (1 - inP) * 0.25) + outP * 0.25;
+    // fade-through: the window + title leave (fade, lift, soft blur) over the shared desktop,
+    // then the next one rises in like the landing's .reveal. No double exposure.
+    const STEP = 2 * BEAT, OUT = 0.2, IN = 0.38;
+    const i = Math.min(Math.floor((t - Bt(10)) / STEP), CUTS.length - 1);
+    const t0 = Bt(10) + i * STEP, t1 = t0 + STEP;
+    const at = CUTS[i][0] + (t - t0) * CUTS[i][1];
+    const o = i + 1 < CUTS.length ? Math.pow(P(t, t1 - OUT, t1), 1.6) : 0;
+    const n = i === 0 ? 1 : eo5(P(t, t0, t0 + IN));
+    const op = n * (1 - o);
+    const dy = lerp(28, 0, n) + lerp(0, -14, o);
+    const bl = lerp(10, 0, n) + o * 8;
     return (
       <AbsoluteFill style={{background: '#0A0826', overflow: 'hidden'}}>
-        <AbsoluteFill style={{transform: `scale(${sc})`, filter: `blur(${bl}px) brightness(${br})`}}>
-          <Scene key={'cut' + i} mod={mainV2} t={s + (t - t0) * r} />
+        <AbsoluteFill style={{background: `url(${staticFile('desk-miami.jpg')}) center/cover`, filter: 'blur(14px) brightness(.8)', transform: 'scale(1.05)'}} />
+        <AbsoluteFill style={{opacity: op, transform: `translateY(${dy}px) scale(${lerp(0.985, 1, n)})`, filter: `blur(${bl}px)`}}>
+          <Scene key={'cut' + i} mod={mainV2} t={at} />
         </AbsoluteFill>
       </AbsoluteFill>
     );
