@@ -677,6 +677,8 @@ fn tools_of(items: &[Item]) -> Vec<(&'static str, u64, usize)> {
         }
         out[k].2 += is_question(it) as usize;
     }
+    // a tool with only kept items has nothing to pick
+    out.retain(|t| items.iter().any(|i| i.group == Group::AiTools && i.tool == t.0 && i.verdict != Verdict::Keep));
     out.sort_by_key(|t| std::cmp::Reverse(t.1));
     out
 }
@@ -2063,8 +2065,12 @@ mod tests {
         assert_eq!(st.selected_in(scope), 10);
         assert_eq!(st.selected_in(Some(Group::AiTools)), 25);
         assert_eq!(cleanup::without_tool(&items[3]), "Logs");
+        let mut items = items;
+        let mut kept = part("Worktrees", "app · main", 4);
+        kept.verdict = Verdict::Keep;
+        items.push(kept);
         let tools = tools_of(&items);
-        assert_eq!(tools.iter().map(|t| t.0).collect::<Vec<_>>(), ["Cursor", "Codex"]);
+        assert_eq!(tools.iter().map(|t| t.0).collect::<Vec<_>>(), ["Cursor", "Codex"], "only-kept tools get no row");
     }
 
     /// Bundles go by folder and kinds show as words: neither reads the

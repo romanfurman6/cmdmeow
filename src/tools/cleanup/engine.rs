@@ -1511,6 +1511,8 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                     }
                 }
             }
+            // an agent's worktree: its repo forgets it once the folder is gone
+            let wt_repo = if it.kind == super::agents::WORKTREE_KIND { super::agents::worktree_repo(&it.path) } else { None };
             let res = match (how, &it.action) {
                 (How::Emptied, _) => empty_trash(&it.path),
                 (How::Command, Action::BrewCleanup) => run_brew_cleanup(),
@@ -1531,6 +1533,9 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                     remove_tracked(&it.path, &cancel, &mut tick)
                 }
             };
+            if let (Ok(()), Some(repo)) = (&res, &wt_repo) {
+                super::agents::prune_worktrees(repo);
+            }
             let mut g = shared.lock_ok();
             if let Some(Stopped(gone)) = res.as_ref().err().and_then(|e| stopped_bytes(e.clone())) {
                 // stopped inside the item: what went is cleaned, the rest stays

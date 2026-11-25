@@ -422,6 +422,18 @@ pub fn remove_model(files: &[PathBuf]) -> Result<(), String> {
             Err(e) => return Err(e.to_string()),
         }
     }
+    // the model's now-empty folders (manifests/<host>/<ns>/<model>), never
+    // manifests itself
+    let manifests = root.join("manifests");
+    if let Some(m) = files.first() {
+        let mut d = m.parent();
+        while let Some(dir) = d.filter(|d| d.starts_with(&manifests) && *d != manifests) {
+            if std::fs::remove_dir(dir).is_err() {
+                break;
+            }
+            d = dir.parent();
+        }
+    }
     Ok(())
 }
 
@@ -497,6 +509,21 @@ pub fn parse_gitdir(text: &str, wt: &Path) -> Option<PathBuf> {
 }
 
 /// The repository a worktree belongs to: <repo>/.git/worktrees/<name> → <repo>.
+/// The repo a linked worktree belongs to, read before it's removed.
+pub fn worktree_repo(wt: &Path) -> Option<PathBuf> {
+    gitdir(wt).filter(|g| g.exists()).and_then(|g| repo_of(&g))
+}
+
+/// Drops the repo's records of worktrees whose folder is gone
+/// (`git worktree list` would show them as prunable).
+pub fn prune_worktrees(repo: &Path) {
+    if let Some(git) = super::run::find_tool(GIT) {
+        git_ok(&git, repo, &["worktree", "prune"]);
+    }
+}
+
+const GIT: &[&str] = &["/opt/homebrew/bin/git", "/usr/local/bin/git", "/Library/Developer/CommandLineTools/usr/bin/git", "/Applications/Xcode.app/Contents/Developer/usr/bin/git"];
+
 pub fn repo_of(gitdir: &Path) -> Option<PathBuf> {
     gitdir.parent()?.parent().filter(|g| g.ends_with(".git"))?.parent().map(Path::to_path_buf)
 }
@@ -521,7 +548,7 @@ fn worktrees(c: &mut Ctx, h: &Path) {
     if found.is_empty() {
         return;
     }
-    let Some(git) = super::run::find_tool(&["/opt/homebrew/bin/git", "/usr/local/bin/git", "/Library/Developer/CommandLineTools/usr/bin/git", "/Applications/Xcode.app/Contents/Developer/usr/bin/git"]) else { return };
+    let Some(git) = super::run::find_tool(GIT) else { return };
     let mut seen = HashSet::new();
     c.tool = WORKTREES;
     for (wt, tool) in found {
