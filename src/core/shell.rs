@@ -191,6 +191,9 @@ impl App {
         let ctx = cc.egui_ctx.clone();
         let demo = opts.screenshot.is_some();
         crate::kit::perms::set_demo(demo);
+        if let Some(u) = std::env::var("CMDMEOW_DEMO_UPDATE").ok().filter(|_| demo) {
+            crate::kit::update::demo(&u);
+        }
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));

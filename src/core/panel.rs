@@ -29,8 +29,27 @@ pub fn set_keep_open(on: bool) {
 pub const HEADER: f32 = 60.0;
 /// Space below the widgets: a gap plus the "Edit widgets…" link.
 pub const FOOTER: f32 = 40.0;
-/// The update banner: one 44 pt row plus the gap above it.
-pub const BANNER: f32 = 52.0;
+/// Canvas only: which update notice to draw (`CMDMEOW_BANNER=now|a|b|c`).
+/// now = the 44 pt card at the bottom; a = a 36 pt tinted strip under the
+/// header; b = a pill in the header; c = a 28 pt line under the header.
+fn variant() -> char {
+    static V: std::sync::OnceLock<char> = std::sync::OnceLock::new();
+    *V.get_or_init(|| match std::env::var("CMDMEOW_BANNER").as_deref() {
+        Ok("now") => '0',
+        Ok("b") => 'b',
+        Ok("c") => 'c',
+        _ => 'a',
+    })
+}
+
+/// Height of the strip (variant a) or line (variant c).
+fn notice_h() -> f32 {
+    match variant() {
+        'a' => 36.0,
+        'c' => 28.0,
+        _ => sp::ROW_H,
+    }
+}
 /// Side padding of the widget grid.
 pub const PAD: f32 = 12.0;
 /// Gap between grid cells.
@@ -38,10 +57,23 @@ pub const GAP: f32 = 8.0;
 
 /// Height the update banner takes (0 when there's nothing to say).
 pub fn banner_h() -> f32 {
-    if crate::kit::update::banner() {
-        BANNER
-    } else {
+    if !crate::kit::update::banner() {
+        return 0.0;
+    }
+    match variant() {
+        // the pill lives in the header
+        'b' => 0.0,
+        // the notice plus the grid gap under it
+        _ => notice_h() + GAP,
+    }
+}
+
+/// Space the notice takes above the widgets (0 when it's below them or in the header).
+fn top_h() -> f32 {
+    if variant() == '0' {
         0.0
+    } else {
+        banner_h()
     }
 }
 
@@ -170,7 +202,7 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let ctx = ui.ctx().clone();
     super::gate::watch(app, &ctx);
     header(app, ui, rect);
-    let area = Rect::from_min_max(Pos2::new(rect.left() + PAD, rect.top() + HEADER), Pos2::new(rect.right() - PAD, rect.bottom() - FOOTER - banner_h()));
+    let area = Rect::from_min_max(Pos2::new(rect.left() + PAD, rect.top() + HEADER + top_h()), Pos2::new(rect.right() - PAD, rect.bottom() - FOOTER - (banner_h() - top_h())));
     let need = content_height(app);
     if need > area.height() + 0.5 {
         // the bar runs in the right padding, beside the widgets
@@ -187,8 +219,11 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         widgets(app, ui, Rect::from_min_size(area.min, Vec2::new(area.width(), need)), cx);
     }
     if banner_h() > 0.0 {
-        let r = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.bottom() - FOOTER - sp::ROW_H), Vec2::new(rect.width() - 2.0 * PAD, sp::ROW_H));
-        update_banner(ui, r);
+        let w = rect.width() - 2.0 * PAD;
+        match variant() {
+            '0' => update_banner(ui, Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.bottom() - FOOTER - sp::ROW_H), Vec2::new(w, sp::ROW_H))),
+            v => update_notice(ui, Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.top() + HEADER), Vec2::new(w, notice_h())), v == 'c'),
+        }
     }
     footer(app, ui, rect);
 }
@@ -271,7 +306,12 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         // ✕ grows left into a red "Quit" pill; Open stays at the corner
         let w = size + (quit_w - size) * t;
         let r = Rect::from_min_size(Pos2::new(quit_r.right() - w, top), Vec2::new(w, size));
-        title_line(app, &p, x0, rect.top(), r.left() - x0 - 10.0);
+        // variant b: the update pill sits left of ✕; an armed Quit covers it
+        let mut title_right = r.left();
+        if variant() == 'b' && crate::kit::update::banner() && t < 0.01 {
+            title_right = update_pill(ui, quit_r.left() - sp::S, top).left();
+        }
+        title_line(app, &p, x0, rect.top(), title_right - x0 - 10.0);
         if t < 0.01 {
             if round_button_in(ui, r, Icon::Close, ts!("app.quit_app")).clicked() {
                 quit_log("arm");
@@ -443,6 +483,127 @@ fn update_banner(ui: &mut Ui, r: Rect) {
         _ => {}
     }
     text_fit(&p, Pos2::new(x, r.center().y), Align2::LEFT_CENTER, &title, ty::title(), TEXT(), text_right - x);
+}
+
+/// Variant a (strip) / c (line): the update under the header, smaller than a
+/// widget and not drawn like one. A: an `ACTION` 12% tint, R_BUTTON, no edge
+/// or base, ↓ + "Cmd+Meow 0.2.1" + a 28 pt Primary "Update". C: no fill, ↓
+/// + the version in dim, an ACCENT "Update" link at the right.
+fn update_notice(ui: &mut Ui, r: Rect, line: bool) {
+    use crate::kit::update::{self, State};
+    let p = ui.painter().clone();
+    let state = update::state();
+    let failed = matches!(state, State::Failed(..));
+    let accent = if failed { RED() } else { ACTION() };
+    let title: String = match &state {
+        State::Available(m) => format!("Cmd+Meow {}", m.version),
+        State::Downloading(v, _) | State::Installing(v) => format!("Cmd+Meow {v}"),
+        State::Restarting => "Cmd+Meow".into(),
+        State::Failed(..) => ts!("app.update_failed").into(),
+        State::Idle => return,
+    };
+    let inset = if line { 0.0 } else { 4.0 };
+    if !line {
+        p.rect_filled(r, R_BUTTON, with_alpha(accent, 0.12));
+    }
+    let ic = Rect::from_center_size(Pos2::new(r.left() + if line { 8.0 } else { sp::M + 7.0 }, r.center().y), Vec2::splat(15.0));
+    icon(&p, if failed { Icon::Info } else { Icon::Down }, ic, if line { ACCENT() } else { accent });
+    let x = ic.right() + sp::S;
+    let right = r.right() - inset - if line { 4.0 } else { 0.0 };
+    let btn_h = sp::CONTROL_H;
+    let mut text_right = right;
+    match &state {
+        State::Available(_) => {
+            let label = ts!("app.update");
+            if line {
+                let lr = link(ui, Pos2::new(right, r.center().y), Align2::RIGHT_CENTER, label, 12.0);
+                if lr.clicked() {
+                    update::install();
+                }
+                text_right = lr.rect.left() - sp::S;
+            } else {
+                let bw = button_width(&p, label, BTN_PRIMARY);
+                let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - btn_h / 2.0), Vec2::new(bw, btn_h));
+                if pill_button(ui, b, label, BTN_PRIMARY, true).clicked() {
+                    update::install();
+                }
+                text_right = b.left() - sp::S;
+            }
+        }
+        State::Downloading(..) | State::Installing(_) => {
+            let f = if let State::Downloading(_, f) = &state { *f } else { 1.0 };
+            let w = 72.0;
+            let b = Rect::from_min_size(Pos2::new(right - w - if line { 0.0 } else { 8.0 }, r.center().y - 2.0), Vec2::new(w, 4.0));
+            bar(&p, b, f, ACTION());
+            text_right = b.left() - sp::M;
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        State::Failed(_, why) => {
+            let cs = if line { 20.0 } else { btn_h };
+            let close = Rect::from_min_size(Pos2::new(right - cs, r.center().y - cs / 2.0), Vec2::splat(cs));
+            if icon_button(ui, close, Icon::Close, ts!("app.hide")).clicked() {
+                update::dismiss();
+            }
+            let label = ts!("app.download");
+            if line {
+                let lr = link(ui, Pos2::new(close.left() - sp::S, r.center().y), Align2::RIGHT_CENTER, label, 12.0).on_hover_text(why);
+                if lr.clicked() {
+                    update::open_releases();
+                }
+                text_right = lr.rect.left() - sp::S;
+            } else {
+                let bw = button_width(&p, label, BTN_SECONDARY);
+                let b = Rect::from_min_size(Pos2::new(close.left() - sp::S - bw, close.top()), Vec2::new(bw, btn_h));
+                if pill_button(ui, b, label, BTN_SECONDARY, true).on_hover_text(why).clicked() {
+                    update::open_releases();
+                }
+                text_right = b.left() - sp::S;
+            }
+            ui.interact(Rect::from_min_max(r.min, Pos2::new(text_right, r.bottom())), ui.scope_id().with("update-why"), Sense::hover()).on_hover_text(why);
+        }
+        _ => {}
+    }
+    let (f, col) = if line { (font(12.0), TEXT_DIM()) } else { (bold(13.0), TEXT()) };
+    text_fit(&p, Pos2::new(x, r.center().y), Align2::LEFT_CENTER, &title, f, col, text_right - x);
+}
+
+/// Variant b: the update as a 28 pt pill in the header, its right edge at
+/// `right`. Available: Primary "↓ 0.2.1"; downloading: a busy pill with the
+/// percent; failed: Secondary "ⓘ Download" (the release page, reason in the
+/// tooltip). Returns its rect.
+fn update_pill(ui: &mut Ui, right: f32, top: f32) -> Rect {
+    use crate::kit::update::{self, State};
+    let p = ui.painter().clone();
+    let state = update::state();
+    let h = BTN_H_ROW;
+    let place = |w: f32| Rect::from_min_size(Pos2::new(right - w, top), Vec2::new(w, h));
+    match &state {
+        State::Available(m) => {
+            let r = place(icon_pill_width(&p, &m.version, BTN_PRIMARY));
+            if icon_pill(ui, r, Icon::Down, &m.version, BTN_PRIMARY, true).on_hover_text(ts!("app.update")).clicked() {
+                update::install();
+            }
+            r
+        }
+        State::Downloading(..) | State::Installing(_) | State::Restarting => {
+            let f = if let State::Downloading(_, f) = &state { *f } else { 1.0 };
+            let label = format!("{}%", (f * 100.0).round() as i32);
+            let r = place(icon_pill_width(&p, "100%", BTN_SECONDARY));
+            busy_pill(ui, r, &label, ACTION());
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            r
+        }
+        State::Failed(_, why) => {
+            let label = ts!("app.download");
+            let r = place(icon_pill_width(&p, label, BTN_SECONDARY));
+            if icon_pill(ui, r, Icon::Info, label, BTN_SECONDARY, true).on_hover_text(why).clicked() {
+                update::open_releases();
+                update::dismiss();
+            }
+            r
+        }
+        State::Idle => place(0.0),
+    }
 }
 
 /// "Edit widgets…", centred under the widgets.
