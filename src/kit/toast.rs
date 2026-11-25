@@ -87,6 +87,13 @@ pub fn refused(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1)
 }
 
+/// [`refused`] for an error that only survives as text (an I/O error's
+/// message, or Cocoa's "You don't have permission to save the file").
+pub fn refused_text(e: &str) -> bool {
+    let l = e.to_lowercase();
+    l.contains("operation not permitted") || l.contains("permission denied") || l.contains("have permission")
+}
+
 /// What a failed read or write at `path` needs, in the words of the fix:
 /// "access to Desktop" (the folder's own permission), else Full Disk Access.
 pub fn needs_for(path: &std::path::Path) -> (String, Fix) {
@@ -115,6 +122,15 @@ mod tests {
         assert!(refused(&std::io::Error::from(std::io::ErrorKind::PermissionDenied)));
         assert!(!refused(&std::io::Error::from(std::io::ErrorKind::NotFound)));
         assert!(!refused(&std::io::Error::from_raw_os_error(28)));
+    }
+
+    #[test]
+    fn refusals_are_told_from_other_errors_by_their_text() {
+        assert!(refused_text(&std::io::Error::from_raw_os_error(1).to_string()));
+        assert!(refused_text(&std::io::Error::from_raw_os_error(13).to_string()));
+        assert!(refused_text("You don't have permission to save the file a.mp4"));
+        assert!(!refused_text(&std::io::Error::from_raw_os_error(28).to_string()));
+        assert!(!refused_text("the disk is full"));
     }
 
     #[test]

@@ -113,8 +113,19 @@ pub enum Event {
 /// What the recorder needs Capture to do.
 pub enum Out {
     Hud(String),
+    /// What was asked for needs this permission (the HUD with its button).
+    Needs(crate::kit::perms::Perm),
+    /// The recording couldn't be saved (the error as text).
+    SaveFailed(String),
     Saved(Stopped),
     SaveSettings,
+}
+
+/// The mic is on and macOS lets us hear it: what the picker shows and what
+/// a recording gets. The setting alone isn't enough, the permission can be
+/// taken away later.
+pub fn mic_on(s: &RecSettings) -> bool {
+    s.mic && sys::access(Media::Mic) == Access::Allowed
 }
 
 pub struct Recorder {
@@ -288,7 +299,9 @@ impl Recorder {
     }
 
     pub fn toggle_mic(&mut self, s: &mut RecSettings) {
-        s.mic = !s.mic;
+        // on only counts with the permission (see [`mic_on`]): a press on a
+        // mic that shows off turns it on and asks
+        s.mic = !mic_on(s);
         if s.mic {
             match sys::access(Media::Mic) {
                 Access::Allowed => {}
@@ -363,7 +376,12 @@ impl Recorder {
     /// Start the engine for `chosen`.
     pub fn launch(&mut self, chosen: Chosen, s: &RecSettings) {
         let path = free_path(&self.folder, &Settings::recording_name(chrono::Local::now()));
-        let mic = (s.mic && sys::access(Media::Mic) == Access::Allowed).then(|| s.mic_device.clone().filter(|id| self.mics.iter().any(|d| &d.id == id)));
+        if s.mic && !mic_on(s) {
+            // the permission went away after the mic was turned on: say so
+            // instead of quietly recording without a voice (P11)
+            self.out.push(Out::Needs(crate::kit::perms::Perm::Microphone));
+        }
+        let mic = mic_on(s).then(|| s.mic_device.clone().filter(|id| self.mics.iter().any(|d| &d.id == id)));
         let cfg = engine::Config {
             target: chosen.target.clone(),
             size: chosen.size,
@@ -506,7 +524,7 @@ impl Recorder {
                     self.phase = Phase::Idle;
                     match r {
                         Ok(st) => self.out.push(Out::Saved(st)),
-                        Err(e) => self.hud(t!("cap.cant_save_rec", e = e).into_owned()),
+                        Err(e) => self.out.push(Out::SaveFailed(e.to_string())),
                     }
                 }
                 Event::Access(m, ok) => match (m, ok) {

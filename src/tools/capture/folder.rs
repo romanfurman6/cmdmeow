@@ -43,6 +43,12 @@ fn key(path: &Path, modified: SystemTime) -> u64 {
     h.finish() | (1 << 63)
 }
 
+/// macOS refuses to list `dir` (the folder's own permission, or Full Disk
+/// Access): an empty list would then be wrong.
+pub fn refused(dir: &Path) -> bool {
+    std::fs::read_dir(dir).err().is_some_and(|e| crate::kit::toast::refused(&e))
+}
+
 /// PNG, JPG and video files directly in `dir`, newest first.
 pub fn scan(dir: &Path) -> Vec<FileShot> {
     let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
