@@ -13,7 +13,8 @@ export const V2_OFFSET = 0; // seconds before beat 0 (track intro)
 const BEAT = 60 / V2_BPM;
 const Bt = (n: number) => V2_OFFSET + n * BEAT;
 export const V2_END = Bt(38); // final hit of the track
-export const V2_DURATION = V2_END + 3.6;
+export const V2_INTRO = 6 * BEAT; // the hook runs 12 beats; everything after it is shifted by this
+export const V2_DURATION = V2_END + 3.6 + V2_INTRO;
 
 // ---- helpers ----
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -234,21 +235,28 @@ const CUTS: [number, number][] = [ // [main scene start, rate]
   [30.0, 1.0], // Mac Health
   [33.0, 1.2], // AI Usage
 ];
-const OPENER_RATE = 4.25 / (6 * 60 / 111.98); // opener's 0–4.25 s fits beats 0–6
 const MAIN_END = 36.39; // main scene end card start (K(16))
 
 const Body: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const t = frame / fps;
-  if (t < Bt(6)) {
-    // hook: the old video's opener (paid apps everywhere, price tags), sped up; the cat eats it all
+  const tv = frame / fps;
+  if (tv < Bt(12)) {
+    // hook: the old video's opener. Paid apps pile up slowly (opener 0–3 s over beats 0–9.5),
+    // then the cat eats them all at normal speed (opener 3–4.25 s).
+    const SPLIT = Bt(9.6);
+    const ot = tv < SPLIT ? (tv / SPLIT) * 3.0 : 3.0 + (tv - SPLIT);
+    const q = eo5(P(tv, Bt(4.5), Bt(5.3))), qo = eo(P(tv, SPLIT - 0.25, SPLIT + 0.1));
     return (
       <AbsoluteFill data-var="a" style={{background: '#0A0826'}}>
-        <Scene key="opener" mod={opener} t={t * OPENER_RATE} />
+        <Scene key="opener" mod={opener} t={Math.min(ot, 4.25)} />
+        <div style={{position: 'absolute', left: 0, right: 0, bottom: 110, textAlign: 'center', zIndex: 20, font: `600 104px/1 ${SANS}`, letterSpacing: '-.04em', color: '#fff', textShadow: '0 6px 40px rgba(10,8,38,.8), 0 0 2px rgba(10,8,38,.6)', opacity: q * (1 - qo), transform: `translateY(${lerp(40, 0, q) - 30 * qo}px)`, filter: `blur(${lerp(8, 0, q) + 8 * qo}px)`}}>
+          Paying for <span style={{color: PINK}}>all of these?</span>
+        </div>
       </AbsoluteFill>
     );
   }
+  const t = tv - V2_INTRO;
   if (t < Bt(10)) {
     return (
       <AbsoluteFill style={{background: '#0A0826', overflow: 'hidden'}}>
