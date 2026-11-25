@@ -67,7 +67,7 @@ pub struct Session;
 
 #[cfg(not(target_os = "macos"))]
 pub fn start(_cfg: Config, reply: Reply<Session>) {
-    reply(Err("Screen recording needs macOS".into()));
+    reply(Err(ts!("cap.err.rec_macos").into()));
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -85,7 +85,7 @@ impl Session {
         false
     }
     pub fn stop(self, done: Reply<Stopped>) {
-        done(Err("Screen recording needs macOS".into()));
+        done(Err(ts!("cap.err.rec_macos").into()));
     }
     pub fn discard(self) {}
 }
@@ -333,7 +333,7 @@ mod imp {
                 self.on_audio(raw, t, Src::Mic);
             }
             if unsafe { self.writer.status() } == AVAssetWriterStatus::Failed {
-                let why = unsafe { self.writer.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| "the video file couldn't be written".into());
+                let why = unsafe { self.writer.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.file_not_written").into());
                 rlog!("writer failed: {why}");
                 self.failed = Some(why);
             }
@@ -767,7 +767,7 @@ mod imp {
     fn finish(shared: Arc<Mutex<Shared>>, path: std::path::PathBuf, size: (u32, u32), done: Reply<Stopped>) {
         let mut s = match shared.lock() {
             Ok(s) => s,
-            Err(_) => return done(Err("The recorder broke".into())),
+            Err(_) => return done(Err(ts!("cap.err.recorder_broke").into())),
         };
         s.done = true;
         rlog!("stop: {:?} frames {} length {:.2}", s.stats, s.frames, s.clock.length(host_now()));
@@ -779,7 +779,7 @@ mod imp {
         if s.frames == 0 {
             unsafe { s.writer.cancelWriting() };
             let _ = std::fs::remove_file(&path);
-            return done(Err("Nothing was recorded".into()));
+            return done(Err(ts!("cap.err.nothing_recorded").into()));
         }
         s.drain(true);
         let secs = s.clock.length(host_now()).max(s.last_video);
@@ -803,7 +803,7 @@ mod imp {
             if unsafe { writer.status() } == AVAssetWriterStatus::Completed {
                 done(Ok(Stopped { path: path.clone(), secs, size, thumb }));
             } else {
-                let why = unsafe { writer.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| "the video file couldn't be finished".into());
+                let why = unsafe { writer.error() }.map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.file_not_finished").into());
                 done(Err(why));
             }
         });
@@ -825,7 +825,7 @@ mod imp {
                     Err(e) => reply(Err(e)),
                 },
                 (None, Some(e)) => reply(Err(ns_err(e))),
-                (None, None) => reply(Err("Screen Recording isn't allowed".into())),
+                (None, None) => reply(Err(ts!("cap.err.rec_not_allowed").into())),
             }
         });
         unsafe { SCShareableContent::getShareableContentExcludingDesktopWindows_onScreenWindowsOnly_completionHandler(false, true, &block) };
@@ -849,7 +849,7 @@ mod imp {
             let mut source: Option<CGRect> = None;
             let filter = match &cfg.target {
                 Target::Display(id) | Target::Area { display: id, .. } => {
-                    let d = display_of(*id).ok_or("That display is gone")?;
+                    let d = display_of(*id).ok_or(ts!("cap.err.display_gone"))?;
                     let ours = NSArray::from_retained_slice(&ours);
                     let keep = NSArray::from_retained_slice(&keep);
                     if let Target::Area { rect, .. } = &cfg.target {
@@ -858,7 +858,7 @@ mod imp {
                     SCContentFilter::initWithDisplay_excludingApplications_exceptingWindows(SCContentFilter::alloc(), &d, &ours, &keep)
                 }
                 Target::Window(id) => {
-                    let w = windows.iter().find(|w| w.windowID() == *id).ok_or("That window is gone")?;
+                    let w = windows.iter().find(|w| w.windowID() == *id).ok_or(ts!("cap.err.window_gone"))?;
                     if keep.is_empty() {
                         // the window on its own, wherever it moves
                         SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), &w)
@@ -875,7 +875,7 @@ mod imp {
                                 mid.x >= r.origin.x && mid.x < r.origin.x + r.size.width && mid.y >= r.origin.y && mid.y < r.origin.y + r.size.height
                             })
                             .or_else(|| all.firstObject())
-                            .ok_or("No display to record")?;
+                            .ok_or(ts!("cap.err.no_display"))?;
                         let r = d.frame();
                         source = Some(CGRect { origin: CGPoint { x: f.origin.x - r.origin.x, y: f.origin.y - r.origin.y }, size: f.size });
                         let mut both = vec![w.clone()];
@@ -934,7 +934,7 @@ mod imp {
             let video = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(AVMediaTypeVideo.ok_or("no video")?, Some(&vset));
             video.setExpectsMediaDataInRealTime(true);
             if !writer.canAddInput(&video) {
-                return Err("This Mac can't encode video at that size".into());
+                return Err(ts!("cap.err.cant_encode").into());
             }
             writer.addInput(&video);
             let adaptor = AVAssetWriterInputPixelBufferAdaptor::assetWriterInputPixelBufferAdaptorWithAssetWriterInput_sourcePixelBufferAttributes(&video, None);
@@ -975,7 +975,7 @@ mod imp {
                 None
             };
             if !writer.startWriting() {
-                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| "Couldn't start the video file".into()));
+                return Err(writer.error().map(|e| ns_err(&e)).unwrap_or_else(|| ts!("cap.err.cant_start_file").into()));
             }
             writer.startSessionAtSourceTime(cm_time(0.0));
 

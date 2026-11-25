@@ -138,7 +138,7 @@ impl Progress {
 /// Put the file at `key` (replacing what was there), readable by anyone
 /// with the link when `public`. Blocks.
 pub fn put_file(b: &Bucket, key: &str, file: &Path, content_type: &str, public: bool, p: &Progress) -> Result<(), String> {
-    let len = std::fs::metadata(file).map_err(|e| format!("Can't read the file: {e}"))?.len();
+    let len = std::fs::metadata(file).map_err(|e| t!("cap.up.cant_read", err = e).into_owned())?.len();
     p.total.store(len, Ordering::Relaxed);
     let hash = file_sha256(file, &p.cancel)?;
     let now = chrono::Utc::now();
@@ -165,15 +165,15 @@ pub fn put_file(b: &Bucket, key: &str, file: &Path, content_type: &str, public: 
         }
     }
     req = req.header("authorization", &auth);
-    let f = std::fs::File::open(file).map_err(|e| format!("Can't read the file: {e}"))?;
+    let f = std::fs::File::open(file).map_err(|e| t!("cap.up.cant_read", err = e).into_owned())?;
     let mut body = Counting { inner: f, p };
     let resp = req.send(ureq::SendBody::from_reader(&mut body)).map_err(|e| {
         if p.cancel.load(Ordering::Relaxed) {
             "Stopped".to_string()
         } else if e.to_string().contains("lookup address") {
-            format!("Upload failed: {} doesn't exist; check Endpoint and Bucket", b.bucket_host())
+            t!("cap.up.no_host", host = b.bucket_host()).into_owned()
         } else {
-            format!("Upload failed: {e}")
+            t!("cap.up.failed", why = e).into_owned()
         }
     })?;
     let status = resp.status().as_u16();
@@ -216,7 +216,7 @@ pub fn size(b: &Bucket, key: &str) -> Result<Option<u64>, String> {
 
 /// Remove `key` from the bucket. Blocks.
 pub fn delete(b: &Bucket, key: &str) -> Result<(), String> {
-    let resp = bodyless(b, "DELETE", key).map_err(|e| format!("Couldn't delete: {e}"))?;
+    let resp = bodyless(b, "DELETE", key).map_err(|e| t!("cap.up.cant_delete", err = e).into_owned())?;
     let status = resp.status().as_u16();
     if (200..300).contains(&status) || status == 404 {
         return Ok(());
@@ -262,13 +262,13 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
-    let resp = req.header("authorization", &auth).call().map_err(|e| format!("CORS check failed: {e}"))?;
+    let resp = req.header("authorization", &auth).call().map_err(|e| t!("cap.up.cors_check", why = e).into_owned())?;
     let status = resp.status().as_u16();
     let text = resp.into_body().read_to_string().unwrap_or_default();
     let existing = match status {
         200 => Some(text),
         404 => None, // NoSuchCORSConfiguration
-        _ => return Err(explain(status, &text).replace("Upload failed", "CORS check failed")),
+        _ => return Err(t!("cap.up.cors_check", why = reason(status, &text)).into_owned()),
     };
     let Some(body) = cors_config(existing.as_deref(), origins) else { return Ok(false) };
 
@@ -287,13 +287,13 @@ pub fn ensure_cors(b: &Bucket, origins: &[&str]) -> Result<bool, String> {
     for (k, v) in headers.iter().filter(|(k, _)| k != "host") {
         req = req.header(k, v);
     }
-    let resp = req.header("authorization", &auth).send(body.as_bytes()).map_err(|e| format!("CORS setup failed: {e}"))?;
+    let resp = req.header("authorization", &auth).send(body.as_bytes()).map_err(|e| t!("cap.up.cors_setup", why = e).into_owned())?;
     let status = resp.status().as_u16();
     if (200..300).contains(&status) {
         return Ok(true);
     }
     let text = resp.into_body().read_to_string().unwrap_or_default();
-    Err(explain(status, &text).replace("Upload failed", "CORS setup failed"))
+    Err(t!("cap.up.cors_setup", why = reason(status, &text)).into_owned())
 }
 
 /// The bucket's CORS document with one read rule added for the `origins`
@@ -380,14 +380,14 @@ fn ascii_only(s: &str) -> String {
 }
 
 fn file_sha256(file: &Path, cancel: &AtomicBool) -> Result<String, String> {
-    let mut f = std::fs::File::open(file).map_err(|e| format!("Can't read the file: {e}"))?;
+    let mut f = std::fs::File::open(file).map_err(|e| t!("cap.up.cant_read", err = e).into_owned())?;
     let mut h = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err("Stopped".into());
         }
-        let n = f.read(&mut buf).map_err(|e| format!("Can't read the file: {e}"))?;
+        let n = f.read(&mut buf).map_err(|e| t!("cap.up.cant_read", err = e).into_owned())?;
         if n == 0 {
             break;
         }
@@ -415,15 +415,20 @@ impl<R: Read> Read for Counting<'_, R> {
 
 /// S3's XML error, said plainly.
 fn explain(status: u16, xml: &str) -> String {
+    t!("cap.up.failed", why = reason(status, xml)).into_owned()
+}
+
+/// Why the storage said no, from its XML answer.
+fn reason(status: u16, xml: &str) -> String {
     let tag = |t: &str| xml.split(&format!("<{t}>")).nth(1).and_then(|r| r.split(&format!("</{t}>")).next()).unwrap_or("").to_string();
     let code = tag("Code");
     let why = match code.as_str() {
-        "InvalidAccessKeyId" => "the access key is wrong".to_string(),
-        "SignatureDoesNotMatch" => "the secret key doesn't match the access key".to_string(),
-        "NoSuchBucket" => "there is no such bucket".to_string(),
-        "AccessDenied" => "these keys may not write to the bucket".to_string(),
-        "RequestTimeTooSkewed" => "the Mac's clock is off".to_string(),
-        "" => format!("the storage answered {status}"),
+        "InvalidAccessKeyId" => ts!("cap.up.bad_access_key").to_string(),
+        "SignatureDoesNotMatch" => ts!("cap.up.bad_secret").to_string(),
+        "NoSuchBucket" => ts!("cap.up.no_bucket").to_string(),
+        "AccessDenied" => ts!("cap.up.denied").to_string(),
+        "RequestTimeTooSkewed" => ts!("cap.up.clock").to_string(),
+        "" => t!("cap.up.answered", status = status).into_owned(),
         c => {
             let m = tag("Message");
             if m.is_empty() {
@@ -433,7 +438,7 @@ fn explain(status: u16, xml: &str) -> String {
             }
         }
     };
-    format!("Upload failed: {why}")
+    why
 }
 
 #[cfg(test)]

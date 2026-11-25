@@ -122,13 +122,13 @@ mod imp {
     /// Slow for long files: call it off the UI thread.
     pub fn read_audio(path: &Path, which: Track, rate: u32, channels: u32) -> Result<Vec<f32>, String> {
         let n = audio_list(path).1.len();
-        read_nth(path, which.index(n).ok_or("This video has no sound")?, rate, channels)
+        read_nth(path, which.index(n).ok_or(ts!("cap.no_sound"))?, rate, channels)
     }
 
     /// The `index`th audio track as float samples (see [`read_audio`]).
     pub fn read_nth(path: &Path, index: usize, rate: u32, channels: u32) -> Result<Vec<f32>, String> {
         let (asset, tracks) = audio_list(path);
-        let track = tracks.get(index).ok_or("This video has no sound")?;
+        let track = tracks.get(index).ok_or(ts!("cap.no_sound"))?;
         unsafe {
             let reader = AVAssetReader::assetReaderWithAsset_error(&asset).map_err(|e| e.localizedDescription().to_string())?;
             let n = |v: f64| NSNumber::new_f64(v);
@@ -145,11 +145,11 @@ mod imp {
             ]);
             let out = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(track, Some(&settings));
             if !reader.canAddOutput(&out) {
-                return Err("The sound can't be read".into());
+                return Err(ts!("cap.err.sound_cant_read").into());
             }
             reader.addOutput(&out);
             if !reader.startReading() {
-                return Err(reader.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound can't be read".into()));
+                return Err(reader.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| ts!("cap.err.sound_cant_read").into()));
             }
             let mut samples = Vec::new();
             while let Some(sb) = out.copyNextSampleBuffer() {
@@ -184,19 +184,19 @@ mod imp {
                 a.setExpectsMediaDataInRealTime(false);
                 a.setMarksOutputTrackAsEnabled(k == 0);
                 if !writer.canAddInput(&a) {
-                    return Err("The sound can't be written".into());
+                    return Err(ts!("cap.err.sound_cant_write").into());
                 }
                 writer.addInput(&a);
                 inputs.push(a);
             }
             if !writer.startWriting() {
-                return Err(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound can't be written".into()));
+                return Err(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| ts!("cap.err.sound_cant_write").into()));
             }
             writer.startSessionAtSourceTime(objc2_core_media::CMTime { value: 0, timescale: 48_000, flags: objc2_core_media::CMTimeFlags::Valid, epoch: 0 });
             let asbd = Asbd { sample_rate: RATE, format_id: LPCM, format_flags: 1 | (1 << 3), bytes_per_packet: 8, frames_per_packet: 1, bytes_per_frame: 8, channels_per_frame: 2, bits_per_channel: 32, reserved: 0 };
             let mut desc = std::ptr::null_mut();
             if CMAudioFormatDescriptionCreate(std::ptr::null(), &asbd, 0, std::ptr::null(), 0, std::ptr::null(), std::ptr::null(), &mut desc) != 0 {
-                return Err("The sound format isn't available".into());
+                return Err(ts!("cap.err.sound_format").into());
             }
             // a second at a time, taking turns so the file stays interleaved
             let chunk = 48_000 * 2;
@@ -215,14 +215,14 @@ mod imp {
                         std::thread::sleep(std::time::Duration::from_millis(2));
                         waited += 1;
                         if waited > 5000 {
-                            failed = Some("Writing the sound stalled".to_string());
+                            failed = Some(ts!("cap.err.sound_stalled").to_string());
                             break 'outer;
                         }
                     }
                     let len = std::mem::size_of_val(part);
                     let mut block = std::ptr::null_mut();
                     if CMBlockBufferCreateWithMemoryBlock(std::ptr::null(), std::ptr::null_mut(), len, std::ptr::null(), std::ptr::null(), 0, len, 1, &mut block) != 0 {
-                        failed = Some("Out of memory".into());
+                        failed = Some(ts!("cap.err.oom").into());
                         break 'outer;
                     }
                     CMBlockBufferReplaceDataBytes(part.as_ptr() as *const c_void, block, 0, len);
@@ -231,13 +231,13 @@ mod imp {
                     let ok = CMAudioSampleBufferCreateReadyWithPacketDescriptions(std::ptr::null(), block, desc, (part.len() / 2) as isize, pts, std::ptr::null(), &mut sb) == 0;
                     CFRelease(block);
                     if !ok || sb.is_null() {
-                        failed = Some("The sound couldn't be packed".into());
+                        failed = Some(ts!("cap.err.sound_not_packed").into());
                         break 'outer;
                     }
                     let appended = input.appendSampleBuffer(&*(sb as *const objc2_core_media::CMSampleBuffer));
                     CFRelease(sb);
                     if !appended {
-                        failed = Some(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound couldn't be written".into()));
+                        failed = Some(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| ts!("cap.err.sound_not_written").into()));
                         break 'outer;
                     }
                 }
@@ -261,7 +261,7 @@ mod imp {
             if writer.status() == objc2_av_foundation::AVAssetWriterStatus::Completed {
                 Ok(())
             } else {
-                Err(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| "The sound couldn't be finished".into()))
+                Err(writer.error().map(|e| e.localizedDescription().to_string()).unwrap_or_else(|| ts!("cap.err.sound_not_finished").into()))
             }
         }
     }
@@ -280,15 +280,15 @@ mod other {
     }
 
     pub fn read_audio(_path: &Path, _which: Track, _rate: u32, _channels: u32) -> Result<Vec<f32>, String> {
-        Err("Reading sound needs macOS".into())
+        Err(ts!("cap.err.read_sound_macos").into())
     }
 
     pub fn read_nth(_path: &Path, _index: usize, _rate: u32, _channels: u32) -> Result<Vec<f32>, String> {
-        Err("Reading sound needs macOS".into())
+        Err(ts!("cap.err.read_sound_macos").into())
     }
 
     pub fn write_m4a(_dest: &Path, _tracks: &[&[f32]]) -> Result<(), String> {
-        Err("Writing sound needs macOS".into())
+        Err(ts!("cap.err.write_sound_macos").into())
     }
 }
 

@@ -72,11 +72,11 @@ pub fn sound_path(video: &Path) -> PathBuf {
 pub fn clean(video: &Path, strength: f32, p: &Progress) -> Result<PathBuf, String> {
     let n = sound::audio_tracks(video);
     if n == 0 {
-        return Err("This video has no sound".into());
+        return Err(ts!("cap.no_sound").into());
     }
     let voice = sound::read_audio(video, sound::voice_track(n), 48_000, 2)?;
     if voice.iter().all(|v| v.abs() < 1e-4) {
-        return Err(if n >= 3 { "The microphone track is silent: nothing to clean up".into() } else { "The sound is silent: nothing to clean up".into() });
+        return Err(if n >= 3 { ts!("cap.err.mic_silent").into() } else { ts!("cap.err.sound_silent").into() });
     }
     let system = if n >= 3 { Some(sound::read_audio(video, Track::System, 48_000, 2)?) } else { None };
     let cleaned = to_stereo(&denoise(&to_mono(&voice), strength, p)?);

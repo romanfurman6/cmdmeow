@@ -739,7 +739,7 @@ fn projects_dir() -> PathBuf {
 fn export_now(src: &Path, voice: Option<&Path>, edl: &Edl, dest: PathBuf) -> Result<PathBuf, String> {
     let (tx, rx) = channel();
     media::export(src, voice, edl, dest, Box::new(move |r| drop(tx.send(r))));
-    rx.recv().map_err(|_| "The cut video didn't come back".to_string())?
+    rx.recv().map_err(|_| ts!("cap.err.cut_lost").to_string())?
 }
 
 /// `--video-probe`: the viewer's work on `path` without UI, printed to

@@ -169,7 +169,7 @@ pub fn transcribe(video: &Path, m: Model, p: &std::sync::Arc<Progress>) -> Resul
     // the mix: everyone in a call, not only this Mac's microphone
     let pcm = super::sound::read_audio(video, super::sound::Track::Mix, 16_000, 1)?;
     if pcm.is_empty() {
-        return Err("This video has no sound".into());
+        return Err(ts!("cap.no_sound").into());
     }
     if p.cancelled() {
         return Err("Stopped".into());
@@ -183,7 +183,7 @@ pub fn transcribe(video: &Path, m: Model, p: &std::sync::Arc<Progress>) -> Resul
 
 #[cfg(not(target_os = "macos"))]
 pub fn transcribe(_video: &Path, _m: Model, _p: &std::sync::Arc<Progress>) -> Result<Vec<Line>, String> {
-    Err("Transcribing needs macOS".into())
+    Err(ts!("cap.err.transcribe_macos").into())
 }
 
 #[cfg(test)]
