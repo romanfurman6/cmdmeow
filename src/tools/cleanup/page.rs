@@ -346,16 +346,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let g = app.clean.lock_ok();
         (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_in(app.clean_group))
     };
-    // after cleaning a group: what's left, and (variant A) what went
-    let cleaned_groups = app.clean.lock_ok().cleaned_groups.clone();
-    let mut sub = if cleaned_groups.is_empty() {
-        t!("cleanup.n_found", n = human_bytes(total)).into_owned()
-    } else if cleaned_in_rail() {
-        t!("cleanup.n_left", n = human_bytes(total)).into_owned()
-    } else {
-        let names: Vec<&str> = cleaned_groups.iter().map(|c| c.0.label()).collect();
-        format!("{} · {}", t!("cleanup.n_left", n = human_bytes(total)), t!("cleanup.x_cleaned", what = names.join(", ")))
-    };
+    // after cleaning a group: what's left (the rail shows what went)
+    let back = !app.clean.lock_ok().cleaned_groups.is_empty();
+    let mut sub = if back { t!("cleanup.n_left", n = human_bytes(total)) } else { t!("cleanup.n_found", n = human_bytes(total)) }.into_owned();
     if let Some(e) = &ai_error {
         sub = format!("{sub} · {e}");
     }
@@ -566,12 +559,6 @@ fn bundle_for_key(items: &[Item], key: &str) -> Vec<usize> {
 /// The groups as a list: All, then each group that found something, with
 /// its size; an amber badge counts a group's questions
 /// (items, like the "Needs your OK" count).
-/// Canvas variants while Roman picks: B (default) keeps a cleaned group in
-/// the rail with a check; A says it in the page header.
-fn cleaned_in_rail() -> bool {
-    std::env::var("CMDMEOW_POSTCLEAN").map_or(true, |v| v != "a")
-}
-
 /// The group rail; returns its card.
 fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
     let ctx = ui.ctx().clone();
@@ -586,7 +573,7 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
         for (k, grp) in Group::ALL.iter().enumerate() {
             if g.items.iter().any(|i| i.group == *grp) {
                 rows.push((Some(*grp), grp.label(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
-            } else if let Some(c) = g.cleaned_groups.iter().find(|c| c.0 == *grp).filter(|_| cleaned_in_rail()) {
+            } else if let Some(c) = g.cleaned_groups.iter().find(|c| c.0 == *grp) {
                 gone.push(*c);
             }
         }

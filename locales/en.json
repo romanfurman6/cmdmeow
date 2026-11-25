@@ -893,7 +893,6 @@
     "freed_trash": "freed · %{size} to the Trash",
     "show_all_n": "Show all %{n}",
     "n_left": "%{n} left",
-    "x_cleaned": "%{what} cleaned",
     "back_to_results": "Back to results",
     "hide_log": "Hide log",
     "show_log": "Show log",
