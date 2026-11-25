@@ -128,9 +128,6 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let running = jobs.iter().filter(|j| j.pid.is_some()).count();
     let suggested: Vec<&Job> = jobs.iter().filter(|j| is_suggested(j)).collect();
     let flagged = jobs.iter().filter(|j| !flags_of(j).is_empty()).count() + cron.iter().filter(|c| !c.flags().is_empty()).count();
-    if flagged == 0 && s.filter == Filter::Flagged && loaded {
-        s.filter = Filter::All;
-    }
     let off = jobs.iter().filter(|j| !j.on).count() + apps.iter().filter(|a| !a.on).count() + cron.iter().filter(|c| !c.on).count();
     let sub = if !loaded {
         ts!("startup.reading_all").to_string()
@@ -315,7 +312,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         + 12.0;
     // the list runs to the window's bottom edge; its last 12 pt sit inside the scroll
     let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 12.0), body.max);
-    let mut child = ui.new_child(UiBuilder::new().max_rect(area));
+    let mut child = ui.new_child(UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(area);
     let mut flip_app: Option<LoginApp> = None;
     let mut flip_job: Option<Job> = None;
@@ -330,7 +327,9 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let mut set_notify: Option<bool> = None;
     let mut budget = ICONS_PER_FRAME;
     ScrollArea::vertical().id_salt("su-list").auto_shrink([false, false]).show(&mut child, |ui| {
-        let (a, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), top_h + list_h), Sense::hover());
+        // the gutter stays free even when the list fits (R12), so switching
+        // tabs never changes the rows' width
+        let (a, _) = ui.allocate_exact_size(Vec2::new(area.width() - sp::SCROLL_GUTTER, top_h + list_h), Sense::hover());
         let p = ui.painter().clone();
         let mut y = a.top();
 
