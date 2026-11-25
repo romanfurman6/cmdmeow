@@ -421,7 +421,6 @@ fn show_root(app: &mut App, root: PathBuf) {
     app.lens_hues.clear();
     app.lens_skip = 0;
     // "freed" counts what was removed from this map only
-    app.lens_freed = 0;
     app.lens_back.clear();
     app.lens_fwd.clear();
     app.lens_peek = false;
@@ -441,18 +440,6 @@ fn open_disk(app: &mut App) {
     *app.lens.event.lock_ok() = None;
     app.lens.loaded.store(false, Ordering::SeqCst);
     app.lens.partial.store(false, Ordering::SeqCst);
-}
-
-/// "just now", "5 min ago", "3 h ago", "2 days ago".
-fn ago(when: i64) -> String {
-    let s = (chrono::Utc::now().timestamp() - when).max(0);
-    match s {
-        0..60 => ts!("lens.ago.now").into(),
-        60..3600 => t!("lens.ago.min", n = s / 60).into_owned(),
-        3600..86400 => t!("lens.ago.h", n = s / 3600).into_owned(),
-        _ if s < 2 * 86400 => ts!("lens.ago.yesterday").into(),
-        _ => t!("lens.ago.days", n = s / 86400).into_owned(),
-    }
 }
 
 fn group_digits(n: u64) -> String {
@@ -1433,35 +1420,21 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let partial = app.lens.partial.load(Ordering::SeqCst);
     // Stop while anything runs; a stopped map is mapped again from scratch
     let busy = peek.is_some() || updating;
-    let btn = if busy {
-        ts!("lens.stop")
-    } else if partial {
-        ts!("lens.map_again")
-    } else {
-        ts!("lens.update")
+    // SP16: the page action at the right edge, one fixed width for every
+    // label so the tabs next to it never move; while a map runs it reads
+    // Stop with a spinner (B8), and its tip says how far it got
+    let btn = if busy { ts!("lens.stop") } else { ts!("lens.update") };
+    let nb = [ts!("lens.stop"), ts!("lens.update")].iter().map(|l| icon_pill_width(&p, l, BTN_SECONDARY)).fold(0.0, f32::max);
+    let new_r = Rect::from_min_size(Pos2::new(hr.right() - sp::PAGE_EDGE - nb, hr.center().y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(nb, sp::HEADER_CONTROL_H));
+    let progress = match (updating, peek) {
+        (_, Some((done, all))) => t!("lens.n_of_folders", done = done, all = all).into_owned(),
+        (true, _) => ts!("lens.updating").to_string(),
+        _ => String::new(),
     };
-    let nb = button_width(&p, btn, BTN_SECONDARY);
-    let new_r = Rect::from_min_size(Pos2::new(hr.right() - 20.0 - nb, hr.center().y - 15.0), Vec2::new(nb, 30.0));
-    let when = match (*app.lens.when.lock_ok(), updating, peek) {
-        (_, _, Some((done, all))) => t!("lens.n_of_folders", done = done, all = all).into_owned(),
-        (_, true, _) => ts!("lens.updating").to_string(),
-        (_, _, _) if partial => ts!("lens.stopped_partial").to_string(),
-        (Some(w), _, _) if app.lens_freed > 0 => t!("lens.freed_mapped", size = human_bytes(app.lens_freed), when = ago(w)).into_owned(),
-        (Some(w), _, _) => t!("lens.mapped", when = ago(w)).into_owned(),
-        (None, _, _) => String::new(),
-    };
-    // the map's state sits right against its action (a stopped map says so
-    // in the header status)
-    let hint = p.text(Pos2::new(new_r.left() - 10.0, hr.center().y), Align2::RIGHT_CENTER, when, font(12.0), TEXT_DIM());
-    if updating || peek.is_some() {
-        spinner(&p, Pos2::new(hint.left() - 12.0, hr.center().y), 5.0, ctx.input(|i| i.time), tint::DISK_MAP());
-        crate::kit::glass::poll(&ctx);
-    }
-    // the view switch in the middle of the header, away from the map's state
+    // the view switch right next to the action (SP16)
     let seg_w = 186.0;
-    let seg_x = (hr.center().x - seg_w / 2.0).min(hint.left() - 40.0 - seg_w);
-    let seg_r = Rect::from_min_size(Pos2::new(seg_x, hr.center().y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(seg_w, sp::HEADER_CONTROL_H));
-    if let Some(i) = segmented(ui, seg_r, ui.scope_id().with("map-view"), &["Bubbles", "Rings", "Files"], app.lens_view as usize) {
+    let seg_r = Rect::from_min_size(Pos2::new(new_r.left() - sp::M - seg_w, hr.center().y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(seg_w, sp::HEADER_CONTROL_H));
+    if let Some(i) = segmented(ui, seg_r, ui.scope_id().with("map-view"), &[ts!("lens.view.bubbles"), ts!("lens.view.rings"), ts!("lens.view.files")], app.lens_view as usize) {
         app.lens_view = i as u8;
         super::save_prefs(app);
         app.lens_morph = Some((None, node.path.clone(), ctx.input(|i| i.time)));
@@ -1527,7 +1500,16 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
             x += 10.0;
         }
     }
-    if pill_button(ui, new_r, btn, BTN_SECONDARY, true).clicked() {
+    let resp = if busy {
+        let (resp, face) = pill_button_at(ui, new_r, "", BTN_SECONDARY, true);
+        spinner(&p, Pos2::new(face.left() + 18.0, face.center().y), 5.0, ctx.input(|i| i.time), tint::DISK_MAP());
+        crate::kit::glass::poll(&ctx);
+        p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, btn, font(13.0), TEXT());
+        resp.on_hover_text(progress)
+    } else {
+        icon_pill(ui, new_r, Icon::Refresh, btn, BTN_SECONDARY, true)
+    };
+    if resp.clicked() {
         act = if busy { Act::Stop } else { Act::Update };
     }
     // the place already mapped: back to its top (a stopped map maps again)
@@ -2104,7 +2086,6 @@ fn trash_loader(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 None => app.lens_trashed.extend(g.removed.iter().cloned()),
             }
             scan::save_later(&app.lens);
-            app.lens_freed += g.freed;
         }
         let toast =
             if g.failed == 0 { t!("lens.moved", size = human_bytes(g.freed)).into_owned() } else { t!("lens.moved_failed", size = human_bytes(g.freed), n = g.failed).into_owned() };
@@ -2351,7 +2332,6 @@ mod tests {
         // a mapped folder, not the disk
         demo_tree(&mut app);
         app.lens_selected.clear();
-        app.lens_freed = 41_900_000;
         assert_ne!(app.lens_root, Path::new("/"));
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 720.0));
         let r = Rect::from_min_size(Pos2::new(220.0, 0.0), Vec2::new(880.0, 720.0));
@@ -2387,8 +2367,6 @@ mod tests {
         // the disk's last map opens next (none here: the folder's is gone)
         assert_eq!(app.lens_root, Path::new("/"));
         assert!(app.lens.result.read_ok().is_none());
-        // what was freed in the folder isn't counted on the disk's map
-        assert_eq!(app.lens_freed, 0);
     }
 
     #[test]

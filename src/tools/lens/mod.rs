@@ -63,8 +63,6 @@ pub struct Lens {
     pub(crate) ai: crate::kit::aicheck::Check,
     /// The list row the keyboard is on.
     pub(crate) lens_cursor: Option<usize>,
-    /// Bytes moved to the Trash from the map since the app started.
-    pub(crate) lens_freed: u64,
     /// Review: the first click on Move to Trash with app data picked.
     pub(crate) lens_confirm: bool,
     /// A menu action picked in a view's own list (files, the Other sheet).
@@ -133,7 +131,6 @@ impl Lens {
                 c
             },
             lens_cursor: None,
-            lens_freed: 0,
             lens_confirm: false,
             lens_trash: None,
             lens_menu_act: None,
