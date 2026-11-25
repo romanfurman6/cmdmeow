@@ -290,6 +290,8 @@ html[data-app="light"] .mbx .mi2.bat i { box-shadow: inset 0 0 0 1.4px rgba(20,2
 html[data-app="light"] .bars:not(.b-one) .mi2.ap { background: rgba(91,138,20,.16); color: #2F5208; }
 html[data-app="light"] .mbx .cat { color: #2F5208; background: rgba(91,138,20,.16); }
 html[data-app="light"] .replay { background: rgba(255,255,255,.8); color: #14181A; }
+html[data-app="light"] .replay:hover { background: #fff; }
+html[data-app="miami"] .replay { background: rgba(14,10,40,.62); } html[data-app="miami"] .replay:hover { background: rgba(14,10,40,.8); }
 
 /* ---- 2026-11-24: the first-screen photo loads without holding anything up.
    The page paints at once on a 40×22 blurred copy inlined here (~1 KB); the

@@ -111,7 +111,7 @@
 .nc1 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 48px; border-top: 1px solid var(--hair); }
 .nc1 li { list-style: none; padding: 32px 24px 0 0; display: flex; flex-direction: column; gap: 10px; }
 .nc1 li + li { padding-left: 24px; border-left: 1px solid var(--hair); }
-.nc1 .k { font: 500 72px/1 var(--sans); letter-spacing: -.04em; color: var(--lime); white-space: nowrap; }
+.nc1 .k { font: 500 72px/1 var(--sans); letter-spacing: -.04em; color: var(--lime-tx); white-space: nowrap; }
 .nc1 b { margin-top: 14px; font-weight: 500; font-size: 19px; line-height: 26px; }
 .nc1 span:last-child { font-size: 15px; line-height: 22px; color: var(--ink2); }
 @media (max-width: 860px) { .nc1 { grid-template-columns: 1fr 1fr; } .nc1 li { padding: 24px 0 24px; border-left: 0 !important; padding-left: 0 !important; border-bottom: 1px solid var(--hair); } .nc1 .k { font-size: 52px; } }
@@ -333,7 +333,7 @@
 
 /* No catch: icons sit on the same line as the $0 numeral */
 .nc1 .k { display: flex; align-items: center; height: 72px; }
-.nc1 .ki { fill: none; stroke: var(--lime); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.nc1 .ki { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 860px) { .nc1 .k { height: 52px; } .nc1 .ki { width: 52px; height: 52px; } }
 
 /* week bars: separate rounded segments like the Today track (lavender = awake, lime = Claude) */
@@ -424,7 +424,9 @@ html[data-app="light"] .dm2 .ac { --ik: 20,24,26; --t2: rgba(20,24,26,.64); --t3
   --card: rgba(255,255,255,.9); --edge: rgba(20,24,26,.09); --hi: transparent; --base: transparent; --cshadow: 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.05);
   --trk: rgba(20,24,26,.12); --gc: #437A20; --rd: #C2391D; --lvr: #6A5AC8; --cup: #14181A;
   --lime: #5B8A14; --cy: #177A8E; --ap: #A65A0E; --lav: #6A5AC8;
-  color: rgb(var(--ik)); box-shadow: inset 0 0 0 1px rgba(20,24,26,.12), 0 40px 100px -40px rgba(0,0,0,.6); }
+  color: rgb(var(--ik));
+  /* a soft green lift like the light cards (S2w), not the dark theme's black drop: that read as a grey smudge on the page */
+  box-shadow: inset 0 0 0 1px rgba(20,24,26,.12), 0 1px 3px rgba(0,0,0,.06), 0 30px 70px -36px rgba(47,82,8,.28); }
 html[data-app="light"] .dm2 .ac .go { background: #A8D83A; color: #0E1405; box-shadow: 0 1px 0 rgba(20,24,26,.25), 0 8px 16px -10px rgba(91,138,20,.5); }
 html[data-app="light"] .dm2 .ac .gr .ck, html[data-app="light"] .dm2 .ac .fl2 .ck { background: #5B8A14; color: #fff; }
 html[data-app="light"] .dm2 .seg2 span.on { background: #fff; }
@@ -438,18 +440,18 @@ html[data-app="light"] .dm2 .ac .tg2::after { box-shadow: 0 1px 2px rgba(0,0,0,.
 html[data-app="light"] .dm2 .ac .pick .num { color: #2F5208; }
 /* light page: tabs, steps and No catch take the darker tints */
 html[data-app="light"] .dm2 { --lime: #5B8A14; --cy: #177A8E; --ap: #A65A0E; --lav: #6A5AC8; }
-html[data-app="light"] .nc1 .k { color: #2F5208; }
+
 html[data-app="light"] .dm2 .ttab { background: rgba(255,255,255,.7); box-shadow: inset 0 0 0 1px rgba(20,24,26,.09); color: rgba(20,24,26,.72); }
 html[data-app="light"] .dm2 .ttab:hover { background: #fff; color: #14181A; }
 html[data-app="light"] .dm2 .ttab.on { background: #fff; box-shadow: inset 0 0 0 1.5px #5B8A14, 0 1px 3px rgba(0,0,0,.07), 0 4px 14px rgba(0,0,0,.05); color: #14181A; }
 html[data-app="light"] .dm2 .st2.on { background: rgba(255,255,255,.8); box-shadow: inset 0 0 0 1px rgba(20,24,26,.08); }
 html[data-app="light"] .dm2 .ac .go { color: #0E1405; }
-html[data-app="light"] .nc1 .ki { stroke: #5B8A14; }
+
 /* Miami (TH): the same window, a dusk backdrop and the theme's tints */
 html[data-app="miami"] .dm2 { --cy: #4FE3E0; --ap: #FF9A4D; --lav: #C3B0FF; }
 html[data-app="miami"] .dm2 .ac { --gc: #7EEBA6; --rd: #FF6B5E; --lvr: #C3B0FF;
   background: linear-gradient(to bottom, #0B1240 0%, #2A1452 45%, #5E1D57 78%, #70283C 100%); }
-html[data-app="miami"] .nc1 .k { color: #FF9DC6; } html[data-app="miami"] .nc1 .ki { stroke: #FF5FA2; }
+
 html[data-app="miami"] .dm2 .go { box-shadow: 0 1px 0 rgba(0,0,0,.35), 0 10px 18px -10px rgba(255,95,162,.55); }
 /* hover stays in the theme (the base rule's #D4F576 is Classic lime), like .btn.pri:hover */
 html[data-app="miami"] .dm2 .go:hover { background: #FF7DB4; }
