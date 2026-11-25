@@ -947,7 +947,7 @@ impl Capture {
 
     fn title_for(&self, id: Option<u64>) -> String {
         match id.and_then(|id| self.store.get(id)) {
-            Some(s) => t!("cap.capture_from", time = s.time().format("%-I:%M %P")).into_owned(),
+            Some(s) => t!("cap.capture_from", time = crate::kit::date::hm12(&s.time())).into_owned(),
             None => ts!("cap.capture").into(),
         }
     }

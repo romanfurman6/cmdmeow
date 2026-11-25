@@ -272,7 +272,7 @@ fn day_label(d: chrono::NaiveDate) -> String {
     } else if Some(d) == today.pred_opt() {
         ts!("cap.yesterday").into()
     } else {
-        d.format("%A, %b %-d").to_string()
+        crate::kit::date::day_title(&d)
     }
 }
 
@@ -309,7 +309,7 @@ impl Item {
         let recording = s.kind == Kind::Recording;
         let video = (s.kind == Kind::Recording).then(|| s.saved.clone()).flatten();
         // history files live in the app's data folder, next to index.json
-        Item { key: s.id, path: PathBuf::new(), time: s.time(), w: s.w, h: s.h, title: if recording { t!("cap.recording_from", time = s.time().format("%-I:%M %P")).into_owned() } else { t!("cap.capture_from", time = s.time().format("%-I:%M %P")).into_owned() }, meta, pinned: s.pinned, src: Src::Shot(s.id), video }
+        Item { key: s.id, path: PathBuf::new(), time: s.time(), w: s.w, h: s.h, title: if recording { t!("cap.recording_from", time = crate::kit::date::hm12(&s.time())).into_owned() } else { t!("cap.capture_from", time = crate::kit::date::hm12(&s.time())).into_owned() }, meta, pinned: s.pinned, src: Src::Shot(s.id), video }
     }
     /// An image in the folder, or a video (its picture comes from the
     /// history entry it was saved from, when there is one).
@@ -483,7 +483,7 @@ fn tile_ui(ui: &mut Ui, p: &egui::Painter, r: Rect, it: &Item, tex: Option<egui:
     }
     let ly = r.bottom() + 12.0;
     let mr = p.text(Pos2::new(r.right(), ly), Align2::RIGHT_CENTER, &it.meta, font(12.0), TEXT_FAINT());
-    text_fit(p, Pos2::new(r.left(), ly), Align2::LEFT_CENTER, &it.time.format("%-I:%M %P").to_string(), font(12.0), TEXT(), mr.left() - r.left() - 6.0);
+    text_fit(p, Pos2::new(r.left(), ly), Align2::LEFT_CENTER, &crate::kit::date::hm12(&it.time), font(12.0), TEXT(), mr.left() - r.left() - 6.0);
     let mut out = None;
     if hovered {
         let bar = Rect::from_min_max(Pos2::new(r.left() + 1.0, r.bottom() - 38.0), Pos2::new(r.right() - 1.0, r.bottom() - 1.0));
@@ -997,7 +997,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
             let tw = bx - 10.0 - (rr.left() + 42.0);
             let (ly1, ly2) = two_lines_y(&p, rr.center().y, &font(13.0), &mono(11.0));
             text_fit(&p, Pos2::new(rr.left() + 42.0, ly1), Align2::LEFT_CENTER, &name, font(13.0), if path.exists() { TEXT() } else { TEXT_DIM() }, tw);
-            let when = if sh.at > 0 { chrono::DateTime::from_timestamp(sh.at, 0).map(|t| t.with_timezone(&chrono::Local).format("%b %-d, %H:%M · ").to_string()).unwrap_or_default() } else { String::new() };
+            let when = if sh.at > 0 { chrono::DateTime::from_timestamp(sh.at, 0).map(|t| t.with_timezone(&chrono::Local)).map(|t| crate::kit::date::comma(&crate::kit::date::md(&t), &t.format("%H:%M").to_string()) + " · ").unwrap_or_default() } else { String::new() };
             text_fit(&p, Pos2::new(rr.left() + 42.0, ly2), Align2::LEFT_CENTER, &format!("{when}{}", sh.link), mono(11.0), TEXT_FAINT(), tw);
         }
     });

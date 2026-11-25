@@ -46,8 +46,8 @@ pub fn when(ts: i64, now: i64) -> String {
     match days {
         0 => t.format("%H:%M").to_string(),
         1 => t!("ai.alert.tomorrow", time = t.format("%H:%M")).into_owned(),
-        2..=6 => t.format("%a %H:%M").to_string(),
-        _ => t.format("%b %-d %H:%M").to_string(),
+        2..=6 => crate::kit::date::then(crate::kit::date::wd(&t), &t.format("%H:%M").to_string()),
+        _ => crate::kit::date::then(&crate::kit::date::md(&t), &t.format("%H:%M").to_string()),
     }
 }
 

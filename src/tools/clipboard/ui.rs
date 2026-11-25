@@ -34,7 +34,7 @@ pub fn ago(e: &Entry) -> String {
     } else if mins < 24 * 60 {
         t!("clip.hours", n = mins / 60).into_owned()
     } else {
-        t.format("%b %-d").to_string()
+        crate::kit::date::md(&t)
     }
 }
 
@@ -349,7 +349,7 @@ fn day_label(d: chrono::NaiveDate) -> String {
     } else if Some(d) == today.pred_opt() {
         ts!("clip.yesterday").into()
     } else {
-        d.format("%A, %b %-d").to_string()
+        crate::kit::date::day_title(&d)
     }
 }
 
@@ -487,7 +487,7 @@ fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
                     // H9: 12 in from the lit edge, both sides
                     let th = Rect::from_min_size(Pos2::new(r.left() + sp::M, r.center().y - 12.0), Vec2::splat(24.0));
                     entry_thumb(c, &p, th, &e, 6.0);
-                    let tr = p.text(Pos2::new(r.right() - sp::M, r.center().y), Align2::RIGHT_CENTER, e.time().format("%-I:%M %P").to_string(), font(12.0), TEXT_FAINT());
+                    let tr = p.text(Pos2::new(r.right() - sp::M, r.center().y), Align2::RIGHT_CENTER, crate::kit::date::hm12(&e.time()), font(12.0), TEXT_FAINT());
                     let ax = tr.left() - 110.0;
                     p.rect_filled(Rect::from_center_size(Pos2::new(ax + 6.0, r.center().y), Vec2::splat(12.0)), 3.0, app_color(&e.app));
                     text_fit(&p, Pos2::new(ax + 18.0, r.center().y), Align2::LEFT_CENTER, &e.app, font(12.0), TEXT_DIM(), 86.0);
@@ -569,7 +569,7 @@ fn detail(c: &mut Clipboard, ui: &mut Ui, r: Rect, e: &Entry) {
     let mut y = r.top() + 14.0;
     p.circle_filled(Pos2::new(x0 + 4.0, y + 8.0), 4.0, e.kind.tint());
     p.text(Pos2::new(x0 + 14.0, y + 8.0), Align2::LEFT_CENTER, e.kind.label(), bold(13.0), TEXT());
-    p.text(Pos2::new(x1, y + 8.0), Align2::RIGHT_CENTER, e.time().format("%b %-d, %-I:%M %P").to_string(), font(12.0), TEXT_FAINT());
+    p.text(Pos2::new(x1, y + 8.0), Align2::RIGHT_CENTER, crate::kit::date::comma(&crate::kit::date::md(&e.time()), &crate::kit::date::hm12(&e.time())), font(12.0), TEXT_FAINT());
     y += 26.0;
     let pv = Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1, y + 200.0));
     preview(c, ui, &p, pv, e, 10.0);
