@@ -330,6 +330,8 @@ pub fn btm_extra(items: &[BtmItem], uid: u32, labels: &[&str], programs: &[PathB
         .filter(|i| i.uid == uid as i64 || i.uid < 0 || i.uid == 0)
         .filter(|i| !(i.team.is_empty() && (i.label().starts_with("com.apple.") || i.bundle_id.starts_with("com.apple."))))
         .filter(|i| i.kind != "developer" && !i.kind.is_empty())
+        // Cmd+Meow's own login item and helpers
+        .filter(|i| !(crate::kit::own::is_own_name(i.label()) || crate::kit::own::is_own_name(&i.bundle_id) || crate::kit::own::is_own_name(&i.name) || i.path.as_deref().is_some_and(crate::kit::own::is_own_path) || i.program.as_deref().is_some_and(crate::kit::own::is_own_path)))
         .filter(|i| !labels.contains(&i.label()))
         .filter(|i| i.program.as_ref().is_none_or(|p| !programs.contains(p)))
         .filter(|i| i.path.as_ref().is_none_or(|p| !apps.contains(p)))

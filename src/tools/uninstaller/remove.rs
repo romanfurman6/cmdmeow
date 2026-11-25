@@ -140,7 +140,7 @@ fn owner_of(_p: &Path) -> Option<(u32, u32)> {
 /// into, vendors' own folders in /Library, and Homebrew's cask records. A
 /// last guard under the matching rules.
 pub fn movable(p: &Path, roots: &Roots, app_roots: &[PathBuf]) -> bool {
-    if crate::kit::fs::is_protected(p).is_some() {
+    if crate::kit::fs::is_protected(p).is_some() || crate::kit::own::is_kept(p) {
         return false;
     }
     let parts = |root: &Path| -> Option<Vec<String>> { p.strip_prefix(root).ok().map(|r| r.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect()) };

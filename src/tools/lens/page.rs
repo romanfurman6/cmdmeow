@@ -2205,7 +2205,7 @@ fn trashable(p: &Path) -> bool {
 /// Whether the map would offer "Move to Trash…" for `p`: never for
 /// essential folders or a protected folder holding a git repo.
 fn can_trash(p: &Path) -> bool {
-    !(scan::is_essential(p) || crate::kit::fs::never_remove(p) || crate::kit::fs::is_protected(p).is_some() && p.join(".git").exists())
+    !(scan::is_essential(p) || crate::kit::fs::never_remove(p) || crate::kit::own::is_kept(p) || crate::kit::fs::is_protected(p).is_some() && p.join(".git").exists())
 }
 
 /// The AI Check action to run: a Remove on a folder the map would never

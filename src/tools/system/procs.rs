@@ -16,9 +16,10 @@ pub const TOP_N: usize = 5;
 /// Below this a process isn't worth listing.
 const MIN_CPU: f32 = 1.0;
 
-/// The `n` busiest, busiest first, without this app and the idle ones.
+/// The `n` busiest, busiest first, without this app (nor its other build,
+/// release or Dev) and the idle ones.
 pub fn top(mut all: Vec<Proc>, me: u32, n: usize) -> Vec<Proc> {
-    all.retain(|p| p.pid != me && p.pid != 0 && p.cpu >= MIN_CPU && !p.name.is_empty());
+    all.retain(|p| p.pid != me && p.pid != 0 && p.cpu >= MIN_CPU && !p.name.is_empty() && !crate::kit::own::is_own_name(&p.name));
     all.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(a.pid.cmp(&b.pid)));
     all.truncate(n);
     all
@@ -55,7 +56,7 @@ mod tests {
 
     #[test]
     fn busiest_first_without_me_and_idle() {
-        let all = vec![p(10, "Safari", 12.0), p(11, "cmdmeow", 50.0), p(12, "idle", 0.2), p(13, "WindowServer", 30.0), p(0, "kernel_task", 90.0), p(14, "", 40.0), p(15, "Xcode", 12.0)];
+        let all = vec![p(10, "Safari", 12.0), p(11, "cmdmeow", 50.0), p(16, "CmdMeow Dev", 60.0), p(12, "idle", 0.2), p(13, "WindowServer", 30.0), p(0, "kernel_task", 90.0), p(14, "", 40.0), p(15, "Xcode", 12.0)];
         let t = top(all, 11, 3);
         assert_eq!(t.iter().map(|p| p.pid).collect::<Vec<_>>(), vec![13, 10, 15]);
     }

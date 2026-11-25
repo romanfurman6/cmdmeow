@@ -361,7 +361,8 @@ impl Index {
                 },
                 None => continue,
             };
-            if !looks_like_bundle_id(&id) || is_system_id(&id) {
+            // Cmd+Meow's own data (the other build's, its first name's) is never a leftover
+            if !looks_like_bundle_id(&id) || is_system_id(&id) || crate::kit::own::is_own_name(&id) || crate::kit::own::is_own_path(&e.path) {
                 continue;
             }
             let lc = id.to_lowercase();
