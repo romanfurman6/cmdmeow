@@ -304,10 +304,6 @@ mod mac {
 
     impl Sampler {
         pub fn open() -> Option<Sampler> {
-            // the channels read here (clusters, P-states, energy model) are Apple silicon's
-            if cfg!(target_arch = "x86_64") {
-                return None;
-            }
             unsafe {
                 let groups = [("Energy Model", None), ("CPU Stats", Some("CPU Core Performance States")), ("GPU Stats", Some("GPU Performance States"))];
                 let mut merged: Cf = std::ptr::null();
