@@ -1075,7 +1075,6 @@
     "about": "Shows which folders and files take up your disk",
     "opening": "Opening the last map…",
     "home": "Home",
-    "applications": "Applications",
     "choose_folder": "Choose a folder",
     "map_disk": "Map disk",
     "or_folder": "Or map a folder",
@@ -1172,7 +1171,8 @@
     "putting_back": "Putting things back…",
     "drop": {
       "not_app": "Not an app. Drop an app from Applications.",
-      "unreadable": "Couldn't read this app."
+      "unreadable": "Couldn't read this app.",
+      "locked": "%{why}, so it can't be removed."
     },
     "n_apps": "%{n} apps",
     "work": {
@@ -2134,6 +2134,12 @@
       "video_calls": "Video calls",
       "video_streaming": "Video streaming",
       "gaming": "Online gaming"
+    },
+    "place": {
+      "applications": "Applications",
+      "documents": "Documents",
+      "downloads": "Downloads",
+      "desktop": "Desktop"
     }
   }
 }

@@ -95,7 +95,7 @@ fn metric(s: &Snapshot, id: &str) -> Option<Metric> {
             }
         }
         "network" => {
-            let name = if s.wifi.name.is_empty() { ts!("health.network").to_string() } else { s.wifi.name.clone() };
+            let name = s.wifi.label();
             let (n, u) = split_num(&human_rate(s.net_down));
             (Icon::Wifi, name, (format!("↓ {}", n.strip_suffix(".0").unwrap_or(&n)), u), format!("↑ {}", human_rate(s.net_up)), None)
         }
@@ -237,7 +237,7 @@ fn medium_body(s: &Snapshot, id: &str, mt: &Metric, p: &egui::Painter, body: Rec
                 text_fit(p, Pos2::new(body.right(), big.center().y), Align2::RIGHT_CENTER, &t!("health.of", size = human_bytes(s.disk_total)), font(12.0), TEXT_DIM(), beside.width());
                 y += 6.0 + 10.0;
             }
-            let items: Vec<(String, u64)> = s.categories.iter().take(3).cloned().collect();
+            let items: Vec<(String, u64)> = s.categories.iter().take(3).map(|(n, b)| (crate::kit::fs::place_name(n), *b)).collect();
             rel(&items)
         }
         "memory" => {

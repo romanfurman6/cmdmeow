@@ -188,10 +188,10 @@ fn intro(ui: &mut Ui, r: Rect, name: &str) -> Option<Start> {
     // a place that isn't there (a renamed Desktop) is left out
     let rows: Vec<(&str, Icon, Option<PathBuf>)> = [
         (ts!("lens.home"), Icon::Home, Some(h.clone())),
-        ("Downloads", Icon::Down, Some(h.join("Downloads"))),
-        ("Documents", Icon::Doc, Some(h.join("Documents"))),
-        ("Desktop", Icon::Monitor, Some(h.join("Desktop"))),
-        (ts!("lens.applications"), Icon::Window, Some(PathBuf::from("/Applications"))),
+        (ts!("kit.place.downloads"), Icon::Down, Some(h.join("Downloads"))),
+        (ts!("kit.place.documents"), Icon::Doc, Some(h.join("Documents"))),
+        (ts!("kit.place.desktop"), Icon::Monitor, Some(h.join("Desktop"))),
+        (ts!("kit.place.applications"), Icon::Window, Some(PathBuf::from("/Applications"))),
         (ts!("lens.choose_folder"), Icon::Folder, None),
     ]
     .into_iter()

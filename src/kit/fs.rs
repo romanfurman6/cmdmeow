@@ -7,6 +7,18 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Mutex, OnceLock};
 
+/// A standard folder's name on screen ("Applications", "Downloads", …);
+/// `id` is its English folder name. Anything else is shown as it is.
+pub fn place_name(id: &str) -> String {
+    match id {
+        "Applications" => ts!("kit.place.applications").into(),
+        "Documents" => ts!("kit.place.documents").into(),
+        "Downloads" => ts!("kit.place.downloads").into(),
+        "Desktop" => ts!("kit.place.desktop").into(),
+        _ => id.to_string(),
+    }
+}
+
 pub fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
 }
