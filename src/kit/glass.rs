@@ -1766,9 +1766,18 @@ pub fn icon_pill(ui: &mut Ui, rect: Rect, ic: Icon, label: &str, kind: u8, enabl
     let p = ui.painter();
     let (f, col) = if kind == BTN_SECONDARY { (font(13.0), TEXT()) } else { (bold(13.0), ON_ACTION) };
     let col = if enabled { col } else { with_alpha(col, key::disabled_alpha()) };
-    icon(p, ic, Rect::from_center_size(Pos2::new(face.left() + 18.0, face.center().y), Vec2::splat(15.0)), col);
-    p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, f, col);
+    let x = pill_content_left(p, rect, face, label, &f);
+    icon(p, ic, Rect::from_center_size(Pos2::new(x + 18.0, face.center().y), Vec2::splat(15.0)), col);
+    p.text(Pos2::new(x + 31.0, face.center().y), Align2::LEFT_CENTER, label, f, col);
     resp
+}
+
+/// Where an [`icon_pill`]'s glyph + label group starts: a pill made wider
+/// than its own label (SP16 fixed width, e.g. Stop sized to Scan again)
+/// keeps the group centred instead of leaving the slack on the right.
+fn pill_content_left(p: &Painter, rect: Rect, face: Rect, label: &str, f: &FontId) -> f32 {
+    let natural = p.layout_no_wrap(label.to_owned(), f.clone(), TEXT()).size().x + 46.0;
+    face.left() + ((rect.width() - natural) / 2.0).max(0.0).round()
 }
 
 /// A page action while its work runs (SP16, B8 loading): a Secondary
@@ -1776,9 +1785,10 @@ pub fn icon_pill(ui: &mut Ui, rect: Rect, ic: Icon, label: &str, kind: u8, enabl
 pub fn busy_pill(ui: &mut Ui, rect: Rect, label: &str, tint: Color32) -> Response {
     let (resp, face) = pill_button_at(ui, rect, "", BTN_SECONDARY, true);
     let p = ui.painter();
-    spinner(p, Pos2::new(face.left() + 18.0, face.center().y), 5.0, ui.ctx().input(|i| i.time), tint);
+    let x = pill_content_left(p, rect, face, label, &font(13.0));
+    spinner(p, Pos2::new(x + 18.0, face.center().y), 5.0, ui.ctx().input(|i| i.time), tint);
     poll(ui.ctx());
-    p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT());
+    p.text(Pos2::new(x + 31.0, face.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT());
     resp
 }
 
