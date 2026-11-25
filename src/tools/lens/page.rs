@@ -420,7 +420,6 @@ fn show_root(app: &mut App, root: PathBuf) {
     app.lens_morph = None;
     app.lens_hues.clear();
     app.lens_skip = 0;
-    // "freed" counts what was removed from this map only
     app.lens_back.clear();
     app.lens_fwd.clear();
     app.lens_peek = false;
