@@ -65,6 +65,20 @@ pub struct Wifi {
     pub iface: String,
 }
 
+impl Wifi {
+    /// What the network is called on screen: its own name, or "Wi-Fi" /
+    /// "Network" when macOS hides it.
+    pub fn label(&self) -> String {
+        if self.name.is_empty() {
+            ts!("health.network").into()
+        } else if self.name.eq_ignore_ascii_case("wi-fi") {
+            ts!("health.wifi").into()
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
 /// Where a speed test is.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SpeedPhase {
@@ -1031,8 +1045,10 @@ fn wifi_name(details: &Wifi) -> Wifi {
     let iface = if w.iface.is_empty() { "en0" } else { w.iface.as_str() };
     let summary = run_cmd("/usr/sbin/ipconfig", &["getsummary", iface]);
     apply_ipconfig(&mut w, &summary);
-    if w.name.is_empty() {
-        w.name = if w.security.is_empty() { "Network".into() } else { "Wi-Fi".into() };
+    // a hidden name stays empty ("Network" on screen), or "Wi-Fi" when it
+    // has security; see [`Wifi::label`]
+    if w.name.is_empty() && !w.security.is_empty() {
+        w.name = "Wi-Fi".into();
     }
     w
 }
@@ -1270,6 +1286,14 @@ mod tests {
         let idle = r#"{"SPAirPortDataType":[{"spairport_airport_interfaces":[{"_name":"awdl0","spairport_current_network_information":{}},{"_name":"en0"}]}]}"#;
         assert_eq!(parse_wifi(idle).iface, "en0");
         assert_eq!(parse_wifi("").iface, "");
+    }
+
+    #[test]
+    fn wifi_label_names_a_hidden_network() {
+        let w = |name: &str| Wifi { name: name.into(), ..Default::default() };
+        assert_eq!(w("").label(), "Network");
+        assert_eq!(w("Wi-Fi").label(), "Wi-Fi");
+        assert_eq!(w("Home").label(), "Home");
     }
 
     #[test]

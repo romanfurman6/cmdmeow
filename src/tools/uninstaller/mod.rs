@@ -461,7 +461,7 @@ impl Uninstaller {
         }
         if let Some(row) = g.apps.iter().find(|a| a.path == path && a.sized) {
             g.drop = match row.locked {
-                Some(why) => Drop::Refused(row.name.clone(), format!("{why}, so it can't be removed.")),
+                Some(why) => Drop::Refused(row.name.clone(), t!("un.drop.locked", why = why).into_owned()),
                 None => Drop::Confirm(row.target(false)),
             };
             return;
@@ -478,7 +478,7 @@ impl Uninstaller {
                 if matches!(&g.drop, Drop::Reading(p) if *p == path) {
                     g.drop = match res {
                         Some(row) => match row.locked {
-                            Some(why) => Drop::Refused(row.name, format!("{why}, so it can't be removed.")),
+                            Some(why) => Drop::Refused(row.name, t!("un.drop.locked", why = why).into_owned()),
                             None => Drop::Confirm(row.target(false)),
                         },
                         None => Drop::Refused(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), ts!("un.drop.unreadable").into()),

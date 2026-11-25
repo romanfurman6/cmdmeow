@@ -177,7 +177,7 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             for (i, (label, b)) in shown.iter().enumerate() {
                 let c = series::monitor(i);
                 sp.segs.push((*b as f32 / total, c));
-                sp.legend.push(leg(c, label, human_bytes(*b)));
+                sp.legend.push(leg(c, &crate::kit::fs::place_name(label), human_bytes(*b)));
             }
             sp.segs.push((other as f32 / total, OTHER()));
             sp.legend.push(leg(OTHER(), ts!("health.other"), human_bytes(other)));
@@ -297,7 +297,7 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
             sp
         }
         Sheet::Network => {
-            let title = if s.wifi.name.is_empty() { ts!("health.network").to_string() } else { s.wifi.name.clone() };
+            let title = s.wifi.label();
             let mut sub = if s.wifi.wired { ts!("health.wired").to_string() } else { ts!("health.wifi").to_string() };
             if !s.wifi.phy.is_empty() {
                 sub.push_str(&format!(" · {}", s.wifi.phy));
