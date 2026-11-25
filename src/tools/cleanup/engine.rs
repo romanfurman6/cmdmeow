@@ -329,11 +329,12 @@ impl Ctx {
     }
 
     pub(super) fn add(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str) {
-        // The app's own cache and logs (also under its first name, CleanMeBro): a few MB, and in use while it runs
-        if path.file_name().is_some_and(|n| {
-            let n = n.to_string_lossy().to_lowercase();
-            n == "cmdmeow" || n == "cleanmebro" || n.starts_with("com.romanfurman6.cmdmeow") || n.starts_with("com.romanfurman6.cleanmebro")
-        }) {
+        // The app's own files (also under its first name, CleanMeBro) are never
+        // offered, only its cache folder, which it makes again. Old captures
+        // it made are their own group (their copies sit in its data folder).
+        let own_cache = crate::kit::own::is_safe_cache(&path);
+        let own_name = path.file_name().is_some_and(|n| crate::kit::own::is_own_name(&n.to_string_lossy()));
+        if group != Group::Captures && (own_name || crate::kit::own::is_own_path(&path)) && !own_cache {
             return;
         }
         if self.kept.iter().any(|k| path.starts_with(k)) {
@@ -370,7 +371,7 @@ impl Ctx {
             it.reason = why.into();
             it.hard_keep = true;
         }
-        if verdict == Verdict::Safe && kind == "Caches" && app_open(&self.running_ids, &self.running_names, &path, title) {
+        if verdict == Verdict::Safe && kind == "Caches" && !own_cache && app_open(&self.running_ids, &self.running_names, &path, title) {
             let name = path.file_name().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
             it.verdict = Verdict::Ask;
             it.rule_verdict = Verdict::Ask;
@@ -575,6 +576,8 @@ pub fn pretty(name: &str) -> String {
         ("com.brave.Browser", "Brave"),
         ("us.zoom.xos", "Zoom"),
         ("com.anthropic.claudefordesktop", "Claude"),
+        ("com.romanfurman6.cmdmeow", "Cmd+Meow"),
+        ("com.romanfurman6.cmdmeow.dev", "Cmd+Meow Dev"),
     ];
     for (id, n) in known {
         if name.eq_ignore_ascii_case(id) {

@@ -479,7 +479,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
 /// reused by another process while the rec sits on screen).
 fn quit_target(live: &[super::procs::Proc], key: &str, name: &str) -> Option<u32> {
     let pid = key.strip_prefix("pid:")?.parse::<u32>().ok()?;
-    live.iter().find(|p| p.pid == pid && p.name == name && p.mine).map(|p| p.pid)
+    live.iter().find(|p| p.pid == pid && p.name == name && p.mine && !crate::kit::own::is_own_name(&p.name)).map(|p| p.pid)
 }
 
 /// What AI Check gets: the busiest processes and how the Mac is doing.

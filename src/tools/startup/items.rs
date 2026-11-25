@@ -171,6 +171,12 @@ impl Job {
         // until its signature is read, it waits out of sight
         sign::apple_owned(p, &self.args, self.sig.as_ref())
     }
+    /// Cmd+Meow's own (its login item, helpers): never listed, so never
+    /// offered to turn off or remove. Its Settings has its own switch.
+    pub fn own(&self) -> bool {
+        use crate::kit::own;
+        own::is_own_name(&self.label) || self.program.as_deref().is_some_and(own::is_own_path) || self.owner.as_deref().is_some_and(own::is_own_path) || own::is_own_path(&self.plist)
+    }
     pub fn flags(&self) -> Vec<Flag> {
         sign::flags(&self.label, self.program.as_deref(), &self.args, self.sig.as_ref())
     }
@@ -222,6 +228,13 @@ pub struct LoginApp {
     pub path: PathBuf,
     pub hidden: bool,
     pub on: bool,
+}
+
+impl LoginApp {
+    /// Cmd+Meow itself: never listed (see [`Job::own`]).
+    pub fn own(&self) -> bool {
+        crate::kit::own::is_own_name(&self.name) || crate::kit::own::is_own_path(&self.path)
+    }
 }
 
 /// The outermost `.app` bundle that holds `program`.
@@ -465,7 +478,7 @@ fn run(args: &[&str]) -> String {
 
 /// Leave out macOS's own jobs.
 pub fn shown(mut jobs: Vec<Job>) -> Vec<Job> {
-    jobs.retain(|j| !j.apple());
+    jobs.retain(|j| !j.apple() && !j.own());
     jobs
 }
 
@@ -649,6 +662,11 @@ pub mod tests {
         // Apple's own: kept out once its program is known to be Apple's (SIP folder here)
         assert!(find("com.apple.x").apple());
         assert_eq!(shown(js.clone()).len(), 5);
+        // Cmd+Meow's own jobs never show
+        let me = |label: &str, program: &str| Job { label: label.into(), program: Some(PathBuf::from(program)), ..Default::default() };
+        assert!(shown(vec![me("com.romanfurman6.cmdmeow.helper", "/Library/PrivilegedHelperTools/com.romanfurman6.cmdmeow.helper"), me("x.y", "/Applications/CmdMeow Dev.app/Contents/MacOS/cmdmeow"), me("com.raycast.x", "/Applications/Raycast.app/Contents/MacOS/x")]).iter().map(|j| j.label.as_str()).eq(["com.raycast.x"]));
+        assert!(LoginApp { name: "CmdMeow Dev".into(), path: "/Applications/CmdMeow Dev.app".into(), hidden: false, on: true }.own());
+        assert!(!LoginApp { name: "Raycast".into(), path: "/Applications/Raycast.app".into(), hidden: false, on: true }.own());
         let g = find("com.google.GoogleUpdater.wake");
         assert_eq!((g.when, g.name.as_str(), g.why()), (When::Every(3600), "Google Updater", Some(Why::Updater)));
         let gone = find("com.gone.agent");
