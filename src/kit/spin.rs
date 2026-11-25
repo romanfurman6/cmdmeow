@@ -396,7 +396,7 @@ fn clock() -> f64 {
 }
 
 #[cfg(target_os = "macos")]
-mod native {
+pub(crate) mod native {
     use super::{Look, MarkState, Turn};
     use egui::{Color32, Pos2, Rect};
     use objc2::rc::Retained;
@@ -463,7 +463,7 @@ mod native {
     /// `c` as egui shows it. egui's surface is untagged, so its bytes land on
     /// the display as they are: tag them with the window's own colour space
     /// (Display P3 when unknown), not sRGB, or the native layers look paler.
-    fn ns_color(c: Color32, space: Option<&AnyObject>) -> Retained<AnyObject> {
+    pub(crate) fn ns_color(c: Color32, space: Option<&AnyObject>) -> Retained<AnyObject> {
         let [r, g, b, a] = c.to_srgba_unmultiplied();
         let comps = [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0, a as f64 / 255.0];
         unsafe {
@@ -475,7 +475,7 @@ mod native {
     }
 
     /// Set `layer`'s fill or stroke colour to `c` (None: no fill).
-    fn set_color(layer: &AnyObject, stroke: bool, c: Option<Color32>, space: Option<&AnyObject>) {
+    pub(crate) fn set_color(layer: &AnyObject, stroke: bool, c: Option<Color32>, space: Option<&AnyObject>) {
         // the NSColor owns the CGColor: keep it alive across the set
         let ns = c.map(|c| ns_color(c, space));
         unsafe {
@@ -491,7 +491,7 @@ mod native {
         }
     }
 
-    fn set_path(layer: &AnyObject, path: *mut c_void) {
+    pub(crate) fn set_path(layer: &AnyObject, path: *mut c_void) {
         unsafe {
             let _: () = msg_send![layer, setPath: path as *const c_void];
             CGPathRelease(path);
@@ -499,7 +499,7 @@ mod native {
     }
 
     /// The fan glyph in a square of side 2r, centre (r, r), y down (fill it even-odd).
-    fn blades_path(r: f32) -> *mut c_void {
+    pub(crate) fn blades_path(r: f32) -> *mut c_void {
         let at = |q: [f32; 2]| ((r + q[0] * r) as f64, (r + q[1] * r) as f64);
         unsafe {
             let path = CGPathCreateMutable();
@@ -538,7 +538,7 @@ mod native {
         }
     }
 
-    fn new_layer(class_name: &str, scale: f64) -> Retained<AnyObject> {
+    pub(crate) fn new_layer(class_name: &str, scale: f64) -> Retained<AnyObject> {
         let l: Retained<AnyObject> = unsafe {
             match class_name {
                 "shape" => msg_send![class!(CAShapeLayer), layer],
@@ -552,7 +552,7 @@ mod native {
     }
 
     /// The view's root layer for viewport `id`, its window's scale and colour space.
-    fn root_of(id: egui::ViewportId) -> Option<(Retained<AnyObject>, f64, Option<Retained<AnyObject>>)> {
+    pub(crate) fn root_of(id: egui::ViewportId) -> Option<(Retained<AnyObject>, f64, Option<Retained<AnyObject>>)> {
         let view = eframe::viewport_ns_view(id)? as *const AnyObject;
         unsafe {
             let view: &AnyObject = view.as_ref()?;
