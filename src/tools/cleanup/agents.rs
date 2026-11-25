@@ -283,9 +283,11 @@ fn ollama(c: &mut Ctx, models: &Path) {
         return;
     }
     c.tool = OLLAMA;
-    let list = ollama_manifests(&manifests);
+    let found = ollama_manifests(&manifests);
+    let list = found.models;
     let mut users: HashMap<String, usize> = HashMap::new();
-    for (_, _, digests) in &list {
+    // a manifest that didn't parse still holds on to the blobs it names
+    for digests in list.iter().map(|m| &m.2).chain(&found.unparsed) {
         for d in digests {
             *users.entry(d.clone()).or_default() += 1;
         }
@@ -297,6 +299,11 @@ fn ollama(c: &mut Ctx, models: &Path) {
         files.extend(own);
         let when = super::engine::ago(age_days(manifest));
         c.add_action(Group::AiTools, name, manifest.clone(), "Local Models", Verdict::Ask, &t!("cleanup.why.model", when = when), Action::Model(files), bytes);
+    }
+    // a manifest that couldn't be read (or sits where none should) may use
+    // any blob: then no blob counts as unused
+    if !found.complete {
+        return;
     }
     let used: HashSet<String> = users.into_keys().map(|d| blob_file(&d)).collect();
     for b in children(&blobs) {
@@ -314,21 +321,59 @@ pub fn blob_file(digest: &str) -> String {
     digest.replacen(':', "-", 1)
 }
 
-/// (name, manifest file, layer + config digests) of every model:
-/// manifests/<host>/<namespace>/<model>/<tag>.
-fn ollama_manifests(root: &Path) -> Vec<(String, PathBuf, Vec<String>)> {
-    let mut out = Vec::new();
+/// What the manifests folder holds.
+#[derive(Default)]
+struct Manifests {
+    /// (name, manifest file, layer + config digests) of every model:
+    /// manifests/<host>/<namespace>/<model>/<tag>.
+    models: Vec<(String, PathBuf, Vec<String>)>,
+    /// Digests named in manifests that didn't parse (found in their text).
+    unparsed: Vec<Vec<String>>,
+    /// Every manifest was read and sat where expected.
+    complete: bool,
+}
+
+fn ollama_manifests(root: &Path) -> Manifests {
+    let mut out = Manifests { complete: true, ..Default::default() };
     for host in children(root) {
+        out.complete &= host.is_dir();
         for ns in children(&host) {
+            out.complete &= ns.is_dir();
             for model in children(&ns) {
-                for tag in children(&model).into_iter().filter(|p| p.is_file()) {
-                    let Ok(text) = std::fs::read_to_string(&tag) else { continue };
-                    let Some(digests) = manifest_digests(&text) else { continue };
-                    let name = model_name(&fname(&host), &fname(&ns), &fname(&model), &fname(&tag));
-                    out.push((name, tag, digests));
+                out.complete &= model.is_dir();
+                for tag in children(&model) {
+                    let Ok(text) = std::fs::read_to_string(&tag) else {
+                        out.complete = false;
+                        continue;
+                    };
+                    match manifest_digests(&text) {
+                        Some(digests) => {
+                            let name = model_name(&fname(&host), &fname(&ns), &fname(&model), &fname(&tag));
+                            out.models.push((name, tag, digests));
+                        }
+                        None => {
+                            let found = digests_in_text(&text);
+                            out.complete &= !found.is_empty();
+                            out.unparsed.push(found);
+                        }
+                    }
                 }
             }
         }
+    }
+    out
+}
+
+/// Every "sha256:<hex>" in a manifest's text, for one that doesn't parse.
+fn digests_in_text(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(k) = rest.find("sha256:") {
+        let hex: String = rest[k + 7..].chars().take_while(|ch| ch.is_ascii_hexdigit()).collect();
+        if !hex.is_empty() {
+            out.push(format!("sha256:{hex}"));
+        }
+        rest = &rest[k + 7..];
     }
     out
 }
@@ -595,6 +640,26 @@ mod tests {
         assert_eq!(workspace_folder(r#"{"folder":"file:///Users/me/%D0%9C%D1%83%D0%B7"}"#), Some(PathBuf::from("/Users/me/Муз")));
         assert_eq!(workspace_folder("not json"), None);
         assert_eq!(workspace_folder(r#"{"folder":"file:///bad%zz"}"#), None);
+    }
+
+    #[test]
+    fn unparsed_manifest_keeps_every_blob() {
+        let root = std::env::temp_dir().join(format!("cmdmeow-ollama-{}", std::process::id()));
+        let m = root.join("registry.ollama.ai/library/llama3.1");
+        std::fs::create_dir_all(&m).unwrap();
+        let a = format!("sha256:{}", "a".repeat(64));
+        let b = format!("sha256:{}", "b".repeat(64));
+        std::fs::write(m.join("8b"), format!(r#"{{"config":{{"digest":"{a}"}},"layers":[{{"digest":"{a}"}}]}}"#)).unwrap();
+        // a future format: no "layers", still names its blob
+        std::fs::write(m.join("new"), format!(r#"{{"parts":["{b}"]}}"#)).unwrap();
+        let found = ollama_manifests(&root);
+        assert_eq!(found.models.len(), 1);
+        assert_eq!(found.unparsed, vec![vec![b.clone()]]);
+        assert!(found.complete);
+        // one that names nothing: no blob may count as unused
+        std::fs::write(m.join("odd"), "{}").unwrap();
+        assert!(!ollama_manifests(&root).complete);
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
