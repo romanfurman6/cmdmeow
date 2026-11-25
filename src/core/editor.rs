@@ -900,7 +900,7 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
             if pill_button(ui, b, label, BTN_SECONDARY, true).on_hover_text(why).clicked() && !app.demo {
                 update::open_releases();
             }
-            p.text(Pos2::new(b.left() - sp::S, head.center().y), Align2::RIGHT_CENTER, ts!("app.update_failed"), font(13.0), AMBER());
+            p.text(Pos2::new(b.left() - sp::S, head.center().y), Align2::RIGHT_CENTER, ts!("app.update_failed"), font(13.0), RED());
         }
         State::Idle => {
             let label = ts!("app.check_updates");
