@@ -311,8 +311,10 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         Row::Allow => 62.0,
         _ => ROW_H + ROW_GAP,
     }).sum::<f32>()
-        + 56.0;
-    let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 12.0), Pos2::new(body.right(), body.bottom() - 12.0));
+        + 56.0
+        + 12.0;
+    // the list runs to the window's bottom edge; its last 12 pt sit inside the scroll
+    let area = Rect::from_min_max(Pos2::new(body.left(), body.top() + 12.0), body.max);
     let mut child = ui.new_child(UiBuilder::new().max_rect(area));
     child.set_clip_rect(area);
     let mut flip_app: Option<LoginApp> = None;

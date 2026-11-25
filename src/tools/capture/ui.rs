@@ -966,7 +966,8 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let rw = body.right() - 24.0 - rx;
     let ty = body.top() + 16.0;
     crate::kit::glass::card_title(&p, Pos2::new(rx, ty), ts!("cap.shared"));
-    let list = Rect::from_min_max(Pos2::new(rx, ty + 28.0), Pos2::new(rx + rw, body.bottom() - 16.0));
+    // the list runs to the window's bottom edge; its last 16 pt sit inside the scroll
+    let list = Rect::from_min_max(Pos2::new(rx, ty + 28.0), Pos2::new(rx + rw, body.bottom()));
     if shared.is_empty() {
         let er = Rect::from_min_size(list.min, Vec2::new(rw, 90.0));
         glass_card(&p, er, R_CARD, 0.0, false);
@@ -977,7 +978,7 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let mut act: Option<(usize, u8)> = None;
     let mut child = ui.new_child(UiBuilder::new().max_rect(list));
     ScrollArea::vertical().id_salt("shared-list").auto_shrink([false, false]).show(&mut child, |ui| {
-        let (area, _) = ui.allocate_exact_size(Vec2::new(rw.min(ui.available_width()), shared.len() as f32 * (row_h + 6.0)), Sense::hover());
+        let (area, _) = ui.allocate_exact_size(Vec2::new(rw.min(ui.available_width()), shared.len() as f32 * (row_h + 6.0) + 16.0), Sense::hover());
         let p = ui.painter().clone();
         for (k, (path, sh)) in shared.iter().enumerate() {
             let rr = Rect::from_min_size(Pos2::new(area.left(), area.top() + k as f32 * (row_h + 6.0)), Vec2::new(rw, row_h));

@@ -1034,9 +1034,8 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
     section_header(&p, Pos2::new(c_when, hy), Align2::RIGHT_CENTER, ts!("un.col.touched"));
     section_header(&p, Pos2::new(c_size, hy), Align2::RIGHT_CENTER, ts!("un.col.size"));
     hairline(&p, Pos2::new(list.left(), list.top() + sp::TABLE_HEAD_H), Pos2::new(list.right(), list.top() + sp::TABLE_HEAD_H));
-    let rows_r = Rect::from_min_max(Pos2::new(list.left(), list.top() + sp::TABLE_HEAD_H + 1.0), Pos2::new(list.right(), list.bottom() - sp::S));
-    // whole rows only: a row cut in half by the card edge looks broken
-    let rows_r = Rect::from_min_size(rows_r.min, Vec2::new(rows_r.width(), ((rows_r.height() / sp::ROW2_H).floor() * sp::ROW2_H).max(sp::ROW2_H).min(rows_r.height())));
+    // rows scroll to the card's bottom edge, as in the apps list
+    let rows_r = Rect::from_min_max(Pos2::new(list.left(), list.top() + sp::TABLE_HEAD_H + 1.0), Pos2::new(list.right(), list.bottom() - 2.0));
     if orphans.is_empty() {
         let msg = if busy { ts!("un.still_looking") } else { ts!("un.nothing_left") };
         p.text(rows_r.center(), Align2::CENTER_CENTER, msg, font(13.0), TEXT_DIM());

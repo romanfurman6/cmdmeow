@@ -1656,6 +1656,9 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let list = Rect::from_min_max(Pos2::new(ri.left(), ri.top() + 16.0 + sp::M), ri.max);
     if app.clean_log {
         p.text(ri.left_top(), Align2::LEFT_TOP, ts!("cleanup.log"), ty::title(), TEXT());
+        // lines scroll to the card's bottom edge; the padding below the last
+        // line sits inside the scroll
+        let list = Rect::from_min_max(list.min, Pos2::new(list.right(), right.bottom() - 1.0));
         let mut child = ui.new_child(UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
         child.set_clip_rect(list);
         ScrollArea::vertical().id_salt("log").auto_shrink([false, false]).show(&mut child, |ui| {
@@ -1663,6 +1666,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
                 let col = if *warn { AMBER() } else { TEXT_DIM() };
                 ui.label(egui::RichText::new(l.replacen(&home_str(), "~", 1)).font(glass::mono(11.0)).color(col));
             }
+            ui.add_space(sp::L - 1.0 - ui.spacing().item_spacing.y);
         });
         return;
     }
