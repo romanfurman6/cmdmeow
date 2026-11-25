@@ -93,6 +93,7 @@ Hero 28/600, number 22/600, lead 15/600, title 13/600, section 12/600, body 13/4
 | R15 | A page grid of cards fills the width but not the height: each card row grows to at most 340 pt and the grid stays at the top; the rest of a tall window stays empty below. Charts and rings never stretch past what the card needs. Also AI Usage (grid max 2×340+16). | `BENTO_MAX_H` (Mac Health) |
 | R16 | A setting that both Capture pages have (Screenshot, Video) uses the same label and the same choice words on both: "Then" (Show preview · Open editor · Nothing), "Hide preview after", Copy to clipboard, Folder, File name, History keeps. | |
 | R17 | **Permission row** in a tool's Settings (Screenshot, Video, Dictation): one shared kit row, 40 pt per permission: state dot, name, "Allowed" / "Not allowed", and a 28 Primary "Allow" when missing. Settings › Permissions keeps its own list. | ✅ |
+| R18 | A scrolling list's viewport reaches the edge it scrolls under (a card's edge, 1 pt in past the hairline, or the footer bar / window bottom). Padding above the first row and below the last sits inside the scroll content, never outside the viewport. Lists don't snap to whole rows. | |
 
 Fixed chrome: sidebar 210 wide, sidebar rows 28, page header 50, page footer 60, sheet header 58, sheet buttons 32.
 
@@ -377,3 +378,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-24, Roman: panel header Quit + Open, Quit confirms in place (B1, variant A, branch claude/project-thread-otzc8q).
 
 2026-11-24, Roman: SP16 page header controls (action right, never hides, fixed width), refresh as icon pill in headers, SP14 tips with a fix, provider-named status chips (canvas https://claude.ai/artifact/8UbQsaY3dRZffn58yyo2Eo).
+
+2026-11-25, Roman: R18 lists scroll to the edge, padding inside the scroll, no snapping to whole rows (PR #365, reference Uninstaller apps list).
