@@ -113,6 +113,8 @@ pub enum Action {
     /// An old upload: deleted from the person's storage, then forgotten
     /// here (`local` is the file that was shared).
     Upload { key: String, local: PathBuf },
+    /// A local model: its manifest and the blobs no other model uses.
+    Model(Vec<PathBuf>),
 }
 
 #[derive(Clone, Debug)]
@@ -134,6 +136,8 @@ pub struct Item {
     pub permanent: bool, // emptying the Trash can't be undone
     pub app_running: bool,
     pub action: Action,
+    /// The tool it belongs to ("Codex", "Ollama"…), for AI Tools items; empty otherwise.
+    pub tool: &'static str,
 }
 
 impl Item {
@@ -206,7 +210,7 @@ pub struct State {
     /// When this scan started (the bar creeps from it until real progress comes).
     pub started: Option<std::time::Instant>,
     /// The clean in progress (or just done) took only this group's ticked items.
-    pub clean_only: Option<Group>,
+    pub clean_only: Scope,
     /// Groups cleaned since this scan, with what each freed: the results
     /// say so when the person goes back to them.
     pub cleaned_groups: Vec<(Group, u64)>,
@@ -258,7 +262,8 @@ impl State {
         self.selected_in(None)
     }
     /// Ticked bytes in one group, or in all of them.
-    pub fn selected_in(&self, only: Option<Group>) -> u64 {
+    pub fn selected_in(&self, only: impl Into<Scope>) -> u64 {
+        let only = only.into();
         self.items.iter().filter(|i| i.selected && in_scope(i, only)).map(|i| i.bytes).sum()
     }
     pub fn pending_questions(&self) -> usize {
@@ -285,7 +290,9 @@ pub(super) struct Ctx {
     kept: HashSet<PathBuf>,
     hidden_kept: usize,
     pub(super) running_ids: HashSet<String>,
-    running_names: HashSet<String>,
+    pub(super) running_names: HashSet<String>,
+    /// The tool the items added now belong to (see `Item::tool`).
+    pub(super) tool: &'static str,
     /// Homebrew's own cleanup was offered: its download cache isn't offered again.
     brew: bool,
     shared: Shared,
@@ -305,15 +312,27 @@ impl Ctx {
     }
     /// Offer an item removed by a tool (simctl, brew): its size comes from the
     /// tool and it lives outside the home folder.
+    /// A tool's item names its tool ("Cursor · Web cache"), so its rows read
+    /// on their own in All and Needs your OK; the tool's own list drops it
+    /// again (`without_tool`).
+    fn titled(&self, title: &str) -> String {
+        if self.tool.is_empty() || title.starts_with(self.tool) {
+            title.to_string()
+        } else {
+            format!("{}{TOOL_SEP}{title}", self.tool)
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_action(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str, action: Action, bytes: u64) {
         if self.kept.contains(&path) {
             self.hidden_kept += 1;
             return;
         }
+        let title = self.titled(title);
         self.items.push(Item {
             group,
-            title: title.to_string(),
+            title,
             path,
             bytes,
             age_days: 0.0,
@@ -328,6 +347,7 @@ impl Ctx {
             permanent: true,
             app_running: false,
             action,
+            tool: self.tool,
         });
     }
 
@@ -352,7 +372,7 @@ impl Ctx {
         let age_days = age_days(&path);
         let mut it = Item {
             group,
-            title: title.to_string(),
+            title: self.titled(title),
             path: path.clone(),
             bytes: 0,
             age_days,
@@ -367,6 +387,7 @@ impl Ctx {
             permanent: false,
             app_running: false,
             action: Action::Files,
+            tool: self.tool,
         };
         if let Some(why) = guard(group, &path) {
             it.verdict = Verdict::Keep;
@@ -408,6 +429,10 @@ pub(super) fn guard(group: Group, p: &Path) -> Option<&'static str> {
     }
     if group == Group::Captures {
         return super::captures::guard(p);
+    }
+    // an agent's worktree is a checkout (has .git), offered only when it's one
+    if group == Group::AiTools && p.join(".git").is_file() && super::agents::is_agent_worktree(p) {
+        return None;
     }
     is_protected(p)
 }
@@ -552,7 +577,7 @@ fn live_progress(live: &[GroupLive], weights: &[f32; Group::COUNT]) -> f32 {
     }
 }
 
-fn age_days(p: &Path) -> f64 {
+pub(super) fn age_days(p: &Path) -> f64 {
     p.symlink_metadata()
         .ok()
         .and_then(|m| m.modified().ok())
@@ -651,10 +676,10 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
         let brew_job = brew_tool.clone().map(|b| std::thread::spawn(move || brew_dry_run(&b)));
         // what's open right now (one lsof run, a few seconds) alongside the scan
         let open_job = std::thread::spawn(super::inuse::OpenFiles::snapshot);
-        let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, brew: brew_tool.is_some(), shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
+        let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, tool: "", brew: brew_tool.is_some(), shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
         let steps: [ScanStep; 12] = [
             ("Claude", scan_claude),
-            ("AI tools", scan_ai_tools),
+            ("AI tools", super::agents::scan),
             ("User caches", scan_user_caches),
             ("App caches", scan_app_caches),
             ("Logs", scan_logs),
@@ -773,6 +798,8 @@ fn scan_claude(c: &mut Ctx) {
     let h = home();
     let cl = h.join(".claude");
     let claude_running = c.running_names.iter().any(|n| n == "claude") || process_running("claude");
+    let old = claude_retention_days(&cl);
+    c.tool = "Claude Code";
     // AIToolScanning sub_7118: Claude Code catalog
     c.add(Group::AiTools, ts!("cleanup.it.cc_debug"), cl.join("debug"), "Logs", Verdict::Safe, ts!("cleanup.why.cc_debug"));
     c.add(Group::AiTools, ts!("cleanup.it.cc_cache"), cl.join("cache"), "Caches", Verdict::Safe, ts!("cleanup.why.cache_rebuilt"));
@@ -780,6 +807,14 @@ fn scan_claude(c: &mut Ctx) {
     c.add(Group::AiTools, ts!("cleanup.it.stats_cache"), cl.join("stats-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.stats"));
     c.add(Group::AiTools, ts!("cleanup.it.mcp_signin"), cl.join("mcp-needs-auth-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.mcp_signin"));
     c.add(Group::AiTools, ts!("cleanup.it.plugin_counts"), cl.join("plugins/install-counts-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.plugin_counts"));
+    c.add(Group::AiTools, ts!("cleanup.it.paste_cache"), cl.join("paste-cache"), "Temp Files", Verdict::Safe, ts!("cleanup.why.paste_cache"));
+    c.add(Group::AiTools, ts!("cleanup.it.cc_flags"), cl.join("statsig"), "Caches", Verdict::Safe, ts!("cleanup.why.cache_rebuilt"));
+    // copies of ~/.claude.json it makes before each change: the newest stays
+    let mut backups: Vec<PathBuf> = children(&cl.join("backups")).into_iter().chain(children(&h).into_iter().filter(|p| fname(p).starts_with(".claude.json.backup"))).filter(|p| p.is_file()).collect();
+    backups.sort_by(|a, b| age_days(a).total_cmp(&age_days(b)));
+    for b in backups.into_iter().skip(1).filter(|b| age_days(b) > CONFIG_BACKUP_DAYS) {
+        c.add(Group::AiTools, ts!("cleanup.it.config_backup"), b, "Temp Files", Verdict::Safe, ts!("cleanup.why.config_backup"));
+    }
     // shell snapshots: only the old ones (a running session uses the newest)
     let snaps = cl.join("shell-snapshots");
     for f in children(&snaps) {
@@ -799,6 +834,7 @@ fn scan_claude(c: &mut Ctx) {
     }
     c.add(Group::AiTools, ts!("cleanup.it.cli_logs"), h.join("Library/Caches/claude-cli-nodejs"), "Logs", Verdict::Safe, ts!("cleanup.why.cli_logs"));
     // AIToolScanning sub_7308: Claude Desktop
+    c.tool = "Claude Desktop";
     c.add(Group::AiTools, ts!("cleanup.it.desk_logs"), h.join("Library/Logs/Claude"), "Logs", Verdict::Safe, ts!("cleanup.why.desk_logs"));
     c.add(Group::AiTools, ts!("cleanup.it.desk_cache"), h.join("Library/Caches/com.anthropic.claudefordesktop"), "Caches", Verdict::Safe, ts!("cleanup.why.app_cache_rebuilt"));
     c.add(Group::AiTools, ts!("cleanup.it.updater"), h.join("Library/Caches/com.anthropic.claudefordesktop.ShipIt"), "Caches", Verdict::Safe, ts!("cleanup.why.updater"));
@@ -807,10 +843,11 @@ fn scan_claude(c: &mut Ctx) {
     for sub in CHROMIUM_CACHES {
         let p = desk.join(sub);
         let (v, r) = if desktop_running { (Verdict::Ask, ts!("cleanup.why.desk_open")) } else { (Verdict::Safe, ts!("cleanup.why.webview")) };
-        c.add(Group::AiTools, &t!("cleanup.it.desk_sub", sub = sub), p, "Caches", v, r);
+        c.add(Group::AiTools, ts!("cleanup.it.web_cache"), p, "Caches", v, r);
     }
     c.add(Group::AiTools, ts!("cleanup.it.vm_image"), desk.join("vm_bundles"), "Downloads", Verdict::Ask, ts!("cleanup.why.vm_image"));
     c.add(Group::AiTools, ts!("cleanup.it.code_vm"), desk.join("claude-code-vm"), "Downloads", Verdict::Ask, ts!("cleanup.why.code_vm"));
+    c.tool = "Claude Code";
     // projects: the ones you use are kept, old ones are offered for review
     for p in claude_code::scan_projects() {
         let idle = p.days_idle();
@@ -831,8 +868,8 @@ fn scan_claude(c: &mut Ctx) {
     // old file-history snapshots and uploads
     for (sub, label, kind) in [("file-history", ts!("cleanup.it.edit_history"), "Old Sessions"), ("uploads", ts!("cleanup.it.uploads"), "Temp Files")] {
         for f in children(&cl.join(sub)) {
-            if age_days(&f) > m::CLAUDE_OLD_DATA_DAYS as f64 {
-                c.add(Group::AiTools, &format!("{label} · {}", short_id(&fname(&f))), f, kind, Verdict::Ask, &t!("cleanup.why.older_than", label = label, days = m::CLAUDE_OLD_DATA_DAYS));
+            if age_days(&f) > old {
+                c.add(Group::AiTools, &format!("{label} · {}", short_id(&fname(&f))), f, kind, Verdict::Ask, &t!("cleanup.why.older_than", label = label, days = old as u64));
             }
         }
     }
@@ -845,6 +882,25 @@ fn scan_claude(c: &mut Ctx) {
             }
         }
     }
+    c.tool = "";
+}
+
+/// Old config backups are offered once older than this (the newest stays).
+const CONFIG_BACKUP_DAYS: f64 = 7.0;
+
+/// After how many days Claude Code's own leftovers count as old: the
+/// person's `cleanupPeriodDays` (Claude Code deletes chats after it too),
+/// else ours.
+fn claude_retention_days(cl: &Path) -> f64 {
+    let set = std::fs::read_to_string(cl.join("settings.json")).ok().and_then(|s| retention_from_settings(&s));
+    set.unwrap_or(m::CLAUDE_OLD_DATA_DAYS as f64)
+}
+
+/// `cleanupPeriodDays` from Claude Code's settings.json, if it's a sane number.
+fn retention_from_settings(json: &str) -> Option<f64> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let d = v.get("cleanupPeriodDays")?.as_f64()?;
+    (1.0..=3650.0).contains(&d).then_some(d)
 }
 
 fn short_id(s: &str) -> String {
@@ -855,7 +911,7 @@ fn short_id(s: &str) -> String {
     }
 }
 
-fn ago(days: f64) -> String {
+pub(super) fn ago(days: f64) -> String {
     if days < 1.0 {
         ts!("cleanup.ago.today").into()
     } else if days < 2.0 {
@@ -867,33 +923,6 @@ fn ago(days: f64) -> String {
 
 fn process_running(name: &str) -> bool {
     Command::new("/usr/bin/pgrep").args(["-x", name]).output().map(|o| o.status.success()).unwrap_or(false)
-}
-
-// ---- other AI tools (AIToolScanning catalog)
-
-fn scan_ai_tools(c: &mut Ctx) {
-    let h = home();
-    for sub in ["codex_apps_server_info", "codex_apps_tools"] {
-        c.add(Group::AiTools, ts!("cleanup.it.codex"), h.join(".codex/cache").join(sub), "Caches", Verdict::Safe, ts!("cleanup.why.codex"));
-    }
-    let gem = h.join(".gemini/antigravity-browser-profile");
-    for sub in ["Default/Cache", "Default/Code Cache", "Default/DawnGraphiteCache", "Default/DawnWebGPUCache", "Default/GPUCache", "Default/Service Worker/CacheStorage", "GraphiteDawnCache", "component_crx_cache", "extensions_crx_cache"] {
-        c.add(Group::AiTools, ts!("cleanup.it.gemini"), gem.join(sub), "Caches", Verdict::Safe, ts!("cleanup.why.agent_profile"));
-    }
-    let mcp = h.join(".cache/chrome-devtools-mcp/chrome-profile");
-    for sub in ["Default/Cache", "Default/Code Cache", "Default/DawnCache", "Default/GPUCache", "Default/GrShaderCache", "Default/GraphiteDawnCache", "Default/Service Worker/CacheStorage", "GraphiteDawnCache", "component_crx_cache", "extensions_crx_cache"] {
-        c.add(Group::AiTools, ts!("cleanup.it.devtools_mcp"), mcp.join(sub), "Caches", Verdict::Safe, ts!("cleanup.why.mcp_profile"));
-    }
-    for f in children(&h.join(".local/share/cursor-agent")) {
-        if f.extension().map(|e| e == "log").unwrap_or(false) {
-            c.add(Group::AiTools, ts!("cleanup.it.cursor"), f, "Logs", Verdict::Safe, ts!("cleanup.why.cursor"));
-        }
-    }
-    c.add(Group::AiTools, ts!("cleanup.it.opencode"), h.join(".local/share/opencode/log"), "Logs", Verdict::Safe, ts!("cleanup.why.opencode"));
-    // local models are big and costly to get back: always ask
-    c.add(Group::AiTools, ts!("cleanup.it.ollama"), h.join(".ollama/models"), "Local Models", Verdict::Ask, ts!("cleanup.why.models"));
-    c.add(Group::AiTools, ts!("cleanup.it.lmstudio"), h.join(".lmstudio/models"), "Local Models", Verdict::Ask, ts!("cleanup.why.models"));
-    c.add(Group::AiTools, ts!("cleanup.it.hf"), h.join(".cache/huggingface"), "Local Models", Verdict::Ask, ts!("cleanup.why.hf"));
 }
 
 // ---- System Junk: user caches (CMUserCachesScanTask)
@@ -943,7 +972,7 @@ fn scan_app_caches(c: &mut Ctx) {
             return;
         }
         let n = fname(&app);
-        if n == "Claude" || !app.is_dir() {
+        if n == "Claude" || super::agents::ai_editor_dir(&n) || !app.is_dir() {
             continue;
         }
         for base in [app.clone(), app.join("Default")] {
@@ -1311,9 +1340,39 @@ fn parse_verdicts(text: &str) -> Vec<(usize, Verdict, String)> {
 
 // ---------------------------------------------------------------- removal
 
-/// The item is in the group a clean is limited to (any, when `None`).
-pub fn in_scope(it: &Item, only: Option<Group>) -> bool {
-    only.is_none_or(|g| it.group == g)
+/// Between a tool's name and its item's title.
+pub const TOOL_SEP: &str = " · ";
+
+/// The item's title without its tool's name in front.
+pub fn without_tool(it: &Item) -> &str {
+    it.title.strip_prefix(it.tool).and_then(|t| t.strip_prefix(TOOL_SEP)).filter(|t| !it.tool.is_empty() && !t.is_empty()).unwrap_or(&it.title)
+}
+
+/// What a clean (or a ticked total) is limited to: one group, and within
+/// it one tool's items (AI Tools rows in the rail). Empty = everything.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Scope {
+    pub group: Option<Group>,
+    /// `Item::tool`; "" = every tool.
+    pub tool: &'static str,
+}
+
+impl Scope {
+    pub fn is_some(&self) -> bool {
+        self.group.is_some() || !self.tool.is_empty()
+    }
+}
+
+impl From<Option<Group>> for Scope {
+    fn from(group: Option<Group>) -> Self {
+        Scope { group, tool: "" }
+    }
+}
+
+/// The item is in the scope a clean is limited to (any, when empty).
+pub fn in_scope(it: &Item, only: impl Into<Scope>) -> bool {
+    let s = only.into();
+    s.group.is_none_or(|g| it.group == g) && (s.tool.is_empty() || it.tool == s.tool)
 }
 
 /// What a clean removes, in order: the Trash is emptied first, so what this
@@ -1395,11 +1454,11 @@ pub fn plan_clean(items: &[Item], delete_now: bool) -> Vec<(Item, How)> {
 
 /// Kinds whose folders a running app may be writing into.
 fn live_kind(kind: &str) -> bool {
-    matches!(kind, "Caches" | "Temp Files" | "Build Data")
+    matches!(kind, "Caches" | "Temp Files" | "Build Data" | super::agents::WORKTREE_KIND)
 }
 
 /// Remove the ticked items; with `only`, just that group's (the rest stay ticked).
-pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: Option<Group>) {
+pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: Scope) {
     let plan: Vec<(Item, How)> = {
         let mut g = shared.lock_ok();
         g.phase = Phase::Cleaning;
@@ -1473,10 +1532,13 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                     }
                 }
             }
+            // an agent's worktree: its repo forgets it once the folder is gone
+            let wt_repo = if it.kind == super::agents::WORKTREE_KIND { super::agents::worktree_repo(&it.path) } else { None };
             let res = match (how, &it.action) {
                 (How::Emptied, _) => empty_trash(&it.path),
                 (How::Command, Action::BrewCleanup) => run_brew_cleanup(),
                 (How::Command, Action::Upload { key, local }) => super::captures::delete_upload(local, key),
+                (How::Command, Action::Model(files)) => super::agents::remove_model(files),
                 (How::Command, a) => super::xcode::remove(a).or_else(|e| if matches!(a, Action::SimDevice(_)) && it.path.is_dir() { remove(&it.path) } else { Err(e) }),
                 (How::Trash, _) => move_to_trash(&it.path),
                 (How::Deleted, _) => {
@@ -1492,6 +1554,9 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                     remove_tracked(&it.path, &cancel, &mut tick)
                 }
             };
+            if let (Ok(()), Some(repo)) = (&res, &wt_repo) {
+                super::agents::prune_worktrees(repo);
+            }
             let mut g = shared.lock_ok();
             if let Some(Stopped(gone)) = res.as_ref().err().and_then(|e| stopped_bytes(e.clone())) {
                 // stopped inside the item: what went is cleaned, the rest stays
@@ -1835,6 +1900,14 @@ mod tests {
     }
 
     #[test]
+    fn claude_retention_from_settings() {
+        assert_eq!(retention_from_settings(r#"{"cleanupPeriodDays": 90}"#), Some(90.0));
+        assert_eq!(retention_from_settings(r#"{"cleanupPeriodDays": 0}"#), None);
+        assert_eq!(retention_from_settings(r#"{"model": "opus"}"#), None);
+        assert_eq!(retention_from_settings("{"), None);
+    }
+
+    #[test]
     fn short_id_is_utf8_safe() {
         assert_eq!(short_id("abc"), "abc");
         assert_eq!(short_id("0123456789abcdef"), "0123456789ab…");
@@ -1932,6 +2005,7 @@ mod tests {
             permanent: false,
             app_running: false,
             action: Action::Files,
+            tool: "",
         }
     }
 
@@ -2063,6 +2137,7 @@ mod tests {
             permanent: false,
             app_running: false,
             action: Action::Files,
+            tool: "",
         };
         let s = State {
             items: vec![
@@ -2137,6 +2212,7 @@ mod tests {
             permanent: false,
             app_running: false,
             action,
+            tool: "",
         }
     }
 

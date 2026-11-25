@@ -5,6 +5,7 @@
 
 use crate::kit::sync::LockExt;
 pub use crate::kit::agent;
+mod agents;
 mod captures;
 pub mod engine;
 mod inuse;
@@ -32,6 +33,8 @@ pub struct Cleanup {
     pub(crate) delete_now: bool,
     /// Group shown in the results; `None` = "Needs your OK".
     pub(crate) clean_group: Option<Group>,
+    /// One tool picked under AI Tools in the rail (`Item::tool`); "" = all.
+    pub(crate) clean_tool: &'static str,
     pub(crate) clean_confirm: bool,
     /// Open apps with selected files, on the confirm sheet.
     pub(crate) quit: Vec<page::QuitRow>,
@@ -49,6 +52,10 @@ pub struct Cleanup {
 }
 
 impl Cleanup {
+    /// What the footer's clean (and the ticked total) covers right now.
+    pub(crate) fn scope(&self) -> engine::Scope {
+        engine::Scope { group: self.clean_group, tool: self.clean_tool }
+    }
     pub fn new(env: &ToolEnv) -> Self {
         Cleanup {
             clean: Default::default(),
@@ -57,6 +64,7 @@ impl Cleanup {
             agent: if env.demo { agent::Agent::Claude } else { agent::main() },
             delete_now: false,
             clean_group: None,
+            clean_tool: "",
             clean_confirm: false,
             quit: Vec::new(),
             quit_then_clean: false,
@@ -170,6 +178,7 @@ impl Tool for Cleanup {
     fn open_page(&mut self, route: &str) {
         if route == "claude" {
             self.clean_group = None;
+            self.clean_tool = "";
         }
     }
     fn busy(&self) -> bool {
@@ -255,7 +264,7 @@ impl Tool for Cleanup {
                 self.clean_group = Some(engine::Group::AppCaches);
                 if self.clean_confirm {
                     let items = self.clean.lock_ok().items.clone();
-                    self.quit = page::quit_rows(&items, page::demo_apps(), self.clean_group);
+                    self.quit = page::quit_rows(&items, page::demo_apps(), self.scope());
                 }
                 v
             }
@@ -290,7 +299,7 @@ impl Tool for Cleanup {
             "results-confirm" => {
                 let v = self.demo_view("results");
                 let items = self.clean.lock_ok().items.clone();
-                self.quit = page::quit_rows(&items, page::demo_apps(), self.clean_group);
+                self.quit = page::quit_rows(&items, page::demo_apps(), self.scope());
                 // one of each state
                 let states = [page::Quit::Stuck, page::Quit::Open, page::Quit::Closed];
                 for (row, st) in self.quit.iter_mut().zip(states) {
