@@ -521,7 +521,23 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
             }, ty::label(), TEXT_DIM());
         }
         y += CARD_TITLE_H;
-        let lr = Rect::from_min_size(Pos2::new(x0 - 12.0, y - 12.0), Vec2::new(w + 24.0, 92.0));
+        // the note under the numbers wraps (no "…"); the card grows with it
+        let note: Option<(String, Color32)> = if sp_.running {
+            None
+        } else if let Some(e) = &sp_.error {
+            Some((e.clone(), AMBER()))
+        } else {
+            sp_.down_mbps.map(|d| {
+                let good: Vec<&str> = monitor::good_for(d).into_iter().map(monitor::good_for_label).collect();
+                let txt = if good.is_empty() { ts!("health.very_slow").to_string() } else { t!("health.good_for", list = good.join(", ").to_lowercase()).into_owned() };
+                (txt, TEXT_DIM())
+            })
+        };
+        let extra = note.as_ref().map_or(0.0, |(t, c)| {
+            let one = p.layout_no_wrap("Ag".into(), ty::label(), *c).size().y;
+            (p.layout(t.clone(), ty::label(), *c, w - 24.0).size().y - one).max(0.0)
+        });
+        let lr = Rect::from_min_size(Pos2::new(x0 - 12.0, y - 12.0), Vec2::new(w + 24.0, 92.0 + extra));
         for (k, (label, v)) in [(ts!("health.download"), sp_.down_mbps), (ts!("health.upload"), sp_.up_mbps)].iter().enumerate() {
             let x = lr.left() + 12.0 + k as f32 * (w / 2.0);
             p.text(Pos2::new(x, lr.top() + 12.0), Align2::LEFT_TOP, *label, ty::label(), TEXT_DIM());
@@ -539,12 +555,8 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
         if sp_.running {
             bar(p, Rect::from_min_size(Pos2::new(lr.left() + 12.0, note_y + 4.0), Vec2::new(w - 24.0, 4.0)), sp_.progress, tint::HEALTH());
             ctx.request_repaint();
-        } else if let Some(e) = &sp_.error {
-            text_fit(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, e, ty::label(), AMBER(), w - 24.0);
-        } else if let Some(d) = sp_.down_mbps {
-            let good: Vec<&str> = monitor::good_for(d).into_iter().map(monitor::good_for_label).collect();
-            let txt = if good.is_empty() { ts!("health.very_slow").to_string() } else { t!("health.good_for", list = good.join(", ").to_lowercase()).into_owned() };
-            text_fit(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, &txt, ty::label(), TEXT_DIM(), w - 24.0);
+        } else if let Some((txt, col)) = &note {
+            text_wrap(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, txt, ty::label(), *col, w - 24.0, 4);
         }
         y += lr.height() - 12.0 + GROUP_GAP;
     }
