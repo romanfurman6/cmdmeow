@@ -135,10 +135,8 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             // Hidden, it waits until the panel or window opens (the nap ends then)
             if (activity::visible() || local_at[i].age().is_none()) && local_at[i].due(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS)) {
                 let mut local = p.local_tokens();
-                history::with(id, |h| {
-                    h.merge_days(&mut local, chrono::Local::now().date_naive());
-                    ((), true)
-                });
+                // saved only when a day changed: the file holds every day kept
+                history::with(id, |h| ((), h.merge_days(&mut local, chrono::Local::now().date_naive())));
                 let mut g = s.lock_ok();
                 g.local = local;
             }

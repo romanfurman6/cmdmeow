@@ -1,7 +1,8 @@
 //! Pieces the AI usage page, card and sheet share: colours, pace marks,
 //! money and freshness labels, and the interactive day chart.
 
-use crate::kit::ai::{alerts, pace, Day, Limit, UsageInfo};
+use crate::kit::ai::{alerts, pace, Day, DayRecord, Limit, UsageInfo};
+use chrono::{Datelike, NaiveDate};
 use crate::kit::glass::*;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 
@@ -129,11 +130,124 @@ pub enum Measure {
     Usd,
 }
 
+/// How far back the usage chart looks (SP18): days for 30d, weeks for
+/// 90d, months for Year and All.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Period {
+    #[default]
+    D30,
+    D90,
+    Year,
+    All,
+}
+
+impl Period {
+    pub const EVERY: [Period; 4] = [Period::D30, Period::D90, Period::Year, Period::All];
+
+    /// The switch's label: "30d".
+    pub fn short(self) -> &'static str {
+        match self {
+            Period::D30 => ts!("ai.period.d30"),
+            Period::D90 => ts!("ai.period.d90"),
+            Period::Year => ts!("ai.period.year"),
+            Period::All => ts!("ai.period.all"),
+        }
+    }
+
+    /// The lists' caption: "90 days".
+    pub fn name(self) -> &'static str {
+        match self {
+            Period::D30 => ts!("ai.days_30"),
+            Period::D90 => ts!("ai.days_90"),
+            Period::Year => ts!("ai.period.year"),
+            Period::All => ts!("ai.all_time"),
+        }
+    }
+
+    pub fn grain(self) -> Grain {
+        match self {
+            Period::D30 => Grain::Day,
+            Period::D90 => Grain::Week,
+            Period::Year | Period::All => Grain::Month,
+        }
+    }
+
+    /// The first day the period covers, given `first`, the first day with
+    /// usage (for All).
+    pub fn start(self, today: NaiveDate, first: Option<NaiveDate>) -> NaiveDate {
+        let month1 = |d: NaiveDate| d.with_day(1).unwrap_or(d);
+        match self {
+            Period::D30 => today - chrono::Days::new(29),
+            Period::D90 => week_start(today) - chrono::Days::new(7 * 12),
+            Period::Year => month1(today) - chrono::Months::new(11),
+            Period::All => month1(first.unwrap_or(today).min(today)),
+        }
+    }
+}
+
+/// What one bar holds.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Grain {
+    Day,
+    Week,
+    Month,
+}
+
+/// "Oct 2026".
+fn month_year(d: &NaiveDate) -> String {
+    t!("ai.month_year", mon = crate::kit::date::mon(d), year = d.year()).into_owned()
+}
+
+/// The Monday of `d`'s week.
+fn week_start(d: NaiveDate) -> NaiveDate {
+    d - chrono::Days::new(d.weekday().num_days_from_monday() as u64)
+}
+
+/// `archive` (every day with usage, oldest first) as the bars of `period`
+/// up to `today`, empty buckets included; each bar's date is its first day.
+pub fn buckets(archive: &[DayRecord], period: Period, today: NaiveDate) -> Vec<Day> {
+    let start = period.start(today, archive.first().map(|r| r.date));
+    let open = |d: NaiveDate| match period.grain() {
+        Grain::Day => d,
+        Grain::Week => week_start(d),
+        Grain::Month => d.with_day(1).unwrap_or(d),
+    };
+    let next = |d: NaiveDate| match period.grain() {
+        Grain::Day => d + chrono::Days::new(1),
+        Grain::Week => d + chrono::Days::new(7),
+        Grain::Month => d + chrono::Months::new(1),
+    };
+    let mut out: Vec<Day> = Vec::new();
+    let mut b = open(start);
+    while b <= today {
+        out.push(Day { date: b, ..Default::default() });
+        b = next(b);
+    }
+    for r in archive.iter().filter(|r| r.date >= start && r.date <= today) {
+        let k = open(r.date);
+        if let Some(d) = out.iter_mut().rev().find(|d| d.date == k) {
+            d.tokens += r.tokens;
+            d.usd += r.usd;
+            d.requests += r.requests;
+        }
+    }
+    out
+}
+
+/// The days of `archive` that `period` covers.
+pub fn period_days(archive: &[DayRecord], period: Period, today: NaiveDate) -> impl Iterator<Item = &DayRecord> {
+    let start = period.start(today, archive.first().map(|r| r.date));
+    archive.iter().filter(move |r| r.date >= start && r.date <= today)
+}
+
 /// Bars per day with a hover readout above them: $ (when `show_usd`),
 /// tokens and requests of the day under the pointer (today when none), each a number over a
 /// caption, the date under the dollars. `pace` draws a
 /// dashed line at that many dollars a day (a budget's even share).
-pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, show_usd: bool, salt: &str) {
+///
+/// With `grain` Week or Month each bar is a week or a month starting at its
+/// date, and the readout names it ("This week", "Week of Nov 17", "Oct 2026").
+pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f64>, show_usd: bool, salt: &str, grain: Grain) {
     let p = ui.painter().clone();
     if days.is_empty() {
         return;
@@ -172,8 +286,15 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     }
     // readout
     let d = &days[sel];
-    let today = days.last().map(|l| l.date) == Some(d.date);
-    let date = if today { ts!("ai.today").to_string() } else { crate::kit::date::wmd(&d.date) };
+    let last = days.last().map(|l| l.date) == Some(d.date);
+    let date = match (grain, last) {
+        (Grain::Day, true) => ts!("ai.today").to_string(),
+        (Grain::Day, false) => crate::kit::date::wmd(&d.date),
+        (Grain::Week, true) => ts!("ai.this_week").to_string(),
+        (Grain::Week, false) => t!("ai.week_of", date = crate::kit::date::md(&d.date)).into_owned(),
+        (Grain::Month, true) => ts!("ai.this_month").to_string(),
+        (Grain::Month, false) => month_year(&d.date),
+    };
     // three stats, number over caption (Roman 2026-11-24, variant A): the
     // date names the dollars, so no line of mixed sizes sits over the bars
     let mut x = r.left();
@@ -190,10 +311,18 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
         let cr = p.text(Pos2::new(x, r.top() + STAT_CAP_Y), Align2::LEFT_TOP, cap, ty::caption(), TEXT_DIM());
         x = vr.right().max(cr.right()) + sp::XL;
     }
-    // first and last day under the bars
-    let lab = |d: &Day| crate::kit::date::md(&d.date);
-    p.text(Pos2::new(plot.left(), r.bottom()), Align2::LEFT_BOTTOM, lab(&days[0]), ty::caption(), ty::caption_color());
-    p.text(Pos2::new(plot.right(), r.bottom()), Align2::RIGHT_BOTTOM, ts!("ai.today"), ty::caption(), ty::caption_color());
+    // first and last bar under the bars
+    let first = match grain {
+        Grain::Month => month_year(&days[0].date),
+        _ => crate::kit::date::md(&days[0].date),
+    };
+    let now = match grain {
+        Grain::Day => ts!("ai.today"),
+        Grain::Week => ts!("ai.this_week"),
+        Grain::Month => ts!("ai.this_month"),
+    };
+    p.text(Pos2::new(plot.left(), r.bottom()), Align2::LEFT_BOTTOM, first, ty::caption(), ty::caption_color());
+    p.text(Pos2::new(plot.right(), r.bottom()), Align2::RIGHT_BOTTOM, now, ty::caption(), ty::caption_color());
 }
 
 
@@ -269,8 +398,40 @@ pub fn day_bars(p: &egui::Painter, r: Rect, daily: &[u64], gap: f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{limit_lines, now, project_names};
-    use crate::kit::ai::Limit;
+    use super::{buckets, limit_lines, now, period_days, project_names, Period};
+    use crate::kit::ai::{DayRecord, Limit};
+    use chrono::NaiveDate;
+
+    #[test]
+    fn periods_add_up_days_into_weeks_and_months() {
+        // Wed Nov 25 2026
+        let today = NaiveDate::from_ymd_opt(2026, 11, 25).unwrap();
+        let day = |y, m, d, tokens| DayRecord { date: NaiveDate::from_ymd_opt(y, m, d).unwrap(), tokens, usd: tokens as f64, requests: 1, ..Default::default() };
+        let archive = vec![day(2025, 3, 4, 7), day(2026, 1, 2, 5), day(2026, 1, 30, 5), day(2026, 11, 16, 2), day(2026, 11, 22, 3), day(2026, 11, 24, 4)];
+        // 30 days: one bar a day, today last
+        let d30 = buckets(&archive, Period::D30, today);
+        assert_eq!(d30.len(), 30);
+        assert_eq!(d30.last().map(|d| (d.date, d.tokens)), Some((today, 0)));
+        // 90 days: 13 weeks from Monday; Nov 16 and 22 share a week
+        let w = buckets(&archive, Period::D90, today);
+        assert_eq!(w.len(), 13);
+        assert_eq!(w.last().map(|d| (d.date, d.tokens)), Some((NaiveDate::from_ymd_opt(2026, 11, 23).unwrap(), 4)));
+        assert_eq!(w[w.len() - 2].tokens, 5);
+        // a year: 12 months, Jan has two days
+        let y = buckets(&archive, Period::Year, today);
+        assert_eq!(y.len(), 12);
+        assert_eq!(y[0].date, NaiveDate::from_ymd_opt(2025, 12, 1).unwrap());
+        assert_eq!(y[1].tokens, 10);
+        assert_eq!(y.iter().map(|d| d.requests).sum::<u64>(), 5);
+        // all: from the first month with usage
+        let all = buckets(&archive, Period::All, today);
+        assert_eq!(all.len(), 21);
+        assert_eq!(all[0].tokens, 7);
+        assert_eq!(all.iter().map(|d| d.tokens).sum::<u64>(), 26);
+        assert_eq!(period_days(&archive, Period::D90, today).count(), 3);
+        // nothing at all: still one bar for now
+        assert_eq!(buckets(&[], Period::All, today).len(), 1);
+    }
 
     #[test]
     fn limit_lines_say_not_started_runs_out_and_resets() {
