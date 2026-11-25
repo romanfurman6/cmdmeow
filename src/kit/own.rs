@@ -27,24 +27,19 @@ pub fn mentions(s: &str) -> bool {
     squash(s).contains("cmdmeow")
 }
 
-/// Whether `p` is Cmd+Meow or something it put on the Mac: an app bundle
-/// named after it, or anything under a `Library` folder (data, caches, logs,
-/// preferences, launch agents and daemons, helper tools) named after it, or
-/// its root-owned files in `/var/db`. A code project that happens to carry
-/// the name (its source folder) is not.
+/// Whether `p` is Cmd+Meow or something it put on the Mac (or inside one):
+/// an app bundle named after it, an entry named after it right inside one of
+/// the `Library` folders apps keep their things in (`Application Support`,
+/// `Caches`, `Logs`, `Preferences`, `LaunchAgents`, `LaunchDaemons`,
+/// `PrivilegedHelperTools`…), or its root-owned files in `/var/db`. Deeper
+/// folders that only carry the name (Xcode's `DerivedData/CmdMeow-…`, its
+/// source folder) are build output of a code project, not the app.
 pub fn is_own_path(p: &Path) -> bool {
     if p.to_string_lossy().starts_with("/var/db/com.romanfurman6.") {
         return true;
     }
-    let mut in_library = false;
-    for c in p.components() {
-        let c = c.as_os_str().to_string_lossy();
-        if (in_library || c.to_ascii_lowercase().ends_with(".app")) && is_own_name(&c) {
-            return true;
-        }
-        in_library |= c == "Library";
-    }
-    false
+    let parts: Vec<String> = p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+    parts.iter().enumerate().any(|(i, c)| is_own_name(c) && (c.to_ascii_lowercase().ends_with(".app") || (i >= 2 && parts[i - 2] == "Library")))
 }
 
 /// Cmd+Meow's own cache folder, or something in it: safe to clear, the app
@@ -101,7 +96,7 @@ mod tests {
             assert!(is_own_path(Path::new(p)), "{p}");
         }
         // its source folder and build output are a code project like any other
-        for p in ["/Users/me/Projects/cleanmebro", "/Users/me/Projects/cleanmebro/target", "/Users/me/code/cmdmeow/site", "/Applications/Safari.app", "/Users/me/Library/Caches/com.apple.Safari", "/Users/me/CmdMeow-reset-backup"] {
+        for p in ["/Users/me/Projects/cleanmebro", "/Users/me/Projects/cleanmebro/target", "/Users/me/Library/Developer/Xcode/DerivedData/CmdMeow-abc123", "/Users/me/code/cmdmeow/site", "/Applications/Safari.app", "/Users/me/Library/Caches/com.apple.Safari", "/Users/me/CmdMeow-reset-backup"] {
             assert!(!is_own_path(Path::new(p)), "{p}");
         }
     }

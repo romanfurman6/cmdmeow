@@ -332,11 +332,10 @@ impl Ctx {
         // The app's own files (also under its first name, CleanMeBro) are never
         // offered, only its cache folder, which it makes again. Old captures
         // it made are their own group (their copies sit in its data folder).
-        let own_cache = crate::kit::own::is_safe_cache(&path);
-        let own_name = path.file_name().is_some_and(|n| crate::kit::own::is_own_name(&n.to_string_lossy()));
-        if group != Group::Captures && (own_name || crate::kit::own::is_own_path(&path)) && !own_cache {
+        if hides_own(group, &path) {
             return;
         }
+        let own_cache = crate::kit::own::is_safe_cache(&path);
         if self.kept.iter().any(|k| path.starts_with(k)) {
             self.hidden_kept += 1;
             return;
@@ -385,6 +384,13 @@ impl Ctx {
         }
         self.items.push(it);
     }
+}
+
+/// Cmd+Meow's own files are never offered (only its cache folder, which it
+/// makes again). Old captures it made are their own group: their copies sit
+/// in its data folder.
+fn hides_own(group: Group, p: &Path) -> bool {
+    group != Group::Captures && crate::kit::own::is_kept(p)
 }
 
 /// Why `p` must never be removed by `group`'s rules, if so. Everything
@@ -1819,6 +1825,20 @@ mod tests {
         assert_eq!(title_app("Slack · Cache"), "Slack");
         assert_eq!(title_app("Mail (sandboxed)"), "Mail");
         assert_eq!(title_app("Xcode"), "Xcode");
+    }
+
+    #[test]
+    fn only_cmdmeows_cache_is_offered() {
+        let h = Path::new("/Users/me");
+        for p in ["Library/Application Support/cmdmeow", "Library/Application Support/cmdmeow-dev", "Library/Logs/CmdMeow", "Library/Preferences/com.romanfurman6.cmdmeow.plist", "Library/HTTPStorages/com.romanfurman6.cmdmeow.dev"] {
+            assert!(hides_own(Group::AppCaches, &h.join(p)), "{p}");
+        }
+        for p in ["Library/Caches/com.romanfurman6.cmdmeow", "Library/Caches/com.romanfurman6.cmdmeow.dev", "Library/Developer/Xcode/DerivedData/CmdMeow-abc123", "Projects/cleanmebro/target", "Library/Caches/com.spotify.client"] {
+            assert!(!hides_own(Group::AppCaches, &h.join(p)), "{p}");
+        }
+        // its old captures (copies in its data folder) are their own group
+        assert!(!hides_own(Group::Captures, &h.join("Library/Application Support/cmdmeow/capture/old.png")));
+        assert_eq!(pretty("com.romanfurman6.cmdmeow.dev"), "Cmd+Meow Dev");
     }
 
     #[test]
