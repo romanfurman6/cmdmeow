@@ -65,7 +65,7 @@ pub fn finish_press(ctx: &egui::Context) {
     }
 }
 
-/// A widget card that isn't interactive (the update banner, a preview).
+/// A widget card that isn't interactive (a preview).
 pub fn paint_card(p: &egui::Painter, rect: Rect, hover: f32, selected: bool) {
     paint_base(p, rect);
     paint_face(p, rect, hover, selected);

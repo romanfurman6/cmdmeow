@@ -171,6 +171,11 @@ impl Provider for ClaudeCode {
         let files = cc::log_dirs().iter().flat_map(|d| recent_jsonl(d, 3)).collect();
         self.cache.update(files, usage_entry)
     }
+    fn old_tokens(&mut self) -> Option<LocalTokens> {
+        // logs kept past 30 days (a longer `cleanupPeriodDays`), read once
+        let files = cc::log_dirs().iter().flat_map(|d| super::all_jsonl(d, 3)).collect();
+        Some(super::LogCache::default().update(files, usage_entry))
+    }
     fn data_dir(&self) -> Option<PathBuf> {
         dirs::home_dir().map(|h| h.join(".claude"))
     }

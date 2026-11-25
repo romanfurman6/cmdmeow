@@ -73,6 +73,18 @@ fn set(s: State) {
     SHARED.lock_ok().state = s;
 }
 
+/// Screenshots only: `CMDMEOW_DEMO_UPDATE=available|downloading|failed`
+/// puts the update notice in that state.
+pub fn demo(which: &str) {
+    let v = "0.2.1".to_string();
+    let m = Manifest { version: v.clone(), url: String::new(), sha256: String::new(), size: 0 };
+    set(match which {
+        "downloading" => State::Downloading(v, 0.42),
+        "failed" => State::Failed(v, "The download was cut off".into()),
+        _ => State::Available(m),
+    });
+}
+
 /// The banner shows for every state but Idle.
 pub fn banner() -> bool {
     !matches!(state(), State::Idle)

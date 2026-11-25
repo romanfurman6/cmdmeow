@@ -1,5 +1,6 @@
 //! The menu-bar panel (design A, "Control Center"): a title line with Quit
-//! (asks first, in place) and Open, the user's widgets on a
+//! (asks first, in place) and Open, the update notice when there is one,
+//! the user's widgets on a
 //! 4-column grid of square cells (scrolling when they don't fit), an "Edit widgets…" link
 //! that opens the widget editor in the full window (see `editor.rs`), and
 //! the sheet that opens beside the panel.
@@ -29,17 +30,17 @@ pub fn set_keep_open(on: bool) {
 pub const HEADER: f32 = 60.0;
 /// Space below the widgets: a gap plus the "Edit widgets…" link.
 pub const FOOTER: f32 = 40.0;
-/// The update banner: one 44 pt row plus the gap above it.
-pub const BANNER: f32 = 52.0;
+/// The update notice (SP19): a 36 pt strip under the header, plus the grid gap under it.
+pub const NOTICE_H: f32 = 36.0;
 /// Side padding of the widget grid.
 pub const PAD: f32 = 12.0;
 /// Gap between grid cells.
 pub const GAP: f32 = 8.0;
 
-/// Height the update banner takes (0 when there's nothing to say).
+/// Height the update notice takes above the widgets (0 when there's nothing to say).
 pub fn banner_h() -> f32 {
     if crate::kit::update::banner() {
-        BANNER
+        NOTICE_H + GAP
     } else {
         0.0
     }
@@ -170,7 +171,7 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let ctx = ui.ctx().clone();
     super::gate::watch(app, &ctx);
     header(app, ui, rect);
-    let area = Rect::from_min_max(Pos2::new(rect.left() + PAD, rect.top() + HEADER), Pos2::new(rect.right() - PAD, rect.bottom() - FOOTER - banner_h()));
+    let area = Rect::from_min_max(Pos2::new(rect.left() + PAD, rect.top() + HEADER + banner_h()), Pos2::new(rect.right() - PAD, rect.bottom() - FOOTER));
     let need = content_height(app);
     if need > area.height() + 0.5 {
         // the bar runs in the right padding, beside the widgets
@@ -187,8 +188,7 @@ pub fn panel(app: &mut App, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         widgets(app, ui, Rect::from_min_size(area.min, Vec2::new(area.width(), need)), cx);
     }
     if banner_h() > 0.0 {
-        let r = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.bottom() - FOOTER - sp::ROW_H), Vec2::new(rect.width() - 2.0 * PAD, sp::ROW_H));
-        update_banner(ui, r);
+        update_notice(ui, Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.top() + HEADER), Vec2::new(rect.width() - 2.0 * PAD, NOTICE_H)));
     }
     footer(app, ui, rect);
 }
@@ -386,26 +386,30 @@ pub fn size_chips(ui: &mut Ui, rect: Rect, id: Id, offered: &[Size], cur: Size) 
     out
 }
 
-/// A new version: its number and Update; while it installs, a bar; when it
-/// failed, Download (the release page) and a close button.
-fn update_banner(ui: &mut Ui, r: Rect) {
+/// The update notice (SP19), under the header: a 36 pt strip in an
+/// `ACTION` 12% tint (`RED` when it failed), R_BUTTON, no edge, base or
+/// highlight, so it never reads as a widget. ↓ + "Cmd+Meow 0.2.1" and a
+/// 28 pt Primary "Update"; while it installs, a bar; when it failed,
+/// Download (the release page) and a close button.
+fn update_notice(ui: &mut Ui, r: Rect) {
     use crate::kit::update::{self, State};
     let p = ui.painter().clone();
-    // the same card as the widgets above, text on their text column
-    crate::kit::tile::paint_card(&p, r, 0.0, false);
-    let icon_r = Rect::from_min_size(Pos2::new(r.left() + crate::kit::tile::PAD, r.center().y - 9.0), Vec2::splat(18.0));
-    let x = icon_r.right() + sp::S;
-    let btn_h = sp::CONTROL_H;
-    let right = r.right() - sp::M;
     let state = update::state();
-    let (title, accent) = match &state {
-        State::Available(m) => (format!("Cmd+Meow {}", m.version), ACTION()),
-        State::Downloading(v, _) | State::Installing(v) => (format!("Cmd+Meow {v}"), ACTION()),
-        State::Restarting => ("Cmd+Meow".into(), ACTION()),
-        State::Failed(..) => (ts!("app.update_failed").into(), RED()),
+    let failed = matches!(state, State::Failed(..));
+    let accent = if failed { RED() } else { ACTION() };
+    let title: String = match &state {
+        State::Available(m) => format!("Cmd+Meow {}", m.version),
+        State::Downloading(v, _) | State::Installing(v) => format!("Cmd+Meow {v}"),
+        State::Restarting => "Cmd+Meow".into(),
+        State::Failed(..) => ts!("app.update_failed").into(),
         State::Idle => return,
     };
-    icon(&p, if matches!(state, State::Failed(..)) { Icon::Info } else { Icon::Down }, icon_r, accent);
+    p.rect_filled(r, R_BUTTON, with_alpha(accent, 0.12));
+    let ic = Rect::from_center_size(Pos2::new(r.left() + sp::M + 7.5, r.center().y), Vec2::splat(15.0));
+    icon(&p, if failed { Icon::Info } else { Icon::Down }, ic, accent);
+    let x = ic.right() + sp::S;
+    let right = r.right() - 4.0;
+    let btn_h = sp::CONTROL_H;
     let mut text_right = right;
     match &state {
         State::Available(_) => {
@@ -419,8 +423,8 @@ fn update_banner(ui: &mut Ui, r: Rect) {
         }
         State::Downloading(..) | State::Installing(_) => {
             let f = if let State::Downloading(_, f) = &state { *f } else { 1.0 };
-            let w = 96.0;
-            let b = Rect::from_min_size(Pos2::new(right - w, r.center().y - 2.0), Vec2::new(w, 4.0));
+            let w = 72.0;
+            let b = Rect::from_min_size(Pos2::new(right - sp::S - w, r.center().y - 2.0), Vec2::new(w, 4.0));
             bar(&p, b, f, ACTION());
             text_right = b.left() - sp::M;
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
@@ -437,12 +441,12 @@ fn update_banner(ui: &mut Ui, r: Rect) {
                 update::open_releases();
             }
             text_right = b.left() - sp::S;
-            // why it failed, on the row itself
+            // why it failed, on the strip itself
             ui.interact(Rect::from_min_max(r.min, Pos2::new(text_right, r.bottom())), ui.scope_id().with("update-why"), Sense::hover()).on_hover_text(why);
         }
         _ => {}
     }
-    text_fit(&p, Pos2::new(x, r.center().y), Align2::LEFT_CENTER, &title, ty::title(), TEXT(), text_right - x);
+    text_fit(&p, Pos2::new(x, r.center().y), Align2::LEFT_CENTER, &title, bold(13.0), TEXT(), text_right - x);
 }
 
 /// "Edit widgets…", centred under the widgets.

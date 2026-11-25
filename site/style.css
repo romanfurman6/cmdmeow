@@ -365,7 +365,8 @@ html[data-app="light"] .tseg { background: rgba(255,255,255,.8); box-shadow: ins
 html[data-app="light"] .tseg i { box-shadow: inset 0 0 0 1px rgba(20,24,26,.18); }
 html[data-app="light"] .tseg button[aria-checked="true"] { box-shadow: inset 0 0 0 1.5px rgba(20,24,26,.7); }
 html[data-app="miami"] .tseg { background: rgba(14,10,40,.62); }
-@media (max-width: 600px) { .tseg { right: 12px; bottom: 12px; } }
+/* phones: the theme switch sits at the end of the page instead of floating over content */
+@media (max-width: 600px) { .tseg { position: static; width: max-content; margin: 0 auto calc(24px + env(safe-area-inset-bottom, 0px)); } }
 
 html[data-app="light"] .dimg { -webkit-mask-image: linear-gradient(to bottom,#000 0,#000 55%,rgba(0,0,0,.7) 72%,rgba(0,0,0,.3) 86%,transparent 100%); mask-image: linear-gradient(to bottom,#000 0,#000 55%,rgba(0,0,0,.7) 72%,rgba(0,0,0,.3) 86%,transparent 100%); }
 html[data-app="light"] .btn.pri:hover { background: #B6E052; }
