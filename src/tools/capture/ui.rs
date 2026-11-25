@@ -680,6 +680,15 @@ fn folder_tab(c: &mut Capture, ui: &mut Ui, body: Rect) {
 
     let list = Rect::from_min_max(Pos2::new(body.left(), fy + 38.0), body.max);
     let items: Vec<Item> = c.files.iter().map(|f| Item::from_file(c, f)).collect();
+    if items.is_empty() && c.files_refused {
+        // P10: not "No images", the folder can't be read
+        let (what, fix) = crate::kit::toast::needs_for(&c.settings.folder);
+        if needs_block(ui, &p, list, Icon::Folder, &what, fix.label()) {
+            fix.go();
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(3));
+        return;
+    }
     if items.is_empty() {
         let (msg, hint) = if c.files_busy && c.files_at.is_none() {
             (ts!("cap.looking_folder"), String::new())

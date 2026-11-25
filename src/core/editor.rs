@@ -798,7 +798,18 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     p.text(Pos2::new(r0.left() + 16.0, r0.center().y), Align2::LEFT_CENTER, ts!("app.open_login"), font(13.0), TEXT());
     let now = ui.ctx().input(|i| i.time);
     let on = app.perm_watch.login_on(app.demo, now);
-    if switch(ui, sw_in(r0), ui.scope_id().with("open-at-login"), on, true).clicked() && !app.demo {
+    if !app.demo && crate::kit::login::needs_approval() {
+        // switched off in System Settings › Login Items: our switch can't
+        // turn it back on, so the row says so and opens that list (R17)
+        let label = ts!("kit.open_settings");
+        let bw = button_width(&p, label, BTN_PRIMARY);
+        let br = Rect::from_min_max(Pos2::new(r0.right() - 12.0 - bw, r0.center().y - 14.0), Pos2::new(r0.right() - 12.0, r0.center().y + 14.0));
+        if pill_button(ui, br, label, BTN_PRIMARY, true).clicked() {
+            crate::kit::login::open_settings();
+        }
+        p.text(Pos2::new(br.left() - 10.0, r0.center().y), Align2::RIGHT_CENTER, ts!("kit.not_allowed"), font(12.0), TEXT_DIM());
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+    } else if switch(ui, sw_in(r0), ui.scope_id().with("open-at-login"), on, true).clicked() && !app.demo {
         app.perm_watch.set_login(!on);
     }
     // off: a menu bar app only, no Dock icon even with this window open
@@ -890,9 +901,23 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
     let row_h = sp::SETTINGS_ROW_H;
     let before = if app.demo { cat::Switches::all_on() } else { cat::switches() };
     let mut s = before;
-    let card = Rect::from_min_size(at, Vec2::new(w, row_h * 3.0));
+    // tidying moves the desktop icons through Finder: when macOS refused
+    // that, the card says so under the switch (R17)
+    let no_finder = !app.demo && s.cat && s.tidy && cat::finder_refused();
+    let card = Rect::from_min_size(at, Vec2::new(w, row_h * (3.0 + no_finder as u8 as f32)));
     glass_card(&p, card, R_CARD, 0.0, false);
     let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * row_h), Vec2::new(w, row_h));
+    if no_finder {
+        let r = row(3);
+        hairline(&p, Pos2::new(r.left() + 16.0, r.top()), Pos2::new(r.right() - 16.0, r.top()));
+        // the row's dot on the labels' column, its button on the switches' edge
+        let at = Rect::from_min_max(Pos2::new(r.left() - 2.0, r.top()), r.max);
+        if access_row(ui, &p, at, r.center().y, ts!("app.finder"), ts!("kit.open_settings")) {
+            crate::kit::toast::Fix::Url(crate::kit::toast::AUTOMATION).go();
+        }
+    }
+    // the shortcut another app holds reads red, with why on hover
+    let key_error = if app.demo { None } else { cat::key_error() };
     let sw_in = |r: Rect| Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
     // the master switch dims what depends on it, and keeps its values (R14)
     let dim = |c: Color32, live: bool| if live { c } else { with_alpha(c, crate::kit::key::disabled_alpha()) };
@@ -913,9 +938,11 @@ fn cat_card(app: &App, ui: &mut Ui, at: Pos2, w: f32) -> f32 {
         }
         let sw = sw_in(r);
         if k == 2 {
-            let keys = p.text(Pos2::new(sw.left() - 12.0, r.center().y), Align2::RIGHT_CENTER, cat::TIDY_KEYS, font(13.0), dim(TEXT_DIM(), live));
+            let keys = p.text(Pos2::new(sw.left() - 12.0, r.center().y), Align2::RIGHT_CENTER, cat::TIDY_KEYS, font(13.0), dim(if key_error.is_some() { RED() } else { TEXT_DIM() }, live));
             // right-aligned above the keys, so it never runs past the window's edge
-            if ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).hovered() {
+            if let Some(e) = &key_error {
+                ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).on_hover_text(e);
+            } else if ui.interact(keys, ui.scope_id().with("cat-tidy-keys"), Sense::hover()).hovered() {
                 egui::Area::new(ui.scope_id().with("cat-put-back"))
                     .order(Order::Tooltip)
                     .interactable(false)

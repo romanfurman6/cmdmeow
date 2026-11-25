@@ -10,7 +10,7 @@
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 /// File header: format and version.
 const MAGIC: &[u8; 4] = b"CMV1";
@@ -79,18 +79,39 @@ fn random_key() -> [u8; 32] {
     k
 }
 
-/// The app's vault, its key read from (or first saved to) the Keychain
-/// once per run. None when the Keychain gave no key.
-pub fn shared() -> Option<Arc<Vault>> {
-    static V: OnceLock<Option<Arc<Vault>>> = OnceLock::new();
-    V.get_or_init(|| match keychain::key() {
+/// The vault once the Keychain was asked: `Some(None)` when it gave no key.
+static SHARED: std::sync::Mutex<Option<Option<Arc<Vault>>>> = std::sync::Mutex::new(None);
+
+fn ask_keychain() -> Option<Arc<Vault>> {
+    match keychain::key() {
         Ok(k) => Some(Arc::new(Vault::from_key(&k))),
         Err(e) => {
             eprintln!("[vault] no key, histories stay in memory this run: {e}");
             None
         }
-    })
-    .clone()
+    }
+}
+
+/// The app's vault, its key read from (or first saved to) the Keychain
+/// once per run. None when the Keychain gave no key.
+pub fn shared() -> Option<Arc<Vault>> {
+    let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    g.get_or_insert_with(ask_keychain).clone()
+}
+
+/// The key is here. Never asks.
+pub fn ready() -> bool {
+    matches!(*SHARED.lock().unwrap_or_else(|e| e.into_inner()), Some(Some(_)))
+}
+
+/// Ask the Keychain again after a refusal (macOS shows its question once
+/// more). True when the key is there now.
+pub fn retry() -> bool {
+    let mut g = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    if !matches!(*g, Some(Some(_))) {
+        *g = Some(ask_keychain());
+    }
+    matches!(*g, Some(Some(_)))
 }
 
 /// A JSON history sealed at `sealed`. Without a vault: the default (and

@@ -930,7 +930,15 @@ end try
 end repeat
 return out
 end tell"#;
-    let spots = crate::kit::macos::osascript(script).map(|o| grid::parse(&o)).unwrap_or_default();
+    let read = crate::kit::macos::osascript(script);
+    // refused in Privacy & Security › Automation: Settings › Cat says so,
+    // and so does a toast, instead of a cat that does nothing (R17, P11)
+    let refused = read.as_ref().err().is_some_and(|e| crate::kit::macos::not_authorized(e));
+    super::set_finder_refused(refused);
+    if refused {
+        crate::kit::toast::needs(ts!("app.finder_access"), crate::kit::toast::Fix::Url(crate::kit::toast::AUTOMATION));
+    }
+    let spots = read.map(|o| grid::parse(&o)).unwrap_or_default();
     let defaults = std::process::Command::new("/usr/bin/defaults").args(["read", "com.apple.finder", "DesktopViewSettings"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
     (spots, grid::view(&defaults))
 }

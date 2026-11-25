@@ -37,6 +37,16 @@ pub fn missing(app: &App, i: usize) -> Option<Perm> {
         .find(|p| app.perm_watch.known(*p).is_some_and(|s| s != Status::Allowed))
 }
 
+/// The optional permission widget `id` of tool `i` can't show anything
+/// without, when it is known to be missing (W10).
+pub fn widget_missing(app: &App, i: usize, id: &str) -> Option<Perm> {
+    if app.demo && app.perm_watch.demo.is_none() {
+        return None;
+    }
+    let perm = app.tools.get(i)?.widget_needs(id)?;
+    app.perm_watch.known(perm).is_some_and(|s| s != Status::Allowed).then_some(perm)
+}
+
 /// The page of a tool whose required permission is missing (Permission →
 /// Empty → Full): the tool's name and nothing else in the header, a tile
 /// with the permission's icon, its name and why, and one big button. A tool

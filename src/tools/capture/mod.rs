@@ -107,7 +107,7 @@ enum Done {
     Thumb(u64, Option<egui::ColorImage>),
     /// A folder picked for recordings (`true`) or screenshots.
     Folder(bool, Option<PathBuf>),
-    Files(PathBuf, Vec<folder::FileShot>),
+    Files(PathBuf, Vec<folder::FileShot>, bool),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +173,8 @@ pub struct Capture {
     editor: Option<windows::EditorWin>,
     overlay: Option<windows::Overlay>,
     hud: Option<(String, Instant)>,
+    /// The button on the HUD (P11): where to allow what the action needs.
+    hud_fix: Option<crate::kit::toast::Fix>,
     /// The Screen Recording card, with the capture that waits for it.
     perm_card: Option<(Grab, Purpose, u32)>,
     /// The user said "Not now" this session: capture without asking.
@@ -183,6 +185,8 @@ pub struct Capture {
     files: Vec<folder::FileShot>,
     files_at: Option<Instant>,
     files_busy: bool,
+    /// macOS refused to list the folder (the Folder tab says what it needs).
+    files_refused: bool,
     /// The folder was read or saved to already (see `folder_known`).
     folder_ok: bool,
     folder_check: Option<(Instant, bool)>,
@@ -277,6 +281,7 @@ impl Capture {
             editor: None,
             overlay: None,
             hud: None,
+            hud_fix: None,
             perm_card: None,
             perm_skip: false,
             perm_needed: false,
@@ -284,6 +289,7 @@ impl Capture {
             files: Vec::new(),
             files_at: None,
             files_busy: false,
+            files_refused: false,
             folder_ok: false,
             folder_check: None,
             tab: Tab::History,
@@ -414,7 +420,25 @@ impl Capture {
 
     fn hud(&mut self, msg: impl Into<String>) {
         self.hud = Some((msg.into(), Instant::now()));
+        self.hud_fix = None;
         self.ctx.request_repaint();
+    }
+
+    /// Saving failed with `e`. When macOS refused the folder, say what it
+    /// needs with the button that opens the place to allow it (P11);
+    /// otherwise the error as it is.
+    fn save_failed(&mut self, e: &str, video: bool) {
+        if crate::kit::toast::refused_text(e) {
+            let folder = if video { self.settings.rec_folder().to_path_buf() } else { self.settings.folder.clone() };
+            let (what, fix) = crate::kit::toast::needs_for(&folder);
+            self.hud = Some((t!("app.needs", perm = what).into_owned(), Instant::now()));
+            self.hud_fix = Some(fix);
+            self.ctx.request_repaint();
+        } else if video {
+            self.hud(t!("cap.cant_save_rec", e = e).into_owned());
+        } else {
+            self.hud(t!("cap.cant_save", e = e).into_owned());
+        }
     }
 
     /// Put a picture on the clipboard. Encoding a big capture takes a
@@ -701,6 +725,12 @@ impl Capture {
         for o in std::mem::take(&mut self.rec.out) {
             match o {
                 record::Out::Hud(m) => self.hud(m),
+                record::Out::SaveFailed(e) => self.save_failed(&e, true),
+                record::Out::Needs(perm) => {
+                    self.hud = Some((t!("app.needs", perm = perm.name()).into_owned(), Instant::now()));
+                    self.hud_fix = Some(crate::kit::toast::Fix::Perm(perm));
+                    self.ctx.request_repaint();
+                }
                 record::Out::SaveSettings => self.save_settings(),
                 record::Out::Saved(st) => self.keep_recording(st),
             }
@@ -795,7 +825,7 @@ impl Capture {
                         self.hud(t!("cap.saved_to", path = windows::short_path(&path)).into_owned());
                     }
                 }
-                Err(e) => self.hud(t!("cap.cant_save", e = e).into_owned()),
+                Err(e) => self.save_failed(&e.to_string(), false),
             },
             Done::Text(lines) => {
                 self.busy = false;
@@ -827,8 +857,9 @@ impl Capture {
                 self.files_at = None;
             }
             Done::Folder(_, None) => {}
-            Done::Files(dir, files) => {
+            Done::Files(dir, files, refused) => {
                 self.files_busy = false;
+                self.files_refused = refused && dir == self.settings.folder;
                 if dir == self.settings.folder {
                     self.folder_ok = true;
                     self.files = files;
@@ -1049,7 +1080,7 @@ impl Capture {
                 Some(path)
             }
             Err(e) => {
-                self.hud(t!("cap.cant_save", e = e).into_owned());
+                self.save_failed(&e.to_string(), false);
                 None
             }
         }
@@ -1098,7 +1129,8 @@ impl Capture {
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
             let files = folder::scan(&dir);
-            let _ = tx.send(Done::Files(dir, files));
+            let refused = files.is_empty() && folder::refused(&dir);
+            let _ = tx.send(Done::Files(dir, files, refused));
             ctx.request_repaint();
         });
     }

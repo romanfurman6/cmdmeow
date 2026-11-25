@@ -216,10 +216,21 @@ pub fn page(d: &mut Displays, ui: &mut Ui, r: Rect) {
     let shown = cols.min(ours.len()).max(1) as f32;
     let x1 = (x0 + shown * cw + (shown - 1.0) * GAP).min(x1).max(x0 + cw.min(avail));
     // the keys
-    let kr = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, y + 56.0));
-    glass_card(&p, kr, R_CARD, 0.0, false);
-    p.text(Pos2::new(kr.left() + 18.0, kr.center().y), Align2::LEFT_CENTER, ts!("disp.use_keys"), ty::body(), TEXT());
     let mut st = d.settings();
+    // the keys are taken through Accessibility: with the switch on and the
+    // permission missing they do nothing, so the card says what's missing (R17)
+    let access = crate::kit::perms::Perm::Accessibility;
+    let ask = st.keys && access.missing();
+    let kr = Rect::from_min_max(Pos2::new(x0, y + 4.0), Pos2::new(x1, y + 56.0));
+    let whole = if ask { kr.with_max_y(kr.bottom() + 44.0) } else { kr };
+    glass_card(&p, whole, R_CARD, 0.0, false);
+    if ask {
+        hairline(&p, Pos2::new(kr.left() + 18.0, kr.bottom()), Pos2::new(kr.right() - 18.0, kr.bottom()));
+        // the row's dot under the label's first letter, its button under the switch
+        let row = Rect::from_min_max(Pos2::new(kr.left() + 4.0, kr.bottom()), Pos2::new(kr.right() - 6.0, whole.bottom()));
+        perm_row(ui, &p, row, row.center().y, access);
+    }
+    p.text(Pos2::new(kr.left() + 18.0, kr.center().y), Align2::LEFT_CENTER, ts!("disp.use_keys"), ty::body(), TEXT());
     let sw = Rect::from_min_size(Pos2::new(kr.right() - 18.0 - 38.0, kr.center().y - 11.0), Vec2::new(38.0, 22.0));
     if switch(ui, sw, id.with("keys"), st.keys, true).clicked() {
         st.keys = !st.keys;

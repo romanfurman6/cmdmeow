@@ -890,23 +890,45 @@ fn overlay(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
 
 fn hud(c: &mut Capture, ctx: &egui::Context, screen: Vec2) {
     let Some((msg, at)) = &c.hud else { return };
-    if at.elapsed().as_secs_f32() > 2.2 {
+    // with a button it stays long enough to read and press
+    let keep = if c.hud_fix.is_some() { 8.0 } else { 2.2 };
+    if at.elapsed().as_secs_f32() > keep {
         c.hud = None;
+        c.hud_fix = None;
         return;
     }
     let msg = msg.clone();
-    let w = (msg.chars().count() as f32 * 7.4 + 56.0).clamp(160.0, 520.0);
+    let label = c.hud_fix.as_ref().map(|f| f.label());
+    // dot + gap before the text, the 28 pt button and its gaps after it
+    let extra = label.map(|l| 16.0 + 12.0 + l.chars().count() as f32 * 7.4 + 24.0).unwrap_or(0.0);
+    let w = (msg.chars().count() as f32 * 7.4 + 56.0 + extra).clamp(160.0, 520.0);
     let size = Vec2::new(w, 40.0);
     let pos = Pos2::new((screen.x - size.x) / 2.0, 44.0);
     let title = &plain("capture-hud");
     let vid = ViewportId::from_hash_of(("capture-hud", at));
-    crate::kit::viewport::show(ctx, vid, floating(title, pos, size).with_active(false).with_mouse_passthrough(true), |ui, _| {
+    let mut pressed = false;
+    crate::kit::viewport::show(ctx, vid, floating(title, pos, size).with_active(false).with_mouse_passthrough(label.is_none()), |ui, _| {
         let r = ui.max_rect();
-        let p = ui.painter();
+        let p = ui.painter().clone();
         p.rect_filled(r, r.height() / 2.0, Color32::from_rgba_unmultiplied(28, 28, 31, 240));
         p.rect_stroke(r, r.height() / 2.0, Stroke::new(1.0, white(30)), StrokeKind::Inside);
-        text_fit(p, r.center(), Align2::CENTER_CENTER, &msg, font(13.0), TEXT(), r.width() - 24.0);
+        let Some(label) = label else {
+            text_fit(&p, r.center(), Align2::CENTER_CENTER, &msg, font(13.0), TEXT(), r.width() - 24.0);
+            return;
+        };
+        // P11: state dot, what it needs, one Primary button
+        let bw = button_width(&p, label, BTN_PRIMARY);
+        let br = Rect::from_min_max(Pos2::new(r.right() - 6.0 - bw, r.center().y - 14.0), Pos2::new(r.right() - 6.0, r.center().y + 14.0));
+        p.circle_filled(Pos2::new(r.left() + 18.0, r.center().y), 4.0, AMBER());
+        text_fit(&p, Pos2::new(r.left() + 30.0, r.center().y), Align2::LEFT_CENTER, &msg, font(13.0), TEXT(), br.left() - 12.0 - (r.left() + 30.0));
+        pressed = pill_button(ui, br, label, BTN_PRIMARY, true).clicked();
     });
+    if pressed {
+        if let Some(f) = c.hud_fix.take() {
+            f.go();
+        }
+        c.hud = None;
+    }
 }
 
 

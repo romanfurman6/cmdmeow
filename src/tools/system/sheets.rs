@@ -113,11 +113,14 @@ struct Spec {
     /// Busiest processes (CPU sheet).
     procs: Vec<super::procs::Proc>,
     buttons: Vec<(&'static str, u8, Action)>,
+    /// A permission part of this sheet can't be read without (R17 row
+    /// under the facts, only while it's missing).
+    perm: Option<crate::kit::perms::Perm>,
 }
 
 impl Spec {
     fn new(icon: Icon, chip: Color32, title: impl Into<String>, sub: impl Into<String>) -> Self {
-        Spec { icon, chip, title: title.into(), sub: sub.into(), hero: None, segs: vec![], spark: vec![], legend: vec![], speed: false, facts: vec![], apps: vec![], refresh: None, procs: vec![], buttons: vec![] }
+        Spec { icon, chip, title: title.into(), sub: sub.into(), hero: None, segs: vec![], spark: vec![], legend: vec![], speed: false, facts: vec![], apps: vec![], refresh: None, procs: vec![], buttons: vec![], perm: None }
     }
 }
 
@@ -193,7 +196,13 @@ fn spec(kind: Sheet, s: &Snapshot) -> Spec {
                 }
                 None => sp.facts.push(fact(ts!("health.trash"), "—", TEXT(), ts!("health.trash_no_access"))),
             }
-            sp.refresh = Some((ts!("health.measure_again"), Action::MeasureFolders));
+            // the Trash and the big folders are behind Full Disk Access: say
+            // so here instead of a button that jumps to System Settings
+            if crate::kit::perms::Perm::FullDisk.missing() {
+                sp.perm = Some(crate::kit::perms::Perm::FullDisk);
+            } else {
+                sp.refresh = Some((ts!("health.measure_again"), Action::MeasureFolders));
+            }
             sp.buttons = vec![(ts!("health.disk_map"), BTN_SECONDARY, Action::Open("lens")), (ts!("health.free_up_space"), BTN_PRIMARY, Action::Open("cleanup"))];
             sp
         }
@@ -392,7 +401,7 @@ pub fn details_height(ui: &Ui, kind: Sheet, s: &Snapshot, w: f32) -> f32 {
     let body_h = body(&p, ui.ctx(), &sp, kind, s, 16.0, w - 32.0, 0.0);
     let procs = procs_h(sp.procs.len().min(super::procs::TOP_N));
     let btns = if sp.buttons.is_empty() { 0.0 } else { BTN_H + 16.0 };
-    SHEET_HEADER_H + 16.0 + body_h + procs + btns + 16.0
+    SHEET_HEADER_H + 16.0 + body_h + perm_h(&sp) + procs + btns + 16.0
 }
 
 /// The details popup on the Mac Health page: the sheet's content in `rect`.
@@ -417,7 +426,14 @@ pub fn details(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
     let x0 = rect.left() + 16.0;
     let x1 = rect.right() - 16.0;
     let top = rect.top() + SHEET_HEADER_H + 16.0;
-    let h = body(&p, ui.ctx(), &sp, kind, s, x0, x1 - x0, top);
+    let mut h = body(&p, ui.ctx(), &sp, kind, s, x0, x1 - x0, top);
+    if let Some(perm) = sp.perm {
+        let y = top + h + divider(&p, x0, x1 - x0, top + h + GROUP_GAP / 2.0) / 2.0;
+        // the row's dot on the text column, its button on the values' edge
+        let row = Rect::from_min_max(Pos2::new(x0 - 14.0, y), Pos2::new(x1 + 12.0, y + PERM_ROW_H));
+        crate::kit::glass::perm_row(ui, &p, row, row.center().y, perm);
+        h += perm_h(&sp);
+    }
     let pa = procs_card(ui, &sp.procs[..sp.procs.len().min(super::procs::TOP_N)], x0, x1 - x0, top + h + GROUP_GAP);
     if pa != Action::None {
         action = pa;
@@ -429,6 +445,12 @@ pub fn details(ui: &mut Ui, rect: Rect, kind: Sheet, s: &Snapshot) -> Action {
     action
 }
 
+
+const PERM_ROW_H: f32 = 40.0;
+
+fn perm_h(sp: &Spec) -> f32 {
+    if sp.perm.is_some() { GROUP_GAP + PERM_ROW_H } else { 0.0 }
+}
 
 /// A row's rect for the shared row painters (`legend_row`, `fact_row`),
 /// which inset their text 12 from the edge: in the popup there is no card

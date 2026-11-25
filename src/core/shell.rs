@@ -157,6 +157,8 @@ pub struct App {
     /// last (ppp, native ppp) logged under CMDMEOW_SCALE_LOG
     debug_scale: Option<(f32, Option<f32>)>,
     pub toast: Option<(String, Instant)>,
+    /// The button on the toast (P11), when it has one.
+    pub toast_fix: Option<crate::kit::toast::Fix>,
     /// First-run setup, while its window is open.
     pub setup: Option<super::onboard::Setup>,
     /// Live permission statuses (setup and Settings › General).
@@ -188,6 +190,7 @@ impl App {
         }
         let ctx = cc.egui_ctx.clone();
         let demo = opts.screenshot.is_some();
+        crate::kit::perms::set_demo(demo);
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
@@ -324,6 +327,7 @@ impl App {
             frame: 0,
             debug_scale: None,
             toast: None,
+            toast_fix: None,
             setup: first_run.then(|| super::onboard::Setup::new(super::onboard::saved_step())),
             perm_watch: Default::default(),
             cat_keys: None,
@@ -580,6 +584,44 @@ impl App {
         (0..self.tools.len()).filter(|&i| self.tools[i].has_page() && self.tool_on(i)).collect()
     }
 
+    /// The toast at the bottom of `full`: a line, and with a fix (P11) a
+    /// state dot and one Primary button that opens the place to allow it.
+    fn draw_toast(&mut self, ui: &mut egui::Ui, full: Rect) {
+        let Some((msg, at)) = &self.toast else { return };
+        let keep = if self.toast_fix.is_some() { 8.0 } else { 3.0 };
+        if at.elapsed().as_secs_f32() >= keep {
+            self.toast = None;
+            self.toast_fix = None;
+            return;
+        }
+        let p = ui.painter().clone();
+        let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
+        let label = self.toast_fix.as_ref().map(|f| f.label());
+        let bw = label.map(|l| glass::button_width(&p, l, glass::BTN_PRIMARY)).unwrap_or(0.0);
+        // dot 8 + 8, text, 12, button, 6 from the edge
+        let (lead, tail) = if label.is_some() { (14.0 + 8.0 + 8.0, 12.0 + bw + 6.0) } else { (14.0, 14.0) };
+        let h = if label.is_some() { 40.0 } else { g.size().y + 16.0 };
+        let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), Vec2::new(lead + g.size().x + tail, h));
+        glass::float_shadow(&p, r, r.height() / 2.0, 1.0);
+        p.rect_filled(r, r.height() / 2.0, POPOVER());
+        p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, glass::POPOVER_EDGE()), egui::StrokeKind::Inside);
+        if label.is_some() {
+            p.circle_filled(Pos2::new(r.left() + 14.0 + 4.0, r.center().y), 4.0, glass::AMBER());
+        }
+        p.galley(Pos2::new(r.left() + lead, r.center().y - g.size().y / 2.0), g, TEXT());
+        if let Some(l) = label {
+            let br = Rect::from_min_max(Pos2::new(r.right() - 6.0 - bw, r.center().y - 14.0), Pos2::new(r.right() - 6.0, r.center().y + 14.0));
+            if glass::pill_button(ui, br, l, glass::BTN_PRIMARY, true).clicked() {
+                if let Some(f) = self.toast_fix.take() {
+                    f.go();
+                }
+                self.toast = None;
+                return;
+            }
+        }
+        ui.ctx().request_repaint();
+    }
+
     /// A fresh per-frame context for tools.
     pub fn cx(&self) -> Cx {
         Cx::new()
@@ -587,8 +629,9 @@ impl App {
 
     /// Carry out what tools asked for this frame.
     pub fn run_actions(&mut self, ctx: &egui::Context, cx: &mut Cx) {
-        if let Some(msg) = LATER_TOAST.lock().ok().and_then(|mut t| t.take()) {
-            self.toast = Some((msg, Instant::now()));
+        if let Some(t) = crate::kit::toast::take() {
+            self.toast = Some((t.msg, Instant::now()));
+            self.toast_fix = t.fix;
         }
         for a in cx.take_actions() {
             match a {
@@ -604,7 +647,10 @@ impl App {
                         self.hide(ctx);
                     }
                 }
-                Action::Toast(msg) => self.toast = Some((msg, Instant::now())),
+                Action::Toast(msg) => {
+                    self.toast = Some((msg, Instant::now()));
+                    self.toast_fix = None;
+                }
                 Action::Quit => self.quit(ctx),
                 Action::Restart => {
                     // the system's own "Restart now?" dialog; macOS may refuse
@@ -613,7 +659,10 @@ impl App {
                     std::thread::spawn(move || {
                         // -128: the person pressed Cancel in that dialog
                         if let Err(e) = crate::kit::macos::osascript("tell application \"loginwindow\" to «event aevtrrst»") {
-                            if e != "Cancelled" {
+                            if crate::kit::macos::not_authorized(&e) {
+                                crate::kit::toast::needs(ts!("app.automation_access"), crate::kit::toast::Fix::Url(crate::kit::toast::AUTOMATION));
+                                ctx.request_repaint();
+                            } else if e != "Cancelled" {
                                 later_toast(&ctx, ts!("app.cant_restart"));
                             }
                         }
@@ -623,11 +672,14 @@ impl App {
                     if crate::kit::native::confirm(ts!("app.empty_trash_q"), ts!("app.empty_trash_why"), ts!("app.empty_trash")) {
                         let ctx = ctx.clone();
                         std::thread::spawn(move || {
-                            let msg = match crate::kit::macos::osascript("tell application \"Finder\" to empty trash") {
-                                Ok(_) => ts!("app.trash_emptied"),
-                                Err(_) => ts!("app.cant_empty"),
-                            };
-                            later_toast(&ctx, msg);
+                            match crate::kit::macos::osascript("tell application \"Finder\" to empty trash") {
+                                Ok(_) => later_toast(&ctx, ts!("app.trash_emptied")),
+                                Err(e) if crate::kit::macos::not_authorized(&e) => {
+                                    crate::kit::toast::needs(ts!("app.finder_access"), crate::kit::toast::Fix::Url(crate::kit::toast::AUTOMATION));
+                                    ctx.request_repaint();
+                                }
+                                Err(_) => later_toast(&ctx, ts!("app.cant_empty")),
+                            }
                         });
                     }
                 }
@@ -1017,6 +1069,8 @@ impl App {
                     if let Some((_, e)) = failed.first() {
                         eprintln!("[cat] tidy shortcut: {e}");
                     }
+                    // Settings › Cat shows it on the shortcut
+                    cat::set_key_error(failed.first().map(|(_, e)| e.clone()));
                 } else {
                     keys.clear();
                 }
@@ -1290,20 +1344,7 @@ impl eframe::App for App {
             }
         }
         self.run_actions(&ctx, &mut cx);
-        if let Some((msg, at)) = &self.toast {
-            if at.elapsed().as_secs_f32() < 3.0 {
-                let p = ui.painter();
-                let g = p.layout_no_wrap(msg.clone(), font(13.0), TEXT());
-                let r = Rect::from_center_size(Pos2::new(full.center().x, full.bottom() - 40.0), g.size() + Vec2::new(28.0, 16.0));
-                crate::kit::glass::float_shadow(p, r, r.height() / 2.0, 1.0);
-                p.rect_filled(r, r.height() / 2.0, POPOVER());
-                p.rect_stroke(r, r.height() / 2.0, egui::Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), egui::StrokeKind::Inside);
-                p.galley(r.center() - g.size() / 2.0, g, TEXT());
-                ctx.request_repaint();
-            } else {
-                self.toast = None;
-            }
-        }
+        self.draw_toast(ui, full);
         let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar());
         if self.app_open {
             self.app_viewport(&ctx);
@@ -1510,6 +1551,7 @@ impl App {
             crate::kit::welcome_ca::end_pass(&vctx);
             let mut cx = self.cx();
             super::window::window_ui(self, ui, full, false, &mut cx);
+            self.draw_toast(ui, full);
             self.run_actions(&vctx, &mut cx);
             vctx.request_repaint_after(glass::next_second());
         });
@@ -1731,12 +1773,8 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 /// A toast from a worker thread, shown on the next frame.
-static LATER_TOAST: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
 fn later_toast(ctx: &egui::Context, msg: &str) {
-    if let Ok(mut t) = LATER_TOAST.lock() {
-        *t = Some(msg.to_string());
-    }
+    crate::kit::toast::say(msg);
     ctx.request_repaint();
 }
 

@@ -229,6 +229,11 @@ pub trait Tool {
     fn needs(&self) -> Vec<crate::kit::perms::Need> {
         Vec::new()
     }
+    /// An optional permission widget `id` has nothing to show without
+    /// (W10): it then draws like a locked widget and a click asks.
+    fn widget_needs(&self, _id: &str) -> Option<crate::kit::perms::Perm> {
+        None
+    }
     /// Status of a need the tool sets up itself ([`crate::kit::perms::Perm::Own`]).
     fn own_status(&self, _id: &str) -> crate::kit::perms::Status {
         crate::kit::perms::Status::NotAsked

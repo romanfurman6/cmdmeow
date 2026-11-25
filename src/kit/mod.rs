@@ -45,6 +45,7 @@ pub mod welcome_ca;
 pub mod key;
 pub mod sound;
 pub mod tile;
+pub mod toast;
 pub mod update;
 pub mod url_scheme;
 pub mod vault;

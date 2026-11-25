@@ -26,6 +26,13 @@ pub fn osascript(script: &str) -> Result<String, String> {
     }
 }
 
+/// An [`osascript`] error that means macOS refused the Apple event: the
+/// app isn't allowed to control the other app (Privacy & Security ›
+/// Automation), "Not authorized to send Apple events to … (-1743)".
+pub fn not_authorized(err: &str) -> bool {
+    err.contains("-1743")
+}
+
 /// Run a shell command as root after macOS asks for the admin password.
 pub fn run_admin(cmd: &str, prompt: &str) -> Result<String, String> {
     osascript(&format!("do shell script {} with prompt {} with administrator privileges", as_quote(cmd), as_quote(prompt)))

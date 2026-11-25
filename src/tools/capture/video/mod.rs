@@ -393,7 +393,7 @@ impl Viewer {
         let path = self.path.with_extension(ext);
         match std::fs::write(&path, body) {
             Ok(()) => self.flash(t!("cap.saved_name", name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).into_owned()),
-            Err(e) => self.flash(t!("cap.cant_save", e = e).into_owned()),
+            Err(e) => self.flash(save_note(&e.to_string())),
         }
     }
 
@@ -662,14 +662,14 @@ impl Viewer {
                         }
                         Err(e) => {
                             self.load();
-                            self.flash(t!("cap.cant_save", e = e).into_owned());
+                            self.flash(save_note(&e.to_string()));
                         }
                     }
                 }
                 Event::Saved(Err(e)) => {
                     self.saving = false;
                     self.rendering = None;
-                    self.flash(t!("cap.cant_save", e = e).into_owned());
+                    self.flash(save_note(&e.to_string()));
                 }
                 Event::Peaks(n, p) => {
                     self.tracks = n;
@@ -842,6 +842,18 @@ fn probe_frame(path: &Path, secs: f64) {
         if let Some(img) = image::RgbaImage::from_raw(cpu.width(), cpu.height(), rgba) {
             png("probe cpu", &img);
         }
+    }
+}
+
+/// What the status line says when saving failed: what it needs when macOS
+/// refused the folder (P11, with the app's toast carrying the button),
+/// else the error as it is.
+fn save_note(e: &str) -> String {
+    if crate::kit::toast::refused_text(e) {
+        crate::kit::toast::needs(crate::kit::perms::Perm::FullDisk.name(), crate::kit::toast::Fix::Perm(crate::kit::perms::Perm::FullDisk));
+        t!("app.needs", perm = crate::kit::perms::Perm::FullDisk.name()).into_owned()
+    } else {
+        t!("cap.cant_save", e = e).into_owned()
     }
 }
 

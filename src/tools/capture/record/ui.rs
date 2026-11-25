@@ -387,7 +387,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
         p.rect_filled(rows, 12.0, ROWS());
         let list: [(Ico, &str, String, bool, Option<Media>); 3] = [
             (Ico::Camera, ts!("cap.camera"), cam.to_string(), s.camera, Some(Media::Camera)),
-            (Ico::Mic, ts!("cap.microphone"), mic.to_string(), s.mic, Some(Media::Mic)),
+            (Ico::Mic, ts!("cap.microphone"), mic.to_string(), super::mic_on(s), Some(Media::Mic)),
             (Ico::Speaker, ts!("cap.system_audio"), ts!("cap.hear_all").into(), s.system_audio, None),
         ];
         for (k, (ico, label, dev, on, media)) in list.into_iter().enumerate() {
@@ -448,7 +448,7 @@ fn picker(c: &mut Capture, ctx: &egui::Context, cx: &mut Cx) {
             todo.push(Do::Source(Source::ALL[i]));
         }
         let mut x = br.left() + 262.0;
-        for (k, (on, ico_on, ico_off, tip)) in [(s.camera, Ico::Camera, Ico::Camera, ts!("cap.camera")), (s.mic, Ico::Mic, Ico::MicOff, ts!("cap.microphone")), (s.system_audio, Ico::Speaker, Ico::Speaker, ts!("cap.system_audio"))].into_iter().enumerate() {
+        for (k, (on, ico_on, ico_off, tip)) in [(s.camera, Ico::Camera, Ico::Camera, ts!("cap.camera")), (super::mic_on(s), Ico::Mic, Ico::MicOff, ts!("cap.microphone")), (s.system_audio, Ico::Speaker, Ico::Speaker, ts!("cap.system_audio"))].into_iter().enumerate() {
             let b = Rect::from_min_size(Pos2::new(x, br.top() + 8.0), Vec2::splat(32.0));
             let color = if on { ON_ACTION } else { TEXT_FAINT() };
             if on {

@@ -253,6 +253,32 @@ pub fn simulate(kind: Kind) {
 }
 
 /// The tidy shortcut, as Settings shows it, and as the key recorder writes it.
+/// Finder refused the cat (Privacy & Security › Automation): tidying needs
+/// it to read and place the desktop icons. Set by the last try.
+static FINDER_REFUSED: AtomicBool = AtomicBool::new(false);
+
+pub fn finder_refused() -> bool {
+    FINDER_REFUSED.load(Ordering::Relaxed)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn set_finder_refused(on: bool) {
+    FINDER_REFUSED.store(on, Ordering::Relaxed);
+}
+
+/// Why the tidy shortcut couldn't be registered (another app holds it).
+static KEY_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn key_error() -> Option<String> {
+    KEY_ERROR.lock().ok().and_then(|e| e.clone())
+}
+
+pub fn set_key_error(e: Option<String>) {
+    if let Ok(mut k) = KEY_ERROR.lock() {
+        *k = e;
+    }
+}
+
 pub const TIDY_KEYS: &str = "⌃⌥⌘T";
 pub fn tidy_shortcut() -> crate::kit::hotkeys::Shortcut {
     crate::kit::hotkeys::Shortcut { cmd: true, shift: false, alt: true, ctrl: true, key: "T".into() }

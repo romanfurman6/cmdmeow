@@ -96,7 +96,7 @@ pub fn place(app: &App, width: f32) -> (Vec<Placed>, f32) {
 
 /// Draw one placed widget at `r`.
 pub fn draw_widget(app: &mut App, ui: &mut Ui, w: &Placed, r: Rect, cx: &mut Cx) {
-    let lock = w.owner.and_then(|i| super::gate::missing(app, i));
+    let lock = w.owner.and_then(|i| super::gate::missing(app, i).or_else(|| super::gate::widget_missing(app, i, w.id)));
     draw_at(app, ui, w.owner, w.id, w.size, r, lock, cx);
 }
 
