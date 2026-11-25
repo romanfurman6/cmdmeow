@@ -8,7 +8,8 @@
 //! - `tn!("startup.items", n = k)` → `Cow<str>` from `startup.items_one`
 //!   when k is 1, else `startup.items_other`; both texts get `%{n}`
 //!
-//! Keys are always string literals, so the tests below can check them:
+//! Keys are string literals, so the tests below can check them (the one
+//! exception, [`data`], has its own test next to its data):
 //! every key used exists in en.json, every en.json key is used, the
 //! arguments match the text's `%{…}`, and other locales only hold English
 //! keys with the same `%{…}`.
@@ -37,6 +38,16 @@ macro_rules! tn {
             t!(concat!($key, "_other"), n = n $(, $k = $v)*)
         }
     }};
+}
+
+/// A text whose key comes from data (Cleanup's rules.json), not code:
+/// keys under `rules.` only, each checked by that data's own test.
+pub fn data(key: &str) -> &'static str {
+    debug_assert!(key.starts_with("rules."));
+    match crate::_rust_i18n_try_translate(&rust_i18n::locale(), key) {
+        Some(c) => st(c),
+        None => st(Cow::Owned(key.to_string())),
+    }
 }
 
 /// `t!` hands back texts borrowed from its static tables; an owned one
@@ -233,7 +244,8 @@ mod tests {
             }
         }
         let used: BTreeSet<&String> = calls.iter().filter_map(|c| c.key.as_ref()).collect();
-        for k in en.keys().filter(|k| !used.contains(k)) {
+        // `rules.*` texts are named by Cleanup's rules.json (see its test)
+        for k in en.keys().filter(|k| !used.contains(k) && !k.starts_with("rules.")) {
             errors.push(format!("locales/en.json: `{k}` isn't used"));
         }
         assert!(errors.is_empty(), "\n{}", errors.join("\n"));
