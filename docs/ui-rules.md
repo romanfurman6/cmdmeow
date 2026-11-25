@@ -290,6 +290,7 @@ Read this before §2: every colour rule there holds in each theme.
 | TH11 | **Onboarding step "Pick a theme"**: right after Welcome, before Goals (one step dot). Title "Pick a theme" (bold 22). Three cards in one row, `sp::M` gap, 2:3, r12, filled by the theme's picture (cover), name top left (bold 17, dark ink on Light Classic, white on the dark two), check top right. The picked card gets the 1.5 action ring (H4), hover lifts 1 pt, and the cards fade in one by one like the Goal cards. The default pick is the theme drawn now (Auto shows as Light or Dark Classic). A click sets Settings › Theme. |
 | TH12 | **Theme switch animation ("ripple through blur")**: the old theme is laid over the new one as a picture and blurs to 10 pt (0.48 s ease-out), then a soft round wave from the clicked card (feather 20% of its reach, 0.8 s ease-in-out) cuts it away. Core Animation only (R-anim), no egui frames. No animation with Reduce motion or in screenshots. Onboarding only for now; Settings switches at once. |
 | TH13 | **Theme pictures**: one flat series (same cat, size and place, empty top third). Light Classic: day rooftops with dark roofs. Dark Classic: night rooftops. Dark Miami: dusk beach. The cat is in the theme's action colour with a soft glow. Files `assets/themes/{light,dark,miami}.jpg`, 1024×1536. |
+| TH14 | The recording dot on an `ACTION` fill (Record screen hero, Video header Record pill, Start recording) uses `REC_ON_ACTION()`: Dark Classic #FF9B7A, Light Classic #C2391D (= `RED`), Dark Miami wine #8A0A26 (3.4:1 on the pink, C12). Every other recording mark keeps `RED`; the live HUD dot over the screen stays fixed (C13). |
 
 Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glow pink. B6 `DANGER()`, P2 shadows and P4 `SCRIM()` use the dark values. C16 overlays and L5 HUD keep their fixed colours. L1–L8 are Light Classic rules.
 
@@ -382,3 +383,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-25, Roman: R18 lists scroll to the edge, padding inside the scroll, no snapping to whole rows (PR #365, reference Uninstaller apps list).
 
 2026-11-25, Roman: Disk Map header on SP16: "↻ Map again" ↔ Stop with spinner, no map status text (canvas https://claude.ai/artifact/SeLN3FKT2ButPaoC5eGF16).
+
+2026-11-25, Roman: TH14 record dot on an action fill, Dark Miami wine (canvas https://claude.ai/artifact/X1JkbDx3aY3mUDT9iQDnxn, PR #367).
