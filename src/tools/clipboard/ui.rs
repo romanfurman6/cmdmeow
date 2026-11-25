@@ -454,12 +454,14 @@ fn grouped_rows(c: &Clipboard, ids: &[u64]) -> std::sync::Arc<Vec<Row>> {
 /// Rows grouped as Pinned, then by day.
 fn list_rows(c: &mut Clipboard, ui: &mut Ui, list: Rect, ids: &[u64]) {
     let rows = grouped_rows(c, ids);
-    let h: f32 = rows.iter().map(|r| if matches!(r, Row::Head(_)) { 28.0 } else { LIST_STEP }).sum::<f32>() + 8.0;
-    let mut child = ui.new_child(UiBuilder::new().max_rect(list.shrink2(Vec2::new(0.0, 4.0))));
+    // rows scroll to the card's edge (1 pt in, past the hairline); the room
+    // above the first row and below the last sits inside the scroll
+    let h: f32 = rows.iter().map(|r| if matches!(r, Row::Head(_)) { 28.0 } else { LIST_STEP }).sum::<f32>() + 3.0 + 11.0;
+    let mut child = ui.new_child(UiBuilder::new().max_rect(list.shrink2(Vec2::new(0.0, 1.0))));
     ScrollArea::vertical().id_salt("clip-list").auto_shrink([false, false]).show(&mut child, |ui| {
         let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
         let p = ui.painter().clone();
-        let mut y = area.top();
+        let mut y = area.top() + 3.0;
         for row in rows.iter() {
             match row {
                 Row::Head(t) => {

@@ -1215,11 +1215,17 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
     }
     let top = list[0].bytes.max(1);
     let row_h = 40.0;
-    let inner = pa.shrink2(Vec2::new(sp::XS, 8.0));
+    // rows scroll to the card's edge (1 pt in, past the hairline); the 8 pt
+    // breathing room sits inside the scroll, above the first and below the last row
+    let inner = pa.shrink2(Vec2::new(sp::XS, 1.0));
     let mut toggle: Option<(PathBuf, u64)> = None;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
     egui::ScrollArea::vertical().id_salt("map-files").auto_shrink([false, false]).show(&mut child, |ui| {
         let w = ui.available_width();
+        // 8 from the card edge to the first row (the viewport starts 1 in);
+        // below the last row the row spacing already counts toward the 8
+        ui.add_space(7.0);
+        let pad = 7.0 - ui.spacing().item_spacing.y;
         for (i, f) in list.iter().enumerate() {
             let (rr, rresp) = ui.allocate_exact_size(Vec2::new(w, row_h), Sense::click());
             let lp = ui.painter();
@@ -1253,6 +1259,7 @@ fn files(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node) -> MapOut {
                 quick_look(&f.path);
             }
         }
+        ui.add_space(pad);
     });
     let _ = ctx;
     if let Some(t) = toggle {
@@ -1298,7 +1305,8 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
     if scrim.clicked() && ctx.pointer_interact_pos().is_some_and(|q| !m.contains(q)) {
         close = true;
     }
-    let list = Rect::from_min_max(m.min + Vec2::new(10.0, 70.0), m.max - Vec2::new(10.0, 8.0));
+    // rows scroll to the popover's edge; the 8 pt end gap sits inside the scroll
+    let list = Rect::from_min_max(m.min + Vec2::new(10.0, 70.0), m.max - Vec2::new(10.0, 1.0));
     let mut go = None;
     let mut toggle = None;
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -1341,6 +1349,8 @@ fn other_sheet_body(app: &mut App, ui: &mut Ui, r: Rect, node: &Node) -> Option<
             let sr = lp.text(Pos2::new(rr.right() - 10.0, rr.center().y), Align2::RIGHT_CENTER, human_bytes(node.other), font(12.0), TEXT_FAINT());
             text_fit(lp, Pos2::new(rr.left() + 58.0, rr.center().y), Align2::LEFT_CENTER, ts!("lens.small_files"), font(13.0), TEXT_DIM(), sr.left() - rr.left() - 68.0);
         }
+        // 8 from the last row to the popover edge (the viewport ends 1 in)
+        ui.add_space(7.0 - ui.spacing().item_spacing.y);
     });
     if let Some(t) = toggle {
         pick(app, t);

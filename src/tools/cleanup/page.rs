@@ -414,7 +414,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     // the groups on the left, what the chosen one found on the right
     let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height()));
     group_rail(app, ui, rail);
-    let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), body.max);
+    // the list runs down to the footer, so rows scroll straight under it;
+    // its own last gap keeps the end clear of the footer (result_list)
+    let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), Pos2::new(body.right(), r.bottom() - PAGE_FOOTER_H));
     result_list(app, ui, list);
 
     // footer: on a group it cleans only that group (the rest stays ticked)
@@ -797,6 +799,8 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
         lines.push(Line::Gap(if k == 0 { sp::L } else { sp::S }));
         lines.push(Line::Tip(k));
     }
+    // the list reaches the footer; scrolled to the end it stops this far above it
+    lines.push(Line::Gap(sp::L));
 
     let height = |l: Line, w: f32| -> f32 {
         match l {
@@ -1652,6 +1656,9 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let list = Rect::from_min_max(Pos2::new(ri.left(), ri.top() + 16.0 + sp::M), ri.max);
     if app.clean_log {
         p.text(ri.left_top(), Align2::LEFT_TOP, ts!("cleanup.log"), ty::title(), TEXT());
+        // lines scroll to the card's bottom edge; the padding below the last
+        // line sits inside the scroll
+        let list = Rect::from_min_max(list.min, Pos2::new(list.right(), right.bottom() - 1.0));
         let mut child = ui.new_child(UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
         child.set_clip_rect(list);
         ScrollArea::vertical().id_salt("log").auto_shrink([false, false]).show(&mut child, |ui| {
@@ -1659,6 +1666,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
                 let col = if *warn { AMBER() } else { TEXT_DIM() };
                 ui.label(egui::RichText::new(l.replacen(&home_str(), "~", 1)).font(glass::mono(11.0)).color(col));
             }
+            ui.add_space(sp::L - 1.0 - ui.spacing().item_spacing.y);
         });
         return;
     }

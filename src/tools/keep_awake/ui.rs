@@ -455,10 +455,10 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
     // the list, newest first. Rows run edge to edge in the card (H2): the
     // hover fill has no inset and no corners of its own
     let top = ly + line_h(p, &font(11.0)) + sp::M;
-    // whole rows only: a row cut through its text at the bottom reads as
-    // broken (the rest scrolls)
-    let rows_fit = ((inner.bottom() - top) / LOG_ROW_H).floor().max(1.0);
-    let list = Rect::from_min_max(Pos2::new(card.left() + 1.0, top), Pos2::new(card.right() - 1.0, top + rows_fit * LOG_ROW_H + 2.0));
+    // rows scroll to the card's bottom edge (like every list); scrolled to
+    // the end, the last row stops at the card's padding
+    let list = Rect::from_min_max(Pos2::new(card.left() + 1.0, top), Pos2::new(card.right() - 1.0, card.bottom()));
+    let tail = (card.bottom() - inner.bottom() - 1.0).max(0.0);
     hairline(p, Pos2::new(inner.left(), top), Pos2::new(inner.right(), top));
     if spans.is_empty() {
         p.text(list.center(), Align2::CENTER_CENTER, ts!("awake.nothing_today"), ty::body(), TEXT_FAINT());
@@ -471,7 +471,7 @@ fn today(ui: &mut Ui, p: &Painter, r: Rect, e: &Engine, now: i64, id: egui::Id) 
     let mut child = ui.new_child(UiBuilder::new().max_rect(list.shrink2(Vec2::new(0.0, 1.0))));
     child.set_clip_rect(list.shrink2(Vec2::new(0.0, 1.0)));
     ScrollArea::vertical().id_salt(id.with("list")).auto_shrink([false, false]).show(&mut child, |ui| {
-        let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), order.len() as f32 * LOG_ROW_H), Sense::hover());
+        let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), order.len() as f32 * LOG_ROW_H + tail), Sense::hover());
         let p = ui.painter().clone();
         for (k, &i) in order.iter().enumerate() {
             let s = &spans[i];
