@@ -1,81 +1,101 @@
 <p align="center">
-  <img src="docs/images/icon.png" width="112" alt="Cmd+Meow icon">
+  <img src="docs/images/icon.png" width="96" alt="Cmd+Meow icon">
 </p>
 
 <h1 align="center">Cmd+Meow</h1>
 
-<p align="center"><b>Everything your Mac needs. Free.</b><br>
-Fourteen Mac tools in one menu bar app. Open source, no account, runs locally.</p>
+<p align="center">
+  <b>Everything your Mac needs. Free.</b><br>
+  Fourteen Mac tools in one menu bar app. Open source, no account, runs on your Mac.
+</p>
 
 <p align="center">
-  <a href="https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg"><b>Download for macOS</b></a> ·
-  <a href="https://cmdmeow.com">Website</a> ·
-  <a href="https://github.com/romanfurman6/cmdmeow/releases">Releases</a>
+  <a href="https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg"><img src="https://img.shields.io/badge/Download_for_macOS-C8F05A?style=for-the-badge&logo=apple&logoColor=1d211d&labelColor=C8F05A&color=C8F05A" height="40" alt="Download for macOS"></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/romanfurman6/cmdmeow/releases/latest"><img src="https://img.shields.io/github/v/release/romanfurman6/cmdmeow?label=version&color=C8F05A&labelColor=1d211d" alt="Latest version"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-C8F05A?labelColor=1d211d" alt="macOS 13+">
+  <img src="https://img.shields.io/badge/Apple_silicon-native-C8F05A?labelColor=1d211d" alt="Apple silicon">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-C8F05A?labelColor=1d211d" alt="MIT license"></a>
   <a href="https://github.com/romanfurman6/cmdmeow/actions/workflows/macos.yml"><img src="https://img.shields.io/github/actions/workflow/status/romanfurman6/cmdmeow/macos.yml?branch=main&label=build&labelColor=1d211d" alt="Build"></a>
 </p>
 
 <p align="center">
-  <a href="https://cmdmeow.com/promo.mp4"><img src="docs/images/promo.gif" width="760" alt="Cmd+Meow in 40 seconds"></a>
+  <a href="https://cmdmeow.com">Website</a> ·
+  <a href="https://cmdmeow.com/promo.mp4">40-second video</a> ·
+  <a href="https://github.com/romanfurman6/cmdmeow/releases">Releases</a>
 </p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.jpg">
+  <img src="docs/images/hero-light.jpg" alt="Cmd+Meow window with Disk Map, next to the menu bar panel">
+</picture>
 
 ## Install
 
-1. Download [CmdMeow.dmg](https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg) and drag Cmd+Meow to Applications.
-2. First-run setup asks only for the permissions of the tools you turn on.
+Download [CmdMeow.dmg](https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg) and drag Cmd+Meow to Applications. Setup asks only for the permissions of the tools you turn on.
 
-Needs macOS 13 or later on Apple silicon. The download also runs on Intel Macs, but it is not tested there yet, and Displays (external monitor brightness) and the power readings in Mac Health work on Apple silicon only.
+Builds are signed and notarized. Cmd+Meow needs macOS 13 or later and is tested on Apple silicon. It also runs on Intel Macs, but Displays and the power readings in Mac Health work on Apple silicon only.
 
-## What's inside
+## Clean
 
-| Tool | What it does |
-| --- | --- |
-| **Cleanup** | Caches, logs and leftovers, reviewed before anything moves to the Trash |
-| **Disk Map** | What takes space, as live bubbles you can drill into |
-| **Uninstaller** | Removes apps together with their leftovers |
-| **Startup** | Login items, agents and daemons; flags what you don't need |
-| **Mac Health** | CPU, memory, disk, battery, Wi-Fi speed test, Bluetooth batteries |
-| **AI Usage** | Claude, Codex, Gemini and OpenCode limits, pace and cost |
-| **Fan Control** | Fan speeds, chip heat map, fixed speed or your own curve |
-| **Screenshot** | Area, window or screen, an editor with arrows, blur, text and zoom |
-| **Video** | Screen recording with camera, mic and system audio |
-| **Sharing** | Upload a shot or a recording to your own S3 and copy a link |
-| **Dictation** | ⌥D types what you say at the caret; speech stays on the Mac |
-| **Clipboard** | History with search, pins and quick paste |
-| **Keep Awake** | Off · Auto · On: Auto keeps the Mac awake while an AI agent works |
-| **Displays** | Brightness and volume of external monitors from your keys |
+Find what takes space and remove it. Everything goes to the Trash first, and you see the list before anything moves.
 
-Every tool can be turned off, and the panel is a grid of widgets you arrange
-yourself. Three themes: Light Classic, Dark Classic and Dark Miami (pick one
-during setup or in Settings › Theme).
+- **Cleanup** finds caches, logs, old installers and leftovers.
+- **Disk Map** shows folders as bubbles you can open one level at a time.
+- **Uninstaller** removes an app together with its leftovers.
+- **Startup** lists login items, agents and daemons, and flags the ones you don't need.
 
-![Disk Map](docs/images/app-disk-map.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/clean-dark.jpg">
+  <img src="docs/images/clean-light.jpg" alt="Cleanup">
+</picture>
 
-![AI Usage](docs/images/app-ai-usage.png)
+## Monitor
 
-![Clipboard history](docs/images/app-clipboard.png)
+- **Mac Health** shows CPU, memory, disk, battery, Wi-Fi speed and the batteries of your AirPods, mouse and keyboard.
+- **AI Usage** tracks limits, pace and cost for Claude, Codex, Gemini and OpenCode.
+- **Fan Control** shows fan speeds and chip heat, and runs a fixed speed or your own curve.
 
-<p align="center">
-  <img src="docs/images/app-menu-panel.png" width="380" alt="The menu bar panel">
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/monitor-dark.jpg">
+  <img src="docs/images/monitor-light.jpg" alt="Mac Health">
+</picture>
+
+## Create
+
+- **Screenshot** takes an area, a window or the whole screen, then opens an editor with arrows, blur, text and zoom.
+- **Video** records the screen with camera, mic and system audio.
+- **Sharing** uploads a shot or a recording to your own S3 bucket and copies the link.
+- **Dictation** types what you say where the cursor is. Press ⌥D. Speech never leaves the Mac.
+- **Clipboard** keeps what you copy, with search, pins and quick paste.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/create-dark.jpg">
+  <img src="docs/images/create-light.jpg" alt="Clipboard history">
+</picture>
+
+## Utilities
+
+- **Keep Awake** has three modes. Off, On, and Auto, which keeps the Mac awake while an AI agent is working.
+- **Displays** sets the brightness and volume of external monitors from your keyboard.
+
+## Your panel, your theme
+
+Click the cat in the menu bar to open the panel. It is a grid of widgets you arrange yourself, and any tool you don't use can be turned off. Pick Light Classic, Dark Classic or Dark Miami during setup, or later in Settings › Theme.
+
+<img src="docs/images/themes.jpg" alt="The menu bar panel in Light Classic, Dark Classic and Dark Miami">
 
 ### Instead of
 
-CleanMyMac, DaisyDisk, CleanShot X, Loom, Paste, iStat Menus, Wispr Flow and
-Amphetamine each do one of these jobs. Cmd+Meow does them in one free app.
+CleanMyMac, DaisyDisk, CleanShot X, Loom, Paste, iStat Menus, Wispr Flow and Amphetamine each do one of these jobs. Cmd+Meow does all of them for free.
 
-<sub>CleanMyMac, DaisyDisk, CleanShot X, Loom, Paste, iStat Menus, Wispr Flow and
-Amphetamine are trademarks of their owners. Cmd+Meow is not affiliated with them.</sub>
+<sub>CleanMyMac, DaisyDisk, CleanShot X, Loom, Paste, iStat Menus, Wispr Flow and Amphetamine are trademarks of their owners. Cmd+Meow is not affiliated with them.</sub>
 
-### Automation
+## Automation
 
-Every action has a link for scripts, Raycast or Shortcuts: `open cmdmeow://…`
-(the Dev build answers `cmdmeow-dev://`).
+Every action has a link you can call from scripts, Raycast or Shortcuts, for example `open cmdmeow://awake/toggle`. The Dev build uses `cmdmeow-dev://`.
 
 | Link | Does |
 | --- | --- |
@@ -84,17 +104,17 @@ Every action has a link for scripts, Raycast or Shortcuts: `open cmdmeow://…`
 | `dictation/toggle`, `start`, `stop`, `cancel` | Dictation |
 | `cat/purr`, `hiss`, `hungry`, `eat`, `hello` | The cat's reactions |
 | `open/<tool>[/<page>]`, e.g. `open/disk-map`, `open/capture/settings`, `open/settings` | Open a page |
-| `open/window` | Open the window (also what opening the app again from Finder or Spotlight does) |
+| `open/window` | Open the window |
 
 ## Privacy and safety
 
 - No account, no telemetry. Files, clipboard, recordings and dictation never leave the Mac unless you share them.
-- Clipboard and dictation history are encrypted on disk (XChaCha20-Poly1305, key in your Keychain) and readable by your user only. Passwords from password managers, and copied tokens, keys and card numbers, are skipped by default.
-- Crash reports are opt-in: official releases ask once during setup (and in Settings › General). If you agree, a crash sends the error, stack trace, app and macOS version to Sentry. No files, hostname or IP address, and the home folder is replaced with `~`. Builds from source never send anything.
+- Clipboard and dictation history are encrypted on disk with XChaCha20-Poly1305. The key lives in your Keychain. Clipboard skips passwords from password managers, and copied tokens, keys and card numbers.
+- Crash reports are opt-in. Official releases ask once during setup, and you can change it in Settings › General. A crash then sends the error, stack trace, app version and macOS version to Sentry. It sends no files, hostname or IP address, and writes your home folder as `~`. Builds from source never send anything.
 - Cleanup never reads file contents. If you turn on the AI review, only paths, sizes and ages go to Claude.
 - Documents, Desktop, Projects, Keychains, `.ssh` and any folder with `.git` are always kept.
 - Removed items go to the Trash unless you choose "Delete right away".
-- Settings › General › **Remove Cmd+Meow** removes the app and everything it keeps on your Mac (data, Keychain items, permissions, the fan helper, Open at login). Screenshots and recordings saved to your own folders stay.
+- Settings › General › **Remove Cmd+Meow** deletes the app with its data, Keychain items, permissions, fan helper and login item. Screenshots and recordings in your own folders stay.
 
 ## Development
 
@@ -285,7 +305,7 @@ cmdmeow/
 │       └── claude/          AI Usage: usage of Claude, Codex, Gemini, OpenCode
 ├── vendor/eframe/        eframe 0.37 with one patch (see Cargo.toml)
 ├── docs/
-│   ├── images/          README screenshots
+│   ├── images/          README images
 │   ├── MECHANICS.md     rules, thresholds and where each came from
 │   └── mechanics.json   same data, machine-readable
 ├── assets/
@@ -297,8 +317,9 @@ cmdmeow/
 └── .github/workflows/macos.yml   CI: test, build, upload the app
 ```
 
-The images in `docs/images/` are rendered from sample data with
-`--screenshot <file.png> --view <name>`.
+The screenshots in `docs/images/` are rendered from sample data with
+`CMDMEOW_THEME=light|dark|miami` and `--screenshot <file.png> --view <name>`,
+then placed on the website's desktop pictures (`site/desk*.jpg`).
 
 </details>
 
