@@ -10,30 +10,30 @@ import './fonts-landing.css';
 
 export const V2_BPM = 111.98; // track: drop at song 16.155 s = Bt(6)
 export const V2_OFFSET = 0; // seconds before beat 0 (track intro)
-const BEAT = 60 / V2_BPM;
-const Bt = (n: number) => V2_OFFSET + n * BEAT;
+export const BEAT = 60 / V2_BPM;
+export const Bt = (n: number) => V2_OFFSET + n * BEAT;
 export const V2_END = Bt(38); // final hit of the track
 export const V2_INTRO = 6 * BEAT; // the hook runs 12 beats; everything after it is shifted by this
 export const V2_DURATION = V2_END + 3.6 + V2_INTRO;
 
 // ---- helpers ----
-const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
-const P = (t: number, a: number, b: number) => clamp((t - a) / (b - a));
-const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
-const eo = (p: number) => 1 - Math.pow(1 - p, 3);
-const eo5 = (p: number) => 1 - Math.pow(1 - p, 5);
-const eio = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
-const spring = (dt: number, k = 7, w = 13) => (dt <= 0 ? 0 : 1 - Math.exp(-k * dt) * Math.cos(w * dt));
+export const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+export const P = (t: number, a: number, b: number) => clamp((t - a) / (b - a));
+export const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
+export const eo = (p: number) => 1 - Math.pow(1 - p, 3);
+export const eo5 = (p: number) => 1 - Math.pow(1 - p, 5);
+export const eio = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+export const spring = (dt: number, k = 7, w = 13) => (dt <= 0 ? 0 : 1 - Math.exp(-k * dt) * Math.cos(w * dt));
 // landing "rise": .8s cubic-bezier(.22,1,.36,1) from translateY(16px), here scaled for video
-const rise = (t: number, at: number, dy = 40, dur = 0.7) => {
+export const rise = (t: number, at: number, dy = 40, dur = 0.7) => {
   const p = eo5(P(t, at, at + dur));
   return {opacity: p, transform: `translateY(${lerp(dy, 0, p)}px)`, filter: `blur(${lerp(8, 0, p)}px)`};
 };
 
-const PINK = '#FF5FA2', ACC = '#FF9DC6', INK2 = 'rgba(255,255,255,.66)';
-const SANS = 'Geist, Inter, sans-serif';
-const SKY = 'linear-gradient(to bottom,#0B1240 0%,#2A1452 45%,#5E1D57 85%,#70283C 100%)';
-const img = (f: string) => staticFile('v2/' + f);
+export const PINK = '#FF5FA2', ACC = '#FF9DC6', INK2 = 'rgba(255,255,255,.66)';
+export const SANS = 'Geist, Inter, sans-serif';
+export const SKY = 'linear-gradient(to bottom,#0B1240 0%,#2A1452 45%,#5E1D57 85%,#70283C 100%)';
+export const img = (f: string) => staticFile('v2/' + f);
 
 const Cursor: React.FC<{x: number; y: number; press?: boolean; o?: number}> = ({x, y, press, o = 1}) => (
   <svg viewBox="0 0 34 44" style={{position: 'absolute', left: 0, top: 0, width: 38, height: 48, opacity: o, transform: `translate(${x}px,${y}px) scale(${press ? 0.84 : 1})`, filter: 'drop-shadow(0 3px 6px rgba(0,0,0,.5))', zIndex: 40}}>
@@ -117,7 +117,7 @@ const Hero: React.FC<{t: number}> = ({t}) => {
 
 // ---- D: the real landing hero switching themes from the dots pill (TH12 ripple through blur) ----
 // ---- E: No catch (landing .trust) ----
-const NC = [
+export const NC = [
   ['$0', 'Free forever', 'No account, no subscription', ''],
   ['', 'Undo anytime', 'Review first, then Trash', '<path d="M8 13h32M18 13V8h12v5M12 13l2 27h20l2-27"/><path d="M28.75 32h-6a3.5 3.5 0 0 1 0-7h5M25.75 22l3 3-3 3"/>'],
   ['', 'Only what you use', 'Asks per tool you turn on', '<rect x="9" y="21" width="30" height="21" rx="5"/><path d="M15 21v-6a9 9 0 0 1 18 0v6M24 29v5"/>'],
@@ -187,18 +187,18 @@ const flatten = (segs: Seg[], n = 32) => {
   return out;
 };
 const BEND: [number, number][] = [[210, 200], [814, 200]];
-const bentEar = (right: number, turn: number) => flatten(EARS[right]).map(([x, y]) => {
+export const bentEar = (right: number, turn: number) => flatten(EARS[right]).map(([x, y]) => {
   let w = clamp((200 - y) / (200 - 44)); w = w * w * (3 - 2 * w);
   const a = (right ? turn : -turn) * w; const [px, py] = BEND[right]; const c = Math.cos(a), sn = Math.sin(a);
   return `${(px + (x - px) * c - (y - py) * sn).toFixed(1)},${(py + (x - px) * sn + (y - py) * c).toFixed(1)}`;
 }).join(' ');
-const BODY_PTS = flatten(BODY).map(p => p.join(',')).join(' ');
-const CMD = 'M347.5 433.5m0 0' + [[347.5, 433.5, 0, -1.5], [670.5, 433.5, 1, 2.5], [347.5, 757.5, -0.5, -2], [670.5, 757.5, 1.5, 3]].map(([cx, cy, a0, a1]) => {
+export const BODY_PTS = flatten(BODY).map(p => p.join(',')).join(' ');
+export const CMD = 'M347.5 433.5m0 0' + [[347.5, 433.5, 0, -1.5], [670.5, 433.5, 1, 2.5], [347.5, 757.5, -0.5, -2], [670.5, 757.5, 1.5, 3]].map(([cx, cy, a0, a1]) => {
   const r = 87.5, A0 = a0 * Math.PI, A1 = a1 * Math.PI; const sx = cx + r * Math.cos(A0), sy = cy + r * Math.sin(A0), ex = cx + r * Math.cos(A1), ey = cy + r * Math.sin(A1);
   return `M${sx} ${sy}A${r} ${r} 0 1 ${A1 > A0 ? 1 : 0} ${ex} ${ey}`;
 }).join('') + 'M435 433.5V757.5M583 433.5V757.5M347.5 521H670.5M347.5 670H670.5';
 // two-tilt flick: out and back, twice, eased
-const flick = (dt: number, dur = 0.9) => (dt <= 0 || dt >= dur ? 0 : 0.28 * Math.sin((dt / dur) * 2 * Math.PI) * Math.sin(Math.PI * dt / dur));
+export const flick = (dt: number, dur = 0.9) => (dt <= 0 || dt >= dur ? 0 : 0.28 * Math.sin((dt / dur) * 2 * Math.PI) * Math.sin(Math.PI * dt / dur));
 
 const EndCard: React.FC<{t: number}> = ({t}) => {
   const s = V2_END, dt = t - s;
@@ -224,8 +224,8 @@ const EndCard: React.FC<{t: number}> = ({t}) => {
 };
 
 // ---- C: fast cuts through the app (the main scene, time-remapped) ----
-const mainV2 = {...main, css: main.css + `#ttl{font:600 112px/1 ${SANS};letter-spacing:-.045em}#endwm{font-family:${SANS}!important;font-weight:600!important}`};
-const CUTS: [number, number][] = [ // [main scene start, rate]
+export const mainV2 = {...main, css: main.css + `#ttl{font:600 112px/1 ${SANS};letter-spacing:-.045em}#endwm{font-family:${SANS}!important;font-weight:600!important}`};
+export const CUTS: [number, number][] = [ // [main scene start, rate]
   [26.6, 1.8], // Clean up
   [9.45, 1.0], // Screenshot
   [11.0, 1.6], // Mark it up
