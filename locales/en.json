@@ -700,7 +700,73 @@
     "updating": "Updating…",
     "limits": "Limits",
     "refresh_limits": "Refresh limits",
-    "clean_caches": "Clean Claude caches"
+    "clean_caches": "Clean Claude caches",
+    "perr": {
+      "claude_missing": "Claude Code isn't installed on this Mac. %{how}",
+      "claude_no_limits": "Claude didn't report limits right now.",
+      "claude_sign_in": "Sign in to Claude Code to see your limits. %{how}",
+      "claude_run": "Couldn't run Claude: %{err}",
+      "codex_missing": "Codex isn't installed on this Mac. Install it with npm i -g @openai/codex or brew install codex, then run codex once to sign in.",
+      "codex_note": "Codex reports its limits with each request, so these are as of your last one.",
+      "codex_after": "Codex shows your limits here after your next request.",
+      "codex_sign_in": "Sign in to Codex to see your limits: run codex in Terminal.",
+      "gemini_unused": "Gemini CLI hasn't been used on this Mac.",
+      "opencode_unused": "OpenCode hasn't been used on this Mac."
+    },
+    "reset_day": "%{day} at %{hour}",
+    "other_model": "Other",
+    "unknown_folder": "Unknown folder",
+    "home_folder": "Home",
+    "lim": {
+      "session": "Session",
+      "week": "Week",
+      "week_of": "Week · %{model}",
+      "month": "Current month",
+      "any": "Limit",
+      "last_h": "Last %{h}h"
+    },
+    "alert": {
+      "session": "session",
+      "week": "week",
+      "week_of": "week · %{model}",
+      "tomorrow": "tomorrow %{time}",
+      "resets": "Resets %{when}",
+      "ahead": "Ahead of pace",
+      "and_ahead": " · ahead of pace",
+      "at": "%{name} %{limit} at %{pct}%",
+      "reset": "%{name} %{limit} reset",
+      "back_to": "Back to %{pct}%",
+      "unused": "%{name} %{limit}: %{pct}% unused",
+      "budget": "%{name} budget at %{pct}%",
+      "budget_body": "$%{used} of $%{budget} this month"
+    },
+    "steps": {
+      "claude": {
+        "install": "Install Claude Code from claude.com/claude-code",
+        "first_run": "Open Terminal and run claude once to sign in",
+        "open": "Open Terminal and run claude",
+        "sign_in": "Sign in with your Claude account"
+      },
+      "codex": {
+        "install": "Install Codex: npm i -g @openai/codex or brew install codex",
+        "first_run": "Open Terminal and run codex once to sign in",
+        "open": "Open Terminal and run codex",
+        "sign_in": "Sign in with your ChatGPT account"
+      },
+      "gemini": {
+        "install": "Install Gemini CLI: npm i -g @google/gemini-cli or brew install gemini-cli",
+        "first_run": "Run gemini once in Terminal",
+        "open": "Open Terminal and run gemini",
+        "sign_in": "Sign in with your Google account"
+      },
+      "opencode": {
+        "install": "Install OpenCode from opencode.ai",
+        "first_run": "Run opencode once in Terminal",
+        "open": "Open Terminal and run opencode",
+        "sign_in": "Connect a provider"
+      },
+      "come_back": "Come back and press Check again"
+    }
   },
   "cleanup": {
     "name": "Cleanup",

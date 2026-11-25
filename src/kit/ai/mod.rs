@@ -170,12 +170,34 @@ pub struct Meta {
     /// The command people type, e.g. "claude".
     pub cli: &'static str,
     pub install_url: &'static str,
-    pub install_steps: &'static [&'static str],
-    pub sign_in_steps: &'static [&'static str],
     /// Reports plan limits (otherwise tokens only).
     pub limits: bool,
     /// Has a status page with a Statuspage-style `/api/v2/status.json`.
     pub status_url: &'static str,
+}
+
+impl Meta {
+    /// How to install the CLI and sign in, then come back.
+    pub fn install_steps(&self) -> [&'static str; 3] {
+        let [a, b] = match self.id {
+            "claude" => [ts!("ai.steps.claude.install"), ts!("ai.steps.claude.first_run")],
+            "codex" => [ts!("ai.steps.codex.install"), ts!("ai.steps.codex.first_run")],
+            "gemini" => [ts!("ai.steps.gemini.install"), ts!("ai.steps.gemini.first_run")],
+            _ => [ts!("ai.steps.opencode.install"), ts!("ai.steps.opencode.first_run")],
+        };
+        [a, b, ts!("ai.steps.come_back")]
+    }
+
+    /// How to sign in to an installed CLI, then come back.
+    pub fn sign_in_steps(&self) -> [&'static str; 3] {
+        let [a, b] = match self.id {
+            "claude" => [ts!("ai.steps.claude.open"), ts!("ai.steps.claude.sign_in")],
+            "codex" => [ts!("ai.steps.codex.open"), ts!("ai.steps.codex.sign_in")],
+            "gemini" => [ts!("ai.steps.gemini.open"), ts!("ai.steps.gemini.sign_in")],
+            _ => [ts!("ai.steps.opencode.open"), ts!("ai.steps.opencode.sign_in")],
+        };
+        [a, b, ts!("ai.steps.come_back")]
+    }
 }
 
 pub const PROVIDERS: &[Meta] = &[
@@ -184,8 +206,6 @@ pub const PROVIDERS: &[Meta] = &[
         name: claude::NAME,
         cli: "claude",
         install_url: "https://claude.com/claude-code",
-        install_steps: &["Install Claude Code from claude.com/claude-code", "Open Terminal and run claude once to sign in", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run claude", "Sign in with your Claude account", "Come back and press Check again"],
         limits: true,
         status_url: "https://status.anthropic.com/api/v2/status.json",
     },
@@ -194,8 +214,6 @@ pub const PROVIDERS: &[Meta] = &[
         name: codex::NAME,
         cli: "codex",
         install_url: "https://developers.openai.com/codex/cli",
-        install_steps: &["Install Codex: npm i -g @openai/codex or brew install codex", "Open Terminal and run codex once to sign in", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run codex", "Sign in with your ChatGPT account", "Come back and press Check again"],
         limits: true,
         status_url: "https://status.openai.com/api/v2/status.json",
     },
@@ -204,8 +222,6 @@ pub const PROVIDERS: &[Meta] = &[
         name: gemini::NAME,
         cli: "gemini",
         install_url: "https://github.com/google-gemini/gemini-cli",
-        install_steps: &["Install Gemini CLI: npm i -g @google/gemini-cli or brew install gemini-cli", "Run gemini once in Terminal", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run gemini", "Sign in with your Google account", "Come back and press Check again"],
         limits: false,
         status_url: "",
     },
@@ -214,8 +230,6 @@ pub const PROVIDERS: &[Meta] = &[
         name: opencode::NAME,
         cli: "opencode",
         install_url: "https://opencode.ai",
-        install_steps: &["Install OpenCode from opencode.ai", "Run opencode once in Terminal", "Come back and press Check again"],
-        sign_in_steps: &["Open Terminal and run opencode", "Connect a provider", "Come back and press Check again"],
         limits: false,
         status_url: "",
     },
@@ -609,8 +623,8 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
         v.sort_by(|a, b| b.usd.total_cmp(&a.usd).then(b.tokens.cmp(&a.tokens)));
         v
     };
-    l.models = merge_same(rank(models, |m| if m.is_empty() { "Other".into() } else { price::display_name(m) }));
-    l.projects = rank(projects, |p| match p { "" => "Unknown folder".into(), "~" => "Home".into(), _ => p.to_string() });
+    l.models = merge_same(rank(models, |m| if m.is_empty() { ts!("ai.other_model").into() } else { price::display_name(m) }));
+    l.projects = rank(projects, |p| match p { "" => ts!("ai.unknown_folder").into(), "~" => ts!("ai.home_folder").into(), _ => p.to_string() });
     l
 }
 
@@ -666,14 +680,22 @@ fn merge_same(v: Vec<Share>) -> Vec<Share> {
 // ---------------------------------------------------------------- formatting
 
 /// Pretty label for a limit row.
+/// `l` is the limit's fixed English name (also its key in history and
+/// alerts); only what this returns is shown.
 pub fn short_label(l: &str) -> String {
     let low = l.to_lowercase();
     if low.contains("session") {
-        "Session".into()
+        ts!("ai.lim.session").into()
     } else if low.contains("all models") {
-        "Week".into()
+        ts!("ai.lim.week").into()
     } else if let (Some(a), Some(b)) = (l.find('('), l.rfind(')')) {
-        format!("Week · {}", &l[a + 1..b])
+        t!("ai.lim.week_of", model = &l[a + 1..b]).into_owned()
+    } else if l == "Current month" {
+        ts!("ai.lim.month").into()
+    } else if l == "Limit" {
+        ts!("ai.lim.any").into()
+    } else if let Some(h) = l.strip_prefix("Last ").and_then(|r| r.strip_suffix('h')).and_then(|n| n.parse::<i64>().ok()) {
+        t!("ai.lim.last_h", h = h).into_owned()
     } else {
         l.to_string()
     }

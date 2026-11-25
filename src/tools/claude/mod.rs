@@ -215,7 +215,7 @@ impl Tool for Claude {
                 Some(View::Page)
             }
             "claude-missing" => {
-                let error = Some(format!("Claude Code isn't installed on this Mac. {}", crate::kit::claude_code::Availability::NotInstalled.how()));
+                let error = Some(t!("ai.perr.claude_missing", how = crate::kit::claude_code::Availability::NotInstalled.how()).into_owned());
                 *self.all[0].lock_ok() = UsageInfo { provider: ai::claude::NAME, loading: false, scanned: true, installed: false, fetched: Some(chrono::Local::now()), error, ..Default::default() };
                 Some(View::Page)
             }

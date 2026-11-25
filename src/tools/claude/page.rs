@@ -75,7 +75,7 @@ fn not_set_up(a: Availability, cl: &UsageInfo, demo: bool, ui: &mut Ui, r: Rect,
     let title = if a == Availability::SignedOut { t!("ai.not_signed_in_title", name = m.name).into_owned() } else { t!("ai.not_installed_title", name = m.name).into_owned() };
     p.text(Pos2::new(r.center().x, y), Align2::CENTER_TOP, title, bold(22.0), TEXT());
     y += 32.0 + 12.0;
-    let steps: &[&str] = if a == Availability::SignedOut { m.sign_in_steps } else { m.install_steps };
+    let steps = if a == Availability::SignedOut { m.sign_in_steps() } else { m.install_steps() };
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(colw, 12.0 + steps.len() as f32 * 34.0));
     data_card(&p, card);
     for (i, s) in steps.iter().enumerate() {
