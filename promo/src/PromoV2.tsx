@@ -2,17 +2,17 @@
 // theme switcher, "No catch", "Designed by Humans."), Dark Miami.
 // Timing is a beat grid (BPM below); retime to the final track by changing BPM / OFFSET.
 import React from 'react';
-import {AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Audio, Img, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Scene} from './Scene';
 import {main} from './scenes';
 import icons from './scenes/landing-icons.json';
 import './fonts-landing.css';
 
-export const V2_BPM = 110;
+export const V2_BPM = 111.98; // track: drop at song 16.155 s = Bt(6)
 export const V2_OFFSET = 0; // seconds before beat 0 (track intro)
 const BEAT = 60 / V2_BPM;
 const Bt = (n: number) => V2_OFFSET + n * BEAT;
-export const V2_END = Bt(37);
+export const V2_END = Bt(38); // final hit of the track
 export const V2_DURATION = V2_END + 3.6;
 
 // ---- helpers ----
@@ -96,7 +96,7 @@ const Hero: React.FC<{t: number}> = ({t}) => {
           <span style={rise(t, Bt(7))}>Mac needs.</span>
           <span style={{color: PINK, display: 'inline-block', opacity: free > 0 ? 1 : 0, transform: `scale(${lerp(1.6, 1, clamp(fp, 0, 2))})`, transformOrigin: 'left 70%', textShadow: '0 0 40px rgba(255,95,162,.45)'}}>Free.</span>
         </div>
-        <div style={{...rise(t, Bt(9), 24), font: `400 38px/52px ${SANS}`, letterSpacing: '-.01em', marginTop: 30, color: 'rgba(255,255,255,.9)'}}>Clean up, screenshots, clipboard, dictation<br />and more, in one menu bar app.</div>
+        <div style={{...rise(t, Bt(8.5), 24), font: `400 38px/52px ${SANS}`, letterSpacing: '-.01em', marginTop: 30, color: 'rgba(255,255,255,.9)'}}>Clean up, screenshots, clipboard, dictation<br />and more, in one menu bar app.</div>
       </div>
       <Img src={img('panel-miami.png')} style={{position: 'absolute', left: 1330, top: 84, width: 513, borderRadius: 22, opacity: pn, transform: `translateY(${lerp(-40, 0, pn)}px) scale(${lerp(0.96, 1, pn)})`, transformOrigin: 'top right', boxShadow: '0 40px 90px rgba(5,3,20,.6)'}} />
     </>
@@ -113,10 +113,10 @@ const NC = [
 ];
 const NoCatch: React.FC<{t: number}> = ({t}) => (
   <AbsoluteFill style={{background: SKY, fontFamily: SANS, color: '#fff'}}>
-    <div style={{position: 'absolute', left: 150, top: 250, font: `500 96px/1 ${SANS}`, letterSpacing: '-.035em', ...rise(t, Bt(27))}}>No catch</div>
+    <div style={{position: 'absolute', left: 150, top: 250, font: `500 96px/1 ${SANS}`, letterSpacing: '-.035em', ...rise(t, Bt(26))}}>No catch</div>
     <div style={{position: 'absolute', left: 150, right: 150, top: 470, display: 'grid', gridTemplateColumns: 'repeat(4,1fr)'}}>
       {NC.map(([k, b, s, path], i) => {
-        const at = Bt(27.5 + i * 0.75);
+        const at = Bt(26.5 + i * 0.75);
         const p = spring(t - at, 9, 15);
         return (
           <div key={i} style={{padding: '0 36px', borderLeft: i ? '1px solid rgba(255,255,255,.12)' : 'none', display: 'flex', flexDirection: 'column', gap: 14, opacity: clamp((t - at) / 0.12)}}>
@@ -169,24 +169,23 @@ const CUTS: [number, number][] = [ // [main scene start, rate]
 ];
 const MAIN_END = 36.39; // main scene end card start (K(16))
 
-export const PromoV2: React.FC = () => {
+const Body: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = frame / fps;
-  if (t < Bt(11)) {
+  if (t < Bt(10)) {
     return (
       <AbsoluteFill style={{background: '#0A0826', overflow: 'hidden'}}>
         <Img src={img('hero-miami-bare.jpg')} style={{position: 'absolute', inset: 0, width: 1920, height: 1080, filter: `blur(${lerp(0, 18, eo(P(t, Bt(6), Bt(7))))}px) brightness(${lerp(0.55, 1, eo(P(t, Bt(5.5), Bt(6.5)))) * lerp(1, 0.72, eo(P(t, Bt(6), Bt(7))))})`, transform: `scale(${lerp(1, 1.04, eo(P(t, Bt(6), Bt(7))))})`}} />
         {t >= Bt(6) && <AbsoluteFill style={{background: 'radial-gradient(70% 80% at 25% 50%, rgba(10,8,38,.55), rgba(10,8,38,0) 70%)', opacity: eo(P(t, Bt(6), Bt(7)))}} />}
         {t >= Bt(6) && <Hero t={t} />}
         <MenuBar t={t} s0={0.15} />
-        {t > Bt(10.6) && <AbsoluteFill style={{background: '#fff', opacity: 0}} />}
       </AbsoluteFill>
     );
   }
-  if (t < Bt(27)) {
-    const i = Math.floor((t - Bt(11)) / (2 * BEAT));
-    const t0 = Bt(11) + i * 2 * BEAT;
+  if (t < Bt(26)) {
+    const i = Math.floor((t - Bt(10)) / (2 * BEAT));
+    const t0 = Bt(10) + i * 2 * BEAT;
     const [s, r] = CUTS[Math.min(i, CUTS.length - 1)];
     // blur-through: each cut leaves by zooming in + blurring, the next arrives from blur (landing "rise" feel)
     const D = 0.2, t1 = t0 + 2 * BEAT;
@@ -212,3 +211,10 @@ export const PromoV2: React.FC = () => {
     </AbsoluteFill>
   );
 };
+
+export const PromoV2: React.FC = () => (
+  <AbsoluteFill>
+    <Body />
+    <Audio src={img('music.mp3')} />
+  </AbsoluteFill>
+);
