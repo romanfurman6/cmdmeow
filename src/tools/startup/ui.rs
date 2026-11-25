@@ -135,29 +135,34 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let sub = if !loaded {
         ts!("startup.reading_all").to_string()
     } else {
-        t!("startup.items_running", items = tn!("startup.items", n = total), running = running).into_owned()
+        t!("startup.n_running", n = running).into_owned()
     };
-    // AI Check: a chip after the title
+    // AI Check: a chip left of the tabs (SP17)
     let ai_n = jobs.iter().filter(|j| j.on).count() + apps.iter().filter(|a| a.on).count();
     let ai_data = loaded && ai_n > 0;
     let cw = aicheck::ui::chip_width(&s.ai, ui, ai_data);
-    // the status ends where search starts (tabs, then a 190 pt field)
-    // Flagged keeps its slot at 0 (SP16), so the search never moves
-    let n_tabs = 4.0;
-    let sub_right = r.right() - sp::PAGE_EDGE - 100.0 * n_tabs - 12.0 - 190.0 - 12.0;
-    let (btns, chip_at) = page_header_room(&p, r, ts!("startup.name"), &sub, TEXT_DIM(), cw, sub_right);
+    // SP17: from the right edge the tabs, AI Check, then search. Flagged
+    // keeps its slot at 0 and the chip keeps its slot while hidden (SP16),
+    // so the search never moves
+    let slot = aicheck::ui::chip_width(&s.ai, ui, true);
+    let tabs0 = [t!("startup.tab_all", n = total).into_owned(), t!("startup.tab_suggested", n = suggested.len()).into_owned(), t!("startup.tab_flagged", n = flagged).into_owned(), t!("startup.tab_off", n = off).into_owned()];
+    let tw = crate::kit::glass::tabs_width(&p, &tabs0.iter().map(|x| x.as_str()).collect::<Vec<_>>());
+    let sub_right = r.right() - sp::PAGE_EDGE - tw - sp::M - if slot > 0.0 { slot + sp::M } else { 0.0 } - 180.0 - sp::M;
+    let (btns, _) = page_header_room(&p, r, ts!("startup.name"), &sub, TEXT_DIM(), 0.0, sub_right);
 
     // filter + search on the right of the header
     let mut tabs = vec![(Filter::All, t!("startup.tab_all", n = total).into_owned()), (Filter::Suggested, t!("startup.tab_suggested", n = suggested.len()).into_owned())];
     tabs.push((Filter::Flagged, t!("startup.tab_flagged", n = flagged).into_owned()));
     tabs.push((Filter::Off, t!("startup.tab_off", n = off).into_owned()));
     let labels: Vec<&str> = tabs.iter().map(|(_, x)| x.as_str()).collect();
-    let tr = Rect::from_min_max(Pos2::new(btns.right() - 100.0 * tabs.len() as f32, btns.top()), btns.max);
+    let tr = Rect::from_min_max(Pos2::new(btns.right() - tw, btns.top()), btns.max);
+    let chip_at = Pos2::new(tr.left() - sp::M - cw, tr.center().y);
     let cur = tabs.iter().position(|(f, _)| *f == s.filter).unwrap_or(0);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("su-filter"), &labels, cur) {
         s.filter = tabs[i].0;
     }
-    let sr = Rect::from_min_max(Pos2::new(tr.left() - sp::M - 180.0, tr.top()), Pos2::new(tr.left() - sp::M, tr.bottom()));
+    let sl = if slot > 0.0 { tr.left() - sp::M - slot } else { tr.left() };
+    let sr = Rect::from_min_max(Pos2::new(sl - sp::M - 180.0, tr.top()), Pos2::new(sl - sp::M, tr.bottom()));
     let mut q = std::mem::take(&mut s.search);
     search_field(ui, sr, &mut q, ts!("startup.search"), false);
     s.search = q;

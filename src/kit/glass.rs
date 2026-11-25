@@ -828,6 +828,21 @@ pub fn data_card(p: &Painter, rect: Rect) {
     crate::kit::tile::paint_card(p, rect, 0.0, false);
 }
 
+/// A [`data_card`] that opens something on click (Mac Health cards, AI
+/// Usage limits): it hovers like a panel widget card (W1, eased, same
+/// face), never with a flat overlay that pops the card's background.
+/// Call before drawing the card's content.
+pub fn data_card_button(ui: &mut Ui, rect: Rect, id: egui::Id) -> Response {
+    let resp = ui.interact(rect, id, Sense::click());
+    // the whole card hovers, its own buttons too (W12); a popup over it doesn't
+    let h = ui.ctx().animate_bool(id.with("h"), ui.rect_contains_pointer(rect));
+    crate::kit::tile::paint_card(ui.painter(), rect, h, false);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
 
 /// Button kinds for [`pill_button`].
 pub const BTN_SECONDARY: u8 = 0;
@@ -1736,6 +1751,14 @@ pub fn header_controls(btns: Rect, tabs_w: f32, action_w: f32) -> (Rect, Rect) {
     (Rect::from_min_max(Pos2::new(right - tabs_w, cy - h), Pos2::new(right, cy + h)), action)
 }
 
+/// SP17: page header tabs: every segment as wide as the widest label + 28,
+/// at least 72.
+pub fn tabs_width(p: &Painter, labels: &[&str]) -> f32 {
+    let n = labels.len().max(1) as f32;
+    let w = labels.iter().map(|l| p.layout_no_wrap(l.to_string(), font(12.0), TEXT()).size().x).fold(0.0, f32::max);
+    n * (w + 28.0).max(72.0) + 4.0 * (n - 1.0) + 4.0
+}
+
 /// A header button with a glyph before its label (SP16, B1): 15 pt glyph
 /// centred 18 from the left, label from 31. `kind` as [`pill_button`].
 pub fn icon_pill(ui: &mut Ui, rect: Rect, ic: Icon, label: &str, kind: u8, enabled: bool) -> Response {
@@ -1745,6 +1768,17 @@ pub fn icon_pill(ui: &mut Ui, rect: Rect, ic: Icon, label: &str, kind: u8, enabl
     let col = if enabled { col } else { with_alpha(col, key::disabled_alpha()) };
     icon(p, ic, Rect::from_center_size(Pos2::new(face.left() + 18.0, face.center().y), Vec2::splat(15.0)), col);
     p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, f, col);
+    resp
+}
+
+/// A page action while its work runs (SP16, B8 loading): a Secondary
+/// [`icon_pill`] with a 13 pt spinner in the glyph slot, in `tint`.
+pub fn busy_pill(ui: &mut Ui, rect: Rect, label: &str, tint: Color32) -> Response {
+    let (resp, face) = pill_button_at(ui, rect, "", BTN_SECONDARY, true);
+    let p = ui.painter();
+    spinner(p, Pos2::new(face.left() + 18.0, face.center().y), 5.0, ui.ctx().input(|i| i.time), tint);
+    poll(ui.ctx());
+    p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, font(13.0), TEXT());
     resp
 }
 
@@ -2059,6 +2093,10 @@ pub enum Icon {
     Plus,
     /// A dash: hides the menu bar panel.
     Minus,
+    /// Two bars: pause (Clipboard).
+    Pause,
+    /// A triangle: resume.
+    Play,
 }
 
 /// The SF Symbol behind each icon (outline variants: icons are monochrome strokes).
@@ -2117,6 +2155,8 @@ pub fn symbol_name(icon: Icon) -> Option<&'static str> {
         Icon::Close => "xmark",
         Icon::Plus => "plus",
         Icon::Minus => "minus",
+        Icon::Pause => "pause.fill",
+        Icon::Play => "play.fill",
         Icon::Refresh => "arrow.clockwise",
         Icon::Search => "magnifyingglass",
         Icon::Grip => "circle.grid.2x3.fill",
@@ -2382,6 +2422,13 @@ fn icon_drawn(p: &Painter, icon: Icon, rect: Rect, color: Color32) {
             open(&[(5.0, 12.0), (19.0, 12.0)]);
         }
         Icon::Minus => open(&[(5.0, 12.0), (19.0, 12.0)]),
+        Icon::Pause => {
+            p.rect_filled(Rect::from_min_max(pt(7.0, 5.0), pt(10.5, 19.0)), u, color);
+            p.rect_filled(Rect::from_min_max(pt(13.5, 5.0), pt(17.0, 19.0)), u, color);
+        }
+        Icon::Play => {
+            p.add(PathShape::convex_polygon(vec![pt(7.5, 5.0), pt(19.0, 12.0), pt(7.5, 19.0)], color, Stroke::NONE));
+        }
         Icon::Refresh => {
             arc(12.0, 12.0, 8.0, -PI * 0.25, PI * 1.6);
             open(&[(20.0, 4.0), (20.0, 9.0), (15.0, 9.0)]);

@@ -12,7 +12,7 @@ use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind,
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-const HEADER_H: f32 = 57.0;
+const HEADER_H: f32 = 50.0;
 const INFO_H: f32 = 28.0;
 
 pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
@@ -1367,13 +1367,14 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     let hr = Rect::from_min_size(r.min, Vec2::new(r.width(), HEADER_H));
     hairline(&p, hr.left_bottom(), hr.right_bottom());
     let can_up = node.path != root.path || peek.is_some();
+    // SP17 H1: the page title first, like every page; back, forward and
+    // the place switcher after it
+    let tx = p.text(Pos2::new(hr.left() + sp::PAGE_EDGE, hr.center().y), Align2::LEFT_CENTER, ts!("lens.name"), crate::kit::glass::ty::lead(), TEXT()).right() + sp::M;
     let mut nav: Option<Nav> = None;
     for (k, (ic, on, tip, go)) in [(Icon::Back, !app.lens_back.is_empty() || peek.is_some(), ts!("lens.back"), Nav::Back), (Icon::Forward, !app.lens_fwd.is_empty(), ts!("lens.forward"), Nav::Forward)].into_iter().enumerate() {
-        let br = Rect::from_min_size(Pos2::new(hr.left() + 20.0 + k as f32 * 32.0, hr.center().y - 14.0), Vec2::splat(28.0));
-        let resp = ui.interact(br, ui.scope_id().with(("map-nav", k)), if on { Sense::click() } else { Sense::hover() });
-        p.rect_filled(br, R_SMALL, white(if !on { 8 } else if resp.hovered() { 32 } else { 20 }));
-        icon(&p, ic, br.shrink(7.0), if on { TEXT_SOFT() } else { TEXT_MUTED() });
-        if resp.on_hover_text(tip).clicked() && on {
+        let br = Rect::from_min_size(Pos2::new(tx + k as f32 * 36.0, hr.center().y - 16.0), Vec2::splat(32.0));
+        let resp = ui.add_enabled_ui(on, |ui| crate::kit::glass::icon_button(ui, br, ic, tip)).inner;
+        if resp.clicked() && on {
             nav = Some(go);
         }
     }
@@ -1390,7 +1391,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     // what's mapped, as one switcher: disks, Home, recent folders, any folder
     let volume = base == Path::new("/") || base.parent() == Some(Path::new("/Volumes"));
     let tg = p.layout_no_wrap(root_label.clone(), bold(13.0), TEXT());
-    let loc = Rect::from_min_size(Pos2::new(hr.left() + 20.0 + 64.0, hr.center().y - 14.0), Vec2::new((tg.size().x + 56.0).min(240.0), 28.0));
+    let loc = Rect::from_min_size(Pos2::new(tx + 72.0 + sp::M, hr.center().y - 16.0), Vec2::new((tg.size().x + 56.0).min(240.0), 32.0));
     let lr_resp = ui.interact(loc, ui.scope_id().with("map-where"), if peek.is_none() { Sense::click() } else { Sense::hover() });
     let at_top = node.path == base;
     if peek.is_none() && lr_resp.hovered() {
@@ -1441,7 +1442,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         _ => String::new(),
     };
     // the view switch right next to the action (SP16)
-    let seg_w = 186.0;
+    let seg_w = crate::kit::glass::tabs_width(&p, &[ts!("lens.view.bubbles"), ts!("lens.view.rings"), ts!("lens.view.files")]);
     let seg_r = Rect::from_min_size(Pos2::new(new_r.left() - sp::M - seg_w, hr.center().y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(seg_w, sp::HEADER_CONTROL_H));
     if let Some(i) = segmented(ui, seg_r, ui.scope_id().with("map-view"), &[ts!("lens.view.bubbles"), ts!("lens.view.rings"), ts!("lens.view.files")], app.lens_view as usize) {
         app.lens_view = i as u8;
@@ -1451,7 +1452,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
     // AI Check: a chip left of the view switch, once the map is final and whole
     let ai_data = !busy && !partial && !big_folders(root).is_empty();
     let cw = if !busy && !partial { aicheck::ui::chip_width(&app.ai, ui, ai_data) } else { 0.0 };
-    let chip_at = Pos2::new(seg_r.left() - 16.0 - cw, hr.center().y);
+    let chip_at = Pos2::new(seg_r.left() - sp::M - cw, hr.center().y);
     let crumbs_end = if cw > 0.0 { chip_at.x - 12.0 } else { seg_r.left() - 16.0 };
     // the switcher gives way to the chip at narrow widths: its name is cut
     // (a name the user brings, R10), never drawn under the chip
@@ -1510,11 +1511,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect, root: &Node, peek: Option<(usize
         }
     }
     let resp = if busy {
-        let (resp, face) = pill_button_at(ui, new_r, "", BTN_SECONDARY, true);
-        spinner(&p, Pos2::new(face.left() + 18.0, face.center().y), 5.0, ctx.input(|i| i.time), tint::DISK_MAP());
-        crate::kit::glass::poll(&ctx);
-        p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, btn, font(13.0), TEXT());
-        resp.on_hover_text(progress)
+        crate::kit::glass::busy_pill(ui, new_r, btn, tint::DISK_MAP()).on_hover_text(progress)
     } else {
         icon_pill(ui, new_r, Icon::Refresh, btn, BTN_SECONDARY, true)
     };
@@ -2208,7 +2205,7 @@ fn trashable(p: &Path) -> bool {
 /// Whether the map would offer "Move to Trash…" for `p`: never for
 /// essential folders or a protected folder holding a git repo.
 fn can_trash(p: &Path) -> bool {
-    !(scan::is_essential(p) || crate::kit::fs::never_remove(p) || crate::kit::fs::is_protected(p).is_some() && p.join(".git").exists())
+    !(scan::is_essential(p) || crate::kit::fs::never_remove(p) || crate::kit::own::is_kept(p) || crate::kit::fs::is_protected(p).is_some() && p.join(".git").exists())
 }
 
 /// The AI Check action to run: a Remove on a folder the map would never
@@ -2355,7 +2352,8 @@ mod tests {
             out.platform_output.accesskit_update
         };
         // open the switcher (the folder's name, top left)
-        let switcher = Pos2::new(r.left() + 84.0 + 24.0, r.top() + HEADER_H / 2.0);
+        // (after the "Disk Map" title, back and forward: SP17)
+        let switcher = Pos2::new(r.left() + 215.0, r.top() + HEADER_H / 2.0);
         pass(&mut app, vec![]);
         pass(&mut app, vec![egui::Event::PointerMoved(switcher)]);
         pass(&mut app, vec![press(switcher, true)]);

@@ -198,7 +198,7 @@ impl State {
         if self.trusted(j) { Vec::new() } else { j.flags() }
     }
     pub fn suggested(&self) -> Vec<Job> {
-        self.jobs.iter().filter(|j| self.is_suggested(j)).cloned().collect()
+        self.jobs.iter().filter(|j| self.is_suggested(j) && !j.own()).cloned().collect()
     }
     /// Jobs with something that looks wrong; `strong`: only red flags.
     pub fn flagged(&self, strong: bool) -> Vec<Job> {
@@ -299,6 +299,7 @@ impl Startup {
                                 a.push(LoginApp { name: name.clone(), path: path.clone(), hidden: *hidden, on: false });
                             }
                         }
+                        a.retain(|x| !x.own());
                         g.apps = a;
                         g.apps_error = None;
                     }
@@ -355,6 +356,9 @@ impl Startup {
     }
 
     pub fn toggle_job(&self, j: &Job) {
+        if j.own() {
+            return;
+        }
         let (j, want) = (j.clone(), !j.on);
         let demo = self.demo;
         self.work(
@@ -375,6 +379,9 @@ impl Startup {
     }
 
     pub fn toggle_app(&self, a: &LoginApp) {
+        if a.own() {
+            return;
+        }
         let (a, want) = (a.clone(), !a.on);
         let demo = self.demo;
         self.work(
@@ -452,7 +459,7 @@ impl Startup {
 
     /// Stop a job and move its file to the Trash.
     pub fn trash(&self, j: &Job) {
-        if j.bundled {
+        if j.bundled || j.own() {
             return;
         }
         let j = j.clone();
@@ -664,6 +671,9 @@ fn watch(st: Shared, lib: PathBuf, ctx: egui::Context) {
             ctx.request_repaint();
             items::sign_jobs(&mut raw);
         }
+        // tracked for changes: also Cmd+Meow's own jobs, which the list
+        // hides, so hiding them never reads as "removed"
+        let tracked: Vec<Job> = raw.iter().filter(|j| !j.apple()).cloned().collect();
         let jobs = items::shown(raw);
         let cron = extra::cron_jobs();
         let sysext = extra::sysexts();
@@ -671,7 +681,7 @@ fn watch(st: Shared, lib: PathBuf, ctx: egui::Context) {
         let mut new_cron: Vec<CronJob> = Vec::new();
         {
             let mut g = st.lock_ok();
-            let (d, now) = diff(&g.settings.seen, &jobs);
+            let (d, now) = diff(&g.settings.seen, &tracked);
             let mut dirty = now != g.settings.seen;
             if g.settings.seeded {
                 for (paths, changed) in [(&d.new, false), (&d.changed, true)] {
@@ -699,6 +709,8 @@ fn watch(st: Shared, lib: PathBuf, ctx: egui::Context) {
             let before = g.settings.gone.len();
             let cut = now_secs().saturating_sub(GONE_FOR);
             g.settings.gone.retain(|x| x.at >= cut);
+            // never Cmd+Meow's own, nor one that is still there
+            g.settings.gone.retain(|x| !crate::kit::own::is_own_name(&x.label) && !tracked.iter().any(|j| j.label == x.label));
             let over = g.settings.gone.len().saturating_sub(20);
             g.settings.gone.drain(..over);
             dirty |= g.settings.gone.len() != before;

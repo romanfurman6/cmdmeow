@@ -71,6 +71,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <!-- Menu bar app: no Dock icon until the full window opens. -->
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
   <key>CFBundleURLTypes</key>
   <array><dict>
     <key>CFBundleURLName</key><string>$BUNDLE_ID</string>

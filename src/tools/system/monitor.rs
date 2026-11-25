@@ -934,6 +934,7 @@ fn parse_battery(out: &str) -> Battery {
     let mut design = 0f32;
     let mut nominal = 0f32;
     let mut raw_max = 0f32;
+    let (mut current, mut max_cap) = (0f64, 0f64);
     let (mut to_empty, mut to_full) = (None, None);
     for line in out.lines() {
         let l = line.trim_start_matches([' ', '|']).trim();
@@ -942,7 +943,8 @@ fn parse_battery(out: &str) -> Battery {
         let v = v.trim();
         let n = || v.parse::<f64>().ok();
         match k {
-            "CurrentCapacity" => b.percent = n().unwrap_or(0.0).clamp(0.0, 100.0) as u8,
+            "CurrentCapacity" => current = n().unwrap_or(0.0),
+            "MaxCapacity" => max_cap = n().unwrap_or(0.0),
             "IsCharging" => b.charging = v == "Yes",
             "ExternalConnected" => b.plugged = v == "Yes",
             "FullyCharged" => b.full = v == "Yes",
@@ -962,8 +964,21 @@ fn parse_battery(out: &str) -> Battery {
     // ioreg lists keys alphabetically, so "IsCharging" comes after both.
     let t = if b.charging { to_full } else { to_empty };
     b.minutes_left = t.filter(|&t| t > 0.0 && t < m::BATTERY_TIME_UNKNOWN).map(|t| t as u32);
-    // Apple Silicon reports health from AppleRawMaxCapacity
-    let max = if raw_max > 0.0 { raw_max } else { nominal };
+    // Apple silicon gives the charge in percent (MaxCapacity = 100); Intel
+    // Macs give both in mAh, the charge being their ratio
+    let pct = if max_cap > 100.0 { current / max_cap * 100.0 } else { current };
+    b.percent = pct.round().clamp(0.0, 100.0) as u8;
+    // Apple Silicon reports health from AppleRawMaxCapacity; older Intel
+    // Macs only have MaxCapacity (mAh)
+    let max = if raw_max > 0.0 {
+        raw_max
+    } else if nominal > 0.0 {
+        nominal
+    } else if max_cap > 100.0 {
+        max_cap as f32
+    } else {
+        0.0
+    };
     if design > 0.0 && max > 0.0 {
         b.health_pct = Some((max / design * 100.0).min(100.0));
     }
@@ -1249,6 +1264,23 @@ mod tests {
         // nothing usable
         assert_eq!(system_watts(smc(&[("PSTR", f32::NAN), ("PD0R", 5000.0)]), false), None);
         assert_eq!(system_watts(smc(&[]), false), None);
+    }
+
+    #[test]
+    fn intel_battery_in_mah() {
+        // Intel Macs: CurrentCapacity and MaxCapacity in mAh, not percent
+        let intel = r#"
+      "CurrentCapacity" = 3640
+      "DesignCapacity" = 5103
+      "IsCharging" = No
+      "MaxCapacity" = 4000
+"#;
+        let b = parse_battery(intel);
+        assert_eq!(b.percent, 91);
+        assert_eq!(b.health_pct, Some(4000.0 / 5103.0 * 100.0));
+        // Apple silicon: MaxCapacity = 100, CurrentCapacity is the percent
+        let arm = IOREG.replace("\"CycleCount\"", "\"MaxCapacity\" = 100\n      \"CycleCount\"");
+        assert_eq!(parse_battery(&arm).percent, 62);
     }
 
     #[test]

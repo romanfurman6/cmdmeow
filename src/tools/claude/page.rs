@@ -31,7 +31,7 @@ fn picker(demo: bool, ui: &mut Ui, area: Rect) -> f32 {
     let mut idx: Vec<usize> = vec![ai::ALL];
     idx.extend((0..ai::ALL).filter(|i| set.is_on(ai::PROVIDERS[*i].id)));
     let labels: Vec<&str> = idx.iter().map(|i| ai::PROVIDERS.get(*i).map(|m| m.name).unwrap_or(ts!("ai.all"))).collect();
-    let w = 72.0 * labels.len() as f32;
+    let w = crate::kit::glass::tabs_width(ui.painter(), &labels);
     let rect = Rect::from_min_max(Pos2::new(area.right() - w, area.top()), area.max);
     let cur = idx.iter().position(|i| *i == ai::selected()).unwrap_or(0);
     if let Some(k) = segmented(ui, rect, ui.scope_id().with("ai-provider"), &labels, cur) {
@@ -42,19 +42,24 @@ fn picker(demo: bool, ui: &mut Ui, area: Rect) -> f32 {
 
 /// Header: title, status, refresh, the provider switch. Returns the left
 /// edge of the controls.
-fn header(ui: &mut Ui, r: Rect, sub: &str, sub_col: egui::Color32, loading: bool, demo: bool, cx: &mut Cx) -> f32 {
+fn header(ui: &mut Ui, r: Rect, (sub, sub_col): (&str, egui::Color32), tip: &str, loading: bool, demo: bool, cx: &mut Cx) -> f32 {
     let p = ui.painter().clone();
     // SP16: Refresh at the right edge, the provider switch next to it
     let rw = icon_pill_width(&p, ts!("ai.refresh"), BTN_SECONDARY);
     let set = settings::get();
-    let tw = 72.0 * (1 + (0..ai::ALL).filter(|i| set.is_on(ai::PROVIDERS[*i].id)).count()) as f32;
+    let mut names: Vec<&str> = vec![ts!("ai.all")];
+    names.extend((0..ai::ALL).filter(|i| set.is_on(ai::PROVIDERS[*i].id)).map(|i| ai::PROVIDERS[i].name));
+    let tw = crate::kit::glass::tabs_width(&p, &names);
     let btns = page_header_room(&p, r, ts!("ai.name"), sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - rw - sp::M - tw - sp::M).0;
     let (tr, rb) = header_controls(btns, tw, rw);
     let busy = loading || backend::refreshing();
     if busy {
         crate::kit::glass::poll(ui.ctx());
     }
-    if icon_pill(ui, rb, Icon::Refresh, ts!("ai.refresh"), BTN_SECONDARY, !busy).clicked() {
+    // SP17 H5: when it last updated sits in the tip, not the status
+    let resp = icon_pill(ui, rb, Icon::Refresh, ts!("ai.refresh"), BTN_SECONDARY, !busy);
+    let resp = if tip.is_empty() { resp } else { resp.on_hover_text(tip) };
+    if resp.clicked() {
         backend::request_refresh();
         cx.toast(ts!("ai.checking_tools"));
     }
@@ -66,7 +71,7 @@ fn not_set_up(a: Availability, cl: &UsageInfo, demo: bool, ui: &mut Ui, r: Rect,
     let p = ui.painter().clone();
     let m = ai::meta(cl.provider);
     let short = if a == Availability::SignedOut { t!("ai.signed_out_short", name = m.name).into_owned() } else { t!("ai.not_installed_short", name = m.name).into_owned() };
-    header(ui, r, &short, TEXT_DIM(), cl.loading, demo, cx);
+    header(ui, r, (&short, TEXT_DIM()), "", cl.loading, demo, cx);
     let colw = 480.0f32.min(r.width() - 48.0);
     let x = r.center().x - colw / 2.0;
     let mut y = r.top() + PAGE_HEADER_H + 56.0;
@@ -128,7 +133,7 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     // the first check isn't done: say so, rather than cards of zeros that
     // turn into "No usage yet" a moment later
     if !cl.scanned {
-        let left = header(ui, r, ts!("ai.checking"), TEXT_DIM(), true, demo, cx);
+        let left = header(ui, r, (ts!("ai.checking"), TEXT_DIM()), "", true, demo, cx);
         incident(ui, Pos2::new(left - sp::M, r.top() + PAGE_HEADER_H / 2.0), Align2::RIGHT_CENTER, &cl);
         checking(&cl, ui, r);
         return;
@@ -144,10 +149,10 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     if cl.is_api() {
         sub.push_str(ts!("ai.api_key_suffix"));
     }
-    if !fresh.is_empty() {
+    if !fresh.is_empty() && cl.stale {
         sub.push_str(&format!(" · {fresh}"));
     }
-    let left = header(ui, r, &sub, if cl.stale { AMBER() } else { TEXT_DIM() }, cl.loading, demo, cx);
+    let left = header(ui, r, (&sub, if cl.stale { AMBER() } else { TEXT_DIM() }), &fresh, cl.loading, demo, cx);
     incident(ui, Pos2::new(left - sp::M, r.top() + PAGE_HEADER_H / 2.0), Align2::RIGHT_CENTER, &cl);
     // nothing to show at all: one empty state instead of cards of zeros. It
     // stays up while a refresh runs, so the page doesn't flash cards
@@ -166,7 +171,6 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let slot = |k: usize, span: usize| Rect::from_min_size(Pos2::new(x0 + k as f32 * (cw + GAP), y), Vec2::new(cw * span as f32 + GAP * (span as f32 - 1.0), ch));
 
     // row 1; a click anywhere on a limit card opens the limits popup
-    let mut limit_rects: Vec<Rect> = Vec::new();
     if cl.is_api() {
         budget_card(ui, slot(0, 2), &cl);
         today_card(&p, slot(2, 1), &cl, show_usd);
@@ -174,8 +178,11 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     } else if !cl.limits.is_empty() {
         let n = cl.limits.len().min(3);
         for (k, l) in cl.limits.iter().take(n).enumerate() {
+            // the whole card opens the limits popup; it hovers like a widget card
+            if data_card_button(ui, slot(k, 1), ui.scope_id().with(("ai-limit", k))).clicked() {
+                open_limits(ui.ctx(), true);
+            }
             limit_card(&p, slot(k, 1), l);
-            limit_rects.push(slot(k, 1));
         }
         let rest = Rect::from_min_max(slot(n, 1).min, Pos2::new(x1, y + ch));
         if show_usd && cl.billing == Billing::Subscription && cl.plan_usd().is_some() {
@@ -219,17 +226,6 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
             empty_note(&p, list, empty);
         }
         parts::share_lines(&p, list, rows, show_usd, &home);
-    }
-    // last, so nothing drawn after takes the card's clicks (the whole card, S2)
-    for (k, lr) in limit_rects.into_iter().enumerate() {
-        let resp = ui.interact(lr, ui.scope_id().with(("ai-limit", k)), egui::Sense::click());
-        if resp.hovered() {
-            p.rect_filled(lr, crate::kit::tile::R_TILE, white(6));
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        if resp.clicked() {
-            open_limits(ui.ctx(), true);
-        }
     }
     limits_popup(all, ui, cx);
 }
@@ -338,8 +334,8 @@ fn stat_card(p: &egui::Painter, r: Rect, title: &str, value: &str, line: &str) {
 
 /// One plan limit: the page's SP2 ring with the even-use arc under the
 /// used one, and beside it when it runs out (red) and when it resets.
+/// The card itself is drawn by the caller ([`data_card_button`]).
 fn limit_card(p: &egui::Painter, cr: Rect, l: &ai::Limit) {
-    data_card(p, cr);
     let inner = cr.shrink(sp::L);
     let tr = p.text(inner.left_top(), Align2::LEFT_TOP, backend::short_label(&l.label), ty::title(), TEXT());
     p.text(Pos2::new(tr.right() + sp::XS, tr.center().y), Align2::LEFT_CENTER, "›", ty::title(), TEXT_FAINT());
@@ -530,7 +526,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let today: f64 = infos.iter().map(|i| i.local.usd_today).sum();
     let sub = if show_usd { t!("ai.usd_today", usd = parts::usd(today)).into_owned() } else { String::new() };
     let loading = infos.iter().any(|i| i.loading || !i.scanned);
-    header(ui, r, &sub, TEXT_DIM(), loading, demo, cx);
+    header(ui, r, (&sub, TEXT_DIM()), "", loading, demo, cx);
     let x0 = r.left() + sp::PAGE_EDGE;
     let x1 = r.right() - sp::PAGE_EDGE;
     let mut y = r.top() + PAGE_HEADER_H + 1.0 + sp::L;

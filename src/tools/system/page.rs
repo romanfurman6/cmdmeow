@@ -53,15 +53,18 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
         Some(rec) => (rec.title.clone(), AMBER()),
         None => (String::new(), TEXT_DIM()),
     };
-    // AI Check: a chip after the title, on the overview
+    // AI Check: a chip left of the tabs (SP17), on the overview
     let cw = if show_settings { 0.0 } else { aicheck::ui::chip_width(ai, ui, s.ready) };
     // a tip without a fix has no button
     let rec_btn = recs.first().filter(|rec| !rec.action.is_empty());
     let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY)).unwrap_or(0.0);
     // SP16: the fix at the right edge, the tabs next to it
-    let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - if rec_w > 0.0 { rec_w + sp::M } else { 0.0 };
-    let (btns, chip_at) = page_header_room(&p, r, ts!("health.name"), &sub, sub_col, cw, sub_right);
-    let (tr, br) = header_controls(btns, 180.0, rec_w);
+    let tabs = [ts!("health.tab.overview"), ts!("health.tab.settings")];
+    let tw = crate::kit::glass::tabs_width(&p, &tabs);
+    let sub_right = r.right() - sp::PAGE_EDGE - tw - sp::M - if rec_w > 0.0 { rec_w + sp::M } else { 0.0 } - if cw > 0.0 { cw + sp::M } else { 0.0 };
+    let (btns, _) = page_header_room(&p, r, ts!("health.name"), &sub, sub_col, 0.0, sub_right);
+    let (tr, br) = header_controls(btns, tw, rec_w);
+    let chip_at = Pos2::new(tr.left() - sp::M - cw, tr.center().y);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("health-tab"), &[ts!("health.tab.overview"), ts!("health.tab.settings")], show_settings as usize) {
         ui.ctx().data_mut(|d| d.insert_temp(settings_id, i == 1));
     }
@@ -143,12 +146,7 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
             // each card opens its details; the card's own buttons sit on top
             const KINDS: [Sheet; 6] = [Sheet::Cpu, Sheet::Storage, Sheet::Memory, Sheet::Battery, Sheet::Network, Sheet::Devices];
             for (rr, kind) in rects.iter().zip(KINDS) {
-                let resp = ui.interact(*rr, ui.scope_id().with(("health-card", kind as u8)), Sense::click());
-                data_card(&p, *rr);
-                if resp.hovered() {
-                    p.rect_filled(*rr, tile::R_TILE, white(6));
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                }
+                let resp = data_card_button(ui, *rr, ui.scope_id().with(("health-card", kind as u8)));
                 if resp.clicked() {
                     open_details(ui.ctx(), Some(kind));
                 }
@@ -479,7 +477,7 @@ fn network_card(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option
 /// reused by another process while the rec sits on screen).
 fn quit_target(live: &[super::procs::Proc], key: &str, name: &str) -> Option<u32> {
     let pid = key.strip_prefix("pid:")?.parse::<u32>().ok()?;
-    live.iter().find(|p| p.pid == pid && p.name == name && p.mine).map(|p| p.pid)
+    live.iter().find(|p| p.pid == pid && p.name == name && p.mine && !crate::kit::own::is_own_name(&p.name)).map(|p| p.pid)
 }
 
 /// What AI Check gets: the busiest processes and how the Mac is doing.

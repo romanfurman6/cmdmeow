@@ -1220,8 +1220,7 @@
     "rescan_tip": "Look for apps and leftovers again",
     "tab": {
       "apps": "Apps",
-      "leftovers": "Leftovers",
-      "leftovers_size": "Leftovers · %{size}"
+      "leftovers": "Leftovers"
     },
     "drop_to_uninstall": "Drop to uninstall",
     "scan_apps": "Scan for apps",
@@ -1427,12 +1426,11 @@
     "stop_save": "Stop and save the recording",
     "history": "History",
     "click_edit": "click to edit",
-    "saving_to": "Saving to %{folder}",
-    "hist_sub_one": "%{n} screenshot · %{size} · saving to %{folder}",
-    "hist_sub_other": "%{n} screenshots · %{size} · saving to %{folder}",
+    "hist_sub_one": "%{n} screenshot · %{size}",
+    "hist_sub_other": "%{n} screenshots · %{size}",
     "newest": " (newest)",
-    "folder_sub_one": "%{n} image%{more} in %{folder}",
-    "folder_sub_other": "%{n} images%{more} in %{folder}",
+    "folder_sub_one": "%{n} image%{more}",
+    "folder_sub_other": "%{n} images%{more}",
     "f": {
       "all": "All",
       "pinned": "Pinned"
@@ -1830,7 +1828,11 @@
       "denied": "these keys may not write to the bucket",
       "clock": "the Mac's clock is off",
       "answered": "the storage answered %{status}"
-    }
+    },
+    "recordings": "Recordings",
+    "rec_sub_one": "%{n} recording",
+    "rec_sub_other": "%{n} recordings",
+    "stop_at": "Stop · %{t}"
   },
   "clip": {
     "now": "now",
@@ -1995,7 +1997,9 @@
     "widget_about": "Your shortcut, words today and the latest dictations.",
     "about": "Speak, and the text is typed where the cursor is",
     "no_mic": "No microphone",
-    "mic_busy": "The microphone is busy"
+    "mic_busy": "The microphone is busy",
+    "words_today_one": "%{n} word today",
+    "words_today_other": "%{n} words today"
   },
   "app": {
     "sec_clean": "Clean",

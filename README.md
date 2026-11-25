@@ -23,7 +23,7 @@
 
 <p align="center">
   <a href="https://cmdmeow.com">Website</a> ·
-  <a href="https://cmdmeow.com/promo.mp4">40-second video</a> ·
+  <a href="https://cmdmeow.com/#watch">▶ How it works (0:27)</a> ·
   <a href="https://github.com/romanfurman6/cmdmeow/releases">Releases</a>
 </p>
 

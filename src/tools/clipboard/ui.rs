@@ -307,10 +307,11 @@ pub fn page(c: &mut Clipboard, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     };
     // SP16: Pause at the right edge, one width for both labels
     let label = if c.paused() { ts!("clip.resume") } else { ts!("clip.pause_15") };
-    let bw = button_width(&p, ts!("clip.pause_15"), BTN_SECONDARY).max(button_width(&p, ts!("clip.resume"), BTN_SECONDARY));
-    let btns = page_header_room(&p, r, ts!("clip.name"), &sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 180.0 - sp::M).0;
-    let (tr, br) = header_controls(btns, 180.0, bw);
-    if pill_button(ui, br, label, BTN_SECONDARY, true).clicked() {
+    let bw = crate::kit::glass::icon_pill_width(&p, ts!("clip.pause_15"), BTN_SECONDARY).max(crate::kit::glass::icon_pill_width(&p, ts!("clip.resume"), BTN_SECONDARY));
+    let tw = crate::kit::glass::tabs_width(&p, &[ts!("clip.history"), ts!("clip.settings")]);
+    let btns = page_header_room(&p, r, ts!("clip.name"), &sub, sub_col, 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - tw - sp::M).0;
+    let (tr, br) = header_controls(btns, tw, bw);
+    if crate::kit::glass::icon_pill(ui, br, if c.paused() { Icon::Play } else { Icon::Pause }, label, BTN_SECONDARY, true).clicked() {
         c.toggle_pause(15);
     }
     let cur = (c.tab == Tab::Settings) as usize;
