@@ -155,7 +155,8 @@ mod mac {
     /// With Settings › General "Show in Dock" off it stays Accessory.
     pub fn set_dock_icon(visible: bool) {
         super::DOCK_WANTED.store(visible, std::sync::atomic::Ordering::Relaxed);
-        let visible = visible && super::show_in_dock();
+        // with no menu bar icon the Dock icon is the only way back in: it stays
+        let visible = (visible && super::show_in_dock()) || !super::show_in_menu_bar();
         let Some(mtm) = MainThreadMarker::new() else { return };
         let app = NSApplication::sharedApplication(mtm);
         let policy = if visible { NSApplicationActivationPolicy::Regular } else { NSApplicationActivationPolicy::Accessory };
@@ -603,6 +604,19 @@ mod mac {
         }
     }
 
+    /// Show or hide the menu bar icon in place. tray-icon's own set_visible
+    /// drops the item and makes a new one, which the cat and the press
+    /// watch still point at.
+    pub fn set_menu_icon_visible(item: *mut std::ffi::c_void, on: bool) {
+        use objc2::msg_send;
+        use objc2::runtime::{AnyObject, Bool};
+        let Some(_mtm) = MainThreadMarker::new() else { return };
+        let Some(item) = (unsafe { (item as *const AnyObject).as_ref() }) else { return };
+        unsafe {
+            let _: () = msg_send![item, setVisible: Bool::new(on)];
+        }
+    }
+
     /// Call `f` on every press that goes to another app (a click outside
     /// our windows). The panel hides on it: it can't count on losing focus,
     /// since macOS may not make the app active when the panel opens.
@@ -733,6 +747,8 @@ pub fn show_in_dock() -> bool {
 }
 
 pub fn set_show_in_dock(on: bool) {
+    // never both off: the app would have no way back in
+    let on = on || !show_in_menu_bar();
     SHOW_IN_DOCK.store(on, std::sync::atomic::Ordering::Relaxed);
     let wanted = DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed);
     set_dock_icon(wanted);
@@ -740,6 +756,24 @@ pub fn set_show_in_dock(on: bool) {
     if wanted && !on {
         activate();
     }
+}
+
+/// Settings › General "Show in menu bar": off hides the menu bar icon (it
+/// still shows while recording, for the clock, and until setup is done).
+/// The app then keeps its Dock icon, and Show in Dock stays on. On by default.
+pub const SHOW_IN_MENU_BAR_KEY: &str = "app.show_in_menu_bar";
+static SHOW_IN_MENU_BAR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn show_in_menu_bar() -> bool {
+    SHOW_IN_MENU_BAR.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn set_show_in_menu_bar(on: bool) {
+    SHOW_IN_MENU_BAR.store(on, std::sync::atomic::Ordering::Relaxed);
+    if !on {
+        SHOW_IN_DOCK.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    set_dock_icon(DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed));
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -764,6 +798,7 @@ mod other {
     pub fn log_left_clicks() {}
     pub fn watch_clicks_elsewhere(_f: impl Fn() + 'static) {}
     pub fn set_menu_icon_lit(_item: *mut std::ffi::c_void, _on: bool) {}
+    pub fn set_menu_icon_visible(_item: *mut std::ffi::c_void, _on: bool) {}
     pub fn watch_menu_icon_presses(_item: *mut std::ffi::c_void, _f: impl Fn() + 'static) -> bool {
         false
     }

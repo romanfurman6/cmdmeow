@@ -106,6 +106,8 @@ pub struct App {
     /// The menu bar icon shows pressed (the panel is open).
     icon_lit: bool,
     tray_title: String,
+    /// Whether the menu bar icon is shown (see `update_tray_title`).
+    tray_shown: Option<bool>,
     anchor: Option<Pos2>,
     /// The usable part of the menu bar icon's display (below the menu bar),
     /// from the icon itself: the panel stays inside it.
@@ -192,6 +194,7 @@ impl App {
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
+        crate::kit::native::set_show_in_menu_bar(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_MENU_BAR_KEY)).unwrap_or(true));
         crate::kit::native::set_show_in_dock(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_DOCK_KEY)).unwrap_or(true));
         if !demo {
             glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::DEFAULT_THEME));
@@ -299,6 +302,7 @@ impl App {
             elsewhere_rx,
             icon_lit: false,
             tray_title: String::new(),
+            tray_shown: None,
             anchor: None,
             menu_screen: None,
             visible: true,
@@ -393,6 +397,7 @@ impl App {
             eframe::set_value(storage, crate::kit::sound::STORAGE_KEY, &crate::kit::sound::on());
             eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
             eframe::set_value(storage, crate::kit::native::SHOW_IN_DOCK_KEY, &crate::kit::native::show_in_dock());
+            eframe::set_value(storage, crate::kit::native::SHOW_IN_MENU_BAR_KEY, &crate::kit::native::show_in_menu_bar());
             eframe::set_value(storage, glass::THEME_KEY, &glass::theme_choice());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
@@ -977,6 +982,18 @@ impl App {
         } else {
             self.tools.iter().enumerate().filter(|(i, _)| self.tool_on(*i)).find_map(|(_, t)| t.tray_title()).unwrap_or_default()
         };
+        // Settings › General "Show in menu bar" off hides the icon, except
+        // for a title (setup not done, the recording clock)
+        // (macOS remembers a hidden item across launches: the first frame
+        // always sets it)
+        let show = crate::kit::native::show_in_menu_bar() || !title.is_empty();
+        if self.tray_shown != Some(show) {
+            #[cfg(target_os = "macos")]
+            if let Some(item) = tray.ns_status_item() {
+                crate::kit::native::set_menu_icon_visible(objc2::rc::Retained::as_ptr(&item) as *mut std::ffi::c_void, show);
+            }
+            self.tray_shown = Some(show);
+        }
         if title != self.tray_title {
             // tray-icon's set_title(None) leaves the old text on macOS (the
             // recording clock stayed after a stop); an empty title clears it
@@ -1328,7 +1345,7 @@ impl eframe::App for App {
         }
         self.run_actions(&ctx, &mut cx);
         self.draw_toast(ui, full);
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1337,7 +1354,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock()) != (&off_before.0, off_before.1, off_before.2, off_before.3, off_before.4) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar()) != (&off_before.0, off_before.1, off_before.2, off_before.3, off_before.4, off_before.5) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }

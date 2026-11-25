@@ -2073,6 +2073,7 @@
     "theme": "Theme",
     "open_login": "Open at login",
     "show_dock": "Show in Dock",
+    "show_menu_bar": "Show in menu bar",
     "sounds": "Sounds",
     "keep_open": "Keep menu bar panel open",
     "send_crash": "Send crash reports",
