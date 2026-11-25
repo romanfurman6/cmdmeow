@@ -130,45 +130,110 @@ pub fn glyph_rgba(px: u32) -> Vec<u8> {
 
 /// The keycap without its ears (the mark's outline, ears cut off along
 /// their base lines), so the ears can move on their own.
-pub(crate) fn body() -> Option<tiny_skia::Path> {
-    let mut pb = PathBuilder::new();
-    pb.move_to(330.0, 200.0);
-    pb.line_to(692.0, 200.0);
-    pb.line_to(940.0, 300.0);
-    pb.cubic_to(955.0, 350.0, 958.0, 400.0, 958.0, 450.0);
-    pb.line_to(958.0, 840.0);
-    pb.cubic_to(958.0, 930.0, 895.0, 992.0, 805.0, 992.0);
-    pb.line_to(218.0, 992.0);
-    pb.cubic_to(128.0, 992.0, 65.0, 930.0, 65.0, 840.0);
-    pb.line_to(65.0, 450.0);
-    pb.cubic_to(65.0, 400.0, 68.0, 350.0, 84.0, 300.0);
-    pb.close();
-    pb.finish()
-}
+pub const BODY: &[Seg] = &[
+    Seg::M(330.0, 200.0),
+    Seg::L(692.0, 200.0),
+    Seg::L(940.0, 300.0),
+    Seg::C(955.0, 350.0, 958.0, 400.0, 958.0, 450.0),
+    Seg::L(958.0, 840.0),
+    Seg::C(958.0, 930.0, 895.0, 992.0, 805.0, 992.0),
+    Seg::L(218.0, 992.0),
+    Seg::C(128.0, 992.0, 65.0, 930.0, 65.0, 840.0),
+    Seg::L(65.0, 450.0),
+    Seg::C(65.0, 400.0, 68.0, 350.0, 84.0, 300.0),
+];
 
-/// One ear, the same curves as [`outline`]. It reaches a little into the
-/// keycap below its base line, so no seam shows where the two meet.
-pub(crate) fn ear(right: bool) -> Option<tiny_skia::Path> {
+/// The ears, the same curves as [`OUTLINE`]. Each reaches a little into
+/// the keycap below its base line, so no seam shows where the two meet.
+pub const EARS: [&[Seg]; 2] = [
+    &[
+        Seg::M(84.0, 300.0),
+        Seg::C(84.0, 200.0, 118.0, 44.0, 161.0, 44.0),
+        Seg::C(193.0, 44.0, 263.0, 110.0, 330.0, 200.0),
+        Seg::L(330.0, 250.0),
+        Seg::L(110.0, 330.0),
+    ],
+    &[
+        Seg::M(692.0, 200.0),
+        Seg::C(760.0, 110.0, 830.0, 44.0, 862.0, 44.0),
+        Seg::C(905.0, 44.0, 940.0, 200.0, 940.0, 300.0),
+        Seg::L(915.0, 330.0),
+        Seg::L(692.0, 250.0),
+    ],
+];
+
+/// A closed path from `segs`.
+fn skia_path(segs: &[Seg]) -> Option<tiny_skia::Path> {
     let mut pb = PathBuilder::new();
-    if right {
-        pb.move_to(692.0, 200.0);
-        pb.cubic_to(760.0, 110.0, 830.0, 44.0, 862.0, 44.0);
-        pb.cubic_to(905.0, 44.0, 940.0, 200.0, 940.0, 300.0);
-        pb.line_to(915.0, 330.0);
-        pb.line_to(692.0, 250.0);
-    } else {
-        pb.move_to(84.0, 300.0);
-        pb.cubic_to(84.0, 200.0, 118.0, 44.0, 161.0, 44.0);
-        pb.cubic_to(193.0, 44.0, 263.0, 110.0, 330.0, 200.0);
-        pb.line_to(330.0, 250.0);
-        pb.line_to(110.0, 330.0);
+    for s in segs {
+        match *s {
+            Seg::M(x, y) => pb.move_to(x, y),
+            Seg::L(x, y) => pb.line_to(x, y),
+            Seg::C(a, b, c, d, x, y) => pb.cubic_to(a, b, c, d, x, y),
+        }
     }
     pb.close();
     pb.finish()
 }
 
-/// Where each ear turns: the middle of its base line (1024 box).
-const EAR_PIVOT: [(f32, f32); 2] = [(207.0, 250.0), (816.0, 250.0)];
+pub(crate) fn body() -> Option<tiny_skia::Path> {
+    skia_path(BODY)
+}
+
+/// One ear as drawn at rest.
+pub(crate) fn ear(right: bool) -> Option<tiny_skia::Path> {
+    skia_path(EARS[right as usize])
+}
+
+/// Where an ear meets the head: the line y = 200 of the 1024 box (the top
+/// edge between the ears). Below it an ear never moves.
+const EAR_BASE_Y: f32 = 200.0;
+/// The ear tips' height: the top of the bend.
+const EAR_TIP_Y: f32 = 44.0;
+/// What each ear bends round: the middle of its base.
+const EAR_BEND: [(f32, f32); 2] = [(210.0, 200.0), (814.0, 200.0)];
+
+/// Where point (x, y) of ear `right` goes when the ear tilts `turn`
+/// radians outward (negative folds it in). The ear bends rather than
+/// turning in one piece: its base stays on the head and the turn grows
+/// smoothly to the tip, so no step or corner opens where it meets the
+/// keycap.
+pub fn bend(right: bool, turn: f32, x: f32, y: f32) -> (f32, f32) {
+    let w = ((EAR_BASE_Y - y) / (EAR_BASE_Y - EAR_TIP_Y)).clamp(0.0, 1.0);
+    let w = w * w * (3.0 - 2.0 * w);
+    // outward is anticlockwise for the left ear, clockwise for the right (y down)
+    let a = if right { turn } else { -turn } * w;
+    let (px, py) = EAR_BEND[right as usize];
+    let (c, s) = (a.cos(), a.sin());
+    (px + (x - px) * c - (y - py) * s, py + (x - px) * s + (y - py) * c)
+}
+
+/// `segs` as points along the outline (each curve in `n` steps).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn flatten(segs: &[Seg], n: usize) -> Vec<(f32, f32)> {
+    let mut out: Vec<(f32, f32)> = Vec::new();
+    for s in segs {
+        match *s {
+            Seg::M(x, y) | Seg::L(x, y) => out.push((x, y)),
+            Seg::C(x1, y1, x2, y2, x, y) => {
+                let (x0, y0) = out.last().copied().unwrap_or((x1, y1));
+                for k in 1..=n {
+                    let t = k as f32 / n as f32;
+                    let u = 1.0 - t;
+                    let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
+                    out.push((a * x0 + b * x1 + c * x2 + d * x, a * y0 + b * y1 + c * y2 + d * y));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Ear `right` tilted `turn` radians outward, as an outline of points.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn bent_ear(right: bool, turn: f32) -> Vec<(f32, f32)> {
+    flatten(EARS[right as usize], 32).into_iter().map(|(x, y)| bend(right, turn, x, y)).collect()
+}
 
 /// The mascot in three white layers (alpha = coverage) in a `px` square:
 /// the keycap with the ⌘ cut out, the left ear, the right ear. Drawn on top
@@ -209,7 +274,8 @@ fn mascot_textures(ctx: &egui::Context) -> [egui::TextureHandle; 3] {
     if let Some(t) = ctx.data(|d| d.get_temp::<[egui::TextureHandle; 3]>(id)) {
         return t;
     }
-    let n = 256;
+    // sharp at the Welcome cat's 184 pt on a Retina screen
+    let n = 512;
     let [b, l, r] = mascot_rgba(n);
     let load = |name: &str, px: &[u8]| ctx.load_texture(name, egui::ColorImage::from_rgba_unmultiplied([n as usize, n as usize], px), egui::TextureOptions::LINEAR);
     let t = [load("cmdmeow-mascot-body", &b), load("cmdmeow-mascot-ear-l", &l), load("cmdmeow-mascot-ear-r", &r)];
@@ -230,19 +296,40 @@ pub fn draw_mascot(p: &egui::Painter, rect: egui::Rect, col: egui::Color32, ears
         return;
     }
     let [body, ear_l, ear_r] = mascot_textures(p.ctx());
-    // the layers are drawn with the mark's own small offset (see glyph_rgba)
-    let at = |(x, y): (f32, f32)| rect.min + egui::Vec2::new((x + 0.5) / 1024.0 * rect.width(), (y - 6.0) / 1024.0 * rect.height());
-    for (tex, pivot, turn) in [(&ear_l, EAR_PIVOT[0], -ears.0), (&ear_r, EAR_PIVOT[1], ears.1)] {
-        let mut m = egui::Mesh::with_texture(tex.id());
-        m.add_rect_with_uv(rect, uv, col);
-        if turn != 0.0 {
-            m.rotate(egui::emath::Rot2::from_angle(turn), at(pivot));
-        }
-        p.add(m);
+    for (tex, right, turn) in [(&ear_l, false, ears.0), (&ear_r, true, ears.1)] {
+        p.add(ear_mesh(tex.id(), rect, col, right, turn));
     }
     let mut m = egui::Mesh::with_texture(body.id());
     m.add_rect_with_uv(rect, uv, col);
     p.add(m);
+}
+
+/// Ear `right` of the mascot in `rect` as a fine grid over its texture,
+/// each point moved by [`bend`]: the texture bends with the ear.
+fn ear_mesh(tex: egui::TextureId, rect: egui::Rect, col: egui::Color32, right: bool, turn: f32) -> egui::Mesh {
+    // the ear's box in the 1024 square, with a margin
+    let (x0, x1) = if right { (680.0, 950.0) } else { (74.0, 344.0) };
+    let (y0, y1) = (34.0, 340.0);
+    const N: u32 = 12;
+    let mut m = egui::Mesh::with_texture(tex);
+    for j in 0..=N {
+        for i in 0..=N {
+            let x = x0 + (x1 - x0) * i as f32 / N as f32;
+            let y = y0 + (y1 - y0) * j as f32 / N as f32;
+            let (bx, by) = if turn == 0.0 { (x, y) } else { bend(right, turn, x, y) };
+            // the texture holds the mark with its nudge: sample where it was drawn
+            let uv = egui::Pos2::new((x + NUDGE.0) / 1024.0, (y + NUDGE.1) / 1024.0);
+            m.vertices.push(egui::epaint::Vertex { pos: at(rect, bx, by), uv, color: col });
+        }
+    }
+    for j in 0..N {
+        for i in 0..N {
+            let a = j * (N + 1) + i;
+            m.add_triangle(a, a + 1, a + N + 2);
+            m.add_triangle(a, a + N + 2, a + N + 1);
+        }
+    }
+    m
 }
 
 /// The app icon at 64 px, for the window sidebar.
@@ -385,5 +472,25 @@ mod tests {
     fn app_icon_png_decodes() {
         let img = image::load_from_memory(APP_ICON_64).unwrap();
         assert_eq!((img.width(), img.height()), (64, 64));
+    }
+
+    #[test]
+    fn a_bent_ear_keeps_its_base_on_the_head() {
+        for right in [false, true] {
+            for turn in [-0.25, 0.28] {
+                for (x, y) in flatten(EARS[right as usize], 32) {
+                    let (bx, by) = bend(right, turn, x, y);
+                    if y >= 200.0 {
+                        assert_eq!((bx, by), (x, y), "the base doesn't move");
+                    }
+                }
+                // the tip goes outward (left ear left, right ear right) for a positive turn
+                let tip = if right { (862.0, 44.0) } else { (161.0, 44.0) };
+                let (bx, _) = bend(right, turn, tip.0, tip.1);
+                let out = if right { bx - tip.0 } else { tip.0 - bx };
+                assert!(out * turn > 0.0, "tip moves with the turn: {out}");
+            }
+            assert_eq!(bent_ear(right, 0.0), flatten(EARS[right as usize], 32));
+        }
     }
 }

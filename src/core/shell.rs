@@ -1286,6 +1286,7 @@ impl eframe::App for App {
         self.screenshot_step(&ctx);
         crate::kit::modal::guard_popups(&ctx);
         crate::kit::spin::flush(&ctx);
+        crate::kit::welcome_ca::end_pass(&ctx);
         crate::kit::spin::drop_unflushed();
         crate::kit::viewport::end_pass();
         crate::kit::repaint_log::end();
@@ -1444,8 +1445,10 @@ impl App {
             glass::backdrop(ui.painter(), full, 16.0, false, t);
             if self.setup.is_some() {
                 finish = super::onboard::setup_ui(self, ui, full);
+                crate::kit::welcome_ca::end_pass(&vctx);
                 return;
             }
+            crate::kit::welcome_ca::end_pass(&vctx);
             let mut cx = self.cx();
             super::window::window_ui(self, ui, full, false, &mut cx);
             self.run_actions(&vctx, &mut cx);
