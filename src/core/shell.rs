@@ -15,6 +15,9 @@ use std::time::Instant;
 const HIDDEN_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(5);
 /// How long opening the app window keeps pulling it to the front, and the
 /// longest the menu panel waits for it before stepping aside anyway.
+/// How long after a press on the menu bar icon a press "elsewhere" is taken
+/// as that same press.
+const ICON_PRESS_ECHO: std::time::Duration = std::time::Duration::from_millis(300);
 const APP_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_millis(700);
 
 /// When the open cover (M5) can go: the window's frames have been coming
@@ -113,6 +116,9 @@ pub struct App {
     /// make the app active) until then. macOS turns activation down while
     /// the press is still on the menu bar, so it's asked again each pass.
     want_focus: Option<Instant>,
+    /// The last press on the menu bar icon: the same press can also reach
+    /// the click-elsewhere watch (macOS 26), which hid the panel it opened.
+    icon_pressed: Option<Instant>,
     last_hide: Instant,
     /// When a click on the icon last stopped a recording: the same click's
     /// release (or a quick second click) doesn't open the panel.
@@ -295,6 +301,7 @@ impl App {
             visible: true,
             had_focus: false,
             want_focus: None,
+            icon_pressed: None,
             last_hide: Instant::now(),
             tray_stopped: None,
             app_open: false,
@@ -756,7 +763,13 @@ impl App {
         self.light_icon();
     }
 
+    #[track_caller]
     pub fn hide(&mut self, ctx: &egui::Context) {
+        if crate::kit::fs::is_dev() && self.visible {
+            // which of the many hide paths fired (a panel that closed by itself)
+            let at = std::panic::Location::caller();
+            eprintln!("[panel] hide from {}:{} (had focus {}, since hide {} ms)", at.file(), at.line(), self.had_focus, self.last_hide.elapsed().as_millis());
+        }
         self.visible = false;
         self.last_hide = Instant::now();
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Visible(false));
@@ -797,6 +810,9 @@ impl App {
     }
 
     pub fn open_panel(&mut self, ctx: &egui::Context) {
+        if crate::kit::fs::is_dev() {
+            eprintln!("[panel] open (app window open {})", self.app_open);
+        }
         self.mode = Mode::Panel;
         self.read_menu_icon();
         crate::kit::native::panel_follows_spaces(egui::ViewportId::ROOT);
@@ -830,6 +846,9 @@ impl App {
                 presses += 1;
             }
         }
+        if presses > 0 {
+            self.icon_pressed = Some(Instant::now());
+        }
         // each press toggles (two quick clicks: open, then close)
         for _ in 0..presses {
             self.read_menu_icon();
@@ -839,6 +858,13 @@ impl App {
         let mut elsewhere = false;
         while self.elsewhere_rx.try_recv().is_ok() {
             elsewhere = true;
+        }
+        // the icon press itself, seen once more as a press elsewhere: not one
+        if elsewhere && self.icon_pressed.is_some_and(|t| t.elapsed() < ICON_PRESS_ECHO) {
+            if crate::kit::fs::is_dev() {
+                eprintln!("[panel] press elsewhere ignored: the icon press itself");
+            }
+            elsewhere = false;
         }
         if elsewhere && !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.screenshot.is_none() && self.panel_hide_after_open.is_none() {
             if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {
@@ -1097,7 +1123,9 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
+        // focus that went to the app window (or another of ours) leaves the
+        // panel open beside it; only leaving the app hides it
+        if !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() && !crate::kit::native::app_active() {
             self.hide(ctx);
         }
     }
@@ -1345,6 +1373,9 @@ pub static QUIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 
 impl App {
     pub fn quit(&mut self, ctx: &egui::Context) {
+        if crate::kit::fs::is_dev() {
+            eprintln!("[window] quit");
+        }
         QUIT.store(true, std::sync::atomic::Ordering::SeqCst);
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Close);
     }
@@ -1405,6 +1436,14 @@ impl App {
                 }
             }
             app_focused = vctx.input(|i| i.viewport().focused) == Some(true);
+            if crate::kit::fs::is_dev() {
+                // the window leaving the front looks like it closed: say when
+                static WAS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                if WAS.swap(app_focused, std::sync::atomic::Ordering::Relaxed) != app_focused {
+                    let min = vctx.input(|i| i.viewport().minimized);
+                    eprintln!("[window] app window {} (minimized {min:?}, panel visible {})", if app_focused { "focused" } else { "lost focus" }, self.visible);
+                }
+            }
             if self.app_focus {
                 self.app_focus = false;
                 self.app_focus_until = Some(Instant::now() + APP_FOCUS_GRACE);
@@ -1427,6 +1466,9 @@ impl App {
                 }
             }
             if vctx.input(|i| i.viewport().close_requested()) {
+                if crate::kit::fs::is_dev() {
+                    eprintln!("[window] app window closed (close requested; focused {app_focused}, setup {})", self.setup.is_some());
+                }
                 // closing during setup only hides it: the menu bar brings it back
                 self.app_open = false;
                 if self.open_cover.take().is_some() {

@@ -252,6 +252,9 @@ fn traffic_lights(ui: &mut Ui, p: &egui::Painter, full: Rect) {
             }
         }
         if resp.clicked() {
+            if crate::kit::fs::is_dev() {
+                eprintln!("[window] traffic light {k} clicked");
+            }
             match k {
                 0 => ctx.send_viewport_cmd(ViewportCommand::Close),
                 1 => ctx.send_viewport_cmd(ViewportCommand::Minimized(true)),
