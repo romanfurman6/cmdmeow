@@ -28,6 +28,8 @@ checks/
 !assets/themes/*.jpg
 # DMG window background ships with every release
 !assets/dmg/*.png
+# README images
+!docs/images/*.jpg
 docs/screenshots/
 docs/reference/
 docs/feedback/
