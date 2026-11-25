@@ -46,7 +46,7 @@ pub fn is_own_path(p: &Path) -> bool {
 /// makes it again.
 pub fn is_safe_cache(p: &Path) -> bool {
     let parts: Vec<String> = p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
-    parts.windows(3).any(|w| w[0] == "Library" && w[1] == "Caches" && w[2].to_ascii_lowercase().starts_with("com.romanfurman6.cmdmeow"))
+    parts.windows(3).any(|w| w[0] == "Library" && w[1] == "Caches" && matches!(w[2].to_ascii_lowercase().as_str(), "com.romanfurman6.cmdmeow" | "com.romanfurman6.cmdmeow.dev"))
 }
 
 /// Whether `p` is Cmd+Meow's and no tool may offer to remove it.
@@ -107,7 +107,7 @@ mod tests {
             assert!(is_safe_cache(Path::new(p)), "{p}");
             assert!(!is_kept(Path::new(p)), "{p}");
         }
-        for p in ["/Users/me/Library/Application Support/cmdmeow", "/Applications/CmdMeow.app", "/Users/me/Library/Logs/CmdMeow", "/Users/me/Library/Caches"] {
+        for p in ["/Users/me/Library/Application Support/cmdmeow", "/Applications/CmdMeow.app", "/Users/me/Library/Logs/CmdMeow", "/Users/me/Library/Caches", "/Users/me/Library/Caches/com.romanfurman6.cmdmeowXYZ"] {
             assert!(!is_safe_cache(Path::new(p)), "{p}");
         }
         assert!(is_kept(Path::new("/Users/me/Library/Application Support/cmdmeow")));
