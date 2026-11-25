@@ -64,8 +64,9 @@ fn chip_label(c: &Check) -> String {
     }
 }
 
-/// Width the chip takes in the header (0 when it doesn't show): pass it to
-/// [`page_header_room`], then draw it with [`chip`] at the point that returns.
+/// Width the chip takes in the header (0 when it doesn't show). SP17: the
+/// chip sits 12 left of the page's tabs (or its action); draw it with
+/// [`chip`] at the left-centre of that slot.
 pub fn chip_width(c: &Check, ui: &Ui, has_data: bool) -> f32 {
     if !shown(c, ui, has_data) {
         return 0.0;

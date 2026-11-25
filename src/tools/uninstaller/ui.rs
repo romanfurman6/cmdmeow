@@ -172,19 +172,18 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         (_, Phase::Sizing { done, total: t }) => t!("un.measuring", n = n_apps, done = done, total = t).into_owned(),
         _ => t!("un.apps_size", n = n_apps, size = human_bytes(total)).into_owned(),
     };
-    // AI Check: a chip after the title, on Leftovers
+    // AI Check: a chip left of the tabs (SP17), on Leftovers
     let ai_data = u.tab == Tab::Leftovers && orphan_bytes > 0;
     let cw = if u.tab == Tab::Leftovers { aicheck::ui::chip_width(&u.ai, ui, ai_data) } else { 0.0 };
     // the status ends before the tabs and Rescan (SP16)
     let rw = icon_pill_width(&p, ts!("un.rescan"), BTN_SECONDARY);
-    let sub_right = r.right() - sp::PAGE_EDGE - rw - sp::M - 260.0 - sp::M;
-    let (btns, chip_at) = page_header_room(&p, r, ts!("un.name"), &sub, TEXT_DIM(), cw, sub_right);
-    let labels_owned = [
-        ts!("un.tab.apps").to_string(),
-        if orphan_bytes > 0 { t!("un.tab.leftovers_size", size = human_bytes(orphan_bytes)).into_owned() } else { ts!("un.tab.leftovers").into() },
-    ];
+    let labels_owned = [ts!("un.tab.apps").to_string(), ts!("un.tab.leftovers").to_string()];
     let labels: Vec<&str> = labels_owned.iter().map(|s| s.as_str()).collect();
-    let (tr, rr) = header_controls(btns, 260.0, rw);
+    let tw = crate::kit::glass::tabs_width(&p, &labels);
+    let sub_right = r.right() - sp::PAGE_EDGE - rw - sp::M - tw - sp::M - if cw > 0.0 { cw + sp::M } else { 0.0 };
+    let (btns, _) = page_header_room(&p, r, ts!("un.name"), &sub, TEXT_DIM(), 0.0, sub_right);
+    let (tr, rr) = header_controls(btns, tw, rw);
+    let chip_at = Pos2::new(tr.left() - sp::M - cw, tr.center().y);
     let cur = match u.tab {
         Tab::Apps => 0,
         Tab::Leftovers => 1,

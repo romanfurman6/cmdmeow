@@ -331,27 +331,23 @@ fn shortcut(ui: &mut Ui, p: &Painter, btns: Rect, e: &mut Engine, keys: &mut Key
     let rec = keys.recording;
     let cur = e.settings.shortcut.clone();
     let text = if rec { ts!("awake.press_keys").to_string() } else { cur.as_ref().map(|s| s.display()).unwrap_or_else(|| ts!("awake.record").into()) };
-    let g = p.layout_no_wrap(text.clone(), font(12.0), TEXT());
-    let bw = (g.size().x + 24.0).max(76.0);
+    // SP17 H3: one kit button with a keyboard glyph: "Shortcut", the keys
+    // once set, "Press keys…" while recording
+    let label = if rec || cur.is_some() { text.clone() } else { ts!("awake.shortcut").to_string() };
+    let bw = crate::kit::glass::icon_pill_width(p, ts!("awake.shortcut"), BTN_SECONDARY).max(crate::kit::glass::icon_pill_width(p, &text, BTN_SECONDARY));
     let br = Rect::from_min_max(Pos2::new(btns.right() - bw, btns.top()), btns.max);
-    let resp = ui.interact(br, id, Sense::click());
-    if rec {
-        p.rect_filled(br, R_SMALL, with_alpha(ACTION(), 0.22));
-        p.rect_stroke(br, R_SMALL, Stroke::new(1.0, ACCENT()), egui::StrokeKind::Inside);
-    } else if cur.is_some() {
-        p.rect_filled(br, R_SMALL, white(if resp.hovered() { 31 } else { 20 }));
-        p.rect_stroke(br, R_SMALL, Stroke::new(1.0, white(26)), egui::StrokeKind::Inside);
-    } else {
-        dashed_rect(p, br, R_SMALL, white(60));
-    }
-    p.text(br.center(), Align2::CENTER_CENTER, text, font(12.0), if cur.is_some() || rec { TEXT() } else { TEXT_FAINT() });
-    if resp.on_hover_text(ts!("awake.shortcut_tip")).clicked() {
+    if crate::kit::glass::icon_pill(ui, br, Icon::Keyboard, &label, BTN_SECONDARY, true).on_hover_text(ts!("awake.shortcut_tip")).clicked() {
         keys.recording = !rec;
         keys.seen = Some(std::time::Instant::now());
     }
-    let lr = p.text(Pos2::new(br.left() - sp::S, br.center().y), Align2::RIGHT_CENTER, ts!("awake.shortcut"), font(12.0), TEXT_DIM());
+    // B8: while it records, the lime tint and ACCENT edge of a shortcut field
+    if rec {
+        p.rect_filled(br, R_BUTTON, with_alpha(ACTION(), 0.22));
+        p.rect_stroke(br, R_BUTTON, Stroke::new(1.0, ACCENT()), egui::StrokeKind::Inside);
+    }
+    let _ = id;
     if let Some(err) = &keys.error {
-        text_fit(p, Pos2::new(lr.left() - sp::M, br.center().y), Align2::RIGHT_CENTER, err, font(11.0), AMBER(), 260.0);
+        text_fit(p, Pos2::new(br.left() - sp::M, br.center().y), Align2::RIGHT_CENTER, err, font(11.0), AMBER(), 260.0);
     }
 }
 

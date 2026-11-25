@@ -208,24 +208,26 @@ pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let first = c.tab == Tab::History && no_shots(c);
     let sub = match c.tab {
-        Tab::History if first => t!("cap.saving_to", folder = c.shown_folder()).into_owned(),
+        Tab::History if first => String::new(),
         Tab::History => {
             let n = c.store.shots.iter().filter(|s| s.kind != Kind::Recording).count();
-            tn!("cap.hist_sub", n = n, size = human_bytes(c.store.bytes_on_disk()), folder = c.shown_folder()).into_owned()
+            tn!("cap.hist_sub", n = n, size = human_bytes(c.store.bytes_on_disk())).into_owned()
         }
         Tab::Folder => {
             c.refresh_files(false);
             let n = c.files.len();
             let more = if n >= super::folder::LIMIT { ts!("cap.newest") } else { "" };
-            tn!("cap.folder_sub", n = n, more = more, folder = c.shown_folder()).into_owned()
+            tn!("cap.folder_sub", n = n, more = more).into_owned()
         }
         Tab::Settings => "".into(),
     };
     // SP16: Capture area at the right edge on every tab, the tabs next to it
     let label = ts!("cap.sc.area");
     let bw = icon_pill_width(&p, label, BTN_PRIMARY);
-    let btns = page_header_room(&p, r, ts!("cap.screenshot"), &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 246.0 - sp::M).0;
-    let (tr, br) = header_controls(btns, 246.0, bw);
+    let tab_labels = [ts!("cap.history"), ts!("cap.folder"), ts!("cap.settings")];
+    let tw = crate::kit::glass::tabs_width(&p, &tab_labels);
+    let btns = page_header_room(&p, r, ts!("cap.screenshot"), &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - tw - sp::M).0;
+    let (tr, br) = header_controls(btns, tw, bw);
     let (resp, face) = pill_button_at(ui, br, "", BTN_PRIMARY, !c.busy);
     if resp.clicked() {
         c.queue.push((Command::Area, 0));
@@ -235,7 +237,7 @@ pub fn page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, bold(13.0), ink);
     let tabs = [Tab::History, Tab::Folder, Tab::Settings];
     let cur = tabs.iter().position(|t| *t == c.tab).unwrap_or(0);
-    if let Some(i) = segmented(ui, tr, ui.scope_id().with("capture-tab"), &["History", "Folder", "Settings"], cur) {
+    if let Some(i) = segmented(ui, tr, ui.scope_id().with("capture-tab"), &tab_labels, cur) {
         c.tab = tabs[i];
         stop_recording(c);
     }
@@ -860,7 +862,8 @@ pub fn sharing_page(c: &mut Capture, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let agent = crate::kit::agent::main();
     let ask = super::share::setup::label(agent);
     let aw = crate::kit::aicheck::ui::agent_button_width(ui, &ask);
-    let (_, chip_at) = page_header_room(&p, r, ts!("cap.sharing"), &sub, if ready { TEXT_DIM() } else { AMBER() }, aw, r.right() - sp::PAGE_EDGE);
+    let _ = page_header_room(&p, r, ts!("cap.sharing"), &sub, if ready { TEXT_DIM() } else { AMBER() }, 0.0, r.right() - sp::PAGE_EDGE - aw - sp::M);
+    let chip_at = Pos2::new(r.right() - sp::PAGE_EDGE - aw, r.top() + PAGE_HEADER_H / 2.0);
     if crate::kit::aicheck::ui::agent_button(ui, chip_at, ui.scope_id().with("share-ask"), agent, &ask).clicked() {
         let _ = std::process::Command::new("open").arg(super::share::setup::chat_url(agent)).spawn();
     }
@@ -1467,20 +1470,23 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let n = c.store.shots.iter().filter(|s| s.kind == Kind::Recording).count();
     let first = c.vtab == VTab::Recordings && n == 0 && c.rec.tray().is_none();
     let sub = match c.vtab {
-        VTab::Recordings if first => format!("Saving to {}", c.shown_rec_folder()),
-        VTab::Recordings => format!("{n} recording{} · saving to {}", if n == 1 { "" } else { "s" }, c.shown_rec_folder()),
+        VTab::Recordings if first => String::new(),
+        VTab::Recordings => tn!("cap.rec_sub", n = n).into_owned(),
         VTab::Settings => String::new(),
     };
     // SP16: Record screen at the right edge on every tab, one width for
     // "Record screen" and "Stop · 12:34", so the tabs never move
     let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
     let label = match &live {
-        Some(t) => format!("Stop · {t}"),
-        None => "Record screen".to_string(),
+        Some(t) => t!("cap.stop_at", t = t).into_owned(),
+        None => ts!("cap.sc.record").to_string(),
     };
-    let bw = ["Record screen", "Stop · 00:00", label.as_str()].iter().map(|l| icon_pill_width(&p, l, BTN_PRIMARY)).fold(0.0, f32::max);
-    let btns = page_header_room(&p, r, "Video", &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - 200.0 - sp::M).0;
-    let (tr, br) = header_controls(btns, 200.0, bw);
+    let stop_w = t!("cap.stop_at", t = "00:00").into_owned();
+    let bw = [ts!("cap.sc.record"), stop_w.as_str(), label.as_str()].iter().map(|l| icon_pill_width(&p, l, BTN_PRIMARY)).fold(0.0, f32::max);
+    let vtab_labels = [ts!("cap.recordings"), ts!("cap.settings")];
+    let tw = crate::kit::glass::tabs_width(&p, &vtab_labels);
+    let btns = page_header_room(&p, r, ts!("cap.video"), &sub, TEXT_DIM(), 0.0, r.right() - sp::PAGE_EDGE - bw - sp::M - tw - sp::M).0;
+    let (tr, br) = header_controls(btns, tw, bw);
     let (resp, face) = pill_button_at(ui, br, "", BTN_PRIMARY, true);
     if resp.clicked() {
         c.queue.push((Command::Record, 0));
@@ -1489,7 +1495,7 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, bold(13.0), ON_ACTION);
     let tabs = [VTab::Recordings, VTab::Settings];
     let cur = tabs.iter().position(|t| *t == c.vtab).unwrap_or(0);
-    if let Some(i) = segmented(ui, tr, ui.scope_id().with("video-tab"), &["Recordings", "Settings"], cur) {
+    if let Some(i) = segmented(ui, tr, ui.scope_id().with("video-tab"), &vtab_labels, cur) {
         c.vtab = tabs[i];
         stop_recording(c);
     }
