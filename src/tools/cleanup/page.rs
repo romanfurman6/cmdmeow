@@ -1724,6 +1724,7 @@ pub fn demo_results() -> cleanup::State {
         permanent: false,
         app_running: false,
         action: cleanup::Action::Files,
+        tool: "",
     };
     let items = vec![
         mk(Group::AiTools, "Claude Desktop cache", "~/Library/Application Support/Claude/Cache", 678_000_000, "Caches", Verdict::Safe, "Web view cache, rebuilt automatically", Who::Ai),

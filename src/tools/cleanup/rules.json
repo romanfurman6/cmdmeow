@@ -44,6 +44,8 @@
 
   "developer": [
     { "path": ".npm/_cacache", "title": "npm cache", "verdict": "safe", "id": "npm_cache" },
+    { "path": ".npm/_npx", "title": "npx downloads", "verdict": "safe", "id": "npx_downloads" },
+    { "path": ".cache/puppeteer", "title": "Puppeteer browsers", "verdict": "ask", "id": "puppeteer_browsers" },
     { "path": ".gradle/caches", "title": "Gradle caches", "verdict": "safe", "id": "gradle_caches" },
     { "path": ".gradle/wrapper/dists", "title": "Gradle versions", "verdict": "ask", "id": "gradle_versions" },
     { "path": ".cache/pip", "title": "pip cache", "verdict": "safe", "id": "pip_cache" },

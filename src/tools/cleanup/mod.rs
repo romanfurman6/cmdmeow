@@ -5,6 +5,7 @@
 
 use crate::kit::sync::LockExt;
 pub use crate::kit::agent;
+mod agents;
 mod captures;
 pub mod engine;
 mod inuse;
