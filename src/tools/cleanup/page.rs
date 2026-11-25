@@ -344,7 +344,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let (total, pending, ai_error, selected) = {
         let g = app.clean.lock_ok();
-        (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_in(app.clean_group))
+        (g.total(), g.pending_questions(), g.ai_error.clone(), g.selected_in(app.scope()))
     };
     let mut sub = t!("cleanup.n_found", n = human_bytes(total)).into_owned();
     if let Some(e) = &ai_error {
@@ -441,6 +441,7 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         p.text(Pos2::new(f.left() + 24.0, fy + 10.0), Align2::LEFT_CENTER, ts!("cleanup.cant_undo"), font(12.0), AMBER());
     }
     let clean_label = match app.clean_group {
+        Some(_) if !app.clean_tool.is_empty() => t!("cleanup.clean_x", what = app.clean_tool).into_owned(),
         Some(g) => t!("cleanup.clean_x", what = g.label()).into_owned(),
         None => t!("cleanup.clean_x", what = human_bytes(selected)).into_owned(),
     };
@@ -462,6 +463,8 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
 const RAIL_W: f32 = 232.0;
 /// A row of that list.
 const GROUP_ROW_H: f32 = 40.0;
+/// A tool's row under its group (SP3a).
+const TOOL_ROW_H: f32 = 32.0;
 /// A section title ("Needs your OK  5 · 29.8 GB") above its card.
 const LABEL_H: f32 = 20.0;
 /// The size column of a question.
@@ -484,9 +487,10 @@ fn parent_is(p: &std::path::Path, name: &str) -> bool {
     p.parent().and_then(|d| d.file_name()).is_some_and(|n| n == name)
 }
 
-fn bundle_of(it: &Item) -> Option<&'static str> {
+/// The bundle an item folds into, and from how many alike items on.
+fn bundle_of(it: &Item) -> Option<(String, usize)> {
     let apple = it.path.components().any(|c| c.as_os_str().to_string_lossy().starts_with("com.apple."));
-    match it.group {
+    let fixed = match it.group {
         Group::AppCaches if apple => Some(ts!("cleanup.bundle.macos")),
         Group::AiTools if parent_is(&it.path, "file-history") => Some(ts!("cleanup.bundle.edit_history")),
         Group::AiTools if parent_is(&it.path, "uploads") => Some(ts!("cleanup.bundle.claude_uploads")),
@@ -494,6 +498,13 @@ fn bundle_of(it: &Item) -> Option<&'static str> {
         Group::Projects if it.rule_verdict == Verdict::Ask => Some(ts!("cleanup.bundle.recent_builds")),
         Group::Captures => super::captures::bundle(it.kind),
         _ => None,
+    };
+    match fixed {
+        Some(b) => Some((b.to_string(), BUNDLE_MIN)),
+        // a tool's parts with one name ("Cursor · Web cache", "Codex · Logs")
+        // are one row from two on (SP4)
+        None if !it.tool.is_empty() => Some((it.title.clone(), 2)),
+        None => None,
     }
 }
 
@@ -501,7 +512,7 @@ fn bundle_of(it: &Item) -> Option<&'static str> {
 #[derive(Clone, Debug, PartialEq)]
 struct Entry {
     /// The bundle's title; `None` for a single item.
-    name: Option<&'static str>,
+    name: Option<String>,
     /// Its items, biggest first.
     idx: Vec<usize>,
     bytes: u64,
@@ -511,18 +522,18 @@ struct Entry {
 /// [`BUNDLE_MIN`] of them, biggest row first.
 fn entries(items: &[Item], idx: &[usize]) -> Vec<Entry> {
     let mut out: Vec<Entry> = Vec::new();
-    let mut bundles: Vec<(&'static str, Vec<usize>)> = Vec::new();
+    let mut bundles: Vec<(String, usize, Vec<usize>)> = Vec::new();
     for &i in idx {
         match bundle_of(&items[i]) {
-            Some(b) => match bundles.iter_mut().find(|x| x.0 == b) {
-                Some(x) => x.1.push(i),
-                None => bundles.push((b, vec![i])),
+            Some((b, min)) => match bundles.iter_mut().find(|x| x.0 == b) {
+                Some(x) => x.2.push(i),
+                None => bundles.push((b, min, vec![i])),
             },
             None => out.push(Entry { name: None, idx: vec![i], bytes: items[i].bytes }),
         }
     }
-    for (b, v) in bundles {
-        if v.len() >= BUNDLE_MIN {
+    for (b, min, v) in bundles {
+        if v.len() >= min {
             let bytes = v.iter().map(|&i| items[i].bytes).sum();
             out.push(Entry { name: Some(b), idx: v, bytes });
         } else {
@@ -547,7 +558,7 @@ fn bundle_for_key(items: &[Item], key: &str) -> Vec<usize> {
     let mut asks: Vec<usize> = (0..items.len()).filter(|&i| is_question(&items[i])).collect();
     asks.sort_by_key(|&i| std::cmp::Reverse(items[i].bytes));
     for e in entries(items, &asks) {
-        if e.name.is_some_and(one_answer) && items[e.idx[0]].path.display().to_string() == key {
+        if e.name.as_deref().is_some_and(one_answer) && items[e.idx[0]].path.display().to_string() == key {
             return e.idx;
         }
     }
@@ -561,29 +572,44 @@ fn bundle_for_key(items: &[Item], key: &str) -> Vec<usize> {
 fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    let mut rows: Vec<(Option<Group>, &'static str, u64, usize, Color32)> = vec![];
+    // (group, tool or "", title, size, questions, color)
+    let mut rows: Vec<(Option<Group>, &'static str, &'static str, u64, usize, Color32)> = vec![];
     {
         let g = app.clean.lock_ok();
         let asks = |f: &dyn Fn(&Item) -> bool| g.items.iter().filter(|i| f(i) && is_question(i)).count();
-        rows.push((None, ts!("cleanup.all"), g.total(), asks(&|_| true), TEXT_DIM()));
+        rows.push((None, "", ts!("cleanup.all"), g.total(), asks(&|_| true), TEXT_DIM()));
         for (k, grp) in Group::ALL.iter().enumerate() {
             if g.items.iter().any(|i| i.group == *grp) {
-                rows.push((Some(*grp), grp.label(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
+                rows.push((Some(*grp), "", grp.label(), g.group_bytes(*grp), asks(&|i| i.group == *grp), junk_ramp(k)));
+                // SP3a: AI Tools, once picked, lists the tools its items come from
+                if *grp == Group::AiTools && app.clean_group == Some(Group::AiTools) {
+                    for (tool, bytes, q) in tools_of(&g.items) {
+                        rows.push((Some(*grp), tool, tool, bytes, q, junk_ramp(k)));
+                    }
+                }
             }
         }
     }
-    if !rows.iter().any(|t| t.0 == app.clean_group) {
-        app.clean_group = None;
+    if !rows.iter().any(|t| t.0 == app.clean_group && t.1 == app.clean_tool) {
+        if !rows.iter().any(|t| t.0 == app.clean_group) {
+            app.clean_group = None;
+        }
+        app.clean_tool = "";
     }
-    let card = Rect::from_min_size(rail.min, Vec2::new(rail.width(), (rows.len() as f32 * GROUP_ROW_H + 2.0 * sp::XS).min(rail.height())));
+    let row_h = |tool: &str| if tool.is_empty() { GROUP_ROW_H } else { TOOL_ROW_H };
+    let h: f32 = rows.iter().map(|t| row_h(t.1)).sum();
+    let card = Rect::from_min_size(rail.min, Vec2::new(rail.width(), (h + 2.0 * sp::XS).min(rail.height())));
     glass_card(&p, card, R_CARD, 0.0, false);
-    for (k, (grp, title, bytes, q, col)) in rows.iter().enumerate() {
-        let rr = Rect::from_min_size(Pos2::new(card.left() + sp::XS, card.top() + sp::XS + k as f32 * GROUP_ROW_H), Vec2::new(card.width() - 2.0 * sp::XS, GROUP_ROW_H));
+    let mut y = card.top() + sp::XS;
+    for (grp, tool, title, bytes, q, col) in rows.iter() {
+        let rr = Rect::from_min_size(Pos2::new(card.left() + sp::XS, y), Vec2::new(card.width() - 2.0 * sp::XS, row_h(tool)));
+        y = rr.bottom();
         if rr.bottom() > card.bottom() + 0.5 {
             break;
         }
-        let sel = app.clean_group == *grp;
-        let id = ui.scope_id().with(("group", *title));
+        let is_tool = !tool.is_empty();
+        let sel = app.clean_group == *grp && app.clean_tool == *tool;
+        let id = ui.scope_id().with(("group", *title, *tool));
         let resp = ui.interact(rr, id, Sense::click());
         let hv = ctx.animate_bool(id, resp.hovered());
         // lit rows never touch: LIT_INSET top and bottom (H1)
@@ -597,33 +623,59 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
         }
         // H9: 12 from the lit edge, like the size on the right
         let c = Pos2::new(rr.left() + sp::M + 12.0, rr.center().y);
-        p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
-        let ir = Rect::from_center_size(c, Vec2::splat(14.0));
-        match grp {
-            Some(g) => group_icon(&p, *g, ir, *col),
-            None => icon(&p, Icon::Disk, ir, *col),
+        if !is_tool {
+            p.circle_filled(c, 12.0, with_alpha(*col, 0.14));
+            let ir = Rect::from_center_size(c, Vec2::splat(14.0));
+            match grp {
+                Some(g) => group_icon(&p, *g, ir, *col),
+                None => icon(&p, Icon::Disk, ir, *col),
+            }
         }
         let size = p.text(Pos2::new(rr.right() - sp::M, rr.center().y), Align2::RIGHT_CENTER, human_bytes(*bytes), ty::body(), TEXT_DIM());
+        // SP3a: a tool's name starts under its group's name (H6)
         let x = c.x + 12.0 + sp::M;
         let label = q.to_string();
         let bw = if *q > 0 { (p.layout_no_wrap(label.clone(), bold(11.0), BG()).size().x + 14.0).max(20.0) + sp::S } else { 0.0 };
-        let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, title, ty::body(), if sel { ACCENT() } else { TEXT() }, size.left() - sp::S - bw - x);
+        let ink = if sel { ACCENT() } else if is_tool { TEXT_DIM() } else { TEXT() };
+        let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, title, ty::body(), ink, size.left() - sp::S - bw - x);
         if *q > 0 {
             badge(&p, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, &label);
         }
         let resp = match grp {
             // P7: beside the rail, never over the next row
-            Some(g) => crate::kit::glass::tip_beside(resp, g.blurb(), card.right()),
-            None => resp,
+            Some(g) if !is_tool => crate::kit::glass::tip_beside(resp, g.blurb(), card.right()),
+            _ => resp,
         };
         if resp.clicked() {
             app.clean_group = *grp;
+            app.clean_tool = tool;
         }
         if resp.hovered() {
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
     }
     card
+}
+
+/// The tools AI Tools' items come from, biggest first: name, size (without
+/// what's kept), open questions.
+fn tools_of(items: &[Item]) -> Vec<(&'static str, u64, usize)> {
+    let mut out: Vec<(&'static str, u64, usize)> = Vec::new();
+    for it in items.iter().filter(|i| i.group == Group::AiTools && !i.tool.is_empty()) {
+        let k = match out.iter().position(|t| t.0 == it.tool) {
+            Some(k) => k,
+            None => {
+                out.push((it.tool, 0, 0));
+                out.len() - 1
+            }
+        };
+        if it.verdict != Verdict::Keep {
+            out[k].1 += it.bytes;
+        }
+        out[k].2 += is_question(it) as usize;
+    }
+    out.sort_by_key(|t| std::cmp::Reverse(t.1));
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -683,7 +735,7 @@ fn fold(ctx: &egui::Context, key: String) {
 }
 
 fn fold_key(sec: Sec, e: &Entry) -> String {
-    format!("{sec:?}:{}", e.name.unwrap_or(""))
+    format!("{sec:?}:{}", e.name.as_deref().unwrap_or(""))
 }
 
 /// "Claude: keep. Large to download again…", wrapped to `w`.
@@ -756,9 +808,15 @@ fn tip_job(agent: &str, t: &aicheck::Rec, w: f32) -> egui::text::LayoutJob {
 fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    let items: Vec<Item> = app.clean.lock_ok().items.clone();
-    let grp = app.clean_group;
-    let mut mine: Vec<usize> = (0..items.len()).filter(|&i| grp.is_none_or(|g| items[i].group == g)).collect();
+    let mut items: Vec<Item> = app.clean.lock_ok().items.clone();
+    let scope = app.scope();
+    // one tool's list: its rows drop the tool's name (the rail says it)
+    if !scope.tool.is_empty() {
+        for it in items.iter_mut().filter(|i| i.tool == scope.tool) {
+            it.title = cleanup::without_tool(it).to_string();
+        }
+    }
+    let mut mine: Vec<usize> = (0..items.len()).filter(|&i| cleanup::in_scope(&items[i], scope)).collect();
     mine.sort_by_key(|&i| std::cmp::Reverse(items[i].bytes));
     let asks: Vec<usize> = mine.iter().copied().filter(|&i| is_question(&items[i])).collect();
     let safe: Vec<usize> = mine.iter().copied().filter(|&i| items[i].verdict == Verdict::Safe || (items[i].verdict == Verdict::Ask && items[i].by == Who::You)).collect();
@@ -835,7 +893,7 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
     let mut acts: Vec<Act> = Vec::new();
     let mut child = ui.new_child(UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(area.intersect(ui.clip_rect()));
-    ScrollArea::vertical().id_salt(("results", grp)).auto_shrink([false, false]).show(&mut child, |ui| {
+    ScrollArea::vertical().id_salt(("results", scope.group, scope.tool)).auto_shrink([false, false]).show(&mut child, |ui| {
         let (all, _) = ui.allocate_exact_size(Vec2::new(w, total), Sense::hover());
         let p = ui.painter().clone();
         // the cards behind runs of rows
@@ -1031,7 +1089,7 @@ fn ask_row(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], e: &Entry, ans: Opt
     if waiting {
         right -= 10.0 + sp::S;
     }
-    let t = text_fit(&p, Pos2::new(x, ty0), Align2::LEFT_CENTER, e.name.unwrap_or(&first.title), ty::title(), TEXT(), right - x);
+    let t = text_fit(&p, Pos2::new(x, ty0), Align2::LEFT_CENTER, e.name.as_deref().unwrap_or(&first.title), ty::title(), TEXT(), right - x);
     let mut after = t.right() + sp::S;
     if perm {
         after = chip(&p, Pos2::new(after, ty0), Align2::LEFT_CENTER, ts!("cleanup.permanent"), CHIP_RISK()).right() + sp::S;
@@ -1110,7 +1168,7 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
         let can: Vec<usize> = e.idx.iter().copied().filter(|&i| !items[i].hard_keep).collect();
         let on = !can.is_empty() && can.iter().all(|&i| items[i].selected);
         let cb = Rect::from_center_size(Pos2::new(x + 8.0, cy), Vec2::splat(16.0));
-        if checkbox(ui, cb, ui.scope_id().with(("sel", &key, e.name)), on, !can.is_empty()).clicked() && !can.is_empty() {
+        if checkbox(ui, cb, ui.scope_id().with(("sel", &key, &e.name)), on, !can.is_empty()).clicked() && !can.is_empty() {
             act = Some(Act::Select(e.idx.clone(), !on, e.name.is_none()));
         }
     }
@@ -1134,7 +1192,7 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
     }
     let undo = e.name.is_none() && undoable(first);
     let undo_w = if undo { p.layout_no_wrap(ts!("cleanup.undo").into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
-    let title = e.name.unwrap_or(&first.title);
+    let title = e.name.as_deref().unwrap_or(&first.title);
     let t = text_fit(&p, Pos2::new(x, cy), Align2::LEFT_CENTER, title, ty::body(), if dim { TEXT_DIM() } else { TEXT() }, right - undo_w - x);
     if e.name.is_some() {
         p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, items_n(e.idx.len()), ty::label(), TEXT_DIM());
@@ -1318,7 +1376,8 @@ fn belongs(app: &OpenApp, it: &Item) -> bool {
 
 /// Open apps with selected files, largest first. Each item counts once.
 /// With `only`, just that group's files count (the clean is limited to it).
-pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>, only: Option<Group>) -> Vec<QuitRow> {
+pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>, only: impl Into<cleanup::Scope>) -> Vec<QuitRow> {
+    let only = only.into();
     let mut taken = vec![false; items.len()];
     let mut rows: Vec<QuitRow> = Vec::new();
     for app in apps {
@@ -1339,7 +1398,7 @@ pub(crate) fn quit_rows(items: &[Item], apps: Vec<OpenApp>, only: Option<Group>)
 /// Open the confirm sheet for the current selection.
 fn open_confirm(app: &mut App) {
     let apps = if app.demo { demo_apps() } else { crate::kit::native::open_apps() };
-    app.quit = quit_rows(&app.clean.lock_ok().items, apps, app.clean_group);
+    app.quit = quit_rows(&app.clean.lock_ok().items, apps, app.scope());
     app.quit_then_clean = false;
     app.clean_confirm = true;
 }
@@ -1382,7 +1441,7 @@ fn start(app: &mut App, ctx: egui::Context) {
     app.quit.clear();
     app.clean_loading = true;
     crate::kit::loader::reset(&ctx, "cleanup");
-    cleanup::start_clean(app.clean.clone(), ctx, app.delete_now, app.clean_group);
+    cleanup::start_clean(app.clean.clone(), ctx, app.delete_now, app.scope());
 }
 
 /// "1 item", "3 items".
@@ -1411,7 +1470,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
     p.rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, SCRIM());
     let (n, bytes, perm, trashed) = {
         let g = app.clean.lock_ok();
-        let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected && cleanup::in_scope(i, app.clean_group)).collect();
+        let sel: Vec<&Item> = g.items.iter().filter(|i| i.selected && cleanup::in_scope(i, app.scope())).collect();
         let trashed = sel.iter().filter(|i| !i.permanent && !i.rebuilds()).count();
         let perm = sel.iter().any(|i| i.permanent || i.group == Group::Trash || i.by_command());
         (sel.len(), sel.iter().map(|i| i.bytes).sum::<u64>(), perm, trashed)
@@ -1498,7 +1557,7 @@ fn confirm_body(app: &mut App, ui: &mut Ui, r: Rect) {
                         it.selected = false;
                     }
                 }
-                g.items.iter().any(|i| i.selected && cleanup::in_scope(i, app.clean_group))
+                g.items.iter().any(|i| i.selected && cleanup::in_scope(i, app.scope()))
             };
             if any_left {
                 start(app, ctx);
@@ -1789,7 +1848,7 @@ pub fn demo_done_group() -> cleanup::State {
     let mut st = demo_results();
     let g = Group::AppCaches;
     st.phase = Phase::Done;
-    st.clean_only = Some(g);
+    st.clean_only = Some(g).into();
     let sel: Vec<Item> = st.items.iter().filter(|i| i.selected && i.group == g).cloned().collect();
     st.cleaned_count = sel.len();
     st.cleaned_bytes = sel.iter().map(|i| i.bytes).sum();
@@ -1810,18 +1869,18 @@ fn check_ask(clean: &cleanup::Shared) -> aicheck::Ask {
     // a one-answer bundle is asked once, by its biggest item, and the answer
     // covers the bundle (see `bundle_for_key`); other bundles item by item
     let asks: Vec<usize> = idx.iter().copied().filter(|&i| is_question(&g.items[i])).collect();
-    let mut stands_for: std::collections::HashMap<usize, (&'static str, usize, u64)> = std::collections::HashMap::new();
+    let mut stands_for: std::collections::HashMap<usize, (String, usize, u64)> = std::collections::HashMap::new();
     let mut covered: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let questions = entries(&g.items, &asks);
     for e in &questions {
-        if let Some(name) = e.name.filter(|n| one_answer(n)) {
+        if let Some(name) = e.name.clone().filter(|n| one_answer(n)) {
             stands_for.insert(e.idx[0], (name, e.idx.len(), e.bytes));
             covered.extend(e.idx[1..].iter().copied());
         }
     }
     let answer: Vec<String> = questions
         .iter()
-        .flat_map(|e| if e.name.is_some_and(one_answer) { vec![e.idx[0]] } else { e.idx.clone() })
+        .flat_map(|e| if e.name.as_deref().is_some_and(one_answer) { vec![e.idx[0]] } else { e.idx.clone() })
         .take(aicheck::MAX_ANSWERS)
         .map(|i| g.items[i].path.display().to_string())
         .collect();
@@ -1901,7 +1960,7 @@ mod tests {
         let items = &st.items;
         let asks: Vec<usize> = (0..items.len()).filter(|&i| is_question(&items[i])).collect();
         let es = entries(items, &asks);
-        let mac = es.iter().find(|e| e.name == Some("macOS caches")).expect("macOS caches bundle");
+        let mac = es.iter().find(|e| e.name.as_deref() == Some("macOS caches")).expect("macOS caches bundle");
         assert_eq!(mac.idx.len(), 4);
         assert!(mac.idx.windows(2).all(|w| items[w[0]].bytes >= items[w[1]].bytes), "biggest first");
         assert_eq!(mac.bytes, mac.idx.iter().map(|&i| items[i].bytes).sum::<u64>());
@@ -1924,7 +1983,7 @@ mod tests {
             items.push(it);
         }
         let asks: Vec<usize> = (0..items.len()).filter(|&i| is_question(&items[i])).collect();
-        let up = entries(&items, &asks).into_iter().find(|e| e.name == Some("Claude Code uploads")).expect("uploads bundle");
+        let up = entries(&items, &asks).into_iter().find(|e| e.name.as_deref() == Some("Claude Code uploads")).expect("uploads bundle");
         assert_eq!(up.idx.len(), 3, "still shown as one row");
         let key = items[up.idx[0]].path.display().to_string();
         assert_eq!(bundle_for_key(&items, &key), vec![up.idx[0]]);
@@ -1943,7 +2002,7 @@ mod tests {
         // the Done screen goes back to what's left
         let done = demo_done_group();
         assert!(done.items.iter().all(|i| !(i.selected && i.group == Group::AppCaches)));
-        assert!(done.total() > 0 && done.clean_only == g);
+        assert!(done.total() > 0 && done.clean_only == g.into());
     }
 
     #[test]
@@ -1975,6 +2034,36 @@ mod tests {
         assert_eq!(items_n(12), "12 items");
     }
 
+    /// SP4/SP3a: a tool's parts with one title are one row from two on, and
+    /// a tool picked in the rail limits the list, the total and the clean.
+    #[test]
+    fn tool_parts_fold_and_scope_by_tool() {
+        let base = demo_results().items.into_iter().find(|i| i.group == Group::AiTools).unwrap();
+        let part = |tool: &'static str, title: &str, n: u64| {
+            let mut it = base.clone();
+            it.tool = tool;
+            it.title = title.into();
+            it.kind = "Caches";
+            it.verdict = Verdict::Safe;
+            it.selected = true;
+            it.bytes = n;
+            it.path = PathBuf::from(format!("/Users/me/{tool}/{n}"));
+            it
+        };
+        let items = vec![part("Cursor", "Cursor · Web cache", 10), part("Cursor", "Cursor · Web cache", 5), part("Codex", "Codex · Web cache", 7), part("Codex", "Codex · Logs", 3)];
+        let es = entries(&items, &[0, 2, 1, 3]);
+        assert_eq!(es.len(), 3, "Cursor's two parts are one row, Codex's stay apart");
+        assert_eq!(es[0].name.as_deref(), Some("Cursor · Web cache"));
+        assert_eq!(es[0].bytes, 15);
+        let scope = cleanup::Scope { group: Some(Group::AiTools), tool: "Codex" };
+        let st = cleanup::State { items: items.clone(), ..Default::default() };
+        assert_eq!(st.selected_in(scope), 10);
+        assert_eq!(st.selected_in(Some(Group::AiTools)), 25);
+        assert_eq!(cleanup::without_tool(&items[3]), "Logs");
+        let tools = tools_of(&items);
+        assert_eq!(tools.iter().map(|t| t.0).collect::<Vec<_>>(), ["Cursor", "Codex"]);
+    }
+
     /// Bundles go by folder and kinds show as words: neither reads the
     /// shown title, so a translated title can't break them.
     #[test]
@@ -1984,7 +2073,7 @@ mod tests {
         it.kind = "Old Sessions";
         for (dir, want) in [("file-history", ts!("cleanup.bundle.edit_history")), ("uploads", ts!("cleanup.bundle.claude_uploads")), ("projects", ts!("cleanup.bundle.old_chats"))] {
             it.path = PathBuf::from(format!("/Users/me/.claude/{dir}/x"));
-            assert_eq!(bundle_of(&it), Some(want), "{dir}");
+            assert_eq!(bundle_of(&it), Some((want.to_string(), BUNDLE_MIN)), "{dir}");
         }
         it.path = PathBuf::from("/Users/me/.claude/other/x");
         assert_eq!(bundle_of(&it), None);

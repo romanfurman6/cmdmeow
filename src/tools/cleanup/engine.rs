@@ -210,7 +210,7 @@ pub struct State {
     /// When this scan started (the bar creeps from it until real progress comes).
     pub started: Option<std::time::Instant>,
     /// The clean in progress (or just done) took only this group's ticked items.
-    pub clean_only: Option<Group>,
+    pub clean_only: Scope,
 }
 
 /// One group's live progress while scanning.
@@ -259,7 +259,8 @@ impl State {
         self.selected_in(None)
     }
     /// Ticked bytes in one group, or in all of them.
-    pub fn selected_in(&self, only: Option<Group>) -> u64 {
+    pub fn selected_in(&self, only: impl Into<Scope>) -> u64 {
+        let only = only.into();
         self.items.iter().filter(|i| i.selected && in_scope(i, only)).map(|i| i.bytes).sum()
     }
     pub fn pending_questions(&self) -> usize {
@@ -309,14 +310,26 @@ impl Ctx {
     /// Offer an item removed by a tool (simctl, brew): its size comes from the
     /// tool and it lives outside the home folder.
     #[allow(clippy::too_many_arguments)]
+    /// A tool's item names its tool ("Cursor · Web cache"), so its rows read
+    /// on their own in All and Needs your OK; the tool's own list drops it
+    /// again (`without_tool`).
+    fn titled(&self, title: &str) -> String {
+        if self.tool.is_empty() || title.starts_with(self.tool) {
+            title.to_string()
+        } else {
+            format!("{}{TOOL_SEP}{title}", self.tool)
+        }
+    }
+
     pub(super) fn add_action(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str, action: Action, bytes: u64) {
         if self.kept.contains(&path) {
             self.hidden_kept += 1;
             return;
         }
+        let title = self.titled(title);
         self.items.push(Item {
             group,
-            title: title.to_string(),
+            title,
             path,
             bytes,
             age_days: 0.0,
@@ -356,7 +369,7 @@ impl Ctx {
         let age_days = age_days(&path);
         let mut it = Item {
             group,
-            title: title.to_string(),
+            title: self.titled(title),
             path: path.clone(),
             bytes: 0,
             age_days,
@@ -810,7 +823,7 @@ fn scan_claude(c: &mut Ctx) {
     for sub in CHROMIUM_CACHES {
         let p = desk.join(sub);
         let (v, r) = if desktop_running { (Verdict::Ask, ts!("cleanup.why.desk_open")) } else { (Verdict::Safe, ts!("cleanup.why.webview")) };
-        c.add(Group::AiTools, &t!("cleanup.it.desk_sub", sub = sub), p, "Caches", v, r);
+        c.add(Group::AiTools, ts!("cleanup.it.web_cache"), p, "Caches", v, r);
     }
     c.add(Group::AiTools, ts!("cleanup.it.vm_image"), desk.join("vm_bundles"), "Downloads", Verdict::Ask, ts!("cleanup.why.vm_image"));
     c.add(Group::AiTools, ts!("cleanup.it.code_vm"), desk.join("claude-code-vm"), "Downloads", Verdict::Ask, ts!("cleanup.why.code_vm"));
@@ -1307,9 +1320,39 @@ fn parse_verdicts(text: &str) -> Vec<(usize, Verdict, String)> {
 
 // ---------------------------------------------------------------- removal
 
-/// The item is in the group a clean is limited to (any, when `None`).
-pub fn in_scope(it: &Item, only: Option<Group>) -> bool {
-    only.is_none_or(|g| it.group == g)
+/// Between a tool's name and its item's title.
+pub const TOOL_SEP: &str = " · ";
+
+/// The item's title without its tool's name in front.
+pub fn without_tool(it: &Item) -> &str {
+    it.title.strip_prefix(it.tool).and_then(|t| t.strip_prefix(TOOL_SEP)).filter(|t| !it.tool.is_empty() && !t.is_empty()).unwrap_or(&it.title)
+}
+
+/// What a clean (or a ticked total) is limited to: one group, and within
+/// it one tool's items (AI Tools rows in the rail). Empty = everything.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Scope {
+    pub group: Option<Group>,
+    /// `Item::tool`; "" = every tool.
+    pub tool: &'static str,
+}
+
+impl Scope {
+    pub fn is_some(&self) -> bool {
+        self.group.is_some() || !self.tool.is_empty()
+    }
+}
+
+impl From<Option<Group>> for Scope {
+    fn from(group: Option<Group>) -> Self {
+        Scope { group, tool: "" }
+    }
+}
+
+/// The item is in the scope a clean is limited to (any, when empty).
+pub fn in_scope(it: &Item, only: impl Into<Scope>) -> bool {
+    let s = only.into();
+    s.group.is_none_or(|g| it.group == g) && (s.tool.is_empty() || it.tool == s.tool)
 }
 
 /// What a clean removes, in order: the Trash is emptied first, so what this
@@ -1395,7 +1438,7 @@ fn live_kind(kind: &str) -> bool {
 }
 
 /// Remove the ticked items; with `only`, just that group's (the rest stay ticked).
-pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: Option<Group>) {
+pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: Scope) {
     let plan: Vec<(Item, How)> = {
         let mut g = shared.lock_ok();
         g.phase = Phase::Cleaning;
