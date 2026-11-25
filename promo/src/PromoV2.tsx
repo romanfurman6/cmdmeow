@@ -83,6 +83,17 @@ const MenuBar: React.FC<{t: number; s0: number}> = ({t, s0}) => {
 };
 
 // ---- B: landing hero, video-sized ----
+// ---- hook: sound-off viewers decide in ~2 s, so the pain is on screen at once ----
+const Hook: React.FC<{t: number}> = ({t}) => {
+  const out = eo(P(t, Bt(5.3), Bt(6)));
+  return (
+    <div style={{position: 'absolute', left: 150, top: 380, font: `500 112px/1.08 ${SANS}`, letterSpacing: '-.04em', color: '#fff', textShadow: '0 4px 40px rgba(10,8,38,.55)', opacity: 1 - out, transform: `translateY(${-30 * out}px)`, filter: `blur(${8 * out}px)`}}>
+      <div style={rise(t, 0.15)}>Too many apps</div>
+      <div style={rise(t, 0.15 + BEAT)}>in your <span style={{color: PINK}}>menu bar?</span></div>
+    </div>
+  );
+};
+
 const Hero: React.FC<{t: number}> = ({t}) => {
   const s = Bt(6);
   const pn = eo5(P(t, s + 0.5 * BEAT, s + 0.5 * BEAT + 0.8));
@@ -106,10 +117,10 @@ const Hero: React.FC<{t: number}> = ({t}) => {
 // ---- D: the real landing hero switching themes from the dots pill (TH12 ripple through blur) ----
 // ---- E: No catch (landing .trust) ----
 const NC = [
-  ['$0', 'Free forever', 'No trial, no subscription', ''],
+  ['$0', 'Free forever', 'No account, no subscription', ''],
+  ['', 'Undo anytime', 'Review first, then Trash', '<path d="M8 13h32M18 13V8h12v5M12 13l2 27h20l2-27"/><path d="M28.75 32h-6a3.5 3.5 0 0 1 0-7h5M25.75 22l3 3-3 3"/>'],
+  ['', 'Only what you use', 'Asks per tool you turn on', '<rect x="9" y="21" width="30" height="21" rx="5"/><path d="M15 21v-6a9 9 0 0 1 18 0v6M24 29v5"/>'],
   ['', 'Open source', 'Code on GitHub', '<circle cx="14" cy="10" r="4.5"/><circle cx="14" cy="38" r="4.5"/><circle cx="34" cy="10" r="4.5"/><path d="M14 14.5v19M34 14.5v4a6 6 0 0 1-6 6h-8a6 6 0 0 0-6 6"/>'],
-  ['', 'Privacy first', 'Your files stay on your Mac', '<rect x="9" y="21" width="30" height="21" rx="5"/><path d="M15 21v-6a9 9 0 0 1 18 0v6M24 29v5"/>'],
-  ['', 'Trash first', 'Cleanup moves files to Trash', '<path d="M8 13h32M18 13V8h12v5M12 13l2 27h20l2-27"/><path d="M28.75 32h-6a3.5 3.5 0 0 1 0-7h5M25.75 22l3 3-3 3"/>'],
 ];
 const NoCatch: React.FC<{t: number}> = ({t}) => (
   <AbsoluteFill style={{background: SKY, fontFamily: SANS, color: '#fff'}}>
@@ -178,6 +189,7 @@ const Body: React.FC = () => {
       <AbsoluteFill style={{background: '#0A0826', overflow: 'hidden'}}>
         <Img src={img('hero-miami-bare.jpg')} style={{position: 'absolute', inset: 0, width: 1920, height: 1080, filter: `blur(${lerp(0, 18, eo(P(t, Bt(6), Bt(7))))}px) brightness(${lerp(0.55, 1, eo(P(t, Bt(5.5), Bt(6.5)))) * lerp(1, 0.72, eo(P(t, Bt(6), Bt(7))))})`, transform: `scale(${lerp(1, 1.04, eo(P(t, Bt(6), Bt(7))))})`}} />
         {t >= Bt(6) && <AbsoluteFill style={{background: 'radial-gradient(70% 80% at 25% 50%, rgba(10,8,38,.55), rgba(10,8,38,0) 70%)', opacity: eo(P(t, Bt(6), Bt(7)))}} />}
+        {t < Bt(6) && <Hook t={t} />}
         {t >= Bt(6) && <Hero t={t} />}
         <MenuBar t={t} s0={0.15} />
       </AbsoluteFill>
