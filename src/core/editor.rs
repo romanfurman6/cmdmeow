@@ -761,7 +761,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let row_h = 44.0;
     // crash reports: official builds only (screenshots show the row too)
     let crash = app.demo || crate::kit::crash_report::available();
-    let n_rows = if crash { 5.0 } else { 4.0 };
+    let n_rows = if crash { 6.0 } else { 5.0 };
     // Theme: its own card on top (T5)
     let theme_card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
     glass_card(&p, theme_card, R_CARD, 0.0, false);
@@ -803,11 +803,20 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     }
     // off: a menu bar app only, no Dock icon even with this window open
     p.text(Pos2::new(r1.left() + 16.0, r1.center().y), Align2::LEFT_CENTER, ts!("app.show_dock"), font(13.0), TEXT());
+    // with no menu bar icon the Dock is the only way back in: locked on
+    let bar = crate::kit::native::show_in_menu_bar() || app.demo;
     let on = crate::kit::native::show_in_dock() || app.demo;
-    if switch(ui, sw_in(r1), ui.scope_id().with("show-in-dock"), on, true).clicked() && !app.demo {
+    if switch(ui, sw_in(r1), ui.scope_id().with("show-in-dock"), on, bar).clicked() && !app.demo {
         crate::kit::native::set_show_in_dock(!on);
     }
-    let r2 = row(2);
+    // off: no menu bar icon (it still shows the recording clock)
+    let rb = row(2);
+    hairline(&p, Pos2::new(rb.left() + 16.0, rb.top()), Pos2::new(rb.right() - 16.0, rb.top()));
+    p.text(Pos2::new(rb.left() + 16.0, rb.center().y), Align2::LEFT_CENTER, ts!("app.show_menu_bar"), font(13.0), TEXT());
+    if switch(ui, sw_in(rb), ui.scope_id().with("show-in-menu-bar"), bar, on).clicked() && !app.demo {
+        crate::kit::native::set_show_in_menu_bar(!bar);
+    }
+    let r2 = row(3);
     hairline(&p, Pos2::new(r2.left() + 16.0, r2.top()), Pos2::new(r2.right() - 16.0, r2.top()));
     p.text(Pos2::new(r2.left() + 16.0, r2.center().y), Align2::LEFT_CENTER, ts!("app.sounds"), font(13.0), TEXT());
     let on = crate::kit::sound::on() || app.demo;
@@ -817,7 +826,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         crate::kit::sound::play(crate::kit::sound::Cue::Ready);
     }
     // the menu bar panel stays up when focus leaves it (for screenshots of it)
-    let r3 = row(3);
+    let r3 = row(4);
     hairline(&p, Pos2::new(r3.left() + 16.0, r3.top()), Pos2::new(r3.right() - 16.0, r3.top()));
     p.text(Pos2::new(r3.left() + 16.0, r3.center().y), Align2::LEFT_CENTER, ts!("app.keep_open"), font(13.0), TEXT());
     let on = super::panel::keep_open();
@@ -825,7 +834,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         super::panel::set_keep_open(!on);
     }
     if crash {
-        let r4 = row(4);
+        let r4 = row(5);
         hairline(&p, Pos2::new(r4.left() + 16.0, r4.top()), Pos2::new(r4.right() - 16.0, r4.top()));
         p.text(Pos2::new(r4.left() + 16.0, r4.center().y), Align2::LEFT_CENTER, ts!("app.send_crash"), font(13.0), TEXT());
         let on = app.demo || crate::kit::crash_report::consent() == Some(true);
