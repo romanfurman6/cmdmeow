@@ -60,9 +60,13 @@ struct Shared {
     state: State,
     busy: bool,
     last_check: Option<Instant>,
+    /// The last check went through and found nothing newer.
+    up_to_date: bool,
+    /// The last check couldn't reach the manifest.
+    check_failed: bool,
 }
 
-static SHARED: Mutex<Shared> = Mutex::new(Shared { state: State::Idle, busy: false, last_check: None });
+static SHARED: Mutex<Shared> = Mutex::new(Shared { state: State::Idle, busy: false, last_check: None, up_to_date: false, check_failed: false });
 static STARTED: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 
 pub fn state() -> State {
@@ -93,14 +97,52 @@ pub fn tick() {
     let started = *STARTED.get_or_init(Instant::now);
     let Some(url) = manifest_url() else { return };
     {
-        let mut s = SHARED.lock_ok();
+        let s = SHARED.lock_ok();
         // a test manifest (CMDMEOW_UPDATE_URL) is checked right away
         let first = if url == MANIFEST_URL { FIRST_CHECK } else { Duration::from_secs(2) };
-        if s.busy || started.elapsed() < first || s.last_check.is_some_and(|t| t.elapsed() < EVERY) {
+        if started.elapsed() < first || s.last_check.is_some_and(|t| t.elapsed() < EVERY) {
             return;
         }
+    }
+    start_check(url);
+}
+
+/// Settings › About's Check for updates: checks now, whatever the timer says.
+/// Does nothing where the app never checks (the dev build without
+/// `CMDMEOW_UPDATE_URL`).
+pub fn check_now() {
+    if let Some(url) = manifest_url() {
+        start_check(url);
+    }
+}
+
+/// Whether this build checks for updates at all.
+pub fn can_check() -> bool {
+    manifest_url().is_some()
+}
+
+/// A check is running.
+pub fn checking() -> bool {
+    SHARED.lock_ok().busy
+}
+
+/// The last check went through and nothing newer is out.
+pub fn up_to_date() -> bool {
+    let s = SHARED.lock_ok();
+    s.up_to_date && s.state == State::Idle
+}
+
+/// The last check couldn't reach the manifest (offline, GitHub down).
+pub fn check_failed() -> bool {
+    let s = SHARED.lock_ok();
+    s.check_failed && s.state == State::Idle
+}
+
+fn start_check(url: String) {
+    {
+        let mut s = SHARED.lock_ok();
         // an offered update stays offered; a failed one is checked again
-        if matches!(s.state, State::Downloading(..) | State::Installing(_) | State::Restarting) {
+        if s.busy || matches!(s.state, State::Downloading(..) | State::Installing(_) | State::Restarting) {
             return;
         }
         s.busy = true;
@@ -110,12 +152,15 @@ pub fn tick() {
         let found = fetch_manifest(&url);
         let mut s = SHARED.lock_ok();
         s.busy = false;
+        s.check_failed = found.is_err();
+        s.up_to_date = false;
         match found {
             Ok(m) if is_newer(&m.version, env!("CARGO_PKG_VERSION")) => {
                 eprintln!("[update] {} is out", m.version);
                 s.state = State::Available(m);
             }
             Ok(_) => {
+                s.up_to_date = true;
                 if matches!(s.state, State::Failed(..) | State::Available(_)) {
                     s.state = State::Idle;
                 }

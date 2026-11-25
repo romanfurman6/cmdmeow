@@ -61,10 +61,10 @@ enum Target {
 }
 
 /// Settings tabs by id, and the order they're shown in.
-fn tab_names() -> [&'static str; 6] {
-    [ts!("app.tab_widgets"), ts!("app.tab_tools"), ts!("app.tab_general"), ts!("app.tab_ai_usage"), ts!("app.tab_ai_check"), ts!("app.tab_cat")]
+fn tab_names() -> [&'static str; 7] {
+    [ts!("app.tab_widgets"), ts!("app.tab_tools"), ts!("app.tab_general"), ts!("app.tab_ai_usage"), ts!("app.tab_ai_check"), ts!("app.tab_cat"), ts!("app.tab_about")]
 }
-const TAB_ORDER: [usize; 6] = [2, 1, 3, 4, 5, 0];
+const TAB_ORDER: [usize; 7] = [2, 1, 3, 4, 5, 0, 6];
 /// The tab Settings opens on from the sidebar.
 pub const TAB_GENERAL: usize = 2;
 /// Settings › Tools.
@@ -76,7 +76,7 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     hairline(&p, top.left_bottom(), top.right_bottom());
     p.text(Pos2::new(top.left() + 24.0, top.center().y), Align2::LEFT_CENTER, ts!("app.settings"), bold(15.0), TEXT());
     // shown General first; `settings_tab` keeps its ids (0 Widgets, 1 Tools,
-    // 2 General, 3 AI Usage, 4 AI Check, 5 Cat) so links and Edit widgets… land on the right tab
+    // 2 General, 3 AI Usage, 4 AI Check, 5 Cat, 6 About) so links and Edit widgets… land on the right tab
     let labels: Vec<&str> = TAB_ORDER.iter().map(|&t| tab_names()[t]).collect();
     let tabs = Rect::from_center_size(top.center(), Vec2::new(90.0 * labels.len() as f32, sp::HEADER_CONTROL_H));
     let shown = TAB_ORDER.iter().position(|&t| t == app.settings_tab).unwrap_or(0);
@@ -91,6 +91,7 @@ pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
         2 => general_tab(app, ui, body),
         4 => scroll_body(ui, body, "settings-ai-check", |ui, body| ai_check_list(app, ui, body)),
         5 => scroll_body(ui, body, "settings-cat", |ui, body| cat_list(app, ui, body)),
+        6 => scroll_body(ui, body, "settings-about", |ui, body| about_list(app, ui, body)),
         _ => {
             let demo = app.demo;
             scroll_body(ui, body, "settings-ai", |ui, body| crate::tools::claude::settings_ui::list(ui, body, demo));
@@ -748,7 +749,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     card.bottom() + 24.0
 }
 
-/// Open at login, show in Dock, sounds, keep the panel open, crash reports, what macOS allows the tools (live), and setup again.
+/// Theme, open at login, show in Dock / menu bar, sounds, and what macOS allows the tools (live).
 fn general_tab(app: &mut App, ui: &mut Ui, body: Rect) {
     scroll_body(ui, body, "settings-general", |ui, body| general_list(app, ui, body));
 }
@@ -759,9 +760,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let x = body.center().x - w / 2.0;
     let mut y = body.top() + 24.0;
     let row_h = 44.0;
-    // crash reports: official builds only (screenshots show the row too)
-    let crash = app.demo || crate::kit::crash_report::available();
-    let n_rows = if crash { 6.0 } else { 5.0 };
+    let n_rows = 4.0;
     // Theme: its own card on top (T5)
     let theme_card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h));
     glass_card(&p, theme_card, R_CARD, 0.0, false);
@@ -836,23 +835,6 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         // a taste of what was just turned on
         crate::kit::sound::play(crate::kit::sound::Cue::Ready);
     }
-    // the menu bar panel stays up when focus leaves it (for screenshots of it)
-    let r3 = row(4);
-    hairline(&p, Pos2::new(r3.left() + 16.0, r3.top()), Pos2::new(r3.right() - 16.0, r3.top()));
-    p.text(Pos2::new(r3.left() + 16.0, r3.center().y), Align2::LEFT_CENTER, ts!("app.keep_open"), font(13.0), TEXT());
-    let on = super::panel::keep_open();
-    if switch(ui, sw_in(r3), ui.scope_id().with("keep-panel-open"), on, true).clicked() && !app.demo {
-        super::panel::set_keep_open(!on);
-    }
-    if crash {
-        let r4 = row(5);
-        hairline(&p, Pos2::new(r4.left() + 16.0, r4.top()), Pos2::new(r4.right() - 16.0, r4.top()));
-        p.text(Pos2::new(r4.left() + 16.0, r4.center().y), Align2::LEFT_CENTER, ts!("app.send_crash"), font(13.0), TEXT());
-        let on = app.demo || crate::kit::crash_report::consent() == Some(true);
-        if switch(ui, sw_in(r4), ui.scope_id().with("crash-reports"), on, true).clicked() && !app.demo {
-            crate::kit::crash_report::set_consent(!on);
-        }
-    }
     y = card.bottom() + 28.0;
     crate::kit::glass::card_title(&p, Pos2::new(x, y), ts!("app.permissions"));
     y += 28.0;
@@ -863,7 +845,130 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     }
     let area = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, body.bottom().max(y)));
     let used = super::onboard::perm_list(app, ui, area, &list, 10.0, now);
-    y += used + 16.0;
+    // the permission rows follow System Settings while this shows
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
+    y + used + 24.0
+}
+
+/// Settings › About: the app and its updates, the panel and crash-report
+/// switches, the logs, and setup again / quit / remove.
+fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
+    use crate::kit::update::{self, State};
+    let p = ui.painter().clone();
+    let w = 600.0f32.min(body.width() - 48.0);
+    let x = body.center().x - w / 2.0;
+    let mut y = body.top() + 24.0;
+    let now = ui.ctx().input(|i| i.time);
+    // the app: icon, name over version, and its update on the right
+    let head = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 64.0));
+    glass_card(&p, head, R_CARD, 0.0, false);
+    let icon_r = Rect::from_min_size(Pos2::new(head.left() + 12.0, head.center().y - 20.0), Vec2::splat(40.0));
+    if let Some(t) = crate::kit::brand::app_icon(ui.ctx()) {
+        p.image(t.id(), icon_r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+    }
+    let tx = icon_r.right() + 12.0;
+    p.text(Pos2::new(tx, head.center().y - 1.0), Align2::LEFT_BOTTOM, "Cmd+Meow", bold(15.0), TEXT());
+    let ver = match option_env!("CMDMEOW_BUILD") {
+        Some(b) if !b.is_empty() => format!("{} ({b})", env!("CARGO_PKG_VERSION")),
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    };
+    p.text(Pos2::new(tx, head.center().y + 2.0), Align2::LEFT_TOP, ver, font(12.0), TEXT_FAINT());
+    let right = head.right() - 12.0;
+    let btn = |bw: f32| Rect::from_min_size(Pos2::new(right - bw, head.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
+    // screenshots: the state CMDMEOW_DEMO_UPDATE put it in, else "Up to date"
+    let state = update::state();
+    match &state {
+        State::Available(m) => {
+            let label = ts!("app.update");
+            let b = btn(button_width(&p, label, BTN_PRIMARY));
+            if pill_button(ui, b, label, BTN_PRIMARY, true).clicked() && !app.demo {
+                update::install();
+            }
+            p.text(Pos2::new(b.left() - sp::S, head.center().y), Align2::RIGHT_CENTER, &m.version, bold(13.0), ACCENT());
+        }
+        State::Downloading(..) | State::Installing(_) | State::Restarting => {
+            let f = if let State::Downloading(_, f) = &state { *f } else { 1.0 };
+            let pct = format!("{:.0}%", f * 100.0);
+            let tr = Rect::from_min_size(Pos2::new(right - 36.0, head.center().y - 8.0), Vec2::new(36.0, 16.0));
+            p.text(tr.right_center(), Align2::RIGHT_CENTER, pct, font(12.0), TEXT_DIM());
+            bar(&p, Rect::from_min_size(Pos2::new(tr.left() - 8.0 - 160.0, head.center().y - 2.0), Vec2::new(160.0, 4.0)), f, ACTION());
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        State::Failed(_, why) => {
+            let label = ts!("app.download");
+            let b = btn(button_width(&p, label, BTN_SECONDARY));
+            if pill_button(ui, b, label, BTN_SECONDARY, true).on_hover_text(why).clicked() && !app.demo {
+                update::open_releases();
+            }
+            p.text(Pos2::new(b.left() - sp::S, head.center().y), Align2::RIGHT_CENTER, ts!("app.update_failed"), font(13.0), AMBER());
+        }
+        State::Idle => {
+            let label = ts!("app.check_updates");
+            let b = btn(button_width(&p, label, BTN_SECONDARY));
+            let checking = !app.demo && update::checking();
+            if pill_button(ui, b, label, BTN_SECONDARY, !app.demo && !checking && update::can_check()).clicked() {
+                update::check_now();
+            }
+            let at = Pos2::new(b.left() - sp::S, head.center().y);
+            if checking {
+                spinner(&p, Pos2::new(at.x - 7.0, at.y), 6.0, now, TEXT_DIM());
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            } else if app.demo || update::up_to_date() {
+                p.text(at, Align2::RIGHT_CENTER, ts!("app.up_to_date"), font(13.0), TEXT_FAINT());
+            } else if update::check_failed() {
+                p.text(at, Align2::RIGHT_CENTER, ts!("app.cant_check"), font(13.0), AMBER());
+            }
+        }
+    }
+    y = head.bottom() + sp::L;
+    // the switches that are about the app itself, then the logs
+    let row_h = 44.0;
+    // crash reports: official builds only (screenshots show the row too)
+    let crash = app.demo || crate::kit::crash_report::available();
+    let n_rows = if crash { 3 } else { 2 };
+    let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, row_h * n_rows as f32));
+    glass_card(&p, card, R_CARD, 0.0, false);
+    let row = |k: usize| Rect::from_min_size(Pos2::new(card.left(), card.top() + k as f32 * row_h), Vec2::new(w, row_h));
+    let sw_in = |r: Rect| Rect::from_min_size(Pos2::new(r.right() - 42.0, r.center().y - 9.0), Vec2::new(30.0, 18.0));
+    let label_at = |r: Rect| Pos2::new(r.left() + 16.0, r.center().y);
+    let divide = |r: Rect| hairline(&p, Pos2::new(r.left() + 16.0, r.top()), Pos2::new(r.right() - 16.0, r.top()));
+    // the menu bar panel stays up when focus leaves it (for screenshots of it)
+    let r0 = row(0);
+    p.text(label_at(r0), Align2::LEFT_CENTER, ts!("app.keep_open"), font(13.0), TEXT());
+    let on = super::panel::keep_open();
+    if switch(ui, sw_in(r0), ui.scope_id().with("keep-panel-open"), on, true).clicked() && !app.demo {
+        super::panel::set_keep_open(!on);
+    }
+    if crash {
+        let r1 = row(1);
+        divide(r1);
+        p.text(label_at(r1), Align2::LEFT_CENTER, ts!("app.send_crash"), font(13.0), TEXT());
+        let on = app.demo || crate::kit::crash_report::consent() == Some(true);
+        if switch(ui, sw_in(r1), ui.scope_id().with("crash-reports"), on, true).clicked() && !app.demo {
+            crate::kit::crash_report::set_consent(!on);
+        }
+    }
+    let rl = row(n_rows - 1);
+    divide(rl);
+    p.text(label_at(rl), Align2::LEFT_CENTER, ts!("app.logs"), font(13.0), TEXT());
+    let export = ts!("app.export");
+    let ew = button_width(&p, export, BTN_SECONDARY);
+    let eb = Rect::from_min_size(Pos2::new(rl.right() - 12.0 - ew, rl.center().y - sp::CONTROL_H / 2.0), Vec2::new(ew, sp::CONTROL_H));
+    let show = ts!("app.show_in_finder");
+    let fw = button_width(&p, show, BTN_SECONDARY);
+    let fb = Rect::from_min_size(Pos2::new(eb.left() - sp::S - fw, eb.top()), Vec2::new(fw, sp::CONTROL_H));
+    if pill_button(ui, fb, show, BTN_SECONDARY, true).clicked() && !app.demo {
+        crate::kit::logs::reveal();
+    }
+    if pill_button(ui, eb, export, BTN_SECONDARY, true).clicked() && !app.demo {
+        // a few files and a zip: off the UI thread, a toast when it's done
+        let _ = std::thread::Builder::new().name("logs-export".into()).spawn(|| match crate::kit::logs::export() {
+            Ok(_) => crate::kit::toast::say(ts!("app.saved_desktop")),
+            Err(e) => crate::kit::toast::say(t!("app.cant_export", why = e).to_string()),
+        });
+    }
+    y = card.bottom() + sp::L;
+    // setup again, quit and remove: the app as a whole
     let label = ts!("app.setup_again");
     let bw = button_width(&p, label, BTN_SECONDARY);
     if pill_button(ui, Rect::from_min_size(Pos2::new(x, y), Vec2::new(bw, sp::HEADER_CONTROL_H)), label, BTN_SECONDARY, true).clicked() {
@@ -877,13 +982,13 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         app.quit(&ctx);
     }
     let failed = remove_button(app, ui, Pos2::new(x + bw + sp::S + qw + sp::S, y));
-    p.text(Pos2::new(x + w, y + sp::HEADER_CONTROL_H / 2.0), Align2::RIGHT_CENTER, version_label(), font(11.0), TEXT_FAINT());
-    // why Remove failed, on its own line under the row (clear of the version)
+    y += sp::HEADER_CONTROL_H;
+    // why Remove failed, on its own line under the row
     if let Some(e) = failed {
-        text_fit(&p, Pos2::new(x, y + sp::HEADER_CONTROL_H + sp::S), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w);
+        y += sp::S;
+        y += text_fit(&p, Pos2::new(x, y), Align2::LEFT_TOP, &e, font(12.0), AMBER(), w).height();
     }
-    ui.ctx().request_repaint_after(std::time::Duration::from_millis(1000));
-    y + sp::HEADER_CONTROL_H + 24.0
+    y + 24.0
 }
 
 /// Settings › Cat: three switches (see [`crate::kit::cat::Switches`]).
@@ -1019,13 +1124,13 @@ mod tab_tests {
     use super::*;
 
     #[test]
-    fn every_settings_tab_shows_once_general_first_widgets_last() {
+    fn every_settings_tab_shows_once_general_first_about_last() {
         let mut ids = TAB_ORDER.to_vec();
         ids.sort();
         assert_eq!(ids, (0..tab_names().len()).collect::<Vec<_>>());
         assert_eq!(tab_names()[TAB_ORDER[0]], "General");
         assert_eq!(TAB_ORDER[0], TAB_GENERAL);
-        assert_eq!(tab_names()[*TAB_ORDER.last().unwrap()], "Widgets");
+        assert_eq!(tab_names()[*TAB_ORDER.last().unwrap()], "About");
         assert_eq!(tab_names()[5], "Cat");
     }
 }
