@@ -44,14 +44,21 @@ $('cat').innerHTML=`<ellipse id="cglow" cx="50" cy="56" rx="44" ry="40" fill="#F
 
 let icRects=null;
 
-const VAR='b';
+const VAR=(root.closest('[data-var]')?.getAttribute('data-var'))||'b';
+if(VAR==='a'){
+  // promo v2: the current mark (src/kit/brand.rs) instead of the old keycap
+  $('cat').innerHTML=`<ellipse id="cglow" cx="50" cy="56" rx="44" ry="40" fill="#FF5FA2" opacity="0" style="filter:blur(8px)"/><g id="cears"><path d="M8.20 29.30C8.20 19.53 11.52 4.30 15.72 4.30C18.85 4.30 25.68 10.74 32.23 19.53L32.23 24.41L10.74 32.23ZM67.58 19.53C74.22 10.74 81.05 4.30 84.18 4.30C88.38 4.30 91.80 19.53 91.80 29.30L89.36 32.23L67.58 24.41Z" fill="#F2ECE3"/></g><path d="M32.23 19.53L67.58 19.53L91.80 29.30C93.26 34.18 93.55 39.06 93.55 43.95L93.55 82.03C93.55 90.82 87.40 96.88 78.61 96.88L21.29 96.88C12.50 96.88 6.35 90.82 6.35 82.03L6.35 43.95C6.35 39.06 6.64 34.18 8.20 29.30Z" fill="#F2ECE3"/><rect id="el" x="36" y="48" width="8" height="18" rx="4" fill="#14181A"/><rect id="er" x="56" y="48" width="8" height="18" rx="4" fill="#14181A"/>`;
+  // what each of these apps costs
+  const TAGS=['$39.95/yr','$29/yr','$3.99/mo','$14.99','$9.99/yr','$19.95','$8/mo','$4.99/mo'];
+  WINS.forEach((w,i)=>$('w'+i).insertAdjacentHTML('beforeend',`<b class="tag" id="tg${i}" style="position:absolute;right:14px;top:46px;padding:8px 16px;border-radius:999px;background:#FF3B5C;color:#fff;font:700 24px/1 Inter;box-shadow:0 8px 24px rgba(255,59,92,.45);transform:scale(0)">${TAGS[i]}</b>`));
+}
 function cmdPath(cx,cy,q){const a=cx-q,b=cx+q,c=cy-q,d=cy+q,r=q*.93;return `M${a} ${c-r}V${d+r}M${b} ${c-r}V${d+r}M${a-r} ${c}H${b+r}M${a-r} ${d}H${b+r}M${a} ${c-r}A${r} ${r} 0 1 0 ${a-r} ${c}M${b} ${c-r}A${r} ${r} 0 1 1 ${b+r} ${c}M${a} ${d+r}A${r} ${r} 0 1 1 ${a-r} ${d}M${b} ${d+r}A${r} ${r} 0 1 0 ${b+r} ${d}`;}
-$('cat').insertAdjacentHTML('beforeend',`<path id="ccmd" d="${cmdPath(50,54,7)}" fill="none" stroke="#FF5FA2" stroke-width="4.2"/>`);
+if(VAR!=='a')$('cat').insertAdjacentHTML('beforeend',`<path id="ccmd" d="${cmdPath(50,54,7)}" fill="none" stroke="#FF5FA2" stroke-width="4.2"/>`);
 const ring=document.createElement('div');ring.style.cssText='position:absolute;border-radius:50%;border:4px solid #FF5FA2;z-index:8;pointer-events:none';$('stage').appendChild(ring);
 const shadeEl=document.createElement('div');shadeEl.id='shade';shadeEl.style.cssText='position:absolute;inset:0;background:#0A0826;z-index:4;pointer-events:none';$('stage').insertBefore(shadeEl,$('mb'));
 // pseudo random
 const rnd=i=>{const x=Math.sin(i*127.1+3.7)*43758.5453;return x-Math.floor(x)};
-function eyes(m,bl){['el','er'].forEach(id=>{const e=$(id);e.style.opacity=m;const h=18*(1-bl*.85);e.setAttribute('height',h);e.setAttribute('y',54-h/2)});$('ccmd').style.opacity=1-m;}
+function eyes(m,bl){['el','er'].forEach(id=>{const e=$(id);e.style.opacity=m;const h=18*(1-bl*.85);e.setAttribute('height',h);e.setAttribute('y',54-h/2)});const cc=$('ccmd');if(cc)cc.style.opacity=1-m;}
 function placeCat(x,y,size,sq=0){const c=$('cat');c.style.width=c.style.height=size+'px';c.style.left=(x-size/2)+'px';c.style.top=(y-size/2)+'px';c.style.transform=`scale(${1+sq*.15},${1-sq*.15})`;c.style.transformOrigin='50% 85%';}
 function render(t){
   $('menu').style.display='none';$('boot').style.opacity=0;
@@ -59,6 +66,7 @@ function render(t){
   // ---------- chaos 0–3 ----------
   ICONS.forEach((_,i)=>{const e=$('ic'+i);const s=spring(t-.05-i*.11,9,16);e.style.transform=`scale(${s})`;e.style.opacity=1;});
   WINS.forEach((w,i)=>{const e=$('w'+i);const d=t-.375*(i+1)*.95;const s=spring(d,8,14);e.style.opacity=clamp(d/.12);e.style.transform=`scale(${lerp(.85,1,s)})`;});
+  if(VAR==='a')WINS.forEach((w,i)=>{const g=$('tg'+i);const d=t-.375*(i+1)*.95-.18;g.style.transform=`scale(${clamp(spring(d,9,18),0,1.3)}) rotate(${(rnd(i)-.5)*14}deg)`;});
   NOTES.forEach((n,i)=>{const e=$('n'+i);const d=t-(1.6+i*.375);const p=eo5(clamp(d/.3));e.style.top=(74+i*96)+'px';e.style.transform=`translateX(${lerp(460,0,p)}px)`;e.style.opacity=p;});
   const cnt=$('count');cnt.style.left=(BASE[0]-85)+'px';cnt.style.top='14px';cnt.style.opacity=t<1.4?0:t<2.6?1:0;cnt.textContent=Math.max(1,Math.min(11,Math.floor((t-.05)/.11)+1))+'';
   shadeEl.style.opacity=0; ring.style.opacity=0; $('cat').style.opacity=0; $('word').innerHTML='';

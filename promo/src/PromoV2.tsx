@@ -4,7 +4,7 @@
 import React from 'react';
 import {AbsoluteFill, Audio, Img, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {Scene} from './Scene';
-import {main} from './scenes';
+import {main, opener} from './scenes';
 import icons from './scenes/landing-icons.json';
 import './fonts-landing.css';
 
@@ -234,18 +234,26 @@ const CUTS: [number, number][] = [ // [main scene start, rate]
   [30.0, 1.0], // Mac Health
   [33.0, 1.2], // AI Usage
 ];
+const OPENER_RATE = 4.25 / (6 * 60 / 111.98); // opener's 0–4.25 s fits beats 0–6
 const MAIN_END = 36.39; // main scene end card start (K(16))
 
 const Body: React.FC = () => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const t = frame / fps;
+  if (t < Bt(6)) {
+    // hook: the old video's opener (paid apps everywhere, price tags), sped up; the cat eats it all
+    return (
+      <AbsoluteFill data-var="a" style={{background: '#0A0826'}}>
+        <Scene key="opener" mod={opener} t={t * OPENER_RATE} />
+      </AbsoluteFill>
+    );
+  }
   if (t < Bt(10)) {
     return (
       <AbsoluteFill style={{background: '#0A0826', overflow: 'hidden'}}>
         <Img src={img('hero-miami-bare.jpg')} style={{position: 'absolute', inset: 0, width: 1920, height: 1080, filter: `blur(${lerp(0, 18, eo(P(t, Bt(6), Bt(7))))}px) brightness(${lerp(0.55, 1, eo(P(t, Bt(5.5), Bt(6.5)))) * lerp(1, 0.72, eo(P(t, Bt(6), Bt(7))))})`, transform: `scale(${lerp(1, 1.04, eo(P(t, Bt(6), Bt(7))))})`}} />
         {t >= Bt(6) && <AbsoluteFill style={{background: 'radial-gradient(70% 80% at 25% 50%, rgba(10,8,38,.55), rgba(10,8,38,0) 70%)', opacity: eo(P(t, Bt(6), Bt(7)))}} />}
-        {t < Bt(6) && <Hook t={t} />}
         {t >= Bt(6) && <Hero t={t} />}
         <MenuBar t={t} s0={0.15} />
       </AbsoluteFill>
