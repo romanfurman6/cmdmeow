@@ -175,6 +175,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | M3 | Press: down 50 ms ease-out, release 160 ms spring `cubic-bezier(.34,1.8,.64,1)` (B7). Hover fades via `animate_bool`. | ✅ |
 | M4 | Loader: fill eases 0.6 s, wave loops 1.6 s linear, ⌘→✓ crossfade 0.25 s plus one 0.46 s hop. | ✅ |
 | M5 | **Window open:** if the window's first frame isn't drawn 150 ms after it appears, show the S1 backdrop and the P6 loader mark (56 pt, centred, lime fill rising on a loop). Fades in over 120 ms; the first frame covers it and it stops (M2). No text, card or frame. Core Animation under egui's frame (M1). | ⏳ code |
+| M6 | **Mascot ears:** an ear never turns as one piece. It bends: its base stays on the head and the turn grows smoothly to the tip (`brand::bend`). A flick is two tilts out and back that ease at the start, turn and end (sin², at most 0.28 rad). The Welcome peek, ear flicks, ring and tool chips run on Core Animation (M1, `kit::welcome_ca`); egui draws them only for screenshots and while the step moves. | ✅ |
 
 ## 10. Sound ✅
 
@@ -387,3 +388,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-25, Roman: TH14 record dot on an action fill, Dark Miami wine (canvas https://claude.ai/artifact/X1JkbDx3aY3mUDT9iQDnxn, PR #367).
 
 2026-11-25, Roman: Dark Miami is the default theme on a fresh install, app and website (TH4, TH11, PR #371).
+
+2026-11-25, Roman: M6 mascot ears bend, onboarding peek on Core Animation (canvas https://claude.ai/artifact/Lbh3WG9pgtpMoVdQrzr2dv, PR #373).
