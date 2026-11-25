@@ -710,8 +710,7 @@ enum Kind {
 /// circle goes to the free spot nearest the middle that touches one already
 /// placed. Area follows size, so a folder twice as big looks twice as big.
 fn pack(sizes: &[u64]) -> Vec<(Vec2, f32)> {
-    let max = sizes.first().copied().unwrap_or(1).max(1) as f32;
-    let radii: Vec<f32> = sizes.iter().map(|b| (*b as f32 / max).sqrt().max(0.08)).collect();
+    let radii = radii(sizes);
     let gap = 0.03;
     let mut out: Vec<(Vec2, f32)> = Vec::with_capacity(radii.len());
     for &r in &radii {
@@ -739,20 +738,52 @@ fn pack(sizes: &[u64]) -> Vec<(Vec2, f32)> {
 }
 
 thread_local! {
-    /// The last pack, by folder (and how many bubbles), so it isn't redone every frame.
-    static PACK: std::cell::RefCell<Option<(PathBuf, Vec<u64>, Vec<(Vec2, f32)>)>> = const { std::cell::RefCell::new(None) };
+    /// The last pack: the folder, and each bubble by name with the size it was packed at.
+    static PACK: std::cell::RefCell<Option<(PathBuf, Vec<(String, u64)>, Vec<(Vec2, f32)>)>> = const { std::cell::RefCell::new(None) };
 }
 
-fn pack_cached(path: &Path, sizes: &[u64]) -> Vec<(Vec2, f32)> {
+/// How far a bubble's radius may drift (biggest bubble = 1) before the
+/// folder is packed again. Smaller than the gap between bubbles, so keeping
+/// the old centres never makes two bubbles overlap.
+const REPACK_DRIFT: f32 = 0.01;
+
+/// Radii as `pack` draws them: area follows size, biggest = 1.
+fn radii(sizes: &[u64]) -> Vec<f32> {
+    let max = sizes.iter().copied().max().unwrap_or(1).max(1) as f32;
+    sizes.iter().map(|b| (*b as f32 / max).sqrt().max(0.08)).collect()
+}
+
+/// `items` (name, bytes; biggest first) placed as bubbles, in the same order.
+/// The map follows the disk while it's open (free space, quiet updates), so a
+/// few bytes more must not reshuffle it: while the same bubbles are there and
+/// none grew or shrank visibly, they keep their places and only their sizes
+/// follow.
+fn pack_stable(last: Option<&(PathBuf, Vec<(String, u64)>, Vec<(Vec2, f32)>)>, path: &Path, items: &[(String, u64)]) -> Option<Vec<(Vec2, f32)>> {
+    let (p, was, at) = last?;
+    if p != path || was.len() != items.len() || at.len() != items.len() {
+        return None;
+    }
+    let old_r = radii(&was.iter().map(|x| x.1).collect::<Vec<_>>());
+    let new_r = radii(&items.iter().map(|x| x.1).collect::<Vec<_>>());
+    let mut out = Vec::with_capacity(items.len());
+    for (i, (name, _)) in items.iter().enumerate() {
+        let j = was.iter().position(|w| &w.0 == name)?;
+        if (old_r[j] - new_r[i]).abs() > REPACK_DRIFT {
+            return None;
+        }
+        out.push((at[j].0, new_r[i]));
+    }
+    Some(out)
+}
+
+fn pack_cached(path: &Path, items: &[(String, u64)]) -> Vec<(Vec2, f32)> {
     PACK.with(|c| {
         let mut c = c.borrow_mut();
-        if let Some((p, s, v)) = c.as_ref() {
-            if p == path && s == sizes {
-                return v.clone();
-            }
+        if let Some(v) = pack_stable(c.as_ref(), path, items) {
+            return v;
         }
-        let v = pack(sizes);
-        *c = Some((path.to_path_buf(), sizes.to_vec(), v.clone()));
+        let v = pack(&items.iter().map(|x| x.1).collect::<Vec<_>>());
+        *c = Some((path.to_path_buf(), items.to_vec(), v.clone()));
         v
     })
 }
@@ -782,8 +813,18 @@ fn bubbles(app: &mut App, ui: &mut Ui, pa: Rect, node: &Node, here: &str, free: 
     }
     // packing wants biggest first; Other and Free can be bigger than some folders
     items.sort_by_key(|x| std::cmp::Reverse(x.1));
-    let sorted: Vec<u64> = items.iter().map(|x| x.1).collect();
-    let bubbles: Vec<Bubble> = pack_cached(&node.path, &sorted).into_iter().zip(&items).map(|((at, r), it)| Bubble { at, r, kind: it.0 }).collect();
+    let named: Vec<(String, u64)> = items
+        .iter()
+        .map(|&(k, b)| {
+            let id = match k {
+                Kind::Kid(i) => kids[i].name.clone(),
+                Kind::Other => "\0other".into(),
+                Kind::Free => "\0free".into(),
+            };
+            (id, b)
+        })
+        .collect();
+    let bubbles: Vec<Bubble> = pack_cached(&node.path, &named).into_iter().zip(&items).map(|((at, r), it)| Bubble { at, r, kind: it.0 }).collect();
     // fit the pack into the area
     let (mut lo, mut hi) = (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN));
     for b in &bubbles {
@@ -2256,6 +2297,36 @@ mod tests {
 
     fn n(path: &str, bytes: u64, items: u64, other: u64, children: Vec<Node>) -> Node {
         Node { name: path.rsplit('/').next().unwrap().into(), path: PathBuf::from(path), bytes, items, children, other }
+    }
+
+    #[test]
+    fn bubbles_stay_put_when_sizes_barely_change() {
+        let path = Path::new("/");
+        let a: Vec<(String, u64)> = vec![("\0free".into(), 1_330_000_000_000), ("Users".into(), 467_000_000_000), ("Applications".into(), 62_700_000_000), ("opt".into(), 34_800_000_000), ("System".into(), 30_800_000_000)];
+        let at = pack(&a.iter().map(|x| x.1).collect::<Vec<_>>());
+        let last = (path.to_path_buf(), a.clone(), at.clone());
+        // free space and a folder move by a few MB: same places
+        let mut b = a.clone();
+        b[0].1 -= 4_000_000;
+        b[1].1 += 2_000_000;
+        let kept = pack_stable(Some(&last), path, &b).expect("kept");
+        for (k, o) in kept.iter().zip(&at) {
+            assert_eq!(k.0, o.0);
+        }
+        // two near-equal folders swap order: each keeps its own place
+        let mut c = a.clone();
+        c.swap(3, 4);
+        let kept = pack_stable(Some(&last), path, &c).expect("kept");
+        assert_eq!(kept[3].0, at[4].0);
+        assert_eq!(kept[4].0, at[3].0);
+        // a big change, a new bubble or another folder packs again
+        let mut d = a.clone();
+        d[1].1 *= 2;
+        assert!(pack_stable(Some(&last), path, &d).is_none());
+        let mut e = a.clone();
+        e.push(("Library".into(), 11_700_000_000));
+        assert!(pack_stable(Some(&last), path, &e).is_none());
+        assert!(pack_stable(Some(&last), Path::new("/Users"), &a).is_none());
     }
 
     #[test]
