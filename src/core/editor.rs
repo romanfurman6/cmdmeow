@@ -694,7 +694,7 @@ fn ai_check_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     title(&mut y, ts!("app.check_after"));
     let rows: Vec<(&str, &str, Icon, Color32)> = aicheck::TOOLS
         .iter()
-        .filter_map(|(id, name, _)| app.tools.iter().find(|t| t.id() == *id).map(|t| (*id, *name, t.badge().icon, t.badge().color)))
+        .filter_map(|(id, _, _)| app.tools.iter().find(|t| t.id() == *id).map(|t| (*id, t.name(), t.badge().icon, t.badge().color)))
         .collect();
     let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, rows.len() as f32 * row_h));
     glass_card(&p, card, R_CARD, 0.0, false);

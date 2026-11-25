@@ -107,14 +107,14 @@ fn fetch(p: &Progress) -> Result<(), String> {
     file.flush().map_err(|e| e.to_string())?;
     drop(file);
     if len.is_some_and(|l| done < l + start) {
-        return Err("The download ended early; try again to pick it up".into());
+        return Err(ts!("kit.dl.early").into());
     }
     // a bzip2 stream starts with "BZh"
     let mut magic = [0u8; 3];
     std::fs::File::open(&part).and_then(|mut f| f.read_exact(&mut magic)).map_err(|e| e.to_string())?;
     if &magic != b"BZh" {
         let _ = std::fs::remove_file(&part);
-        return Err("That wasn't the speech model; try again".into());
+        return Err(ts!("kit.dl.not_the_model").into());
     }
     std::fs::rename(&part, archive()).map_err(|e| e.to_string())
 }
@@ -144,7 +144,7 @@ fn unpack(p: &Progress, tmp: &std::path::Path) -> Result<(), String> {
     if got < FILES.len() {
         let _ = std::fs::remove_dir_all(&tmp);
         let _ = std::fs::remove_file(archive());
-        return Err("The model archive is missing files; try again".into());
+        return Err(ts!("kit.dl.missing").into());
     }
     let _ = std::fs::remove_dir_all(dir());
     std::fs::rename(&tmp, dir()).map_err(|e| e.to_string())?;
@@ -174,7 +174,7 @@ impl Loaded {
         config.model_config.model_type = Some("nemo_transducer".into());
         config.model_config.num_threads = crate::kit::work_threads() as i32;
         config.model_config.provider = Some("cpu".into());
-        let rec = OfflineRecognizer::create(&config).ok_or("The speech model didn't load")?;
+        let rec = OfflineRecognizer::create(&config).ok_or(ts!("dict.didnt_load"))?;
         Ok(Loaded { rec })
     }
 
