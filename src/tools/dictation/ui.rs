@@ -240,10 +240,11 @@ pub fn page(d: &mut Dictation, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     } else if !d.settings.engine.ready() {
         (ts!("dict.no_model").to_string(), AMBER())
     } else {
-        (format!("{} · {} · {}", d.shortcut_label(), d.settings.engine.name(), words(d.words_today())), TEXT_DIM())
+        (tn!("dict.words_today", n = d.words_today()).into_owned(), TEXT_DIM())
     };
     let btns = page_header(&p, r, ts!("dict.name"), &sub, col);
-    let tr = Rect::from_min_max(Pos2::new(btns.right() - 180.0, btns.top()), btns.max);
+    let tw = crate::kit::glass::tabs_width(&p, &[ts!("dict.history"), ts!("dict.settings")]);
+    let tr = Rect::from_min_max(Pos2::new(btns.right() - tw, btns.top()), btns.max);
     let cur = (d.tab == Tab::Settings) as usize;
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("dict-tab"), &[ts!("dict.history"), ts!("dict.settings")], cur) {
         d.tab = if i == 1 { Tab::Settings } else { Tab::History };

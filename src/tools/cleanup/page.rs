@@ -227,7 +227,8 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
         Phase::Cleaning => ts!("cleanup.cleaning").into(),
         _ => ts!("cleanup.scanning").into(),
     };
-    let btns = page_header(&p, r, ts!("cleanup.name"), &sub, TEXT_DIM());
+    // SP17 H5: no "Scanning…" in the header; Stop with its spinner says it
+    let btns = page_header(&p, r, ts!("cleanup.name"), "", TEXT_DIM());
     // Stop: back to the start; Skip: the results now, by the built-in rules
     let stop = match phase {
         Phase::Scanning => Some(ts!("cleanup.stop")),
@@ -235,9 +236,9 @@ fn working(app: &mut App, ui: &mut Ui, r: Rect, phase: Phase) {
         _ => None,
     };
     if let Some(label) = stop {
-        let w = button_width(&p, label, BTN_SECONDARY).max(64.0);
+        let w = [ts!("cleanup.scan_again"), ts!("cleanup.stop"), ts!("cleanup.skip")].iter().map(|l| crate::kit::glass::icon_pill_width(&p, l, BTN_SECONDARY)).fold(0.0, f32::max);
         let sr = Rect::from_min_max(Pos2::new(btns.right() - w, btns.top()), btns.max);
-        if pill_button(ui, sr, label, BTN_SECONDARY, true).clicked() {
+        if crate::kit::glass::busy_pill(ui, sr, label, tint::CLEANUP()).on_hover_text(&sub).clicked() {
             if phase == Phase::Judging {
                 cleanup::skip_ai(&app.clean);
             } else {
@@ -349,28 +350,18 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     if let Some(e) = &ai_error {
         sub = format!("{sub} · {e}");
     }
-    // AI Check: a chip after the title
+    // AI Check: a chip left of the page action (SP17)
     let ai_n = app.clean.lock_ok().items.iter().filter(|i| i.verdict != Verdict::Keep).count();
     let cw = aicheck::ui::chip_width(&app.ai, ui, ai_n > 0);
-    let (btns, chip_at) = page_header_room(&p, r, ts!("cleanup.name"), &sub, if ai_error.is_some() { AMBER() } else { TEXT_DIM() }, cw, r.right() - 260.0);
-    let w = button_width(&p, ts!("cleanup.scan_again"), BTN_SECONDARY);
+    let w = [ts!("cleanup.scan_again"), ts!("cleanup.stop"), ts!("cleanup.skip")].iter().map(|l| crate::kit::glass::icon_pill_width(&p, l, BTN_SECONDARY)).fold(0.0, f32::max);
+    let (btns, _) = page_header_room(&p, r, ts!("cleanup.name"), &sub, if ai_error.is_some() { AMBER() } else { TEXT_DIM() }, 0.0, r.right() - sp::PAGE_EDGE - w - sp::M - cw - sp::M);
     let sr = Rect::from_min_max(Pos2::new(btns.right() - w, btns.top()), btns.max);
-    if pill_button(ui, sr, ts!("cleanup.scan_again"), BTN_SECONDARY, true).clicked() {
+    let chip_at = Pos2::new(sr.left() - sp::M - cw, sr.center().y);
+    if crate::kit::glass::icon_pill(ui, sr, Icon::Refresh, ts!("cleanup.scan_again"), BTN_SECONDARY, true).clicked() {
         // back to the start screen, where the scan can be set up and started
         cleanup::stop_scan(&app.clean);
         app.ai.reset();
         return;
-    }
-    let hidden = app.clean.lock_ok().hidden_kept;
-    if hidden > 0 {
-        let label = t!("cleanup.show_kept", n = hidden);
-        let kw = button_width(&p, &label, BTN_SECONDARY);
-        let kr = Rect::from_min_max(Pos2::new(sr.left() - 8.0 - kw, btns.top()), Pos2::new(sr.left() - 8.0, btns.bottom()));
-        if pill_button(ui, kr, &label, BTN_SECONDARY, true).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
-            cleanup::forget_kept();
-            cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
-            return;
-        }
     }
 
     if total == 0 && pending == 0 {
@@ -382,6 +373,15 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let dr = Rect::from_center_size(c + Vec2::new(0.0, 130.0), Vec2::new(96.0, 32.0));
         if pill_button(ui, dr, ts!("cleanup.done"), BTN_PRIMARY, true).clicked() {
             app.clean.lock_ok().phase = Phase::Intro;
+        }
+        // everything found was kept before: offer it back here too
+        let hidden = app.clean.lock_ok().hidden_kept;
+        if hidden > 0 {
+            let label = t!("cleanup.show_kept", n = hidden);
+            if crate::kit::glass::link(ui, Pos2::new(dr.center().x, dr.bottom() + sp::L), Align2::CENTER_TOP, &label, 12.0).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
+                cleanup::forget_kept();
+                cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
+            }
         }
         return;
     }
@@ -412,8 +412,20 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     }
 
     // the groups on the left, what the chosen one found on the right
-    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height()));
-    group_rail(app, ui, rail);
+    // SP17 H3: one action in the header; items kept before are offered
+    // under the rail, which leaves room for that line
+    let hidden = app.clean.lock_ok().hidden_kept;
+    let kept_h = if hidden > 0 { sp::L + 16.0 } else { 0.0 };
+    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height() - kept_h));
+    let card = group_rail(app, ui, rail);
+    if hidden > 0 {
+        let label = t!("cleanup.show_kept", n = hidden);
+        if crate::kit::glass::link(ui, Pos2::new(card.left() + sp::M, card.bottom() + sp::L), Align2::LEFT_TOP, &label, 12.0).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
+            cleanup::forget_kept();
+            cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
+            return;
+        }
+    }
     // the list runs down to the footer, so rows scroll straight under it;
     // its own last gap keeps the end clear of the footer (result_list)
     let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), Pos2::new(body.right(), r.bottom() - PAGE_FOOTER_H));
@@ -545,7 +557,8 @@ fn bundle_for_key(items: &[Item], key: &str) -> Vec<usize> {
 /// The groups as a list: All, then each group that found something, with
 /// its size; an amber badge counts a group's questions
 /// (items, like the "Needs your OK" count).
-fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
+/// The group rail; returns its card.
+fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let mut rows: Vec<(Option<Group>, &'static str, u64, usize, Color32)> = vec![];
@@ -610,6 +623,7 @@ fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) {
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
     }
+    card
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

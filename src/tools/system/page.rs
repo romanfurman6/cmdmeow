@@ -53,15 +53,18 @@ pub fn page(mon: &monitor::Shared, ai: &mut aicheck::Check, recs: &[Recommendati
         Some(rec) => (rec.title.clone(), AMBER()),
         None => (String::new(), TEXT_DIM()),
     };
-    // AI Check: a chip after the title, on the overview
+    // AI Check: a chip left of the tabs (SP17), on the overview
     let cw = if show_settings { 0.0 } else { aicheck::ui::chip_width(ai, ui, s.ready) };
     // a tip without a fix has no button
     let rec_btn = recs.first().filter(|rec| !rec.action.is_empty());
     let rec_w = rec_btn.map(|rec| button_width(&p, &rec.action, BTN_PRIMARY)).unwrap_or(0.0);
     // SP16: the fix at the right edge, the tabs next to it
-    let sub_right = r.right() - sp::PAGE_EDGE - 180.0 - sp::M - if rec_w > 0.0 { rec_w + sp::M } else { 0.0 };
-    let (btns, chip_at) = page_header_room(&p, r, ts!("health.name"), &sub, sub_col, cw, sub_right);
-    let (tr, br) = header_controls(btns, 180.0, rec_w);
+    let tabs = [ts!("health.tab.overview"), ts!("health.tab.settings")];
+    let tw = crate::kit::glass::tabs_width(&p, &tabs);
+    let sub_right = r.right() - sp::PAGE_EDGE - tw - sp::M - if rec_w > 0.0 { rec_w + sp::M } else { 0.0 } - if cw > 0.0 { cw + sp::M } else { 0.0 };
+    let (btns, _) = page_header_room(&p, r, ts!("health.name"), &sub, sub_col, 0.0, sub_right);
+    let (tr, br) = header_controls(btns, tw, rec_w);
+    let chip_at = Pos2::new(tr.left() - sp::M - cw, tr.center().y);
     if let Some(i) = segmented(ui, tr, ui.scope_id().with("health-tab"), &[ts!("health.tab.overview"), ts!("health.tab.settings")], show_settings as usize) {
         ui.ctx().data_mut(|d| d.insert_temp(settings_id, i == 1));
     }
