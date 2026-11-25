@@ -387,6 +387,20 @@ pub fn settings(ui: &mut Ui, r: Rect, s: &Snapshot) -> Option<PageAction> {
 pub fn card_body(ui: &mut Ui, p: &egui::Painter, r: Rect, s: &Snapshot) -> Option<PageAction> {
     let mut out = None;
     let devs = devices::lowest_first(&s.devices);
+    // without Bluetooth the list is short (no AirPods case, no LE batteries)
+    // or empty: say so instead of "No devices connected" (P10, R17)
+    let bt = crate::kit::perms::Perm::Bluetooth;
+    let mut r = r;
+    if bt.missing() {
+        if devs.is_empty() {
+            crate::kit::glass::needs_perm(ui, p, r, bt);
+            return out;
+        }
+        let row = Rect::from_min_max(Pos2::new(r.left() - 14.0, r.bottom() - 34.0), Pos2::new(r.right() + 8.0, r.bottom() + 6.0));
+        hairline(p, Pos2::new(r.left(), row.top()), Pos2::new(r.right(), row.top()));
+        crate::kit::glass::perm_row(ui, p, row, row.center().y, bt);
+        r.max.y = row.top() - LINE_GAP;
+    }
     if devs.is_empty() {
         let cy = r.center().y - 16.0;
         icon(p, Icon::Bluetooth, Rect::from_center_size(Pos2::new(r.center().x, cy - 18.0), Vec2::splat(26.0)), TEXT_FAINT());

@@ -22,6 +22,9 @@ const TOP_CARD_H: f32 = 64.0;
 /// Icons are loaded a few per frame so a long list doesn't stall.
 const ICONS_PER_FRAME: usize = 4;
 /// Faint red behind suggested rows and the suggestion card.
+/// The "Needs System Events" card and the gap under it.
+const ALLOW_H: f32 = NEEDS_H + 32.0 + 4.0;
+
 fn red_wash(a: f32) -> Color32 {
     with_alpha(tint::STARTUP(), a)
 }
@@ -305,7 +308,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let list_h: f32 = rows.iter().map(|r| match r {
         Row::Head(..) => HEAD_H,
         Row::Note(_) => 40.0,
-        Row::Allow => 62.0,
+        Row::Allow => ALLOW_H,
         _ => ROW_H + ROW_GAP,
     }).sum::<f32>()
         + 56.0
@@ -385,7 +388,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 yy += match row {
                     Some(Row::Head(..)) => HEAD_H,
                     Some(Row::Note(_)) => 40.0,
-                    Some(Row::Allow) => 62.0,
+                    Some(Row::Allow) => ALLOW_H,
                     Some(_) => ROW_H + ROW_GAP,
                     None => 0.0,
                 };
@@ -517,24 +520,11 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                     y += 40.0;
                 }
                 Row::Allow => {
-                    use crate::kit::perms::{Perm, Status};
-                    let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), 58.0));
+                    // P10: the list can't be read, so the card says what's missing
+                    use crate::kit::perms::Perm;
+                    let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ALLOW_H - 4.0));
                     glass_card(&p, r, R_CARD, 0.0, false);
-                    icon(&p, Icon::Script, Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::splat(18.0)), TEXT_SOFT());
-                    let denied = s.events.0 == Status::Denied;
-                    let label = if denied { ts!("startup.open_settings") } else { ts!("startup.allow_access") };
-                    let bw = button_width(&p, label, BTN_PRIMARY);
-                    let br = Rect::from_min_size(Pos2::new(r.right() - 12.0 - bw, r.center().y - 14.0), Vec2::new(bw, 28.0));
-                    let tw = br.left() - r.left() - 44.0 - 12.0;
-                    let (ly1, ly2) = two_lines_y(&p, r.center().y, &bold(13.0), &font(12.0));
-                    text_fit(&p, Pos2::new(r.left() + 44.0, ly1), Align2::LEFT_CENTER, ts!("startup.cant_see_apps"), bold(13.0), TEXT(), tw);
-                    let why = if denied {
-                        ts!("startup.events_denied")
-                    } else {
-                        ts!("startup.events_ask")
-                    };
-                    text_fit(&p, Pos2::new(r.left() + 44.0, ly2), Align2::LEFT_CENTER, why, font(12.0), TEXT_FAINT(), tw);
-                    if pill_button(ui, br, label, BTN_PRIMARY, true).clicked() {
+                    if needs_block(ui, &p, r, Perm::SystemEvents.icon(), Perm::SystemEvents.name(), Perm::SystemEvents.fix_label()) {
                         Perm::SystemEvents.ask();
                         retry = true;
                     }
@@ -542,7 +532,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                         // repaint now and then so the row goes once access lands
                         ctx.request_repaint_after(std::time::Duration::from_secs(1));
                     }
-                    y += 62.0;
+                    y += ALLOW_H;
                 }
                 Row::App(la) => {
                     let r = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), ROW_H));

@@ -341,8 +341,12 @@ impl Startup {
                 g.jobs = jobs;
                 g.busy = None;
                 if let Err(e) = res {
-                    if e != "Cancelled" {
-                        crate::kit::notify::send(ts!("startup.couldnt_change"), &e);
+                    // in the app, not as a notification: those may be off (P11)
+                    if crate::kit::macos::not_authorized(&e) {
+                        let events = crate::kit::perms::Perm::SystemEvents;
+                        crate::kit::toast::needs(events.name(), crate::kit::toast::Fix::Url(crate::kit::toast::AUTOMATION));
+                    } else if e != "Cancelled" {
+                        crate::kit::toast::say(format!("{}: {e}", ts!("startup.couldnt_change")));
                     }
                 }
                 ctx.request_repaint();
@@ -535,7 +539,7 @@ impl Startup {
             .name("startup-vt".into())
             .spawn(move || match sign::sha256(&file) {
                 Some(h) => crate::kit::macos::open(&format!("https://www.virustotal.com/gui/file/{h}")),
-                None => crate::kit::notify::send(ts!("startup.couldnt_read_file"), &file.display().to_string()),
+                None => crate::kit::toast::say(ts!("startup.couldnt_read_file")),
             })
             .ok();
     }
@@ -563,7 +567,7 @@ impl Startup {
                 match res {
                     Ok(list) => g.btm = Some(list),
                     Err(e) if e == "Cancelled" || e.contains("-128") => {}
-                    Err(e) => crate::kit::notify::send(ts!("startup.couldnt_read_btm"), &e),
+                    Err(e) => crate::kit::toast::say(format!("{}: {e}", ts!("startup.couldnt_read_btm"))),
                 }
                 ctx.request_repaint();
             })

@@ -260,11 +260,6 @@
     "copy_command": "Copy command",
     "copy_bundle_id": "Copy bundle ID",
     "show_in_finder": "Show in Finder",
-    "open_settings": "Open Settings",
-    "allow_access": "Allow access",
-    "cant_see_apps": "Can't see the apps that open at login",
-    "events_denied": "Turn on System Events for Cmd+Meow in Privacy & Security › Automation",
-    "events_ask": "macOS lists them through System Events; allow it once to see and switch them",
     "opens_hidden": "Opens hidden",
     "opens_window": "Opens its window",
     "remove": "Remove",
@@ -2037,12 +2032,12 @@
     "edit_widgets_tip": "Edit the panel's widgets in the Cmd+Meow window",
     "system_settings": "System Settings",
     "open_settings": "Open Settings",
-    "cant_restart": "Couldn't restart. Allow CmdMeow in Privacy & Security › Automation",
+    "cant_restart": "Couldn't restart",
     "empty_trash_q": "Empty the Trash?",
     "empty_trash_why": "Items in the Trash are deleted for good.",
     "empty_trash": "Empty Trash",
     "trash_emptied": "Trash emptied",
-    "cant_empty": "Couldn't empty the Trash. Allow CmdMeow to control Finder in Privacy & Security › Automation",
+    "cant_empty": "Couldn't empty the Trash",
     "finish_setup": "Finish setup",
     "tab_widgets": "Widgets",
     "tab_tools": "Tools",
@@ -2088,7 +2083,9 @@
     "click_remove": "Click again to remove",
     "remove_app": "Remove Cmd+Meow",
     "cant_remove": "Cmd+Meow couldn't be removed",
-    "removing_app": "Removing Cmd+Meow…"
+    "removing_app": "Removing Cmd+Meow…",
+    "automation_access": "Automation access",
+    "finder_access": "Finder access"
   },
   "setup": {
     "back": "Back",
@@ -2364,7 +2361,8 @@
     "login": {
       "needs_13": "Needs macOS 13 or later"
     },
-    "trash_where": "Moved, but the Trash didn't say where"
+    "trash_where": "Moved, but the Trash didn't say where",
+    "access_to": "access to %{folder}"
   },
   "rules": {
     "keep": {

@@ -1439,12 +1439,12 @@ pub fn switch(ui: &mut Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) ->
 /// "Allowed" / "Not allowed", and a 28 Primary button that asks when it's
 /// missing. `y` is the row's centre.
 pub fn perm_row(ui: &mut Ui, p: &Painter, card: Rect, y: f32, perm: crate::kit::perms::Perm) {
-    let ok = perm.status() == crate::kit::perms::Status::Allowed;
+    let ok = perm.cached() == crate::kit::perms::Status::Allowed;
     p.circle_filled(Pos2::new(card.left() + 18.0, y), 4.0, if ok { GREEN() } else { AMBER() });
     p.text(Pos2::new(card.left() + 30.0, y), Align2::LEFT_CENTER, perm.name(), font(13.0), TEXT());
     let mut right = card.right() - 12.0;
     if !ok {
-        let label = perm.ask_label();
+        let label = perm.fix_label();
         let bw = button_width(p, label, BTN_PRIMARY);
         let br = Rect::from_min_max(Pos2::new(right - bw, y - 14.0), Pos2::new(right, y + 14.0));
         if pill_button(ui, br, label, BTN_PRIMARY, true).clicked() {
@@ -1454,6 +1454,44 @@ pub fn perm_row(ui: &mut Ui, p: &Painter, card: Rect, y: f32, perm: crate::kit::
         ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
     }
     p.text(Pos2::new(right, y), Align2::RIGHT_CENTER, if ok { ts!("kit.allowed") } else { ts!("kit.not_allowed") }, font(12.0), TEXT_DIM());
+}
+
+/// A row for access that isn't a macOS permission switch we can read as a
+/// [`crate::kit::perms::Perm`] (the Keychain, Login Items): the R17 row
+/// with the name and button given. True when the button was pressed.
+pub fn access_row(ui: &mut Ui, p: &Painter, card: Rect, y: f32, name: &str, label: &str) -> bool {
+    p.circle_filled(Pos2::new(card.left() + 18.0, y), 4.0, AMBER());
+    p.text(Pos2::new(card.left() + 30.0, y), Align2::LEFT_CENTER, name, font(13.0), TEXT());
+    let right = card.right() - 12.0;
+    let bw = button_width(p, label, BTN_PRIMARY);
+    let br = Rect::from_min_max(Pos2::new(right - bw, y - 14.0), Pos2::new(right, y + 14.0));
+    let hit = pill_button(ui, br, label, BTN_PRIMARY, true).clicked();
+    p.text(Pos2::new(br.left() - 10.0, y), Align2::RIGHT_CENTER, ts!("kit.not_allowed"), font(12.0), TEXT_DIM());
+    hit
+}
+
+/// Height of [`needs_block`].
+pub const NEEDS_H: f32 = 26.0 + 10.0 + 16.0 + 10.0 + 28.0;
+
+/// A card that has nothing to show because access is missing (P10): the
+/// dimmed glyph, "Needs <what>" and one Primary button, centred in `r`.
+/// True when the button was pressed.
+pub fn needs_block(ui: &mut Ui, p: &Painter, r: Rect, glyph: Icon, what: &str, label: &str) -> bool {
+    let top = r.center().y - NEEDS_H / 2.0;
+    let cx = r.center().x;
+    icon(p, glyph, Rect::from_center_size(Pos2::new(cx, top + 13.0), Vec2::splat(26.0)), TEXT_FAINT());
+    p.text(Pos2::new(cx, top + 26.0 + 10.0 + 8.0), Align2::CENTER_CENTER, t!("app.needs", perm = what), font(13.0), TEXT_DIM());
+    let bw = button_width(p, label, BTN_PRIMARY);
+    let br = Rect::from_min_size(Pos2::new(cx - bw / 2.0, top + NEEDS_H - 28.0), Vec2::new(bw, 28.0));
+    pill_button(ui, br, label, BTN_PRIMARY, true).clicked()
+}
+
+/// [`needs_block`] for a macOS permission: the button asks for it.
+pub fn needs_perm(ui: &mut Ui, p: &Painter, r: Rect, perm: crate::kit::perms::Perm) {
+    if needs_block(ui, p, r, perm.icon(), perm.name(), perm.fix_label()) {
+        perm.ask();
+    }
+    ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
 }
 
 /// A dashed rounded outline: a drop zone, an empty slot or sample content

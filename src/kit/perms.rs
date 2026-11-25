@@ -7,6 +7,13 @@ use crate::kit::glass::Icon;
 /// See [`Perm::take_answered`].
 static ANSWERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Screenshot mode: pages draw sample data, so nothing counts as missing.
+static DEMO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_demo(on: bool) {
+    DEMO.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn answered() {
     ANSWERED.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -143,6 +150,39 @@ impl Perm {
     /// The live status of a system permission (`Own` ones belong to their tool).
     pub fn status(self) -> Status {
         imp::status(self)
+    }
+
+    /// [`Perm::status`] read at most once a second: for pages that look
+    /// at it every frame (Full Disk Access opens a file to find out).
+    pub fn cached(self) -> Status {
+        use std::collections::HashMap;
+        use std::sync::{Mutex, OnceLock};
+        use std::time::Instant;
+        static SEEN: OnceLock<Mutex<HashMap<Perm, (Status, Instant)>>> = OnceLock::new();
+        let mut m = match SEEN.get_or_init(Default::default).lock() {
+            Ok(m) => m,
+            Err(e) => e.into_inner(),
+        };
+        match m.get(&self) {
+            Some((s, at)) if at.elapsed().as_secs_f32() < 1.0 => *s,
+            _ => {
+                let s = self.status();
+                m.insert(self, (s, Instant::now()));
+                s
+            }
+        }
+    }
+
+    /// The permission is known to be missing (see [`Perm::cached`]).
+    /// Never in screenshots (sample data needs no access).
+    pub fn missing(self) -> bool {
+        !DEMO.load(std::sync::atomic::Ordering::Relaxed) && self.cached() != Status::Allowed
+    }
+
+    /// What its button says now: "Open Settings" once refused (macOS won't
+    /// ask twice), else [`Perm::ask_label`].
+    pub fn fix_label(self) -> &'static str {
+        if self.cached() == Status::Denied { ts!("kit.open_settings") } else { self.ask_label() }
     }
 
     /// Ask: show macOS's question when it has one, else open System Settings

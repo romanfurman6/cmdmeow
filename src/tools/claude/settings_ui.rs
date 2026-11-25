@@ -124,7 +124,17 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     }
 
     // notifications
-    let card = section(&p, x, w, &mut y, ts!("ai.set.notifications"), 3);
+    // alerts go out as notifications: while those aren't allowed the card
+    // says so (R17), or the switches would look on and nothing would come
+    let notif = crate::kit::perms::Perm::Notifications;
+    let no_notif = !demo && notif.missing();
+    let card = section(&p, x, w, &mut y, ts!("ai.set.notifications"), 3 + no_notif as usize);
+    if no_notif {
+        let r = row(card, 3);
+        // the row's dot on the labels' column, its button on the switches' edge
+        let at = Rect::from_min_max(Pos2::new(r.left() - 2.0, r.top()), Pos2::new(r.right() - 4.0, r.bottom()));
+        perm_row(ui, &p, at, r.center().y, notif);
+    }
     let r0 = row(card, 0);
     label(&p, r0, ts!("ai.set.limit_reaches"));
     let cw = 56.0;

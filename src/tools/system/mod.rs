@@ -71,6 +71,10 @@ impl Tool for System {
         use crate::kit::perms::{Need, Perm};
         vec![Need::may(Perm::FullDisk), Need::may(Perm::Bluetooth), Need::may(Perm::Notifications)]
     }
+    fn widget_needs(&self, id: &str) -> Option<crate::kit::perms::Perm> {
+        // devices the system report lists still show; with none, it's Bluetooth that's missing
+        (id == "devices" && { let s = self.mon.lock_ok(); s.ready && s.devices.is_empty() }).then_some(crate::kit::perms::Perm::Bluetooth)
+    }
     fn set_on(&mut self, on: bool) {
         monitor::set_paused(!on);
     }
