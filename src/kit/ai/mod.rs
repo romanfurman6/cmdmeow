@@ -152,6 +152,11 @@ pub trait Provider: Send {
     fn fetch_account(&mut self, s: &Shared);
     /// Token counts from local session logs.
     fn local_tokens(&mut self) -> LocalTokens;
+    /// Every log there is, older than `LOG_DAYS` too, read once to fill the
+    /// saved history (`History::backfilled`). None: nothing older to read.
+    fn old_tokens(&mut self) -> Option<LocalTokens> {
+        None
+    }
     /// The folder where the assistant keeps its data; settings use it to
     /// tell whether the assistant is on this Mac.
     fn data_dir(&self) -> Option<PathBuf> {
@@ -442,9 +447,18 @@ pub fn recent_jsonl(dir: &Path, depth: usize) -> Vec<PathBuf> {
     recent_files(dir, depth, "jsonl")
 }
 
+/// Every `.jsonl` file under `dir` (down to `depth` folder levels), however old.
+pub fn all_jsonl(dir: &Path, depth: usize) -> Vec<PathBuf> {
+    files_since(dir, depth, "jsonl", 0)
+}
+
 /// Files with extension `ext` under `dir` (down to `depth` levels) changed in the last `LOG_DAYS`.
 pub fn recent_files(dir: &Path, depth: usize, ext: &str) -> Vec<PathBuf> {
-    let since = Utc::now().timestamp() - LOG_DAYS * 86_400;
+    files_since(dir, depth, ext, Utc::now().timestamp() - LOG_DAYS * 86_400)
+}
+
+/// Files with extension `ext` under `dir` (down to `depth` levels) changed at `since` (unix time) or later.
+fn files_since(dir: &Path, depth: usize, ext: &str, since: i64) -> Vec<PathBuf> {
     let mut out = Vec::new();
     fn walk(d: &Path, depth: usize, since: i64, ext: &str, out: &mut Vec<PathBuf>) {
         let Ok(rd) = std::fs::read_dir(d) else { return };
@@ -545,6 +559,55 @@ pub struct LocalTokens {
     /// The last 30 days by model and by project, most expensive first.
     pub models: Vec<Share>,
     pub projects: Vec<Share>,
+    /// Every day with usage, oldest first: what the logs still have, filled
+    /// in from the app's own history (`history::merge_days`) for the days
+    /// they no longer cover. Model and project names are kept as logged.
+    pub archive: Vec<DayRecord>,
+}
+
+/// One day with usage and what it went to. `models` and `projects` hold the
+/// names as logged (a model id, a folder path), most expensive first;
+/// [`model_label`] and [`project_label`] name them for the screen.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DayRecord {
+    pub date: NaiveDate,
+    pub tokens: u64,
+    pub usd: f64,
+    pub requests: u64,
+    pub models: Vec<Share>,
+    pub projects: Vec<Share>,
+}
+
+/// A model as a list shows it: "Opus 4.5" for "claude-opus-4-5-20251101".
+pub fn model_label(raw: &str) -> String {
+    if raw.is_empty() { ts!("ai.other_model").into() } else { price::display_name(raw) }
+}
+
+/// A project as a list keeps it: the logged path, or a word for none / home.
+pub fn project_label(raw: &str) -> String {
+    match raw {
+        "" => ts!("ai.unknown_folder").into(),
+        "~" => ts!("ai.home_folder").into(),
+        _ => raw.to_string(),
+    }
+}
+
+/// Models or projects of `days` added up under their labels, most expensive
+/// first; `label` is [`model_label`] or [`project_label`].
+pub fn shares_of<'a>(days: impl IntoIterator<Item = &'a DayRecord>, models: bool) -> Vec<Share> {
+    let label: fn(&str) -> String = if models { model_label } else { project_label };
+    let mut by: HashMap<String, Share> = HashMap::new();
+    for d in days {
+        for s in if models { &d.models } else { &d.projects } {
+            let name = label(&s.name);
+            let e = by.entry(name.clone()).or_insert_with(|| Share { name, ..Default::default() });
+            e.tokens += s.tokens;
+            e.usd += s.usd;
+        }
+    }
+    let mut v: Vec<Share> = by.into_values().filter(|s| s.tokens > 0).collect();
+    v.sort_by(|a, b| b.usd.total_cmp(&a.usd).then(b.tokens.cmp(&a.tokens)).then(a.name.cmp(&b.name)));
+    v
 }
 
 /// Days kept in `LocalTokens::days`: enough for the 30-day totals and a
@@ -577,14 +640,29 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
     l.days = (0..DAYS).map(|i| Day { date: first + chrono::Days::new(i as u64), ..Default::default() }).collect();
     let mut models: HashMap<u32, Share> = HashMap::new();
     let mut projects: HashMap<u32, Share> = HashMap::new();
+    // every day the logs have, with its models and projects by id
+    type ByDay = std::collections::BTreeMap<NaiveDate, (Day, HashMap<u32, Share>, HashMap<u32, Share>)>;
+    let mut records: ByDay = Default::default();
     for e in entries {
-        if e.ts < first_start || e.ts > now_ts + 3600 {
+        if e.ts > now_ts + 3600 {
             continue;
         }
         let tokens = e.tokens();
         let usd = e.usd();
         // the local day it fell on
         let date = Local.timestamp_opt(e.ts, 0).single().map(|t| t.date_naive()).unwrap_or(today);
+        let rec = records.entry(date).or_insert_with(|| (Day { date, ..Default::default() }, HashMap::new(), HashMap::new()));
+        rec.0.tokens += tokens;
+        rec.0.requests += 1;
+        rec.0.usd += usd.unwrap_or(0.0);
+        for (map, key) in [(&mut rec.1, e.model), (&mut rec.2, e.project)] {
+            let s = map.entry(key).or_default();
+            s.tokens += tokens;
+            s.usd += usd.unwrap_or(0.0);
+        }
+        if e.ts < first_start {
+            continue;
+        }
         let idx = (date - first).num_days().clamp(0, DAYS as i64 - 1) as usize;
         let d = &mut l.days[idx];
         d.tokens += tokens;
@@ -623,9 +701,18 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
         v.sort_by(|a, b| b.usd.total_cmp(&a.usd).then(b.tokens.cmp(&a.tokens)));
         v
     };
-    l.models = merge_same(rank(models, |m| if m.is_empty() { ts!("ai.other_model").into() } else { price::display_name(m) }));
-    l.projects = rank(projects, |p| match p { "" => ts!("ai.unknown_folder").into(), "~" => ts!("ai.home_folder").into(), _ => p.to_string() });
+    l.models = merge_same(rank(models, model_label));
+    l.projects = rank(projects, project_label);
+    l.archive = records
+        .into_values()
+        .filter(|(d, _, _)| d.tokens > 0)
+        .map(|(d, m, p)| DayRecord { date: d.date, tokens: d.tokens, usd: d.usd, requests: d.requests, models: rank(m, name_of), projects: rank(p, name_of) })
+        .collect();
     l
+}
+
+fn name_of(raw: &str) -> String {
+    raw.to_string()
 }
 
 /// A month of made-up replies for screenshots: `per_day` million tokens a
@@ -643,11 +730,13 @@ pub fn demo_local(models: &[(&str, u32)], projects: &[&str], per_day: f64) -> Lo
     let mids: Vec<(u32, u32)> = models.iter().map(|(m, w)| (intern(m), *w)).collect();
     let pids: Vec<u32> = projects.iter().map(|p| intern(p)).collect();
     let mut out = Vec::new();
-    for day in 0..DAYS as i64 {
+    // over a year, so Year and All have months to show
+    for day in 0..420_i64 {
         // quieter weekends, busier lately
         let date = now - chrono::Duration::days(day);
         let weekend = matches!(date.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
-        let mult = if weekend { 0.35 } else { 1.0 } * (0.55 + rnd() * 0.9);
+        let growth = 1.0 - 0.7 * (day as f64 / 420.0);
+        let mult = if weekend { 0.35 } else { 1.0 } * (0.55 + rnd() * 0.9) * growth;
         let replies = 40;
         let hours = if day == 0 { (now.timestamp() % 86_400) / 3600 + 1 } else { 12 };
         for k in 0..replies {

@@ -99,6 +99,13 @@ impl Provider for Codex {
         files.extend(recent_jsonl(&home.join("archived_sessions"), 1));
         self.cache.update(files, usage_entry)
     }
+    fn old_tokens(&mut self) -> Option<LocalTokens> {
+        // Codex keeps every rollout: read them all once, then let them go
+        let home = home();
+        let mut files = super::all_jsonl(&home.join("sessions"), 3);
+        files.extend(super::all_jsonl(&home.join("archived_sessions"), 1));
+        Some(super::LogCache::default().update(files, usage_entry))
+    }
     fn data_dir(&self) -> Option<PathBuf> {
         Some(home())
     }

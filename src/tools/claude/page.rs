@@ -4,7 +4,7 @@
 //! use by model and project. "All": a card per provider side by side.
 
 use super::backend::{self, All};
-use super::parts::{self, Measure};
+use super::parts::{self, Measure, Period};
 use crate::core::tool::Cx;
 use crate::kit::ai::{self, settings, Billing, Day, UsageInfo};
 use crate::kit::claude_code::{self as cc, Availability};
@@ -211,16 +211,25 @@ pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let y2 = y + ch + GAP;
     let bottom = (r.bottom() - sp::L).min(y + GRID_MAX_H).max(y2 + 200.0);
     let chart = Rect::from_min_max(Pos2::new(x0, y2), Pos2::new(x0 + cw * 2.0 + GAP, bottom));
-    chart_card(ui, chart, &cl, meta.id, show_usd, demo);
+    let period = chart_card(ui, chart, &cl, meta.id, show_usd, demo);
     let col = Rect::from_min_max(Pos2::new(chart.right() + GAP, y2), Pos2::new(x1, bottom));
     let half = (col.height() - GAP) / 2.0;
     let home = dirs::home_dir().unwrap_or_default().display().to_string();
-    for (k, (title, empty, rows)) in [(ts!("ai.models"), ts!("ai.no_models"), &cl.local.models), (ts!("ai.projects"), ts!("ai.no_projects"), &cl.local.projects)].into_iter().enumerate() {
+    // the lists follow the chart's period; 30 days come straight from the logs
+    let (models, projects) = match period {
+        Period::D30 => (cl.local.models.clone(), cl.local.projects.clone()),
+        _ => {
+            let today = chrono::Local::now().date_naive();
+            (ai::shares_of(parts::period_days(&cl.local.archive, period, today), true), ai::shares_of(parts::period_days(&cl.local.archive, period, today), false))
+        }
+    };
+    let (no_models, no_projects) = if period == Period::D30 { (ts!("ai.no_models"), ts!("ai.no_projects")) } else { (ts!("ai.no_models_period"), ts!("ai.no_projects_period")) };
+    for (k, (title, empty, rows)) in [(ts!("ai.models"), no_models, &models), (ts!("ai.projects"), no_projects, &projects)].into_iter().enumerate() {
         let cr = Rect::from_min_size(Pos2::new(col.left(), col.top() + k as f32 * (half + GAP)), Vec2::new(col.width(), half));
         data_card(&p, cr);
         let inner = cr.shrink(sp::L);
         p.text(inner.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
-        p.text(inner.right_top(), Align2::RIGHT_TOP, ts!("ai.days_30"), ty::caption(), ty::caption_color());
+        p.text(inner.right_top(), Align2::RIGHT_TOP, period.name(), ty::caption(), ty::caption_color());
         let list = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 16.0 + sp::M), inner.max);
         if rows.is_empty() {
             empty_note(&p, list, empty);
@@ -471,47 +480,57 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     text_fit(&p, i.right_bottom(), Align2::RIGHT_BOTTOM, &f, ty::label(), if by_end > b { RED() } else { TEXT_DIM() }, i.width() * 0.65);
 }
 
-/// History: the limit window as a line, or tokens / dollars per day.
-fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, demo: bool) {
+/// Usage over the chosen period (SP18): days for 30d, weeks for 90d,
+/// months for Year and All. Returns the period, which the lists follow.
+fn chart_card(ui: &mut Ui, r: Rect, cl: &UsageInfo, id: &str, show_usd: bool, demo: bool) -> Period {
     let p = ui.painter().clone();
     data_card(&p, r);
     let i = r.shrink(sp::L);
     // one question per card: limits live in the top row; this card is always
-    // daily usage, and Tokens | $ only changes the unit of the same bars
+    // usage, Tokens | $ only changes the unit of the same bars
     let _ = demo;
     let units: Vec<&str> = if show_usd { vec![ts!("ai.unit_tokens"), "$"] } else { vec![] };
     let key = ui.scope_id().with(("ai-chart-unit", id));
     let mut unit = ui.ctx().data_mut(|d| d.get_temp::<usize>(key)).unwrap_or(usize::from(cl.is_api() && show_usd)).min(units.len().saturating_sub(1));
-    let title = if cl.is_api() { ts!("ai.usage_month") } else { ts!("ai.usage_30") };
-    p.text(i.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
+    // the period is the same on every provider's tab
+    let pkey = egui::Id::unique("ai-chart-period");
+    let mut period = ui.ctx().data_mut(|d| d.get_temp::<Period>(pkey)).unwrap_or_default();
+    p.text(i.left_top(), Align2::LEFT_TOP, ts!("ai.usage"), ty::title(), TEXT());
+    // SP18: period first, then Tokens | $, sp::M apart, at the right edge
+    let mut right = i.right();
     if !units.is_empty() {
         let tw = 120.0;
-        let tr = Rect::from_min_size(Pos2::new(i.right() - tw, i.top() - 6.0), Vec2::new(tw, sp::CONTROL_H));
+        let tr = Rect::from_min_size(Pos2::new(right - tw, i.top() - 6.0), Vec2::new(tw, sp::CONTROL_H));
         if let Some(k) = segmented(ui, tr, key.with("seg"), &units, unit) {
             unit = k;
             ui.ctx().data_mut(|d| d.insert_temp(key, k));
         }
+        right = tr.left() - sp::M;
+    }
+    let labels: Vec<&str> = Period::EVERY.iter().map(|p| p.short()).collect();
+    let pw = 176.0;
+    let pr = Rect::from_min_size(Pos2::new(right - pw, i.top() - 6.0), Vec2::new(pw, sp::CONTROL_H));
+    let at = Period::EVERY.iter().position(|x| *x == period).unwrap_or(0);
+    if let Some(k) = segmented(ui, pr, pkey.with("seg"), &labels, at) {
+        period = Period::EVERY[k];
+        ui.ctx().data_mut(|d| d.insert_temp(pkey, period));
     }
     let usd_unit = units.get(unit) == Some(&"$");
     let body = Rect::from_min_max(Pos2::new(i.left(), i.top() + 24.0 + sp::M), i.max);
-    match if cl.is_api() && usd_unit { "Spend" } else if usd_unit { "API price" } else { "Tokens" } {
-        "Spend" => {
-            let pace = budget(cl).map(|b| b / days_in_month() as f64);
-            let days: Vec<Day> = cl.local.month().to_vec();
-            if days.iter().all(|d| d.tokens == 0) {
-                return empty_note(&p, body, ts!("ai.no_spend"));
-            }
-            parts::day_chart(ui, body, &days, Measure::Usd, pace, show_usd, id);
-        }
-        other => {
-            let days: Vec<Day> = cl.local.days.iter().rev().take(30).rev().copied().collect();
-            if days.iter().all(|d| d.tokens == 0) {
-                return empty_note(&p, body, ts!("ai.no_usage_30"));
-            }
-            let m = if other == "Tokens" { Measure::Tokens } else { Measure::Usd };
-            parts::day_chart(ui, body, &days, m, None, show_usd, id);
-        }
+    let m = if usd_unit { Measure::Usd } else { Measure::Tokens };
+    let days: Vec<Day> = match period {
+        // the last 30 days as the logs and history merged them
+        Period::D30 => cl.local.days.iter().rev().take(30).rev().copied().collect(),
+        _ => parts::buckets(&cl.local.archive, period, chrono::Local::now().date_naive()),
+    };
+    if days.iter().all(|d| d.tokens == 0) {
+        empty_note(&p, body, if period == Period::D30 { ts!("ai.no_usage_30") } else { ts!("ai.no_usage_period") });
+        return period;
     }
+    // an API key's spend over 30 days shows the budget's even share a day
+    let pace = (cl.is_api() && usd_unit && period == Period::D30).then(|| budget(cl).map(|b| b / days_in_month() as f64)).flatten();
+    parts::day_chart(ui, body, &days, m, pace, show_usd, id, period.grain());
+    period
 }
 
 
@@ -561,7 +580,7 @@ fn all_page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
         }
     }
     days.sort_by_key(|d| d.date);
-    parts::day_chart(ui, Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::M), i.max), &days, Measure::Usd, None, true, "all");
+    parts::day_chart(ui, Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::M), i.max), &days, Measure::Usd, None, true, "all", parts::Grain::Day);
 }
 
 /// One provider in the "All" view.

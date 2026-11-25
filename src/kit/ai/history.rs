@@ -1,9 +1,10 @@
 //! What the app saw over time, kept in `<data>/ai/history/<provider>.json`:
-//! limit percentages (for the week's chart and for alerts) and daily
-//! totals, which outlive the session logs (Claude Code deletes its logs
-//! after 30 days).
+//! limit percentages (for the week's chart and for alerts) and every day's
+//! totals with its models and projects, kept for good: they outlive the
+//! session logs (Claude Code deletes its logs after 30 days), so the chart
+//! can show a year and more.
 
-use super::{Day, Limit, LocalTokens};
+use super::{Day, DayRecord, Limit, LocalTokens, Share};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,6 +25,24 @@ pub struct SavedDay {
     pub tokens: u64,
     pub usd: f64,
     pub requests: u64,
+    /// (name as logged, tokens, dollars), most expensive first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<(String, u64, f64)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<(String, u64, f64)>,
+}
+
+impl SavedDay {
+    fn of(r: &DayRecord) -> Self {
+        let pack = |v: &[Share]| v.iter().map(|s| (s.name.clone(), s.tokens, s.usd)).collect();
+        SavedDay { date: r.date.format("%Y-%m-%d").to_string(), tokens: r.tokens, usd: r.usd, requests: r.requests, models: pack(&r.models), projects: pack(&r.projects) }
+    }
+
+    fn record(&self) -> Option<DayRecord> {
+        let date = NaiveDate::parse_from_str(&self.date, "%Y-%m-%d").ok()?;
+        let unpack = |v: &[(String, u64, f64)]| v.iter().map(|(n, t, u)| Share { name: n.clone(), tokens: *t, usd: *u }).collect();
+        Some(DayRecord { date, tokens: self.tokens, usd: self.usd, requests: self.requests, models: unpack(&self.models), projects: unpack(&self.projects) })
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -33,13 +52,15 @@ pub struct History {
     pub days: Vec<SavedDay>,
     /// The `COUNTING` the days were saved under.
     pub counting: u32,
+    /// Every old log was read once into `days` (`Provider::old_tokens`).
+    pub backfilled: bool,
 }
 
 /// Goes up when replies are counted differently, so days saved under the
 /// old rules give way to what the logs say now.
 const COUNTING: u32 = 1;
 
-/// Samples and days older than this are dropped.
+/// Samples older than this are dropped (days are kept).
 const KEEP_DAYS: i64 = 45;
 /// A limit that didn't change is sampled again after this long, so the
 /// chart has points through quiet hours.
@@ -77,31 +98,55 @@ impl History {
     /// what the logs say now. A past day keeps the larger of the two counts
     /// (its logs only get deleted); today is what the logs say, so it reads
     /// the same everywhere and a count that was too high comes back down.
-    pub fn merge_days(&mut self, local: &mut LocalTokens, today: NaiveDate) {
+    /// `local.archive` comes back with every day known. Returns whether
+    /// anything saved changed.
+    pub fn merge_days(&mut self, local: &mut LocalTokens, today: NaiveDate) -> bool {
         let key = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
+        let before = self.days.clone();
         let mut by_date: HashMap<String, SavedDay> = self.days.drain(..).map(|d| (d.date.clone(), d)).collect();
         // days saved under other counting rules stay only where the logs are gone
         let same_rules = self.counting == COUNTING;
         self.counting = COUNTING;
-        for d in local.days.iter_mut() {
-            let past = d.date != today;
-            match by_date.get(&key(d.date)) {
-                Some(s) if past && s.tokens > d.tokens && (same_rules || d.tokens == 0) => {
-                    *d = Day { date: d.date, tokens: s.tokens, usd: s.usd, requests: s.requests };
-                }
-                _ => {
-                    if d.tokens > 0 {
-                        by_date.insert(key(d.date), SavedDay { date: key(d.date), tokens: d.tokens, usd: d.usd, requests: d.requests });
-                    } else {
-                        by_date.remove(&key(d.date));
+        // what the logs have; older days the logs have also count
+        let mut logged: HashMap<NaiveDate, DayRecord> = local.archive.drain(..).map(|r| (r.date, r)).collect();
+        for d in &local.days {
+            if d.tokens > 0 {
+                logged.entry(d.date).or_insert_with(|| DayRecord { date: d.date, tokens: d.tokens, usd: d.usd, requests: d.requests, ..Default::default() });
+            }
+        }
+        for r in logged.values() {
+            let past = r.date != today;
+            match by_date.get_mut(&key(r.date)) {
+                // the saved count stays; models and projects saved before
+                // they were kept come from the logs
+                Some(s) if past && s.tokens > r.tokens && same_rules => {
+                    if s.models.is_empty() && !r.models.is_empty() {
+                        let f = SavedDay::of(r);
+                        s.models = f.models;
+                        s.projects = f.projects;
                     }
+                }
+                // the same count saved without its models: keep the details
+                Some(s) if s.tokens == r.tokens && r.models.is_empty() && !s.models.is_empty() => {}
+                _ => {
+                    by_date.insert(key(r.date), SavedDay::of(r));
                 }
             }
         }
-        let cut = key(today - chrono::Days::new(KEEP_DAYS as u64));
+        if !logged.contains_key(&today) {
+            by_date.remove(&key(today));
+        }
+        for d in local.days.iter_mut() {
+            if let Some(s) = by_date.get(&key(d.date)) {
+                if d.date != today && s.tokens > d.tokens {
+                    *d = Day { date: d.date, tokens: s.tokens, usd: s.usd, requests: s.requests };
+                }
+            }
+        }
         // ISO dates sort as text
-        self.days = by_date.into_values().filter(|d| d.date >= cut).collect();
+        self.days = by_date.into_values().collect();
         self.days.sort_by(|a, b| a.date.cmp(&b.date));
+        local.archive = self.days.iter().filter_map(SavedDay::record).collect();
         // the totals follow the days
         let n = local.days.len();
         let tail = |k: usize| local.days[n.saturating_sub(k)..].iter().map(|d| d.usd).sum::<f64>();
@@ -111,6 +156,7 @@ impl History {
             local.usd_month = local.usd_month.max(local.month().iter().map(|d| d.usd).sum());
             local.daily = local.days[n.saturating_sub(7)..].iter().map(|d| d.tokens).collect();
         }
+        self.days != before
     }
 }
 
@@ -197,7 +243,7 @@ mod tests {
     fn days_counted_under_old_rules_give_way_to_the_logs() {
         let today = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
         let d = |n: u64| today - chrono::Days::new(n);
-        let saved = |n: u64, tokens: u64| SavedDay { date: d(n).format("%Y-%m-%d").to_string(), tokens, usd: 1.0, requests: 1 };
+        let saved = |n: u64, tokens: u64| SavedDay { date: d(n).format("%Y-%m-%d").to_string(), tokens, usd: 1.0, requests: 1, ..Default::default() };
         // saved before the counting changed
         let mut h = History { days: vec![saved(2, 700), saved(1, 700)], ..Default::default() };
         // the logs still have yesterday, not the day before
@@ -208,5 +254,43 @@ mod tests {
         let mut later = LocalTokens { days: vec![Day { date: d(1), tokens: 100, usd: 1.0, requests: 1 }], ..Default::default() };
         h.merge_days(&mut later, today);
         assert_eq!(later.days[0].tokens, 400);
+    }
+
+    #[test]
+    fn days_stay_for_good_with_their_models() {
+        let today = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let old = today - chrono::Days::new(400);
+        let rec = |date, tokens| DayRecord {
+            date,
+            tokens,
+            usd: 2.0,
+            requests: 3,
+            models: vec![Share { name: "claude-opus-4-5".into(), tokens, usd: 2.0 }],
+            projects: vec![Share { name: "/p/a".into(), tokens, usd: 2.0 }],
+        };
+        let mut h = History::default();
+        let mut local = LocalTokens { archive: vec![rec(old, 50), rec(today, 10)], ..Default::default() };
+        assert!(h.merge_days(&mut local, today));
+        // that day's logs are gone; nothing new to save
+        let mut later = LocalTokens { archive: vec![rec(today, 10)], ..Default::default() };
+        assert!(!h.merge_days(&mut later, today));
+        assert_eq!(later.archive.iter().map(|r| r.date).collect::<Vec<_>>(), vec![old, today]);
+        assert_eq!(later.archive[0].models[0].name, "claude-opus-4-5");
+        assert_eq!(later.archive[0].projects[0].tokens, 50);
+        // a day saved before models were kept gets them from the logs
+        let mut h2 = History { days: vec![SavedDay { date: old.format("%Y-%m-%d").to_string(), tokens: 60, ..Default::default() }], counting: COUNTING, ..Default::default() };
+        let mut l2 = LocalTokens { archive: vec![rec(old, 50)], ..Default::default() };
+        assert!(h2.merge_days(&mut l2, today));
+        assert_eq!((l2.archive[0].tokens, l2.archive[0].projects.len()), (60, 1));
+        // it reads back as saved
+        let back: History = serde_json::from_str(&serde_json::to_string(&h).unwrap()).unwrap();
+        assert_eq!(back, h);
+    }
+
+    #[test]
+    fn days_saved_before_keep_reading() {
+        let d: SavedDay = serde_json::from_str(r#"{"date":"2026-11-12","tokens":1,"usd":0.5,"requests":1}"#).unwrap();
+        assert!(d.models.is_empty());
+        assert_eq!(d.record().map(|r| r.tokens), Some(1));
     }
 }
