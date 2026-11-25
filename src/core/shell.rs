@@ -1533,6 +1533,7 @@ impl App {
                 if self.open_cover.take().is_some() {
                     crate::kit::spin::uncover(id);
                 }
+                crate::kit::spin::remove_underlay(id);
                 // the Dock icon goes a moment later: dropping it while macOS
                 // still flashes the menu title (⌘W) left "Window" highlighted
                 self.dock_off_at = Some(Instant::now());

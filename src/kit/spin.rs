@@ -416,6 +416,11 @@ pub fn underlay(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
     native::underlay(id, &look, theme as u64)
 }
 
+/// Drop window `id`'s underlay (the window closed).
+pub fn remove_underlay(id: egui::ViewportId) {
+    native::remove_underlay(id);
+}
+
 /// Seconds on Core Animation's clock (so native and egui drawing agree).
 fn clock() -> f64 {
     native::media_time()
@@ -1239,7 +1244,7 @@ pub(crate) mod native {
             let _: () = msg_send![&*mark, addAnimation: &*fade, forKey: &*key("cmdmeow-fade")];
 
             // under the Metal layer egui draws into, over the underlay
-            let at: u32 = if UNDERS.with(|u| u.borrow().iter().any(|x| x.viewport == id && x.root == Retained::as_ptr(&root))) { 1 } else { 0 };
+            let at: u32 = if UNDERS.with(|u| u.borrow().iter().any(|x| x.viewport == id && std::ptr::eq(Retained::as_ptr(&x.root), Retained::as_ptr(&root)))) { 1 } else { 0 };
             let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: at];
             let _: () = msg_send![class!(CATransaction), commit];
             // to the window server now: the paint that follows may hold the
@@ -1254,8 +1259,9 @@ pub(crate) mod native {
     /// A window's lasting backdrop under egui (see `super::underlay`).
     struct Under {
         viewport: egui::ViewportId,
-        /// The view's layer it hangs from (a new window means a new one).
-        root: *const AnyObject,
+        /// The view's layer it hangs from (a new window means a new one);
+        /// held, so a new view can't reuse its address.
+        root: Retained<AnyObject>,
         container: Retained<AnyObject>,
         gradient: Retained<AnyObject>,
         /// What it was built for: look, scale and colour space.
@@ -1273,7 +1279,6 @@ pub(crate) mod native {
     /// rebuilt for a new look, scale (another display) or colour space.
     pub fn underlay(id: egui::ViewportId, look: &CoverLook, look_key: u64) -> bool {
         let Some((root, scale, space)) = root_of(id) else { return false };
-        let root_ptr = Retained::as_ptr(&root);
         let space_ptr = space.as_deref().map_or(std::ptr::null(), |s| s as *const AnyObject);
         let built = (look_key, scale.to_bits(), space_ptr);
         unsafe {
@@ -1282,7 +1287,7 @@ pub(crate) mod native {
             let same = UNDERS.with(|u| {
                 let mut u = u.borrow_mut();
                 let Some(x) = u.iter_mut().find(|x| x.viewport == id) else { return false };
-                if x.root != root_ptr || x.built != built {
+                if !std::ptr::eq(Retained::as_ptr(&x.root), Retained::as_ptr(&root)) || x.built != built {
                     return false;
                 }
                 if x.size != size {
@@ -1308,7 +1313,7 @@ pub(crate) mod native {
             let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: 0u32];
             let _: () = msg_send![class!(CATransaction), commit];
             drop(keep);
-            UNDERS.with(|u| u.borrow_mut().push(Under { viewport: id, root: root_ptr, container: c, gradient: g, built, size }));
+            UNDERS.with(|u| u.borrow_mut().push(Under { viewport: id, root, container: c, gradient: g, built, size }));
         }
         true
     }
@@ -1401,6 +1406,7 @@ mod native {
     pub fn underlay(_id: egui::ViewportId, _look: &CoverLook, _look_key: u64) -> bool {
         false
     }
+    pub fn remove_underlay(_id: egui::ViewportId) {}
 }
 
 #[cfg(test)]
