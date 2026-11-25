@@ -207,6 +207,9 @@ pub struct State {
     pub started: Option<std::time::Instant>,
     /// The clean in progress (or just done) took only this group's ticked items.
     pub clean_only: Option<Group>,
+    /// Groups cleaned since this scan, with what each freed: the results
+    /// say so when the person goes back to them.
+    pub cleaned_groups: Vec<(Group, u64)>,
 }
 
 /// One group's live progress while scanning.
@@ -1445,6 +1448,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
             ctx.request_repaint();
             let skip = |why: String, shared: &Shared, journal: &mut super::journal::Entry| {
                 let mut g = shared.lock_ok();
+                untick(&mut g, &it.path);
                 g.log.push((t!("cleanup.line.skipped", path = it.path.display(), why = why).into_owned(), true));
                 journal.failed.push((it.path.display().to_string(), why.clone()));
                 g.failed.push((it.title.clone(), why));
@@ -1526,6 +1530,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
                     }
                 }
                 Err(e) => {
+                    untick(&mut g, &it.path);
                     g.log.push((t!("cleanup.line.failed", path = it.path.display(), err = e).into_owned(), true));
                     journal.failed.push((it.path.display().to_string(), e.clone()));
                     g.failed.push((it.title.clone(), e));
@@ -1536,6 +1541,13 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
         g.progress = 1.0;
         g.clean_done = g.clean_total;
         g.phase = Phase::Done;
+        let done: Vec<(Group, u64)> = g.cleaned.clone();
+        for (grp, b) in done {
+            match g.cleaned_groups.iter_mut().find(|c| c.0 == grp) {
+                Some(c) => c.1 += b,
+                None => g.cleaned_groups.push((grp, b)),
+            }
+        }
         if g.cleaned_bytes > 0 {
             record_clean(g.cleaned_bytes);
         }
@@ -1546,6 +1558,14 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: O
         crate::kit::sound::play(if g.failed.is_empty() { crate::kit::sound::Cue::Done } else { crate::kit::sound::Cue::Oops });
     });
 }
+/// What couldn't go stays listed, but unticked: the results never offer it
+/// again as if nothing happened.
+fn untick(g: &mut State, path: &Path) {
+    if let Some(x) = g.items.iter_mut().find(|x| x.path == path) {
+        x.selected = false;
+    }
+}
+
 /// Past cleans, oldest first: (unix seconds, bytes removed). Kept so the
 /// widget can show what Cleanup did without a new scan.
 /// Read once from disk, then kept in memory (the widget asks every frame).

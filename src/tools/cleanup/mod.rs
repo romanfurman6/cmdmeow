@@ -259,6 +259,30 @@ impl Tool for Cleanup {
                 }
                 v
             }
+            // a clean where open apps kept some items back
+            "cleanup-done-failed" => {
+                let mut st = page::demo_done();
+                let fails = [
+                    ("Notion Calendar", "a running app has files in it open"),
+                    ("Spotify", "the app was opened after the scan"),
+                    ("Slack", "a running app has files in it open"),
+                    ("Google Chrome · Code Cache", "a running app has files in it open"),
+                    ("Telegram media cache", "a running app has files in it open"),
+                ];
+                st.failed = fails.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+                st.in_way = true;
+                *self.clean.lock_ok() = st;
+                Some(View::Page)
+            }
+            // back from cleaning one group: the rest waits, the cleaned group says so
+            "results-after-group" => {
+                let v = self.demo_view("results");
+                let mut g = self.clean.lock_ok();
+                let gone: u64 = g.items.iter().filter(|i| i.group == engine::Group::AppCaches).map(|i| i.bytes).sum();
+                g.items.retain(|i| i.group != engine::Group::AppCaches);
+                g.cleaned_groups = vec![(engine::Group::AppCaches, gone)];
+                v
+            }
             "cleanup-done-group" => {
                 *self.clean.lock_ok() = page::demo_done_group();
                 Some(View::Page)
