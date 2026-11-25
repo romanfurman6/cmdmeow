@@ -294,6 +294,17 @@ impl Dictation {
         }
     }
 
+    /// The Keychain gave the key after all: bring back what was saved and
+    /// keep what was said since (it was only in memory).
+    pub(crate) fn reload_history(&mut self) {
+        let Some(dir) = self.dir.clone() else { return };
+        let mine = std::mem::take(&mut self.history.items);
+        self.history = settings::load_history(&dir);
+        // newest first
+        self.history.items.splice(0..0, mine);
+        self.save_history();
+    }
+
     fn save_history(&self) {
         if let Some(d) = &self.dir {
             settings::save_history(d, &self.history);

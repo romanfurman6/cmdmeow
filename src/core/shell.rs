@@ -1052,6 +1052,8 @@ impl App {
                     if let Some((_, e)) = failed.first() {
                         eprintln!("[cat] tidy shortcut: {e}");
                     }
+                    // Settings › Cat shows it on the shortcut
+                    cat::set_key_error(failed.first().map(|(_, e)| e.clone()));
                 } else {
                     keys.clear();
                 }

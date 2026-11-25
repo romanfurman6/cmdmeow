@@ -122,6 +122,18 @@ pub struct Clipboard {
 }
 
 impl Clipboard {
+    /// The Keychain refused the history's key: nothing is saved this run.
+    pub(crate) fn history_locked(&self) -> bool {
+        !self.demo && !self.store.saves() && crate::kit::vault::locked()
+    }
+
+    /// Ask the Keychain again; with the key, open the saved history.
+    pub(crate) fn unlock_history(&mut self) {
+        if crate::kit::vault::retry() {
+            self.store = Store::open(settings::data_dir().join("history"), crate::kit::vault::shared());
+        }
+    }
+
     pub fn new(env: &ToolEnv) -> Self {
         let (clips_tx, clips) = channel();
         let (thumb_tx, thumb_rx) = channel();

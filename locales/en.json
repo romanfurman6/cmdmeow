@@ -2085,7 +2085,8 @@
     "cant_remove": "Cmd+Meow couldn't be removed",
     "removing_app": "Removing Cmd+Meow…",
     "automation_access": "Automation access",
-    "finder_access": "Finder access"
+    "finder_access": "Finder access",
+    "finder": "Finder"
   },
   "setup": {
     "back": "Back",
@@ -2362,7 +2363,8 @@
       "needs_13": "Needs macOS 13 or later"
     },
     "trash_where": "Moved, but the Trash didn't say where",
-    "access_to": "access to %{folder}"
+    "access_to": "access to %{folder}",
+    "keychain": "Keychain"
   },
   "rules": {
     "keep": {

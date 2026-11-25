@@ -918,9 +918,15 @@ fn right_col(d: &mut Dictation, ui: &mut Ui, p: &egui::Painter, col: Rect) -> bo
 
     let y0 = card.bottom() + 28.0;
     crate::kit::glass::card_title(p, Pos2::new(x0, y0), ts!("dict.permissions"));
-    let card = card_rows(p, x0, y0 + 28.0, col.width(), 2);
+    // the history is sealed with a key from the Keychain: after "Deny"
+    // it isn't saved, and the card says so (R17); Allow asks again
+    let locked = !d.demo && crate::kit::vault::locked();
+    let card = card_rows(p, x0, y0 + 28.0, col.width(), 2 + locked as usize);
     for (k, perm) in [Perm::Microphone, Perm::Accessibility].into_iter().enumerate() {
         perm_row(ui, p, card, row_y(card, k), perm);
+    }
+    if locked && access_row(ui, p, card, row_y(card, 2), ts!("kit.keychain"), ts!("kit.allow")) && crate::kit::vault::retry() {
+        d.reload_history();
     }
     changed
 }

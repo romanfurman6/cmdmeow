@@ -8,6 +8,29 @@ pub fn enabled() -> bool {
     imp::status() == Some(1)
 }
 
+/// The person turned Cmd+Meow off in System Settings › Login Items: it is
+/// registered but macOS won't open it until they turn it back on there.
+/// Read at most once a second.
+pub fn needs_approval() -> bool {
+    use std::sync::Mutex;
+    use std::time::Instant;
+    static SEEN: Mutex<Option<(bool, Instant)>> = Mutex::new(None);
+    let mut g = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    match *g {
+        Some((v, at)) if at.elapsed().as_secs_f32() < 1.0 => v,
+        _ => {
+            let v = imp::status() == Some(2);
+            *g = Some((v, Instant::now()));
+            v
+        }
+    }
+}
+
+/// System Settings › General › Login Items.
+pub fn open_settings() {
+    let _ = std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.LoginItems-Settings.extension").spawn();
+}
+
 /// Turn opening at login on or off.
 pub fn set(on: bool) -> Result<(), String> {
     imp::set(on)
