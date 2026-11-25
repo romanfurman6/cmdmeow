@@ -180,12 +180,12 @@ pub fn window_label(minutes: i64) -> String {
 /// "9:10pm" today, "Nov 8 at 5pm" on another day, like Claude's `/usage`.
 pub fn reset_text(ts: i64) -> String {
     let Some(t) = Local.timestamp_opt(ts, 0).single() else { return String::new() };
-    let time = if t.format("%M").to_string() == "00" { t.format("%-I%P").to_string() } else { t.format("%-I:%M%P").to_string() };
+    let time = crate::kit::date::hm12_short(&t);
     if t.date_naive() == Local::now().date_naive() {
         time
     } else {
         // another day: the hour is enough
-        t!("ai.reset_day", day = t.format("%b %-d"), hour = t.format("%-I%P")).into_owned()
+        t!("ai.reset_day", day = crate::kit::date::md(&t), hour = crate::kit::date::h12_short(&t)).into_owned()
     }
 }
 

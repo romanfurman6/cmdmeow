@@ -423,7 +423,7 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     let today = chrono::Local::now().date_naive();
     let spent = cl.local.usd_month;
     let b = budget(cl);
-    p.text(i.left_top(), Align2::LEFT_TOP, t!("ai.month_budget", month = today.format("%B")), ty::title(), TEXT());
+    p.text(i.left_top(), Align2::LEFT_TOP, t!("ai.month_budget", month = crate::kit::date::month(&today)), ty::title(), TEXT());
     // the budget field, top right
     let fr = Rect::from_min_max(Pos2::new(i.right() - 84.0, i.top() + 8.0 - sp::CONTROL_H / 2.0), Pos2::new(i.right(), i.top() + 8.0 + sp::CONTROL_H / 2.0));
     let id = ui.scope_id().with(("ai-budget", cl.provider));
@@ -467,10 +467,10 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     p.text(i.left_bottom(), Align2::LEFT_BOTTOM, t!("ai.day_of", day = day, dim = dim), ty::label(), TEXT_DIM());
     let per_day = spent / day.max(1) as f64;
     let by_end = per_day * dim as f64;
-    let mut f = t!("ai.by_end", usd = parts::usd(by_end), date = today.format("%b ").to_string() + &dim.to_string()).into_owned();
+    let mut f = t!("ai.by_end", usd = parts::usd(by_end), date = t!("kit.date.md", mon = crate::kit::date::mon(&today), day = dim)).into_owned();
     if per_day > 0.0 && by_end > b {
         let out_day = (b / per_day).ceil() as u32;
-        f = t!("ai.budget_out", month = today.format("%b"), day = out_day, rest = f).into_owned();
+        f = t!("ai.budget_out", month = crate::kit::date::mon(&today), day = out_day, rest = f).into_owned();
     }
     text_fit(&p, i.right_bottom(), Align2::RIGHT_BOTTOM, &f, ty::label(), if by_end > b { RED() } else { TEXT_DIM() }, i.width() * 0.65);
 }

@@ -2140,6 +2140,64 @@
       "documents": "Documents",
       "downloads": "Downloads",
       "desktop": "Desktop"
+    },
+    "date": {
+      "mon": {
+        "jan": "Jan",
+        "feb": "Feb",
+        "mar": "Mar",
+        "apr": "Apr",
+        "may": "May",
+        "jun": "Jun",
+        "jul": "Jul",
+        "aug": "Aug",
+        "sep": "Sep",
+        "oct": "Oct",
+        "nov": "Nov",
+        "dec": "Dec"
+      },
+      "month": {
+        "jan": "January",
+        "feb": "February",
+        "mar": "March",
+        "apr": "April",
+        "may": "May",
+        "jun": "June",
+        "jul": "July",
+        "aug": "August",
+        "sep": "September",
+        "oct": "October",
+        "nov": "November",
+        "dec": "December"
+      },
+      "wd": {
+        "mon": "Mon",
+        "tue": "Tue",
+        "wed": "Wed",
+        "thu": "Thu",
+        "fri": "Fri",
+        "sat": "Sat",
+        "sun": "Sun"
+      },
+      "weekday": {
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday",
+        "sun": "Sunday"
+      },
+      "am": "am",
+      "pm": "pm",
+      "md": "%{mon} %{day}",
+      "wmd": "%{wd} %{mon} %{day}",
+      "day_title": "%{weekday}, %{mon} %{day}",
+      "hm12": "%{h}:%{m} %{ap}",
+      "hm12_short": "%{h}:%{m}%{ap}",
+      "h12_short": "%{h}%{ap}",
+      "then": "%{date} %{time}",
+      "comma": "%{date}, %{time}"
     }
   },
   "rules": {

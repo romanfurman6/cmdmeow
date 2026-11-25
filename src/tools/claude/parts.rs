@@ -173,7 +173,7 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
     // readout
     let d = &days[sel];
     let today = days.last().map(|l| l.date) == Some(d.date);
-    let date = if today { ts!("ai.today").to_string() } else { d.date.format("%a %b %-d").to_string() };
+    let date = if today { ts!("ai.today").to_string() } else { crate::kit::date::wmd(&d.date) };
     // three stats, number over caption (Roman 2026-11-24, variant A): the
     // date names the dollars, so no line of mixed sizes sits over the bars
     let mut x = r.left();
@@ -191,7 +191,7 @@ pub fn day_chart(ui: &mut Ui, r: Rect, days: &[Day], m: Measure, pace: Option<f6
         x = vr.right().max(cr.right()) + sp::XL;
     }
     // first and last day under the bars
-    let lab = |d: &Day| d.date.format("%b %-d").to_string();
+    let lab = |d: &Day| crate::kit::date::md(&d.date);
     p.text(Pos2::new(plot.left(), r.bottom()), Align2::LEFT_BOTTOM, lab(&days[0]), ty::caption(), ty::caption_color());
     p.text(Pos2::new(plot.right(), r.bottom()), Align2::RIGHT_BOTTOM, ts!("ai.today"), ty::caption(), ty::caption_color());
 }
