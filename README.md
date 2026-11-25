@@ -10,15 +10,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg"><img src="https://img.shields.io/badge/Download_for_macOS-C8F05A?style=for-the-badge&logo=apple&logoColor=1d211d&labelColor=C8F05A&color=C8F05A" height="40" alt="Download for macOS"></a>
+  <a href="https://github.com/romanfurman6/cmdmeow/releases/latest/download/CmdMeow.dmg"><img src="https://img.shields.io/badge/Download_for_macOS-FF5FA2?style=for-the-badge&logo=apple&logoColor=0E1405&labelColor=FF5FA2&color=FF5FA2" height="40" alt="Download for macOS"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/romanfurman6/cmdmeow/releases/latest"><img src="https://img.shields.io/github/v/release/romanfurman6/cmdmeow?label=version&color=C8F05A&labelColor=1d211d" alt="Latest version"></a>
-  <img src="https://img.shields.io/badge/macOS-13%2B-C8F05A?labelColor=1d211d" alt="macOS 13+">
-  <img src="https://img.shields.io/badge/Apple_silicon-native-C8F05A?labelColor=1d211d" alt="Apple silicon">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-C8F05A?labelColor=1d211d" alt="MIT license"></a>
-  <a href="https://github.com/romanfurman6/cmdmeow/actions/workflows/macos.yml"><img src="https://img.shields.io/github/actions/workflow/status/romanfurman6/cmdmeow/macos.yml?branch=main&label=build&labelColor=1d211d" alt="Build"></a>
+  <a href="https://github.com/romanfurman6/cmdmeow/releases/latest"><img src="https://img.shields.io/github/v/release/romanfurman6/cmdmeow?label=version&color=FF5FA2&labelColor=1A1248" alt="Latest version"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-FF5FA2?labelColor=1A1248" alt="macOS 13+">
+  <img src="https://img.shields.io/badge/Apple_silicon-native-FF5FA2?labelColor=1A1248" alt="Apple silicon">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-FF5FA2?labelColor=1A1248" alt="MIT license"></a>
+  <a href="https://github.com/romanfurman6/cmdmeow/actions/workflows/macos.yml"><img src="https://img.shields.io/github/actions/workflow/status/romanfurman6/cmdmeow/macos.yml?branch=main&label=build&labelColor=1A1248" alt="Build"></a>
 </p>
 
 <p align="center">
@@ -27,10 +27,7 @@
   <a href="https://github.com/romanfurman6/cmdmeow/releases">Releases</a>
 </p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.jpg">
-  <img src="docs/images/hero-light.jpg" alt="Cmd+Meow window with Disk Map, next to the menu bar panel">
-</picture>
+<img src="docs/images/hero.jpg" alt="Cmd+Meow window with Disk Map, next to the menu bar panel">
 
 ## Install
 
@@ -47,10 +44,7 @@ Find what takes space and remove it. Everything goes to the Trash first, and you
 - **Uninstaller** removes an app together with its leftovers.
 - **Startup** lists login items, agents and daemons, and flags the ones you don't need.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/clean-dark.jpg">
-  <img src="docs/images/clean-light.jpg" alt="Cleanup">
-</picture>
+<img src="docs/images/clean.jpg" alt="Cleanup">
 
 ## Monitor
 
@@ -58,10 +52,7 @@ Find what takes space and remove it. Everything goes to the Trash first, and you
 - **AI Usage** tracks limits, pace and cost for Claude, Codex, Gemini and OpenCode.
 - **Fan Control** shows fan speeds and chip heat, and runs a fixed speed or your own curve.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/monitor-dark.jpg">
-  <img src="docs/images/monitor-light.jpg" alt="Mac Health">
-</picture>
+<img src="docs/images/monitor.jpg" alt="Mac Health">
 
 ## Create
 
@@ -71,10 +62,7 @@ Find what takes space and remove it. Everything goes to the Trash first, and you
 - **Dictation** types what you say where the cursor is. Press ⌥D. Speech never leaves the Mac.
 - **Clipboard** keeps what you copy, with search, pins and quick paste.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/create-dark.jpg">
-  <img src="docs/images/create-light.jpg" alt="Clipboard history">
-</picture>
+<img src="docs/images/create.jpg" alt="Clipboard history">
 
 ## Utilities
 
@@ -83,9 +71,9 @@ Find what takes space and remove it. Everything goes to the Trash first, and you
 
 ## Your panel, your theme
 
-Click the cat in the menu bar to open the panel. It is a grid of widgets you arrange yourself, and any tool you don't use can be turned off. Pick Light Classic, Dark Classic or Dark Miami during setup, or later in Settings › Theme.
+Click the cat in the menu bar to open the panel. It is a grid of widgets you arrange yourself, and any tool you don't use can be turned off. Dark Miami is the default. You can switch to Light Classic or Dark Classic during setup or in Settings › Theme.
 
-<img src="docs/images/themes.jpg" alt="The menu bar panel in Light Classic, Dark Classic and Dark Miami">
+<img src="docs/images/themes.jpg" alt="The menu bar panel in Dark Miami, Light Classic and Dark Classic">
 
 ### Instead of
 
