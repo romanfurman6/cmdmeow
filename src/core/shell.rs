@@ -1541,6 +1541,9 @@ impl App {
             crate::kit::native::apply_glass(16.0);
             kick_first_frames(&vctx);
             let full = ui.max_rect();
+            // the same backdrop under egui's surface: an empty frame never
+            // shows the blur behind the window
+            crate::kit::spin::underlay(id, full.size(), 16.0);
             let t = vctx.input(|i| i.time);
             glass::backdrop(ui.painter(), full, 16.0, false, t);
             if self.setup.is_some() {

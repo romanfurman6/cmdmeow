@@ -778,6 +778,11 @@ fn backdrop_mesh(rect: Rect, radius: f32, light: Theme, alpha: f32, tall: bool) 
     mesh
 }
 
+/// Whether live windows' backdrop is solid (the default).
+pub fn backdrop_opaque() -> bool {
+    backdrop_alpha() >= 1.0
+}
+
 /// How much the backdrop covers what's behind live windows: solid by
 /// default (`CMDMEOW_BACKDROP_ALPHA` lets the blur through when tuning).
 fn backdrop_alpha() -> f32 {
