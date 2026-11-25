@@ -171,7 +171,7 @@ pub struct App {
     hold_panel: Option<Instant>,
     /// `cmdmeow://open/<tool>[/<route>]` links, as (tool, route).
     links: Option<crate::kit::url_scheme::Inbox<(String, String)>>,
-    /// The update banner was shown last frame (see `kit::update`).
+    /// The update notice was shown last frame (see `kit::update`).
     update_banner: bool,
     /// The cat's tidy shortcut, and whether it is bound.
     cat_keys: Option<crate::kit::hotkeys::Keys<bool>>,
@@ -191,6 +191,9 @@ impl App {
         let ctx = cc.egui_ctx.clone();
         let demo = opts.screenshot.is_some();
         crate::kit::perms::set_demo(demo);
+        if let Some(u) = std::env::var("CMDMEOW_DEMO_UPDATE").ok().filter(|_| demo) {
+            crate::kit::update::demo(&u);
+        }
         // screenshots stay silent; otherwise sounds are on until switched off
         crate::kit::sound::set_on(!demo && cc.storage.and_then(|s| eframe::get_value(s, crate::kit::sound::STORAGE_KEY)).unwrap_or(true));
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
@@ -1106,7 +1109,7 @@ impl eframe::App for App {
             self.quit(ctx);
             return;
         }
-        // the update banner came or went: the panel changes height
+        // the update notice came or went: the panel changes height
         let banner = crate::kit::update::banner();
         if banner != self.update_banner {
             self.update_banner = banner;

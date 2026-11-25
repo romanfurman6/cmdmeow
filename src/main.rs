@@ -12,7 +12,8 @@
 //! rows or all-s11 / all-s12 / all-s24 / all-s44 for every widget at one size,
 //! or widget-<tool>/<widget>@<size> for one widget alone (widget-system/devices@4:4).
 //! CMDMEOW_DEMO_LONG=1 and CMDMEOW_DEMO_DEVICES=one|long fill them with the
-//! longest texts they meet.
+//! longest texts they meet. CMDMEOW_DEMO_UPDATE=available|downloading|failed
+//! shows the panel's update notice in that state.
 //! `--fan-report` prints every fan and temperature sensor this Mac reports.
 //! `--fan-install` / `--fan-uninstall` add or remove the fan helper,
 //! `--fan-set 2400,3000|auto|hello` talks to it (the lease lasts 8 s).
