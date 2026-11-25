@@ -101,6 +101,12 @@ fn is_running(u: &mut Uninstaller, id: &str) -> bool {
     u.running.as_ref().is_some_and(|(ids, _)| ids.iter().any(|x| x == id))
 }
 
+/// The app the page opens on: the first listed one that isn't running and
+/// can be removed. `rows`: (path, bundle id, locked), in list order.
+fn default_pick(rows: &[(PathBuf, String, bool)], mut running: impl FnMut(&str) -> bool) -> Option<PathBuf> {
+    rows.iter().find(|(_, id, locked)| !*locked && !running(id)).map(|(p, _, _)| p.clone())
+}
+
 fn scrim(ui: &mut Ui, r: Rect, salt: &str) {
     let _ = ui.interact(r, ui.scope_id().with(salt), Sense::click());
     ui.painter().rect_filled(r, CornerRadius { nw: 0, sw: 0, ne: WIN_R as u8, se: WIN_R as u8 }, crate::kit::glass::SCRIM());
@@ -374,7 +380,13 @@ fn apps_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect) {
     let ids = u.visible();
     let keep = u.selected.as_ref().is_some_and(|s| u.st.lock_ok().apps.iter().any(|a| &a.path == s));
     if !keep {
-        u.selected = ids.first().map(|&i| u.st.lock_ok().apps[i].path.clone());
+        // never open on an app that's running or can't be removed: its
+        // main button would be "Quit and uninstall"
+        let rows: Vec<(PathBuf, String, bool)> = {
+            let g = u.st.lock_ok();
+            ids.iter().map(|&i| (g.apps[i].path.clone(), g.apps[i].id.clone(), g.apps[i].locked.is_some())).collect()
+        };
+        u.selected = default_pick(&rows, |id| is_running(u, id));
     }
     glass_card(&p, list, R_CARD, 0.0, false);
     // column heads
@@ -1523,6 +1535,17 @@ mod tests {
         assert_eq!(ago(now, Some(now - 121 * 86400)), "4 months");
         assert_eq!(ago(now, Some(now - 400 * 86400)), "1 year");
         assert_eq!(ago(now, Some(now - 800 * 86400)), "2 years");
+    }
+
+    #[test]
+    fn opens_on_an_app_that_is_not_running() {
+        let row = |p: &str, id: &str, locked: bool| (PathBuf::from(p), id.to_string(), locked);
+        let rows = vec![row("/A/Claude.app", "claude", false), row("/A/Safari.app", "safari", true), row("/A/Steam.app", "steam", false)];
+        assert_eq!(default_pick(&rows, |id| id == "claude"), Some(PathBuf::from("/A/Steam.app")));
+        assert_eq!(default_pick(&rows, |_| false), Some(PathBuf::from("/A/Claude.app")));
+        // everything running or protected: nothing picked
+        assert_eq!(default_pick(&rows, |_| true), None);
+        assert_eq!(default_pick(&[], |_| false), None);
     }
 
     #[test]

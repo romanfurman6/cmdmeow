@@ -937,7 +937,7 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
     let armed_id = ui.scope_id().with("remove-armed");
     let loading_id = ui.scope_id().with("remove-loading");
     let armed = ctx.data(|d| d.get_temp::<f64>(armed_id)).is_some_and(|t| now - t < 4.0);
-    let run = if app.demo { Run::Idle } else { remove::run_state() };
+    let mut run = if app.demo { Run::Idle } else { remove::run_state() };
     let label = match (&run, armed) {
         (Run::Working, _) => ts!("app.removing"),
         (_, true) => ts!("app.click_remove"),
@@ -954,6 +954,9 @@ fn remove_button(app: &mut App, ui: &mut Ui, at: Pos2) -> Option<String> {
             });
             crate::kit::loader::reset(&ctx, "remove-app");
             remove::start(ctx.clone());
+            // read again: a failed earlier try still says Failed, and the
+            // loader would take that as "ended before it showed"
+            run = remove::run_state();
         } else {
             ctx.data_mut(|d| d.insert_temp(armed_id, now));
         }
