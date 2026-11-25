@@ -310,11 +310,11 @@ fn card(ctx: &egui::Context, page: Rect, key: &str, s: &Status) -> Option<Click>
         // buttons, centred
         let buttons: Vec<(&str, u8, Click)> = match s {
             Status::Working { can_stop: true, .. } => {
-                vec![("Stop", BTN_SECONDARY, Click::Stop)]
+                vec![(ts!("kit.loader.stop"), BTN_SECONDARY, Click::Stop)]
             }
-            Status::Finished { put_back: true, .. } => vec![("Put back", BTN_SECONDARY, Click::PutBack), ("Done", BTN_PRIMARY, Click::Done)],
+            Status::Finished { put_back: true, .. } => vec![(ts!("kit.loader.put_back"), BTN_SECONDARY, Click::PutBack), (ts!("kit.loader.done"), BTN_PRIMARY, Click::Done)],
             Status::Finished { .. } | Status::Stopped { .. } | Status::Failed { .. } => {
-                vec![("Done", BTN_PRIMARY, Click::Done)]
+                vec![(ts!("kit.loader.done"), BTN_PRIMARY, Click::Done)]
             }
             _ => vec![],
         };

@@ -533,7 +533,7 @@ mod mac {
         NSFileManager::defaultManager()
             .trashItemAtURL_resultingItemURL_error(&url, Some(&mut out))
             .map_err(|e| e.localizedDescription().to_string())?;
-        out.and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())).ok_or_else(|| "Moved, but the Trash didn't say where".to_string())
+        out.and_then(|u| u.path()).map(|s| std::path::PathBuf::from(s.to_string())).ok_or_else(|| ts!("kit.trash_where").to_string())
     }
 
     /// Call `f` on every left press on the menu bar icon, seen as the app
