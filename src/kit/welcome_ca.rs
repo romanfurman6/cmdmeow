@@ -439,7 +439,7 @@ mod native {
             let _: () = msg_send![&*ear, setFrame: rect(0.0, 0.0, s, s)];
             set_color(&ear, false, Some(scene.cat), space);
             let paths: Retained<AnyObject> = msg_send![class!(NSMutableArray), arrayWithCapacity: n];
-            let mut last = std::ptr::null_mut();
+            let mut last: *mut c_void = std::ptr::null_mut();
             for e in &f.ears {
                 let p = poly_path(s, &brand::bent_ear(right, if right { e.1 } else { e.0 }));
                 let _: () = msg_send![&*paths, addObject: p as *const AnyObject];
