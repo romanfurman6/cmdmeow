@@ -105,6 +105,9 @@ impl ThemeChoice {
 
 /// Where Settings › Theme is saved.
 pub const THEME_KEY: &str = "app.theme";
+/// The theme on a fresh install (nothing saved yet): Dark Miami. A saved
+/// choice, Auto included, is kept.
+pub const DEFAULT_THEME: ThemeChoice = ThemeChoice::Miami;
 static CHOICE: std::sync::Mutex<ThemeChoice> = std::sync::Mutex::new(ThemeChoice::Auto);
 
 /// The theme picked in Settings.
