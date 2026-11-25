@@ -390,6 +390,37 @@ pub fn uncover(id: egui::ViewportId) {
     native::uncover(id);
 }
 
+/// Keep window `id`'s backdrop as Core Animation layers under egui's
+/// surface, for the window's life. egui draws the same backdrop on top,
+/// so nothing changes on screen, but a frame that reaches the screen empty
+/// (seen on an external display, on hover) shows the backdrop instead of
+/// the system blur behind the window, which read as the whole page lit
+/// like a hovered row. Call every pass; it only touches layers when the
+/// theme, display or size changed.
+pub fn underlay(id: egui::ViewportId, size: Vec2, radius: f32) -> bool {
+    use crate::kit::glass;
+    if !glass::backdrop_opaque() || !native_wanted() {
+        return false;
+    }
+    let theme = glass::theme();
+    let look = native::CoverLook {
+        stops: glass::backdrop_stops(theme),
+        sky: theme == glass::Theme::Miami,
+        glow: glass::backdrop_glow(size, glass::WINDOW_BEAM),
+        edge: glass::backdrop_edge(),
+        track: Color32::TRANSPARENT,
+        lime: Color32::TRANSPARENT,
+        radius,
+        mark: 0.0,
+    };
+    native::underlay(id, &look, theme as u64)
+}
+
+/// Drop window `id`'s underlay (the window closed).
+pub fn remove_underlay(id: egui::ViewportId) {
+    native::remove_underlay(id);
+}
+
 /// Seconds on Core Animation's clock (so native and egui drawing agree).
 fn clock() -> f64 {
     native::media_time()
@@ -1064,60 +1095,86 @@ pub(crate) mod native {
         }
     }
 
+    /// The window's backdrop as layers: a rounded container with its 1 pt
+    /// edge and the gradient (S1) in it, y down like egui, sized to `root`.
+    /// Returns (container, gradient). Call inside a CATransaction.
+    unsafe fn backdrop_layers(root: &AnyObject, scale: f64, sp: Option<&AnyObject>, look: &CoverLook, keep: &mut Vec<Retained<AnyObject>>) -> (Retained<AnyObject>, Retained<AnyObject>) {
+        let mut cg = |c: Color32| -> *const c_void {
+            let ns = ns_color(c, sp);
+            let p: *const c_void = msg_send![&*ns, CGColor];
+            keep.push(ns);
+            p
+        };
+        let num = |v: f64| NSNumber::new_f64(v);
+        let key = |k: &str| NSString::from_str(k);
+        let flipped: bool = msg_send![root, contentsAreFlipped];
+        let bounds: NSRect = msg_send![root, bounds];
+        let (w, h) = (bounds.size.width.max(1.0), bounds.size.height.max(1.0));
+        const W_SIZABLE: u32 = 1 << 1;
+        const H_SIZABLE: u32 = 1 << 4;
+
+        // the window: rounded, its 1 pt edge on top, y down like egui
+        let c = new_layer("plain", scale);
+        let _: () = msg_send![&*c, setGeometryFlipped: !flipped];
+        let _: () = msg_send![&*c, setFrame: ns_rect(0.0, 0.0, w, h)];
+        let _: () = msg_send![&*c, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
+        let _: () = msg_send![&*c, setCornerRadius: look.radius as f64];
+        let _: () = msg_send![&*c, setMasksToBounds: true];
+        let _: () = msg_send![&*c, setBorderWidth: 1.0f64];
+        let _: () = msg_send![&*c, setBorderColor: cg(look.edge)];
+
+        // the backdrop (S1): a radial glow from the top middle, or
+        // Miami's sky from top to bottom (TH6)
+        let g: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
+        let _: () = msg_send![&*g, setContentsScale: scale];
+        let _: () = msg_send![&*g, setType: &*key(if look.sky { "axial" } else { "radial" })];
+        let colors: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+        let stops: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+        for (t, col) in look.stops {
+            let _: () = msg_send![&*colors, addObject: cg(*col) as *const AnyObject];
+            let _: () = msg_send![&*stops, addObject: &*num(*t as f64)];
+        }
+        let _: () = msg_send![&*g, setColors: &*colors];
+        let _: () = msg_send![&*g, setLocations: &*stops];
+        let _: () = msg_send![&*g, setStartPoint: NSPoint::new(0.5, 0.0)];
+        let _: () = msg_send![&*g, setEndPoint: glow_end(look, w, h)];
+        let _: () = msg_send![&*g, setFrame: ns_rect(0.0, 0.0, w, h)];
+        let _: () = msg_send![&*g, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
+        let _: () = msg_send![&*c, addSublayer: &*g];
+        (c, g)
+    }
+
+    /// The gradient's end point (unit coordinates) for a `w` × `h` window.
+    fn glow_end(look: &CoverLook, w: f64, h: f64) -> NSPoint {
+        if look.sky {
+            NSPoint::new(0.5, 1.0)
+        } else {
+            NSPoint::new(0.5 + look.glow.0 as f64 / w, look.glow.1 as f64 / h)
+        }
+    }
+
     pub fn cover(id: egui::ViewportId, look: &CoverLook) -> bool {
         let Some((root, scale, space)) = root_of(id) else { return false };
         uncover(id);
         let sp = space.as_deref();
         // the NSColors own their CGColors: keep them until the commit
         let mut keep: Vec<Retained<AnyObject>> = Vec::new();
-        let mut cg = |c: Color32| -> *const c_void {
-            let ns = ns_color(c, sp);
-            let p: *const c_void = unsafe { msg_send![&*ns, CGColor] };
-            keep.push(ns);
-            p
-        };
         let num = |v: f64| NSNumber::new_f64(v);
         let key = |k: &str| NSString::from_str(k);
         unsafe {
             let _: () = msg_send![class!(CATransaction), begin];
             let _: () = msg_send![class!(CATransaction), setDisableActions: true];
-            let flipped: bool = msg_send![&*root, contentsAreFlipped];
             let bounds: NSRect = msg_send![&*root, bounds];
             let (w, h) = (bounds.size.width.max(1.0), bounds.size.height.max(1.0));
-            const W_SIZABLE: u32 = 1 << 1;
-            const H_SIZABLE: u32 = 1 << 4;
             const MARGINS: u32 = 1 | (1 << 2) | (1 << 3) | (1 << 5);
-
-            // the window: rounded, its 1 pt edge on top, y down like egui
-            let c = new_layer("plain", scale);
+            let (c, _) = backdrop_layers(&root, scale, sp, look, &mut keep);
             let _: () = msg_send![&*c, setName: &*key("cmdmeow-open-cover")];
-            let _: () = msg_send![&*c, setGeometryFlipped: !flipped];
-            let _: () = msg_send![&*c, setFrame: ns_rect(0.0, 0.0, w, h)];
-            let _: () = msg_send![&*c, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
-            let _: () = msg_send![&*c, setCornerRadius: look.radius as f64];
-            let _: () = msg_send![&*c, setMasksToBounds: true];
-            let _: () = msg_send![&*c, setBorderWidth: 1.0f64];
-            let _: () = msg_send![&*c, setBorderColor: cg(look.edge)];
-
-            // the backdrop (S1): a radial glow from the top middle, or
-            // Miami's sky from top to bottom (TH6)
-            let g: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
-            let _: () = msg_send![&*g, setContentsScale: scale];
-            let _: () = msg_send![&*g, setType: &*key(if look.sky { "axial" } else { "radial" })];
-            let colors: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
-            let stops: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
-            for (t, col) in look.stops {
-                let _: () = msg_send![&*colors, addObject: cg(*col) as *const AnyObject];
-                let _: () = msg_send![&*stops, addObject: &*num(*t as f64)];
-            }
-            let _: () = msg_send![&*g, setColors: &*colors];
-            let _: () = msg_send![&*g, setLocations: &*stops];
-            let _: () = msg_send![&*g, setStartPoint: NSPoint::new(0.5, 0.0)];
-            let end = if look.sky { NSPoint::new(0.5, 1.0) } else { NSPoint::new(0.5 + look.glow.0 as f64 / w, look.glow.1 as f64 / h) };
-            let _: () = msg_send![&*g, setEndPoint: end];
-            let _: () = msg_send![&*g, setFrame: ns_rect(0.0, 0.0, w, h)];
-            let _: () = msg_send![&*g, setAutoresizingMask: W_SIZABLE | H_SIZABLE];
-            let _: () = msg_send![&*c, addSublayer: &*g];
+            let mut cg = |col: Color32| -> *const c_void {
+                let ns = ns_color(col, sp);
+                let p: *const c_void = msg_send![&*ns, CGColor];
+                keep.push(ns);
+                p
+            };
 
             // the mark (P6), centred: the keycap in the track colour, lime
             // rising inside it, the ⌘ cut out of both
@@ -1186,8 +1243,9 @@ pub(crate) mod native {
             let _: () = msg_send![&*fade, setFillMode: &*key("backwards")];
             let _: () = msg_send![&*mark, addAnimation: &*fade, forKey: &*key("cmdmeow-fade")];
 
-            // under the Metal layer egui draws into
-            let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: 0u32];
+            // under the Metal layer egui draws into, over the underlay
+            let at: u32 = if UNDERS.with(|u| u.borrow().iter().any(|x| x.viewport == id && std::ptr::eq(Retained::as_ptr(&x.root), Retained::as_ptr(&root)))) { 1 } else { 0 };
+            let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: at];
             let _: () = msg_send![class!(CATransaction), commit];
             // to the window server now: the paint that follows may hold the
             // main thread for a second, and this has to be on screen by then
@@ -1196,6 +1254,86 @@ pub(crate) mod native {
         }
         drop(keep);
         true
+    }
+
+    /// A window's lasting backdrop under egui (see `super::underlay`).
+    struct Under {
+        viewport: egui::ViewportId,
+        /// The view's layer it hangs from (a new window means a new one);
+        /// held, so a new view can't reuse its address.
+        root: Retained<AnyObject>,
+        container: Retained<AnyObject>,
+        gradient: Retained<AnyObject>,
+        /// What it was built for: look, scale and colour space.
+        built: (u64, u64, *const AnyObject),
+        size: (f64, f64),
+    }
+
+    thread_local! {
+        static UNDERS: RefCell<Vec<Under>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Keep window `id`'s backdrop as layers under egui's surface: a frame
+    /// that reaches the screen empty shows the same backdrop instead of the
+    /// blur behind it. `look_key` changes with the theme; the layers are
+    /// rebuilt for a new look, scale (another display) or colour space.
+    pub fn underlay(id: egui::ViewportId, look: &CoverLook, look_key: u64) -> bool {
+        let Some((root, scale, space)) = root_of(id) else { return false };
+        let space_ptr = space.as_deref().map_or(std::ptr::null(), |s| s as *const AnyObject);
+        let built = (look_key, scale.to_bits(), space_ptr);
+        unsafe {
+            let bounds: NSRect = msg_send![&*root, bounds];
+            let size = (bounds.size.width.max(1.0), bounds.size.height.max(1.0));
+            let same = UNDERS.with(|u| {
+                let mut u = u.borrow_mut();
+                let Some(x) = u.iter_mut().find(|x| x.viewport == id) else { return false };
+                if !std::ptr::eq(Retained::as_ptr(&x.root), Retained::as_ptr(&root)) || x.built != built {
+                    return false;
+                }
+                if x.size != size {
+                    // the glow keeps its size in points as the window resizes
+                    let _: () = msg_send![class!(CATransaction), begin];
+                    let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+                    let _: () = msg_send![&*x.gradient, setEndPoint: glow_end(look, size.0, size.1)];
+                    let _: () = msg_send![class!(CATransaction), commit];
+                    x.size = size;
+                }
+                true
+            });
+            if same {
+                return true;
+            }
+            remove_underlay(id);
+            let mut keep: Vec<Retained<AnyObject>> = Vec::new();
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+            let (c, g) = backdrop_layers(&root, scale, space.as_deref(), look, &mut keep);
+            let _: () = msg_send![&*c, setName: &*NSString::from_str("cmdmeow-underlay")];
+            // the lowest layer: under the open cover and egui's Metal layer
+            let _: () = msg_send![&*root, insertSublayer: &*c, atIndex: 0u32];
+            let _: () = msg_send![class!(CATransaction), commit];
+            drop(keep);
+            UNDERS.with(|u| u.borrow_mut().push(Under { viewport: id, root, container: c, gradient: g, built, size }));
+        }
+        true
+    }
+
+    /// Drop window `id`'s underlay, if it has one.
+    pub fn remove_underlay(id: egui::ViewportId) {
+        UNDERS.with(|u| {
+            u.borrow_mut().retain(|x| {
+                if x.viewport != id {
+                    return true;
+                }
+                unsafe {
+                    let _: () = msg_send![class!(CATransaction), begin];
+                    let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+                    let _: () = msg_send![&*x.container, removeFromSuperlayer];
+                    let _: () = msg_send![class!(CATransaction), commit];
+                }
+                false
+            })
+        });
     }
 
     pub fn uncover(id: egui::ViewportId) {
@@ -1265,6 +1403,10 @@ mod native {
         false
     }
     pub fn uncover(_id: egui::ViewportId) {}
+    pub fn underlay(_id: egui::ViewportId, _look: &CoverLook, _look_key: u64) -> bool {
+        false
+    }
+    pub fn remove_underlay(_id: egui::ViewportId) {}
 }
 
 #[cfg(test)]
