@@ -556,7 +556,7 @@ fn body(p: &egui::Painter, ctx: &egui::Context, sp: &Spec, kind: Sheet, s: &Snap
             bar(p, Rect::from_min_size(Pos2::new(lr.left() + 12.0, note_y + 4.0), Vec2::new(w - 24.0, 4.0)), sp_.progress, tint::HEALTH());
             ctx.request_repaint();
         } else if let Some((txt, col)) = &note {
-            text_wrap(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, txt, ty::label(), *col, w - 24.0, 4);
+            text_wrap(p, Pos2::new(lr.left() + 12.0, note_y), Align2::LEFT_TOP, txt, ty::label(), *col, w - 24.0, usize::MAX);
         }
         y += lr.height() - 12.0 + GROUP_GAP;
     }
