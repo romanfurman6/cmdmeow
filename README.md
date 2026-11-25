@@ -21,7 +21,9 @@ Fourteen Mac tools in one menu bar app. Open source, no account, runs locally.</
 </p>
 
 <p align="center">
-  <a href="https://cmdmeow.com/promo.mp4"><img src="docs/images/promo.gif" width="760" alt="Cmd+Meow in 40 seconds"></a>
+  <a href="https://cmdmeow.com/#watch"><img src="docs/images/promo.gif" width="760" alt="Cmd+Meow: how it works"></a>
+  <br>
+  <a href="https://cmdmeow.com/#watch">▶ How it works (0:27)</a>
 </p>
 
 ## Install

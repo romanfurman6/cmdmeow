@@ -20,8 +20,12 @@
     bg(false);
     v.pause();
     if (last && last.focus) last.focus({ preventScroll: true });
+    if (location.hash === "#watch") history.replaceState(null, "", location.pathname + location.search);
   }
   document.querySelectorAll("[data-watch]").forEach(function (b) { b.addEventListener("click", open); });
   lb.addEventListener("click", function (e) { if (e.target === lb || e.target.closest(".tl button")) close(); });
+  // cmdmeow.com/#watch (README link) opens the window right away
+  if (location.hash === "#watch") open();
+  window.addEventListener("hashchange", function () { if (location.hash === "#watch" && !lb.classList.contains("on")) open(); });
   window.addEventListener("keydown", function (e) { if (e.key === "Escape" && lb.classList.contains("on")) { e.preventDefault(); close(); } }, true);
 })();
