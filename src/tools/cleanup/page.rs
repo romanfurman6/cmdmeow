@@ -414,7 +414,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     // the groups on the left, what the chosen one found on the right
     let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height()));
     group_rail(app, ui, rail);
-    let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), body.max);
+    // the list runs down to the footer, so rows scroll straight under it;
+    // its own last gap keeps the end clear of the footer (result_list)
+    let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), Pos2::new(body.right(), r.bottom() - PAGE_FOOTER_H));
     result_list(app, ui, list);
 
     // footer: on a group it cleans only that group (the rest stays ticked)
@@ -797,6 +799,8 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
         lines.push(Line::Gap(if k == 0 { sp::L } else { sp::S }));
         lines.push(Line::Tip(k));
     }
+    // the list reaches the footer; scrolled to the end it stops this far above it
+    lines.push(Line::Gap(sp::L));
 
     let height = |l: Line, w: f32| -> f32 {
         match l {
