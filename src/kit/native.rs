@@ -473,6 +473,11 @@ mod mac {
     /// The app with this process id is still running.
     pub fn app_alive(pid: i32) -> bool {
         use objc2_app_kit::NSRunningApplication;
+        // the process itself decides: AppKit's terminated flag can lag
+        // behind (or miss) an app that quit
+        if pid <= 0 || unsafe { libc::kill(pid, 0) } != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::EPERM) {
+            return false;
+        }
         NSRunningApplication::runningApplicationWithProcessIdentifier(pid).is_some_and(|a| !a.isTerminated())
     }
 
