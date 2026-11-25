@@ -1082,13 +1082,6 @@
     "measured_files": "measured · %{files} files",
     "stop": "Stop",
     "fda_hint": "Allow Full Disk Access for complete results",
-    "ago": {
-      "now": "just now",
-      "min": "%{n} min ago",
-      "h": "%{n} h ago",
-      "yesterday": "yesterday",
-      "days": "%{n} days ago"
-    },
     "files": "%{files} files",
     "n_more": "%{n} more",
     "looking": "Looking inside…",
@@ -1106,13 +1099,14 @@
     "back": "Back",
     "forward": "Forward",
     "choose_folder_menu": "Choose Folder…",
-    "map_again": "Map again",
-    "update": "Update",
+    "update": "Map again",
+    "view": {
+      "bubbles": "Bubbles",
+      "rings": "Rings",
+      "files": "Files"
+    },
     "n_of_folders": "%{done} of %{all} folders",
     "updating": "Updating…",
-    "stopped_partial": "Stopped · partial map",
-    "freed_mapped": "%{size} freed · Mapped %{when}",
-    "mapped": "Mapped %{when}",
     "show_in_finder": "Show in Finder",
     "remove": "Remove",
     "free_of": "free of %{total}",
