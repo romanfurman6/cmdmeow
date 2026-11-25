@@ -1123,7 +1123,9 @@ impl eframe::App for App {
                 crate::kit::native::activate();
             }
         }
-        if !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() {
+        // focus that went to the app window (or another of ours) leaves the
+        // panel open beside it; only leaving the app hides it
+        if !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.had_focus && focused == Some(false) && self.screenshot.is_none() && !crate::kit::native::app_active() {
             self.hide(ctx);
         }
     }
