@@ -227,7 +227,7 @@ fn editor(c: &mut Ctx, base: &Path, e: &Editor) {
     // a workspace's state (chats, open files) for a project that's gone
     for w in children(&base.join("User/workspaceStorage")) {
         let Some(project) = std::fs::read_to_string(w.join("workspace.json")).ok().and_then(|s| workspace_folder(&s)) else { continue };
-        if !project.exists() && age_days(&w) > FRESH_DAYS {
+        if !project.exists() && !on_missing_volume(&project) && age_days(&w) > FRESH_DAYS {
             let name = fname(&project);
             c.add(e.group, &t!("cleanup.it.workspace", name = name), w, "Old Sessions", Verdict::Ask, ts!("cleanup.why.workspace_gone"));
         }
@@ -534,6 +534,11 @@ fn worktrees(c: &mut Ctx, h: &Path) {
         let Some(gd) = gitdir(&wt) else { continue };
         let repo = repo_of(&gd).map(|r| fname(&r)).unwrap_or_else(|| fname(&wt));
         if !gd.exists() {
+            // a repo on an ejected drive isn't gone; one used today may be
+            // mid-move: neither is offered
+            if on_missing_volume(&gd) || age_days(&wt) < FRESH_DAYS {
+                continue;
+            }
             let title = format!("{repo} · {}", fname(&wt));
             c.add(Group::AiTools, &title, wt, WORKTREE_KIND, Verdict::Ask, &t!("cleanup.why.worktree_orphan", tool = tool));
             continue;
@@ -553,6 +558,13 @@ fn worktrees(c: &mut Ctx, h: &Path) {
             }
         }
     }
+}
+
+/// `p` is on a drive that isn't mounted now (/Volumes/<name> is missing):
+/// it can't be told from gone.
+fn on_missing_volume(p: &Path) -> bool {
+    let mut c = p.components();
+    matches!((c.next(), c.next(), c.next()), (Some(std::path::Component::RootDir), Some(v), Some(name)) if v.as_os_str() == "Volumes" && !Path::new("/Volumes").join(name).exists())
 }
 
 #[derive(Debug, PartialEq)]
@@ -640,6 +652,13 @@ mod tests {
         assert_eq!(workspace_folder(r#"{"folder":"file:///Users/me/%D0%9C%D1%83%D0%B7"}"#), Some(PathBuf::from("/Users/me/Муз")));
         assert_eq!(workspace_folder("not json"), None);
         assert_eq!(workspace_folder(r#"{"folder":"file:///bad%zz"}"#), None);
+    }
+
+    #[test]
+    fn ejected_drives_are_not_gone() {
+        assert!(on_missing_volume(Path::new("/Volumes/cmdmeow-not-mounted-xyz/code/app")));
+        assert!(!on_missing_volume(Path::new("/Users/me/gone")));
+        assert!(!on_missing_volume(Path::new("/Volumes")));
     }
 
     #[test]

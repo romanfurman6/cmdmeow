@@ -569,11 +569,14 @@ fn bundle_for_key(items: &[Item], key: &str) -> Vec<usize> {
 /// its size; an amber badge counts a group's questions
 /// (items, like the "Needs your OK" count).
 /// The group rail; returns its card.
+/// A rail row: group, tool ("" for the group itself), title, size,
+/// questions, color.
+type RailRow = (Option<Group>, &'static str, &'static str, u64, usize, Color32);
+
 fn group_rail(app: &mut App, ui: &mut Ui, rail: Rect) -> Rect {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
-    // (group, tool or "", title, size, questions, color)
-    let mut rows: Vec<(Option<Group>, &'static str, &'static str, u64, usize, Color32)> = vec![];
+    let mut rows: Vec<RailRow> = vec![];
     {
         let g = app.clean.lock_ok();
         let asks = |f: &dyn Fn(&Item) -> bool| g.items.iter().filter(|i| f(i) && is_question(i)).count();

@@ -309,7 +309,6 @@ impl Ctx {
     }
     /// Offer an item removed by a tool (simctl, brew): its size comes from the
     /// tool and it lives outside the home folder.
-    #[allow(clippy::too_many_arguments)]
     /// A tool's item names its tool ("Cursor · Web cache"), so its rows read
     /// on their own in All and Needs your OK; the tool's own list drops it
     /// again (`without_tool`).
@@ -321,6 +320,7 @@ impl Ctx {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn add_action(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str, action: Action, bytes: u64) {
         if self.kept.contains(&path) {
             self.hidden_kept += 1;
@@ -880,7 +880,7 @@ fn claude_retention_days(cl: &Path) -> f64 {
 fn retention_from_settings(json: &str) -> Option<f64> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let d = v.get("cleanupPeriodDays")?.as_f64()?;
-    (d >= 1.0 && d <= 3650.0).then_some(d)
+    (1.0..=3650.0).contains(&d).then_some(d)
 }
 
 fn short_id(s: &str) -> String {
