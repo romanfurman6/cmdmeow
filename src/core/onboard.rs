@@ -395,13 +395,14 @@ fn cat_color() -> Color32 {
     if is_light() { ACCENT() } else { ACTION() }
 }
 
-/// An ear flick starting at `at` (seconds): two quick outward tilts, in radians.
+/// An ear flick starting at `at` (seconds): two quick outward tilts, in
+/// radians, each easing out and back (no snap at the turn).
 fn twitch(t: f32, at: f32) -> f32 {
     let u = (t - at) / 0.36;
     if !(0.0..1.0).contains(&u) {
         return 0.0;
     }
-    (u * std::f32::consts::TAU).sin().abs() * 0.28 * (1.0 - 0.4 * u)
+    (u * std::f32::consts::TAU).sin().powi(2) * 0.28 * (1.0 - 0.4 * u)
 }
 
 /// How long the cat's hop from one step dot to the next takes.
@@ -472,6 +473,13 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         if seen {
             s.clock += dt;
         }
+        // the Welcome animation runs on Core Animation: its clock is the
+        // one that counts (egui draws no frames meanwhile)
+        if kind == Kind::Welcome && seen && !app.demo {
+            if let Some(e) = crate::kit::welcome_ca::elapsed(&ctx) {
+                s.clock = e;
+            }
+        }
         t = s.clock;
     }
     // screenshots show each step settled, not mid-animation
@@ -500,8 +508,9 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let body = body.translate(Vec2::new(slide, 0.0));
     let mut next = false;
     let mut restart_now = false;
+    let mut native_welcome = false;
     match kind {
-        Kind::Welcome => next = welcome(app, ui, body, t),
+        Kind::Welcome => (next, native_welcome) = welcome(app, ui, body, t, seen),
         Kind::Theme => theme_step(app, ui, body, t),
         Kind::Tools => tools(app, ui, body, t),
         Kind::Agents => agents(app, ui, body, t),
@@ -555,7 +564,8 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // the root for the frames too, or after a click the window kept showing
     // the old step until it was resized (first launch, M1)
     let busy_for = if kind == Kind::Welcome { WELCOME_END } else { 2.5 };
-    let animating = (seen && t < busy_for) || app.perm_watch.busy(now) || (kind == Kind::SignIns && crate::tools::claude::keychain::busy()) || next;
+    // the Welcome animation on Core Animation needs no frames from egui
+    let animating = (seen && t < busy_for && !native_welcome) || app.perm_watch.busy(now) || (kind == Kind::SignIns && crate::tools::claude::keychain::busy()) || next;
     if !seen && t < busy_for {
         // waiting to be seen: look again soon, without drawing flat out
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -635,7 +645,9 @@ fn brand_glyph(p: &egui::Painter, c: Pos2, size: f32, col: Color32) {
     p.image(tex.id(), Rect::from_center_size(c, Vec2::splat(size)), uv, col);
 }
 
-fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
+/// The Welcome step. Says whether Set up was clicked, and whether its
+/// animation is on Core Animation this pass (egui draws none of it then).
+fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32, seen: bool) -> (bool, bool) {
     let p = ui.painter().clone();
     // the ring, the name and the button fill the step, as one block in its middle
     let ring = 150.0;
@@ -644,29 +656,70 @@ fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let button = Vec2::new(168.0, 46.0);
     let block = 2.0 * (ring + chip) + 40.0 + title + sp::S + 18.0 + 36.0 + button.y;
     let c = Pos2::new(body.center().x, body.center().y - block / 2.0 + chip + ring);
+    let size = 184.0;
     // the cat peeks out ears first, flicks them, then hops up; the ring
     // draws itself round it and the tools land on it one by one
     crate::kit::glass::stroke_circle(&p, c, ring, Stroke::new(2.0, white(14)));
-    let start = -std::f32::consts::FRAC_PI_2;
-    // the ring and the tools come once the cat is up
-    let v = t - WELCOME_WAIT - WELCOME_SHAKE;
-    let k = ease((v - 1.15) / 0.9);
-    if k > 0.0 {
-        p.add(egui::Shape::line(arc_points(c, ring, start, start + std::f32::consts::TAU * k, 128), Stroke::new(2.5, ACTION())));
+    let scene = crate::kit::welcome_ca::Scene {
+        c,
+        ring,
+        chip,
+        size,
+        icons: app.tools.iter().map(|tool| tool.badge().icon).collect(),
+        cat: cat_color(),
+        arc: ACTION(),
+        chip_fill: BG(),
+        chip_edge: white(36),
+        icon: TEXT_SOFT(),
+    };
+    let native = if seen && !app.demo {
+        let n = scene.icons.len();
+        crate::kit::welcome_ca::show(ui.ctx(), &scene, t, || welcome_frames(n, size))
+    } else {
+        // hidden or covered: it waits, and starts again from here
+        crate::kit::welcome_ca::remove(ui.ctx());
+        false
+    };
+    if !native {
+        welcome_egui(&p, &scene, t);
     }
-    let n = app.tools.len().max(1);
-    for (i, tool) in app.tools.iter().enumerate() {
+    let name = p.text(Pos2::new(c.x, c.y + ring + chip + 40.0), Align2::CENTER_TOP, "Cmd+Meow", bold(title), TEXT());
+    let line = p.text(Pos2::new(c.x, name.bottom() + sp::S), Align2::CENTER_TOP, t!("setup.tagline", n = app.tools.len()), font(16.0), TEXT_FAINT());
+    let r = Rect::from_min_size(Pos2::new(c.x - button.x / 2.0, line.bottom() + 36.0), button);
+    (pill_button(ui, r, ts!("setup.set_up"), BTN_PRIMARY, true).clicked(), native)
+}
+
+/// The ring drawn so far at `t` (0 to 1).
+fn welcome_arc(t: f32) -> f32 {
+    ease((t - WELCOME_WAIT - WELCOME_SHAKE - 1.15) / 0.9)
+}
+
+/// Tool chip `i`'s scale at `t` (0 = not there yet; pops past 1).
+fn welcome_chip(t: f32, i: usize) -> f32 {
+    pop((t - WELCOME_WAIT - WELCOME_SHAKE - 1.25 - 0.07 * i as f32) / 0.4)
+}
+
+/// The Welcome animation drawn by egui (screenshots, or while the step
+/// moves): the arc, the tools and the cat at `t`.
+fn welcome_egui(p: &egui::Painter, s: &crate::kit::welcome_ca::Scene, t: f32) {
+    let (c, ring, chip, size) = (s.c, s.ring, s.chip, s.size);
+    let start = -std::f32::consts::FRAC_PI_2;
+    let k = welcome_arc(t);
+    if k > 0.0 {
+        p.add(egui::Shape::line(arc_points(c, ring, start, start + std::f32::consts::TAU * k, 128), Stroke::new(2.5, s.arc)));
+    }
+    let n = s.icons.len().max(1);
+    for (i, ic) in s.icons.iter().enumerate() {
         let a = start + i as f32 / n as f32 * std::f32::consts::TAU;
         let at = c + Vec2::new(a.cos(), a.sin()) * ring;
-        let s = pop((v - 1.25 - 0.07 * i as f32) / 0.4);
-        if s <= 0.0 {
+        let k = welcome_chip(t, i);
+        if k <= 0.0 {
             continue;
         }
-        p.circle_filled(at, chip * s, BG());
-        crate::kit::glass::stroke_circle(&p, at, chip * s, Stroke::new(1.0, white(36)));
-        icon(&p, tool.badge().icon, Rect::from_center_size(at, Vec2::splat(19.0 * s)), TEXT_SOFT());
+        p.circle_filled(at, chip * k, s.chip_fill);
+        crate::kit::glass::stroke_circle(p, at, chip * k, Stroke::new(1.0, s.chip_edge));
+        icon(p, *ic, Rect::from_center_size(at, Vec2::splat(19.0 * k)), s.icon);
     }
-    let size = 184.0;
     // peek() is laid out for a 96 pt cat
     let ((rise, sx, sy), ears) = welcome_cat(t);
     let rise = rise * size / 96.0;
@@ -675,11 +728,27 @@ fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let cat = Rect::from_min_max(Pos2::new(c.x - w / 2.0, floor - rise - h), Pos2::new(c.x + w / 2.0, floor - rise));
     // below the floor the cat is hidden: that's where it peeks out from
     let clip = Rect::from_min_max(Pos2::new(c.x - size * 0.7, c.y - size), Pos2::new(c.x + size * 0.7, floor));
-    crate::kit::brand::draw_mascot(&p.with_clip_rect(clip.intersect(p.clip_rect())), cat, cat_color(), ears);
-    let name = p.text(Pos2::new(c.x, c.y + ring + chip + 40.0), Align2::CENTER_TOP, "Cmd+Meow", bold(title), TEXT());
-    let line = p.text(Pos2::new(c.x, name.bottom() + sp::S), Align2::CENTER_TOP, t!("setup.tagline", n = app.tools.len()), font(16.0), TEXT_FAINT());
-    let r = Rect::from_min_size(Pos2::new(c.x - button.x / 2.0, line.bottom() + 36.0), button);
-    pill_button(ui, r, ts!("setup.set_up"), BTN_PRIMARY, true).clicked()
+    crate::kit::brand::draw_mascot(&p.with_clip_rect(clip.intersect(p.clip_rect())), cat, s.cat, ears);
+}
+
+/// The Welcome animation for Core Animation: one sample per 1/60 s until
+/// the last ear flick is over. `size` is the cat's side.
+fn welcome_frames(tools: usize, size: f32) -> crate::kit::welcome_ca::Frames {
+    let fps = crate::kit::welcome_ca::FPS as f32;
+    // the left ear's last flick ends a little after the last tool lands
+    let n = ((WELCOME_END + 0.15) * fps).ceil() as usize + 1;
+    let mut f = crate::kit::welcome_ca::Frames { chips: vec![Vec::with_capacity(n); tools], ..Default::default() };
+    for k in 0..n {
+        let t = k as f32 / fps;
+        let ((rise, sx, sy), ears) = welcome_cat(t);
+        f.cat.push((rise * size / 96.0, sx, sy));
+        f.ears.push(ears);
+        f.arc.push(welcome_arc(t));
+        for (i, v) in f.chips.iter_mut().enumerate() {
+            v.push(welcome_chip(t, i).max(0.0));
+        }
+    }
+    f
 }
 
 /// Welcome waits this long after the window is on screen before anything moves.
@@ -3021,5 +3090,32 @@ mod tests {
         assert_eq!(twitch(1.4, 1.0), 0.0);
         let most = (0..36).map(|i| twitch(1.0 + i as f32 * 0.01, 1.0)).fold(0.0f32, f32::max);
         assert!(most > 0.1 && most <= 0.3, "{most}");
+    }
+
+    #[test]
+    fn welcome_frames_end_at_rest() {
+        let f = welcome_frames(3, 184.0);
+        let n = f.cat.len();
+        assert!(n > 200);
+        assert_eq!((f.ears.len(), f.arc.len(), f.chips.len()), (n, n, 3));
+        assert!(f.chips.iter().all(|c| c.len() == n));
+        // hidden below the floor at first, nothing drawn yet
+        assert!(f.cat[0].0 < -150.0);
+        assert_eq!((f.arc[0], f.chips[0][0]), (0.0, 0.0));
+        // and at rest at the end: cat up and unsquashed, ears still, ring and tools full
+        let (rise, sx, sy) = f.cat[n - 1];
+        assert_eq!((rise, sx, sy), (0.0, 1.0, 1.0));
+        assert!(f.ears[n - 1].0.abs() < 1e-3 && f.ears[n - 1].1.abs() < 1e-3);
+        assert_eq!(f.arc[n - 1], 1.0);
+        assert!(f.chips.iter().all(|c| (c[n - 1] - 1.0).abs() < 1e-4));
+    }
+
+    #[test]
+    fn an_ear_flick_starts_and_ends_softly() {
+        // no snap: near the start, the middle and the end the tilt is tiny
+        for u in [0.01, 0.5, 0.99] {
+            assert!(twitch(u * 0.36, 0.0) < 0.01, "{u}");
+        }
+        assert!(twitch(0.25 * 0.36, 0.0) > 0.2);
     }
 }
