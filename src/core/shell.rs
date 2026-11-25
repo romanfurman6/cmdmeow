@@ -15,6 +15,9 @@ use std::time::Instant;
 const HIDDEN_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(5);
 /// How long opening the app window keeps pulling it to the front, and the
 /// longest the menu panel waits for it before stepping aside anyway.
+/// How long after a press on the menu bar icon a press "elsewhere" is taken
+/// as that same press.
+const ICON_PRESS_ECHO: std::time::Duration = std::time::Duration::from_millis(300);
 const APP_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_millis(700);
 
 /// When the open cover (M5) can go: the window's frames have been coming
@@ -113,6 +116,9 @@ pub struct App {
     /// make the app active) until then. macOS turns activation down while
     /// the press is still on the menu bar, so it's asked again each pass.
     want_focus: Option<Instant>,
+    /// The last press on the menu bar icon: the same press can also reach
+    /// the click-elsewhere watch (macOS 26), which hid the panel it opened.
+    icon_pressed: Option<Instant>,
     last_hide: Instant,
     /// When a click on the icon last stopped a recording: the same click's
     /// release (or a quick second click) doesn't open the panel.
@@ -295,6 +301,7 @@ impl App {
             visible: true,
             had_focus: false,
             want_focus: None,
+            icon_pressed: None,
             last_hide: Instant::now(),
             tray_stopped: None,
             app_open: false,
@@ -839,6 +846,9 @@ impl App {
                 presses += 1;
             }
         }
+        if presses > 0 {
+            self.icon_pressed = Some(Instant::now());
+        }
         // each press toggles (two quick clicks: open, then close)
         for _ in 0..presses {
             self.read_menu_icon();
@@ -848,6 +858,13 @@ impl App {
         let mut elsewhere = false;
         while self.elsewhere_rx.try_recv().is_ok() {
             elsewhere = true;
+        }
+        // the icon press itself, seen once more as a press elsewhere: not one
+        if elsewhere && self.icon_pressed.is_some_and(|t| t.elapsed() < ICON_PRESS_ECHO) {
+            if crate::kit::fs::is_dev() {
+                eprintln!("[panel] press elsewhere ignored: the icon press itself");
+            }
+            elsewhere = false;
         }
         if elsewhere && !super::panel::keep_open() && self.hold_panel.is_none() && self.mode == Mode::Panel && self.visible && self.screenshot.is_none() && self.panel_hide_after_open.is_none() {
             if std::env::var_os("CMDMEOW_TRAY_LOG").is_some() {

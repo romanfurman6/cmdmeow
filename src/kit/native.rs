@@ -623,6 +623,10 @@ mod mac {
                 };
                 w.is_some()
             };
+            if crate::kit::fs::is_dev() {
+                let at: objc2_foundation::NSPoint = unsafe { msg_send![class!(NSEvent), mouseLocation] };
+                eprintln!("[panel] press elsewhere at ({:.0}, {:.0}), ours {ours}", at.x, at.y);
+            }
             if !ours {
                 f();
             }
