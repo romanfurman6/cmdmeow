@@ -604,6 +604,18 @@ pub fn pretty(name: &str) -> String {
     name.to_string()
 }
 
+/// A cache of macOS itself (com.apple.*): its owner is a system process
+/// the person can't quit.
+fn macos_cache(it: &Item) -> bool {
+    it.action == Action::Files && live_kind(it.kind) && it.path.components().any(|c| c.as_os_str().to_string_lossy().to_lowercase().starts_with("com.apple."))
+}
+
+/// macOS caches a system process has open right now can't be removed and
+/// nothing the person can quit frees them: they aren't offered at all.
+fn drop_held_by_macos(items: &mut Vec<Item>, open: &super::inuse::OpenFiles) {
+    items.retain(|it| !(macos_cache(it) && open.holds(&it.path)));
+}
+
 fn running_apps() -> (HashSet<String>, HashSet<String>) {
     let (ids, names) = crate::kit::native::running_apps();
     let ids: HashSet<String> = ids.into_iter().map(|s| s.to_lowercase()).collect();
@@ -634,6 +646,8 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
         // and its answer joins once everything else is measured
         let brew_tool = brew_path();
         let brew_job = brew_tool.clone().map(|b| std::thread::spawn(move || brew_dry_run(&b)));
+        // what's open right now (one lsof run, a few seconds) alongside the scan
+        let open_job = std::thread::spawn(super::inuse::OpenFiles::snapshot);
         let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, brew: brew_tool.is_some(), shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
         let steps: [ScanStep; 12] = [
             ("Claude", scan_claude),
@@ -658,6 +672,9 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
         }
         if !c.stopped() {
             measure(&mut c.items, &shared, &ctx, FIND, &cancel, brew_job.is_some());
+            if let Ok(Some(open)) = open_job.join() {
+                drop_held_by_macos(&mut c.items, &open);
+            }
         }
         if let (Some(job), Some(tool)) = (brew_job, brew_tool) {
             join_brew(&mut c, job, &tool, &shared, &ctx, &cancel);
@@ -2060,6 +2077,26 @@ mod tests {
         assert!(guard(Group::Captures, &h.join("Desktop/Screenshot 2026-09-01 at 10.10.04.png")).is_some());
         assert!(guard(Group::Captures, &h.join("Desktop")).is_some());
         assert!(guard(Group::Captures, &h.join("Desktop/Capture 2026-09-01 at 10.10.04.png")).is_some(), "a file that isn't there");
+    }
+
+    #[test]
+    fn macos_caches_held_open_are_not_offered() {
+        let u = "/Users/me/Library/Caches";
+        let mut items = vec![
+            plain(Group::AppCaches, &format!("{u}/com.apple.geod"), "Caches", Verdict::Ask, Action::Files),
+            plain(Group::AppCaches, &format!("{u}/com.apple.tipsd"), "Caches", Verdict::Ask, Action::Files),
+            plain(Group::AppCaches, &format!("{u}/com.spotify.client"), "Caches", Verdict::Safe, Action::Files),
+            plain(Group::Logs, "/Users/me/Library/Logs/com.apple.x", "Logs", Verdict::Safe, Action::Files),
+        ];
+        let open = super::super::inuse::OpenFiles::from(vec![
+            PathBuf::from(format!("{u}/com.apple.geod/db.sqlite")),
+            PathBuf::from(format!("{u}/com.spotify.client/data")),
+            PathBuf::from("/Users/me/Library/Logs/com.apple.x/now.log"),
+        ]);
+        drop_held_by_macos(&mut items, &open);
+        let left: Vec<String> = items.iter().map(|i| i.path.display().to_string()).collect();
+        // the open macOS cache goes; an idle one, an app's (quit sheet) and logs stay
+        assert_eq!(left, vec![format!("{u}/com.apple.tipsd"), format!("{u}/com.spotify.client"), "/Users/me/Library/Logs/com.apple.x".to_string()]);
     }
 
     fn plain(group: Group, path: &str, kind: &'static str, verdict: Verdict, action: Action) -> Item {

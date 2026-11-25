@@ -1358,21 +1358,35 @@ fn quit_one(app: &mut App, k: usize, now: f64) {
 fn poll_quits(app: &mut App, ctx: &egui::Context, now: f64) {
     let demo = app.demo;
     let mut waiting = false;
+    let mut stuck = false;
     for row in &mut app.quit {
-        if let Quit::Quitting(t) = row.state {
-            let gone = if demo { now - t > 0.9 } else { !crate::kit::native::app_alive(row.app.pid) };
-            row.state = if gone {
-                Quit::Closed
-            } else if now - t > QUIT_WAIT {
-                Quit::Stuck
-            } else {
-                waiting = true;
-                Quit::Quitting(t)
-            };
+        match row.state {
+            Quit::Quitting(t) => {
+                let gone = if demo { now - t > 0.9 } else { !crate::kit::native::app_alive(row.app.pid) };
+                row.state = if gone {
+                    Quit::Closed
+                } else if now - t > QUIT_WAIT {
+                    Quit::Stuck
+                } else {
+                    waiting = true;
+                    Quit::Quitting(t)
+                };
+            }
+            // an app slow to quit (or quit from the Dock) still turns Closed
+            Quit::Stuck if !demo => {
+                if crate::kit::native::app_alive(row.app.pid) {
+                    stuck = true;
+                } else {
+                    row.state = Quit::Closed;
+                }
+            }
+            _ => {}
         }
     }
     if waiting {
         ctx.request_repaint_after(std::time::Duration::from_millis(200));
+    } else if stuck {
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
 }
 
