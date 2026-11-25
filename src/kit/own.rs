@@ -15,10 +15,15 @@ fn squash(s: &str) -> String {
 }
 
 /// Whether a name, label or bundle id is Cmd+Meow's (also under its first
-/// name, CleanMeBro).
+/// name, CleanMeBro): its bundle ids and what starts with them
+/// (`com.romanfurman6.cmdmeow.dev.plist`), or the app's own names
+/// ("CmdMeow", "CmdMeow Dev.app", "cmdmeow-dev", "Cmd+Meow"). Only a name
+/// that merely holds the word (a CI runner `actions.runner.…-cmdmeow.…`) is not.
 pub fn is_own_name(s: &str) -> bool {
-    let s = squash(s);
-    s.contains("cmdmeow") || s.contains("cleanmebro")
+    let l = s.trim().to_ascii_lowercase();
+    let id = ["com.romanfurman6.cmdmeow", "com.romanfurman6.cleanmebro"].iter().any(|p| l.strip_prefix(p).is_some_and(|r| r.is_empty() || r.starts_with('.')));
+    let base = [".app", ".plist", ".savedstate", ".log"].iter().find_map(|e| l.strip_suffix(e)).unwrap_or(&l);
+    id || matches!(squash(base).as_str(), "cmdmeow" | "cmdmeowdev" | "cleanmebro" | "cleanmebrodev")
 }
 
 /// Whether text an agent wrote is about Cmd+Meow. Only the current name: the
@@ -70,10 +75,10 @@ mod tests {
 
     #[test]
     fn names() {
-        for s in ["CmdMeow", "CmdMeow Dev", "Cmd+Meow", "cmdmeow", "com.romanfurman6.cmdmeow", "com.romanfurman6.cmdmeow.dev", "com.romanfurman6.cmdmeow.helper", "CleanMeBro", "CmdMeow Dev.app"] {
+        for s in ["CmdMeow", "CmdMeow Dev", "Cmd+Meow", "cmdmeow", "cmdmeow-dev", "com.romanfurman6.cleanmebro.fanhelper", "com.romanfurman6.cmdmeow.plist", "com.romanfurman6.cmdmeow", "com.romanfurman6.cmdmeow.dev", "com.romanfurman6.cmdmeow.helper", "CleanMeBro", "CmdMeow Dev.app"] {
             assert!(is_own_name(s), "{s}");
         }
-        for s in ["Safari", "Raycast", "com.google.keystone.daemon", "Meow", "cmd", ""] {
+        for s in ["Safari", "Raycast", "com.google.keystone.daemon", "Meow", "cmd", "", "actions.runner.romanfurman6-cmdmeow.m1-personal", "com.romanfurman6.cmdmeowxyz", "cmdmeow-reset-backup"] {
             assert!(!is_own_name(s), "{s}");
         }
     }

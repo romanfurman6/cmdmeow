@@ -664,7 +664,7 @@ pub mod tests {
         assert_eq!(shown(js.clone()).len(), 5);
         // Cmd+Meow's own jobs never show
         let me = |label: &str, program: &str| Job { label: label.into(), program: Some(PathBuf::from(program)), ..Default::default() };
-        assert!(shown(vec![me("com.romanfurman6.cmdmeow.helper", "/Library/PrivilegedHelperTools/com.romanfurman6.cmdmeow.helper"), me("x.y", "/Applications/CmdMeow Dev.app/Contents/MacOS/cmdmeow"), me("com.raycast.x", "/Applications/Raycast.app/Contents/MacOS/x")]).iter().map(|j| j.label.as_str()).eq(["com.raycast.x"]));
+        assert!(shown(vec![me("com.romanfurman6.cmdmeow.helper", "/Library/PrivilegedHelperTools/com.romanfurman6.cmdmeow.helper"), me("x.y", "/Applications/CmdMeow Dev.app/Contents/MacOS/cmdmeow"), me("com.romanfurman6.cleanmebro.fanhelper", "/Library/PrivilegedHelperTools/com.romanfurman6.cleanmebro.fanhelper"), me("com.raycast.x", "/Applications/Raycast.app/Contents/MacOS/x"), me("actions.runner.romanfurman6-cmdmeow.m1-personal", "/Users/me/runner/runsvc.sh")]).iter().map(|j| j.label.as_str()).eq(["com.raycast.x", "actions.runner.romanfurman6-cmdmeow.m1-personal"]));
         assert!(LoginApp { name: "CmdMeow Dev".into(), path: "/Applications/CmdMeow Dev.app".into(), hidden: false, on: true }.own());
         assert!(!LoginApp { name: "Raycast".into(), path: "/Applications/Raycast.app".into(), hidden: false, on: true }.own());
         let g = find("com.google.GoogleUpdater.wake");

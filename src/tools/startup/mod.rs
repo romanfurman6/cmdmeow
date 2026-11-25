@@ -667,6 +667,9 @@ fn watch(st: Shared, lib: PathBuf, ctx: egui::Context) {
             ctx.request_repaint();
             items::sign_jobs(&mut raw);
         }
+        // tracked for changes: also Cmd+Meow's own jobs, which the list
+        // hides, so hiding them never reads as "removed"
+        let tracked: Vec<Job> = raw.iter().filter(|j| !j.apple()).cloned().collect();
         let jobs = items::shown(raw);
         let cron = extra::cron_jobs();
         let sysext = extra::sysexts();
@@ -674,7 +677,7 @@ fn watch(st: Shared, lib: PathBuf, ctx: egui::Context) {
         let mut new_cron: Vec<CronJob> = Vec::new();
         {
             let mut g = st.lock_ok();
-            let (d, now) = diff(&g.settings.seen, &jobs);
+            let (d, now) = diff(&g.settings.seen, &tracked);
             let mut dirty = now != g.settings.seen;
             if g.settings.seeded {
                 for (paths, changed) in [(&d.new, false), (&d.changed, true)] {
@@ -702,6 +705,8 @@ fn watch(st: Shared, lib: PathBuf, ctx: egui::Context) {
             let before = g.settings.gone.len();
             let cut = now_secs().saturating_sub(GONE_FOR);
             g.settings.gone.retain(|x| x.at >= cut);
+            // never Cmd+Meow's own, nor one that is still there
+            g.settings.gone.retain(|x| !crate::kit::own::is_own_name(&x.label) && !tracked.iter().any(|j| j.label == x.label));
             let over = g.settings.gone.len().saturating_sub(20);
             g.settings.gone.drain(..over);
             dirty |= g.settings.gone.len() != before;
