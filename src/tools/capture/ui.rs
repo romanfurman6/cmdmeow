@@ -636,7 +636,7 @@ fn first_recording(c: &mut Capture, ui: &mut Ui, body: Rect) {
 
     let key = c.settings.shortcut(Command::Record).map(|s| s.display());
     let hc = Pos2::new(cx0, tr.bottom() + sp::XXL + HERO_H / 2.0);
-    if hero_button(ui, hc, id.with("record"), ts!("cap.ui.record_screen"), key.as_deref(), Lead::Dot(RED()), Some(ACTION()), true, 220.0).clicked() {
+    if hero_button(ui, hc, id.with("record"), ts!("cap.ui.record_screen"), key.as_deref(), Lead::Dot(REC_ON_ACTION()), Some(ACTION()), true, 220.0).clicked() {
         c.queue.push((Command::Record, 0));
     }
     // sound: what you hear and your voice
@@ -1485,7 +1485,7 @@ pub fn video_page(c: &mut Capture, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     if resp.clicked() {
         c.queue.push((Command::Record, 0));
     }
-    p.circle_filled(Pos2::new(face.left() + 18.0, face.center().y), 6.0, if live.is_some() { ON_ACTION } else { RED() });
+    p.circle_filled(Pos2::new(face.left() + 18.0, face.center().y), 6.0, if live.is_some() { ON_ACTION } else { REC_ON_ACTION() });
     p.text(Pos2::new(face.left() + 31.0, face.center().y), Align2::LEFT_CENTER, label, bold(13.0), ON_ACTION);
     let tabs = [VTab::Recordings, VTab::Settings];
     let cur = tabs.iter().position(|t| *t == c.vtab).unwrap_or(0);
