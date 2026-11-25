@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Everything your Mac needs. Free.</b><br>
-  Fourteen Mac tools in one menu bar app. Open source, no account, runs on your Mac.
+  All your Mac tools in one menu bar app. Open source, no account, runs on your Mac.
 </p>
 
 <p align="center">
