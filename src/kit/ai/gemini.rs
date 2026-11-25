@@ -47,7 +47,7 @@ impl Provider for Gemini {
         g.installed = installed;
         g.logged_in = installed;
         g.fetched = Some(Local::now());
-        g.error = (!installed).then(|| "Gemini CLI hasn't been used on this Mac.".to_string());
+        g.error = (!installed).then(|| ts!("ai.perr.gemini_unused").to_string());
         match live {
             Some(Ok((plan, limits))) => {
                 g.source = "API";

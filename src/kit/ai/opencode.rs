@@ -40,7 +40,7 @@ impl Provider for OpenCode {
         g.logged_in = installed;
         g.source = "Local";
         g.fetched = Some(Local::now());
-        g.error = (!installed).then(|| "OpenCode hasn't been used on this Mac.".to_string());
+        g.error = (!installed).then(|| ts!("ai.perr.opencode_unused").to_string());
     }
     fn local_tokens(&mut self) -> LocalTokens {
         let home = home();

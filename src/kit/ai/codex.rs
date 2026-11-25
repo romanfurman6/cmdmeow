@@ -71,7 +71,7 @@ impl Provider for Codex {
             g.limits.clear();
             // checked: keeps the setup screen up while the next check runs
             g.fetched = Some(Local::now());
-            g.error = Some("Codex isn't installed on this Mac. Install it with npm i -g @openai/codex or brew install codex, then run codex once to sign in.".into());
+            g.error = Some(ts!("ai.perr.codex_missing").into());
             return;
         }
         match latest {
@@ -82,12 +82,12 @@ impl Provider for Codex {
                 }
                 g.limits = l.limits;
                 g.fetched = Some(l.at);
-                g.note = "Codex reports its limits with each request, so these are as of your last one.".into();
+                g.note = ts!("ai.perr.codex_note").into();
             }
             None => {
                 g.limits.clear();
                 g.fetched = Some(Local::now());
-                g.error = Some(if logged_in { "Codex shows your limits here after your next request.".into() } else { "Sign in to Codex to see your limits: run codex in Terminal.".into() });
+                g.error = Some(if logged_in { ts!("ai.perr.codex_after").into() } else { ts!("ai.perr.codex_sign_in").into() });
             }
         }
     }
@@ -185,7 +185,7 @@ pub fn reset_text(ts: i64) -> String {
         time
     } else {
         // another day: the hour is enough
-        format!("{} at {}", t.format("%b %-d"), t.format("%-I%P"))
+        t!("ai.reset_day", day = t.format("%b %-d"), hour = t.format("%-I%P")).into_owned()
     }
 }
 

@@ -24,16 +24,16 @@ pub struct Memory {
 fn short(label: &str) -> String {
     let low = label.to_lowercase();
     if low.contains("session") {
-        "session".into()
+        ts!("ai.alert.session").into()
     } else if let (true, Some(a), Some(b)) = (low.contains("week"), label.find('('), label.rfind(')')) {
         let inner = &label[a + 1..b];
         if inner.eq_ignore_ascii_case("all models") {
-            "week".into()
+            ts!("ai.alert.week").into()
         } else {
-            format!("week · {inner}")
+            t!("ai.alert.week_of", model = inner).into_owned()
         }
     } else if low.contains("week") {
-        "week".into()
+        ts!("ai.alert.week").into()
     } else {
         label.to_string()
     }
@@ -45,7 +45,7 @@ pub fn when(ts: i64, now: i64) -> String {
     let days = (t.date_naive() - n.date_naive()).num_days();
     match days {
         0 => t.format("%H:%M").to_string(),
-        1 => format!("tomorrow {}", t.format("%H:%M")),
+        1 => t!("ai.alert.tomorrow", time = t.format("%H:%M")).into_owned(),
         2..=6 => t.format("%a %H:%M").to_string(),
         _ => t.format("%b %-d %H:%M").to_string(),
     }
@@ -67,11 +67,11 @@ pub fn check(info: &UsageInfo, s: &Settings, mem: &mut Memory, now: i64) -> Vec<
                 for lower in thresholds.iter().filter(|x| *x < t) {
                     mem.sent.insert(format!("{name}|{}|{window}|{lower}", l.label));
                 }
-                let mut body = l.resets_at.map(|r| format!("Resets {}", when(r, now))).unwrap_or_default();
+                let mut body = l.resets_at.map(|r| t!("ai.alert.resets", when = when(r, now)).into_owned()).unwrap_or_default();
                 if pace::of_limit(l, now).is_some_and(|p| p.state == pace::State::Ahead) {
-                    body.push_str(if body.is_empty() { "Ahead of pace" } else { " · ahead of pace" });
+                    body.push_str(if body.is_empty() { ts!("ai.alert.ahead") } else { ts!("ai.alert.and_ahead") });
                 }
-                out.push(Alert { title: format!("{name} {} at {t}%", short(&l.label)), body });
+                out.push(Alert { title: t!("ai.alert.at", name = name, limit = short(&l.label), pct = t).into_owned(), body });
             }
         }
         // a limit that was getting full started over
@@ -79,7 +79,7 @@ pub fn check(info: &UsageInfo, s: &Settings, mem: &mut Memory, now: i64) -> Vec<
             let first = thresholds.first().copied().unwrap_or(80) as f32;
             let was_full = mem.last.iter().any(|(lab, was, at)| *lab == l.label && *was >= first && (l.pct + 30.0 < *was || (at.is_some() && l.resets_at.is_some() && *at != l.resets_at && l.pct < *was)));
             if was_full {
-                out.push(Alert { title: format!("{name} {} reset", short(&l.label)), body: format!("Back to {:.0}%", l.pct) });
+                out.push(Alert { title: t!("ai.alert.reset", name = name, limit = short(&l.label)).into_owned(), body: t!("ai.alert.back_to", pct = l.pct : {:.0}).into_owned() });
             }
         }
         // a week about to reset with much of it left
@@ -88,7 +88,7 @@ pub fn check(info: &UsageInfo, s: &Settings, mem: &mut Memory, now: i64) -> Vec<
             if let Some(r) = l.resets_at {
                 let left = r - now;
                 if left > 0 && left <= 86_400 && l.pct <= 50.0 && mem.sent.insert(format!("{name}|{}|{r}|unused", l.label)) {
-                    out.push(Alert { title: format!("{name} {}: {:.0}% unused", short(&l.label), 100.0 - l.pct), body: format!("Resets {}", when(r, now)) });
+                    out.push(Alert { title: t!("ai.alert.unused", name = name, limit = short(&l.label), pct = 100.0 - l.pct : {:.0}).into_owned(), body: t!("ai.alert.resets", when = when(r, now)).into_owned() });
                 }
             }
         }
@@ -103,7 +103,7 @@ pub fn check(info: &UsageInfo, s: &Settings, mem: &mut Memory, now: i64) -> Vec<
                     for lower in thresholds.iter().filter(|x| *x < t) {
                         mem.sent.insert(format!("{name}|budget|{month}|{lower}"));
                     }
-                    out.push(Alert { title: format!("{name} budget at {t}%"), body: format!("${:.0} of ${:.0} this month", info.local.usd_month, budget) });
+                    out.push(Alert { title: t!("ai.alert.budget", name = name, pct = t).into_owned(), body: t!("ai.alert.budget_body", used = info.local.usd_month : {:.0}, budget = budget : {:.0}).into_owned() });
                 }
             }
         }

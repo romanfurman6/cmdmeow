@@ -186,7 +186,7 @@ fn fetch_cli(s: &Shared) {
         g.installed = false;
         g.signed_out = false;
         g.limits.clear();
-        g.error = Some(format!("Claude Code isn't installed on this Mac. {}", cc::Availability::NotInstalled.how()));
+        g.error = Some(t!("ai.perr.claude_missing", how = cc::Availability::NotInstalled.how()).into_owned());
         return;
     };
     // plan + login
@@ -218,7 +218,7 @@ fn fetch_cli(s: &Shared) {
             let text = v["result"].as_str().unwrap_or("").to_string();
             let (limits, contrib, note) = parse_usage(&text);
             if limits.is_empty() {
-                g.error = Some(if logged_in { "Claude didn't report limits right now.".into() } else { format!("Sign in to Claude Code to see your limits. {}", cc::Availability::SignedOut.how()) });
+                g.error = Some(if logged_in { ts!("ai.perr.claude_no_limits").into() } else { t!("ai.perr.claude_sign_in", how = cc::Availability::SignedOut.how()).into_owned() });
                 if g.signed_out {
                     g.limits.clear();
                 }
@@ -235,7 +235,7 @@ fn fetch_cli(s: &Shared) {
             g.stale = g.error.is_some() && !g.limits.is_empty();
         }
         Err(e) => {
-            g.error = Some(format!("Couldn't run Claude: {e}"));
+            g.error = Some(t!("ai.perr.claude_run", err = e).into_owned());
             g.stale = !g.limits.is_empty();
         }
     }
