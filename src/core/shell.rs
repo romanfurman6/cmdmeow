@@ -776,14 +776,24 @@ impl App {
         if self.screenshot.is_some() {
             return;
         }
-        self.app_open = true;
-        self.app_focus = true;
-        self.app_asked = Some(Instant::now());
+        self.ask_app_window();
         crate::kit::native::set_dock_icon(true);
         if self.visible {
             self.panel_hide_after_open = Some(Instant::now());
             ctx.request_repaint();
         }
+    }
+
+    /// Bring the app window up. Only a window that isn't open yet gets the
+    /// open cover: over one already on screen it blanked the window for
+    /// 0.6 s on each menu bar click during setup (the app looked closed,
+    /// then came back).
+    fn ask_app_window(&mut self) {
+        if !self.app_open {
+            self.app_asked = Some(Instant::now());
+        }
+        self.app_open = true;
+        self.app_focus = true;
     }
 
     pub fn open_panel(&mut self, ctx: &egui::Context) {
@@ -1476,9 +1486,7 @@ impl App {
         if self.setup.is_none() {
             self.setup = Some(super::onboard::Setup::new(super::onboard::saved_step()));
         }
-        self.app_open = true;
-        self.app_focus = true;
-        self.app_asked = Some(Instant::now());
+        self.ask_app_window();
         crate::kit::native::set_dock_icon(true);
         if self.visible {
             self.panel_hide_after_open = Some(Instant::now());
