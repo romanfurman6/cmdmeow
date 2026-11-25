@@ -166,6 +166,62 @@ const Human: React.FC<{t: number}> = ({t}) => {
   );
 };
 
+
+// ---- end card: the current mark (src/kit/brand.rs BODY + EARS, 1024 box) ----
+// Ears follow rule M6: an ear never turns as one piece; its base stays on the head
+// and the turn grows smoothly to the tip; a flick = tilt out and back, max 0.28 rad.
+type Seg = ['M' | 'L', number, number] | ['C', number, number, number, number, number, number];
+const BODY: Seg[] = [['M', 330, 200], ['L', 692, 200], ['L', 940, 300], ['C', 955, 350, 958, 400, 958, 450], ['L', 958, 840], ['C', 958, 930, 895, 992, 805, 992], ['L', 218, 992], ['C', 128, 992, 65, 930, 65, 840], ['L', 65, 450], ['C', 65, 400, 68, 350, 84, 300]];
+const EARS: Seg[][] = [
+  [['M', 84, 300], ['C', 84, 200, 118, 44, 161, 44], ['C', 193, 44, 263, 110, 330, 200], ['L', 330, 250], ['L', 110, 330]],
+  [['M', 692, 200], ['C', 760, 110, 830, 44, 862, 44], ['C', 905, 44, 940, 200, 940, 300], ['L', 915, 330], ['L', 692, 250]],
+];
+const flatten = (segs: Seg[], n = 32) => {
+  const out: [number, number][] = [];
+  for (const sg of segs) {
+    if (sg[0] !== 'C') { out.push([sg[1], sg[2]]); continue; }
+    const [, x1, y1, x2, y2, x, y] = sg; const [x0, y0] = out[out.length - 1];
+    for (let k = 1; k <= n; k++) { const t = k / n, u = 1 - t; const a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t; out.push([a * x0 + b * x1 + c * x2 + d * x, a * y0 + b * y1 + c * y2 + d * y]); }
+  }
+  return out;
+};
+const BEND: [number, number][] = [[210, 200], [814, 200]];
+const bentEar = (right: number, turn: number) => flatten(EARS[right]).map(([x, y]) => {
+  let w = clamp((200 - y) / (200 - 44)); w = w * w * (3 - 2 * w);
+  const a = (right ? turn : -turn) * w; const [px, py] = BEND[right]; const c = Math.cos(a), sn = Math.sin(a);
+  return `${(px + (x - px) * c - (y - py) * sn).toFixed(1)},${(py + (x - px) * sn + (y - py) * c).toFixed(1)}`;
+}).join(' ');
+const BODY_PTS = flatten(BODY).map(p => p.join(',')).join(' ');
+const CMD = 'M347.5 433.5m0 0' + [[347.5, 433.5, 0, -1.5], [670.5, 433.5, 1, 2.5], [347.5, 757.5, -0.5, -2], [670.5, 757.5, 1.5, 3]].map(([cx, cy, a0, a1]) => {
+  const r = 87.5, A0 = a0 * Math.PI, A1 = a1 * Math.PI; const sx = cx + r * Math.cos(A0), sy = cy + r * Math.sin(A0), ex = cx + r * Math.cos(A1), ey = cy + r * Math.sin(A1);
+  return `M${sx} ${sy}A${r} ${r} 0 1 ${A1 > A0 ? 1 : 0} ${ex} ${ey}`;
+}).join('') + 'M435 433.5V757.5M583 433.5V757.5M347.5 521H670.5M347.5 670H670.5';
+// two-tilt flick: out and back, twice, eased
+const flick = (dt: number, dur = 0.9) => (dt <= 0 || dt >= dur ? 0 : 0.28 * Math.sin((dt / dur) * 2 * Math.PI) * Math.sin(Math.PI * dt / dur));
+
+const EndCard: React.FC<{t: number}> = ({t}) => {
+  const s = V2_END, dt = t - s;
+  const pop = spring(dt, 7, 11);
+  const ears = flick(dt - 0.45);
+  const a = eo5(P(t, s + 0.35, s + 0.75)), c = eo5(P(t, s + 0.55, s + 0.95)), d = eo5(P(t, s + 0.75, s + 1.15));
+  return (
+    <AbsoluteFill style={{overflow: 'hidden', fontFamily: SANS, color: '#fff'}}>
+      <Img src={staticFile('desk-miami.jpg')} style={{position: 'absolute', inset: 0, width: 1920, height: 1080, objectFit: 'cover', filter: 'blur(16px) brightness(.62)', transform: 'scale(1.06)'}} />
+      <svg viewBox="0 0 1024 1024" style={{position: 'absolute', left: 960 - 150, top: 250, width: 300, height: 300, overflow: 'visible', transform: `scale(${clamp(pop, 0, 1.3)})`, transformOrigin: '50% 60%', filter: 'drop-shadow(0 30px 60px rgba(5,3,20,.55)) drop-shadow(0 0 50px rgba(255,95,162,.35))'}}>
+        <g fill="#F2ECE3" stroke="#F2ECE3" strokeWidth={2} strokeLinejoin="round">
+          <polygon points={bentEar(0, ears)} /><polygon points={bentEar(1, ears)} /><polygon points={BODY_PTS} />
+        </g>
+        <path d={CMD} fill="none" stroke={PINK} strokeWidth={59} strokeLinecap="round" />
+      </svg>
+      <div style={{position: 'absolute', left: 0, right: 0, top: 600, textAlign: 'center', font: `600 76px/1 ${SANS}`, letterSpacing: '-.03em', opacity: a, transform: `translateY(${lerp(24, 0, a)}px)`, filter: `blur(${lerp(6, 0, a)}px)`}}>Cmd+Meow</div>
+      <div style={{position: 'absolute', left: 0, right: 0, top: 700, textAlign: 'center', font: `400 34px/1 ${SANS}`, color: 'rgba(255,255,255,.75)', opacity: c, transform: `translateY(${lerp(20, 0, c)}px)`}}>cmdmeow.com</div>
+      <div style={{position: 'absolute', left: 0, right: 0, top: 778, display: 'flex', justifyContent: 'center', opacity: d, transform: `translateY(${lerp(20, 0, d)}px)`}}>
+        <span style={{background: PINK, color: '#1A0B1E', font: `600 30px/1 ${SANS}`, padding: '20px 36px', borderRadius: 16}}>Free download for Mac</span>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 // ---- C: fast cuts through the app (the main scene, time-remapped) ----
 const mainV2 = {...main, css: main.css + `#ttl{font:600 112px/1 ${SANS};letter-spacing:-.045em}#endwm{font-family:${SANS}!important;font-weight:600!important}`};
 const CUTS: [number, number][] = [ // [main scene start, rate]
@@ -196,33 +252,30 @@ const Body: React.FC = () => {
     );
   }
   if (t < Bt(26)) {
-    // fade-through: the window + title leave (fade, lift, soft blur) over the shared desktop,
-    // then the next one rises in like the landing's .reveal. No double exposure.
-    const STEP = 2 * BEAT, OUT = 0.2, IN = 0.38;
+    // macOS Spaces swipe: the whole desktop slides left and the next feature's desktop
+    // follows it in, like a three-finger swipe between Spaces. Both are on screen, side by side.
+    const STEP = 2 * BEAT, SW = 0.42, GAP = 40;
     const i = Math.min(Math.floor((t - Bt(10)) / STEP), CUTS.length - 1);
     const t0 = Bt(10) + i * STEP, t1 = t0 + STEP;
-    const at = CUTS[i][0] + (t - t0) * CUTS[i][1];
-    const o = i + 1 < CUTS.length ? Math.pow(P(t, t1 - OUT, t1), 1.6) : 0;
-    const n = i === 0 ? 1 : eo5(P(t, t0, t0 + IN));
-    const op = n * (1 - o);
-    const dy = lerp(28, 0, n) + lerp(0, -14, o);
-    const bl = lerp(10, 0, n) + o * 8;
+    const at = (k: number) => CUTS[k][0] + (t - (Bt(10) + k * STEP)) * CUTS[k][1];
+    const sw = i + 1 < CUTS.length ? eio(P(t, t1 - SW, t1)) : 0;
+    const x = -sw * (1920 + GAP);
+    const mb = Math.sin(Math.PI * sw); // motion: a touch of blur + depth mid-swipe
+    const page = (k: number, dx: number) => (
+      <AbsoluteFill key={'cut' + k} style={{transform: `translateX(${dx}px) scale(${1 - 0.04 * mb})`, filter: mb > 0.01 ? `blur(${mb * 3}px)` : undefined, borderRadius: 24 * mb, overflow: 'hidden'}}>
+        <Scene mod={mainV2} t={at(k)} />
+      </AbsoluteFill>
+    );
     return (
-      <AbsoluteFill style={{background: '#0A0826', overflow: 'hidden'}}>
-        <AbsoluteFill style={{background: `url(${staticFile('desk-miami.jpg')}) center/cover`, filter: 'blur(14px) brightness(.8)', transform: 'scale(1.05)'}} />
-        <AbsoluteFill style={{opacity: op, transform: `translateY(${dy}px) scale(${lerp(0.985, 1, n)})`, filter: `blur(${bl}px)`}}>
-          <Scene key={'cut' + i} mod={mainV2} t={at} />
-        </AbsoluteFill>
+      <AbsoluteFill style={{background: '#07061A', overflow: 'hidden'}}>
+        {page(i, x)}
+        {sw > 0 && page(i + 1, x + 1920 + GAP)}
       </AbsoluteFill>
     );
   }
   if (t < Bt(32)) return <NoCatch t={t} />;
   if (t < V2_END) return <Human t={t} />;
-  return (
-    <AbsoluteFill style={{background: '#0A0826'}}>
-      <Scene key="end" mod={mainV2} t={MAIN_END + (t - V2_END)} />
-    </AbsoluteFill>
-  );
+  return <EndCard t={t} />;
 };
 
 export const PromoV2: React.FC = () => (
