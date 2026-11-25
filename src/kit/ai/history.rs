@@ -116,8 +116,16 @@ impl History {
         }
         for r in logged.values() {
             let past = r.date != today;
-            match by_date.get(&key(r.date)) {
-                Some(s) if past && s.tokens > r.tokens && same_rules => {}
+            match by_date.get_mut(&key(r.date)) {
+                // the saved count stays; models and projects saved before
+                // they were kept come from the logs
+                Some(s) if past && s.tokens > r.tokens && same_rules => {
+                    if s.models.is_empty() && !r.models.is_empty() {
+                        let f = SavedDay::of(r);
+                        s.models = f.models;
+                        s.projects = f.projects;
+                    }
+                }
                 // the same count saved without its models: keep the details
                 Some(s) if s.tokens == r.tokens && r.models.is_empty() && !s.models.is_empty() => {}
                 _ => {
@@ -269,6 +277,11 @@ mod tests {
         assert_eq!(later.archive.iter().map(|r| r.date).collect::<Vec<_>>(), vec![old, today]);
         assert_eq!(later.archive[0].models[0].name, "claude-opus-4-5");
         assert_eq!(later.archive[0].projects[0].tokens, 50);
+        // a day saved before models were kept gets them from the logs
+        let mut h2 = History { days: vec![SavedDay { date: old.format("%Y-%m-%d").to_string(), tokens: 60, ..Default::default() }], counting: COUNTING, ..Default::default() };
+        let mut l2 = LocalTokens { archive: vec![rec(old, 50)], ..Default::default() };
+        assert!(h2.merge_days(&mut l2, today));
+        assert_eq!((l2.archive[0].tokens, l2.archive[0].projects.len()), (60, 1));
         // it reads back as saved
         let back: History = serde_json::from_str(&serde_json::to_string(&h).unwrap()).unwrap();
         assert_eq!(back, h);

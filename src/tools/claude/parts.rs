@@ -180,7 +180,8 @@ impl Period {
             Period::D30 => today - chrono::Days::new(29),
             Period::D90 => week_start(today) - chrono::Days::new(7 * 12),
             Period::Year => month1(today) - chrono::Months::new(11),
-            Period::All => month1(first.unwrap_or(today).min(today)),
+            // never less than a year, so a short history isn't one wide bar
+            Period::All => month1(first.unwrap_or(today).min(today)).min(month1(today) - chrono::Months::new(11)),
         }
     }
 }
@@ -430,8 +431,8 @@ mod tests {
         assert_eq!(all[0].tokens, 7);
         assert_eq!(all.iter().map(|d| d.tokens).sum::<u64>(), 26);
         assert_eq!(period_days(&archive, Period::D90, today).count(), 3);
-        // nothing at all: still one bar for now
-        assert_eq!(buckets(&[], Period::All, today).len(), 1);
+        // a short history still shows a year
+        assert_eq!(buckets(&[], Period::All, today).len(), 12);
     }
 
     #[test]
