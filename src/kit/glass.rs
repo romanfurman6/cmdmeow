@@ -649,6 +649,12 @@ pub fn float_shadow_egui() -> egui::epaint::Shadow {
 /// blur behind it shows through a little; `opaque` (screenshots)
 /// paints it solid.
 pub fn backdrop(painter: &Painter, rect: Rect, radius: f32, opaque: bool, _t: f64) {
+    // CMDMEOW_NO_EGUI_BACKDROP=1 (testing): leave it to the layers under
+    // egui (spin::underlay), as an empty frame would
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !opaque && *OFF.get_or_init(|| std::env::var_os("CMDMEOW_NO_EGUI_BACKDROP").is_some_and(|v| v == "1")) {
+        return;
+    }
     backdrop_with(painter, rect, radius, if opaque { 1.0 } else { backdrop_alpha() }, WINDOW_BEAM);
 }
 
