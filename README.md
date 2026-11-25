@@ -58,11 +58,44 @@ Find what takes space and remove it. Everything goes to the Trash first, and you
 
 - **Screenshot** takes an area, a window or the whole screen, then opens an editor with arrows, blur, text and zoom.
 - **Video** records the screen with camera, mic and system audio.
-- **Sharing** uploads a shot or a recording to your own S3 bucket and copies the link.
+- **Sharing** uploads a shot or a recording to your own storage and copies the link.
 - **Dictation** types what you say where the cursor is. Press ⌥D. Speech never leaves the Mac.
 - **Clipboard** keeps what you copy, with search, pins and quick paste.
 
 <img src="docs/images/create.jpg" alt="Clipboard history">
+
+### Set up Sharing
+
+Sharing uploads to storage you own, so nobody else hosts your files. You set it up once.
+
+**You need** a free [Cloudflare](https://dash.cloudflare.com/sign-up) account. R2 gives 10 GB free and charges nothing for downloads. The Claude desktop app makes setup automatic. Without it, Claude opens on the web.
+
+**Steps**
+
+1. In Cmd+Meow, open **Sharing** in the sidebar (under Create).
+2. Press **Ask Claude to set up**. Claude opens with the instructions already typed in. Press Send.
+3. Sign in to Cloudflare when Claude asks. If R2 asks you to accept its plan, do that yourself. Claude never types payment details.
+4. Wait while Claude creates the bucket, turns on public links, adds the CORS rule and makes an access key for this bucket only.
+5. Open `cmdmeow-sharing.cmdmeow` from Downloads. Cmd+Meow asks "Use this storage for sharing?". Confirm it.
+6. Take a screenshot and press **Share** in the editor. The link is now on your clipboard.
+
+Cmd+Meow keeps the secret key in your Keychain and moves the file to the Trash. Claude never writes the keys into the chat.
+
+<details>
+<summary>Set it up by hand, or use other S3 storage</summary>
+
+Fill in these fields on the Sharing page:
+
+| Field | Cloudflare R2 example |
+| --- | --- |
+| Endpoint | `<account id>.r2.cloudflarestorage.com` |
+| Bucket | `cmdmeow-shares` |
+| Access key, Secret key | from an R2 API token with Object Read & Write on this bucket |
+| Public URL | `https://pub-….r2.dev`, or your own domain |
+
+Any S3-compatible storage works. Turn on public read for the bucket so links open in a browser.
+
+</details>
 
 ## Utilities
 
