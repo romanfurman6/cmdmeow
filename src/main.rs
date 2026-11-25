@@ -125,7 +125,14 @@ fn main() -> eframe::Result {
         .with_decorations(false)
         .with_resizable(false)
         .with_has_shadow(true);
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    // the built-in GPU: on Intel Macs with two GPUs, wgpu's default (high
+    // performance) wakes the discrete one for as long as the app runs, and
+    // the fans spin up. A menu bar app never needs it.
+    // `WGPU_POWER_PREF=high` still picks it, to compare.
+    let mut gpu = eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle();
+    gpu.power_preference = eframe::wgpu::PowerPreference::from_env().unwrap_or(eframe::wgpu::PowerPreference::LowPower);
+    let wgpu_options = eframe::egui_wgpu::WgpuConfiguration { wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(gpu), ..Default::default() };
+    let options = eframe::NativeOptions { viewport, wgpu_options, ..Default::default() };
     // the panel shows on a click, not by itself at launch (the shell hides
     // it on its first pass; this keeps it from flashing up before that)
     if opts.screenshot.is_none() && !kit::perms::launched_to_panel() {
