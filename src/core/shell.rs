@@ -1345,6 +1345,9 @@ pub static QUIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 
 impl App {
     pub fn quit(&mut self, ctx: &egui::Context) {
+        if crate::kit::fs::is_dev() {
+            eprintln!("[window] quit");
+        }
         QUIT.store(true, std::sync::atomic::Ordering::SeqCst);
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, ViewportCommand::Close);
     }
@@ -1405,6 +1408,14 @@ impl App {
                 }
             }
             app_focused = vctx.input(|i| i.viewport().focused) == Some(true);
+            if crate::kit::fs::is_dev() {
+                // the window leaving the front looks like it closed: say when
+                static WAS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                if WAS.swap(app_focused, std::sync::atomic::Ordering::Relaxed) != app_focused {
+                    let min = vctx.input(|i| i.viewport().minimized);
+                    eprintln!("[window] app window {} (minimized {min:?}, panel visible {})", if app_focused { "focused" } else { "lost focus" }, self.visible);
+                }
+            }
             if self.app_focus {
                 self.app_focus = false;
                 self.app_focus_until = Some(Instant::now() + APP_FOCUS_GRACE);
@@ -1427,6 +1438,9 @@ impl App {
                 }
             }
             if vctx.input(|i| i.viewport().close_requested()) {
+                if crate::kit::fs::is_dev() {
+                    eprintln!("[window] app window closed (close requested; focused {app_focused}, setup {})", self.setup.is_some());
+                }
                 // closing during setup only hides it: the menu bar brings it back
                 self.app_open = false;
                 if self.open_cover.take().is_some() {
