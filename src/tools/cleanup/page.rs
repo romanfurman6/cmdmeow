@@ -374,6 +374,15 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         if pill_button(ui, dr, ts!("cleanup.done"), BTN_PRIMARY, true).clicked() {
             app.clean.lock_ok().phase = Phase::Intro;
         }
+        // everything found was kept before: offer it back here too
+        let hidden = app.clean.lock_ok().hidden_kept;
+        if hidden > 0 {
+            let label = t!("cleanup.show_kept", n = hidden);
+            if crate::kit::glass::link(ui, Pos2::new(dr.center().x, dr.bottom() + sp::L), Align2::CENTER_TOP, &label, 12.0).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
+                cleanup::forget_kept();
+                cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
+            }
+        }
         return;
     }
 
@@ -403,12 +412,13 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     }
 
     // the groups on the left, what the chosen one found on the right
-    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height()));
-    let card = group_rail(app, ui, rail);
     // SP17 H3: one action in the header; items kept before are offered
-    // under the rail
+    // under the rail, which leaves room for that line
     let hidden = app.clean.lock_ok().hidden_kept;
-    if hidden > 0 && card.bottom() + sp::L + 16.0 < rail.bottom() {
+    let kept_h = if hidden > 0 { sp::L + 16.0 } else { 0.0 };
+    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height() - kept_h));
+    let card = group_rail(app, ui, rail);
+    if hidden > 0 {
         let label = t!("cleanup.show_kept", n = hidden);
         if crate::kit::glass::link(ui, Pos2::new(card.left() + sp::M, card.bottom() + sp::L), Align2::LEFT_TOP, &label, 12.0).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
             cleanup::forget_kept();
