@@ -171,7 +171,7 @@ pub struct App {
     hold_panel: Option<Instant>,
     /// `cmdmeow://open/<tool>[/<route>]` links, as (tool, route).
     links: Option<crate::kit::url_scheme::Inbox<(String, String)>>,
-    /// The update banner was shown last frame (see `kit::update`).
+    /// The update notice was shown last frame (see `kit::update`).
     update_banner: bool,
     /// The cat's tidy shortcut, and whether it is bound.
     cat_keys: Option<crate::kit::hotkeys::Keys<bool>>,
@@ -1109,7 +1109,7 @@ impl eframe::App for App {
             self.quit(ctx);
             return;
         }
-        // the update banner came or went: the panel changes height
+        // the update notice came or went: the panel changes height
         let banner = crate::kit::update::banner();
         if banner != self.update_banner {
             self.update_banner = banner;
