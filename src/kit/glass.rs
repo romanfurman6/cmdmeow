@@ -222,6 +222,13 @@ pub fn AMBER() -> Color32 { pick3(hex(0xF7B267), hex(0xA65A0E), hex(0xFFC06B)) }
 /// State: problem, low battery.
 #[allow(non_snake_case)]
 pub fn RED() -> Color32 { pick3(hex(0xFF9B7A), hex(0xC2391D), hex(0xFF6B5E)) }
+/// The recording dot on an [`ACTION`] fill (Record screen, Start
+/// recording). Classic keeps [`RED`]; a light red vanishes on the Miami
+/// pink, so Miami gets a deep one with 3:1 against it (C12).
+#[allow(non_snake_case)]
+pub fn REC_ON_ACTION() -> Color32 {
+    pick3(hex(0xFF9B7A), hex(0xC2391D), hex(0x8A0A26))
+}
 /// Fill of destructive buttons only; text on it is white. Not for text or
 /// marks: those use [`RED`].
 // callers land with the buttons / AI marks work
