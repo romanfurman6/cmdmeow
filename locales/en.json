@@ -600,13 +600,6 @@
     "get": "Get %{name}",
     "open_terminal": "Open Terminal",
     "looking_for": "Looking for %{name}…",
-    "inc": {
-      "investigating": "Investigating",
-      "identified": "Identified",
-      "monitoring": "Monitoring",
-      "yesterday": "Yesterday %{time}",
-      "since": "since %{when}"
-    },
     "checking": "Checking…",
     "asking_limits": "Asking %{provider} for your limits…",
     "today": "Today",
@@ -650,8 +643,6 @@
     "not_started": "Not started",
     "couldnt_update": "Couldn't update · %{time}",
     "updated": "Updated %{time}",
-    "is_down": "%{name} is down",
-    "has_problems": "%{name} has problems",
     "api_key": "API key",
     "set": {
       "providers": "Providers",
@@ -666,7 +657,6 @@
       "weekly_unused": "Weekly unused, day before reset",
       "display": "Display",
       "cost": "Cost in $",
-      "outages": "Provider outages",
       "main_agent": "Main agent"
     },
     "tokens_7d": "Tokens · 7 days",

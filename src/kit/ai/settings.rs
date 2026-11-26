@@ -41,8 +41,6 @@ pub struct Settings {
     pub notify_reset: bool,
     /// Notify a day before a weekly limit resets with much of it unused.
     pub notify_unused: bool,
-    /// Show outages from the providers' status pages.
-    pub show_outages: bool,
     /// What the menu bar shows: "closest" (the provider nearest a limit)
     /// or a provider id.
     pub menu_bar: String,
@@ -72,7 +70,6 @@ impl Default for Settings {
             notify_at: vec![80, 95],
             notify_reset: true,
             notify_unused: true,
-            show_outages: true,
             // the icon alone; a number there is opt-in
             menu_bar: "off".into(),
             claude_keychain: String::new(),

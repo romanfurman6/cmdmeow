@@ -210,19 +210,11 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     }
 
     // display
-    let card = section(&p, x, w, &mut y, ts!("ai.set.display"), 2);
-    for (k, (name, on, f)) in [
-        (ts!("ai.set.cost"), set.show_cost, (|s: &mut settings::Settings| s.show_cost = !s.show_cost) as fn(&mut settings::Settings)),
-        (ts!("ai.set.outages"), set.show_outages, |s: &mut settings::Settings| s.show_outages = !s.show_outages),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let r = row(card, k);
-        label(&p, r, name);
-        if switch(ui, switch_at(r), ui.scope_id().with(("ai-d", k)), on, true).clicked() {
-            change = Some(Box::new(f));
-        }
+    let card = section(&p, x, w, &mut y, ts!("ai.set.display"), 1);
+    let r = row(card, 0);
+    label(&p, r, ts!("ai.set.cost"));
+    if switch(ui, switch_at(r), ui.scope_id().with(("ai-d", 0)), set.show_cost, true).clicked() {
+        change = Some(Box::new(|s: &mut settings::Settings| s.show_cost = !s.show_cost));
     }
 
     if let Some(f) = change {

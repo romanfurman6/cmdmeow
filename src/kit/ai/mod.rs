@@ -13,7 +13,6 @@ pub mod pace;
 pub mod price;
 pub mod settings;
 pub mod alerts;
-pub mod status;
 pub mod statusline;
 
 use crate::kit::claude_code::Availability;
@@ -88,11 +87,6 @@ pub struct UsageInfo {
     /// The last check failed: the limits shown are the last ones known, as
     /// of `fetched`.
     pub stale: bool,
-    /// An outage or slowdown the provider's status page reports right now:
-    /// "Degraded" or "Outage".
-    pub incident: Option<String>,
-    /// The open incidents behind it, for the badge's hover.
-    pub incidents: Vec<status::Incident>,
     /// The account's name when the provider has more than one ("Work").
     pub account: String,
     /// The account's config folder, as "~/.claude-work".
@@ -196,8 +190,6 @@ pub struct Meta {
     pub install_url: &'static str,
     /// Reports plan limits (otherwise tokens only).
     pub limits: bool,
-    /// Has a status page with a Statuspage-style `/api/v2/status.json`.
-    pub status_url: &'static str,
 }
 
 impl Meta {
@@ -231,7 +223,6 @@ pub const PROVIDERS: &[Meta] = &[
         cli: "claude",
         install_url: "https://claude.com/claude-code",
         limits: true,
-        status_url: "https://status.anthropic.com/api/v2/status.json",
     },
     Meta {
         id: "codex",
@@ -239,7 +230,6 @@ pub const PROVIDERS: &[Meta] = &[
         cli: "codex",
         install_url: "https://developers.openai.com/codex/cli",
         limits: true,
-        status_url: "https://status.openai.com/api/v2/status.json",
     },
     Meta {
         id: "gemini",
@@ -247,7 +237,6 @@ pub const PROVIDERS: &[Meta] = &[
         cli: "gemini",
         install_url: "https://github.com/google-gemini/gemini-cli",
         limits: false,
-        status_url: "",
     },
     Meta {
         id: "opencode",
@@ -255,7 +244,6 @@ pub const PROVIDERS: &[Meta] = &[
         cli: "opencode",
         install_url: "https://opencode.ai",
         limits: false,
-        status_url: "",
     },
 ];
 

@@ -206,13 +206,11 @@ fn tall(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, all: &[UsageInfo], s
     for (k, info) in rows.iter().take(n).enumerate() {
         let y = body.top() + k as f32 * (ROW + 10.0);
         let nr = name_line(p, Pos2::new(body.left(), y + 8.0), info, bold(12.0), TEXT(), body.width() * 0.5);
-        let mut x = nr.right() + sp::S;
         let title = info.plan_title();
         let plan = title.strip_prefix(info.provider).unwrap_or("").trim();
         if !plan.is_empty() {
-            x = p.text(Pos2::new(x, y + 8.0), Align2::LEFT_CENTER, plan, ty::label(), TEXT_DIM()).right() + sp::S;
+            p.text(Pos2::new(nr.right() + sp::S, y + 8.0), Align2::LEFT_CENTER, plan, ty::label(), TEXT_DIM());
         }
-        parts::incident_chip(p, Pos2::new(x, y + 8.0), Align2::LEFT_CENTER, info);
         let lines = two_limits(info);
         if lines.is_empty() {
             p.text(Pos2::new(body.left(), y + 22.0), Align2::LEFT_TOP, status(info), ty::caption(), ty::caption_color());

@@ -47,43 +47,6 @@ pub fn fresh(i: &UsageInfo) -> (String, Color32) {
     }
 }
 
-/// A small chip for an outage: "Degraded" (amber) or "Outage" (red).
-pub fn incident_chip(p: &egui::Painter, pos: Pos2, align: Align2, i: &UsageInfo) -> Option<Rect> {
-    let s = i.incident.as_deref()?;
-    let name = crate::kit::ai::meta(i.provider).name;
-    let (label, c) = if s == "Outage" { (t!("ai.is_down", name = name).into_owned(), RED()) } else { (t!("ai.has_problems", name = name).into_owned(), AMBER()) };
-    Some(chip(p, pos, align, &label, (with_alpha(c, 0.16), c)))
-}
-
-/// Statuspage's incident state in words: "Investigating".
-pub fn incident_state(s: &str) -> Option<String> {
-    Some(match s {
-        "investigating" => ts!("ai.inc.investigating"),
-        "identified" => ts!("ai.inc.identified"),
-        "monitoring" => ts!("ai.inc.monitoring"),
-        "" => return None,
-        other => return Some(other.to_owned()),
-    }
-    .to_owned())
-}
-
-/// When an incident started (T14, 24 h): "since 13:05" today, "since
-/// Yesterday 22:10", "since Mon 22:10" within the week, else "since Nov 3".
-pub fn incident_since(t: chrono::DateTime<chrono::Local>) -> String {
-    let today = chrono::Local::now().date_naive();
-    let d = t.date_naive();
-    let when = if d == today {
-        t.format("%H:%M").to_string()
-    } else if today.pred_opt() == Some(d) {
-        t!("ai.inc.yesterday", time = t.format("%H:%M")).into_owned()
-    } else if (today - d).num_days() < 7 {
-        t.format("%a %H:%M").to_string()
-    } else {
-        t.format("%b %-d").to_string()
-    };
-    t!("ai.inc.since", when = when).into_owned()
-}
-
 /// What the chart shows per day.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Measure {
