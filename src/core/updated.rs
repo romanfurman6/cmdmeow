@@ -1,41 +1,73 @@
 //! SP24: after an app update that noticeably changed a tool, its sidebar
-//! row shows "Updated" until the tool's first open. The release names
-//! those tools in [`CHANGED`]; small fixes name none. Nothing on a fresh
-//! install. What was opened is kept with the version in
-//! `<data>/updated.json`, so the next release that changes a tool shows
-//! it again.
+//! row shows "Updated" until the tool's first open. Each release that
+//! changes a tool adds `(tool, version)` to [`CHANGED`]; small fixes add
+//! nothing. Nothing on a fresh install. What was opened is kept in
+//! `<data>/updated.json` as `tool@version`, so a later release that
+//! changes the same tool again shows the chip again, and old entries can
+//! stay in the list without coming back.
 
 use crate::kit::sync::LockExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
-/// Tools this release changed noticeably (ids).
-pub const CHANGED: &[&str] = &["claude"];
+/// Tools a release changed noticeably: (tool id, version that ships it).
+/// Append one row per tool for each release; never edit shipped rows.
+pub const CHANGED: &[(&str, &str)] = &[
+    ("claude", "0.2.2"),
+    ("cleanup", "0.2.2"),
+    ("uninstaller", "0.2.2"),
+];
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 #[serde(default)]
 struct State {
-    /// The app version the list below belongs to.
-    version: String,
-    /// Tools opened since this version (or all of them on a fresh install).
+    /// `tool@version` entries already seen (opened, or present at a fresh install).
     seen: Vec<String>,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
+fn key(id: &str, ver: &str) -> String {
+    format!("{id}@{ver}")
+}
+
 fn path() -> std::path::PathBuf {
     crate::kit::fs::data_path("updated.json")
 }
 
-/// This version's state: a new version starts with nothing seen; a fresh
-/// install (setup never finished) has seen everything.
-fn load(saved: Option<State>, version: &str, fresh: bool) -> State {
-    match saved {
-        Some(s) if s.version == version => s,
-        Some(_) => State { version: version.into(), seen: Vec::new() },
-        None if fresh => State { version: version.into(), seen: CHANGED.iter().map(|s| s.to_string()).collect() },
-        None => State { version: version.into(), seen: Vec::new() },
+/// Marks every entry in `changed` seen; returns whether anything was added.
+fn see_all(s: &mut State, changed: &[(&str, &str)], only: Option<&str>) -> bool {
+    let mut added = false;
+    for (id, ver) in changed {
+        if only.is_some_and(|o| o != *id) {
+            continue;
+        }
+        let k = key(id, ver);
+        if !s.seen.contains(&k) {
+            s.seen.push(k);
+            added = true;
+        }
     }
+    added
+}
+
+/// Saved state, or a new one: a fresh install (setup never finished) has
+/// seen everything listed today.
+fn load(saved: Option<State>, changed: &[(&str, &str)], fresh: bool) -> State {
+    match saved {
+        Some(s) => s,
+        None => {
+            let mut s = State::default();
+            if fresh {
+                see_all(&mut s, changed, None);
+            }
+            s
+        }
+    }
+}
+
+fn shows_in(s: &State, changed: &[(&str, &str)], id: &str) -> bool {
+    changed.iter().any(|(t, v)| *t == id && !s.seen.contains(&key(t, v)))
 }
 
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
@@ -43,7 +75,7 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let s = g.get_or_insert_with(|| {
         let saved = std::fs::read(path()).ok().and_then(|b| serde_json::from_slice::<State>(&b).ok());
         let fresh = !crate::kit::fs::data_path("setup-done").exists();
-        let s = load(saved.clone(), env!("CARGO_PKG_VERSION"), fresh);
+        let s = load(saved.clone(), CHANGED, fresh);
         if saved.as_ref() != Some(&s) {
             save(&s);
         }
@@ -58,18 +90,12 @@ fn save(s: &State) {
     }
 }
 
-/// Setup just finished: this is a fresh install, so every tool this
-/// release changed counts as seen. The sidebar can be drawn during setup,
-/// before its marker exists, so the fresh check at load isn't enough.
+/// Setup just finished: this is a fresh install, so every listed change
+/// counts as seen. The sidebar can be drawn during setup, before its
+/// marker exists, so the fresh check at load isn't enough.
 pub fn setup_finished() {
     with(|s| {
-        let before = s.seen.len();
-        for id in CHANGED {
-            if !s.seen.iter().any(|x| x == id) {
-                s.seen.push(id.to_string());
-            }
-        }
-        if s.seen.len() != before {
+        if see_all(s, CHANGED, None) {
             save(s);
         }
     });
@@ -77,17 +103,40 @@ pub fn setup_finished() {
 
 /// Whether the sidebar shows "Updated" on tool `id`.
 pub fn shows(id: &str) -> bool {
-    CHANGED.contains(&id) && with(|s| !s.seen.iter().any(|x| x == id))
+    CHANGED.iter().any(|(t, _)| *t == id) && with(|s| shows_in(s, CHANGED, id))
 }
 
-/// Tool `id` was opened: no chip until the next update that changes it.
+/// Which page was shown last frame; `None` before the first frame.
+static LAST: Mutex<Option<Option<String>>> = Mutex::new(None);
+
+/// Whether the shown tool now counts as opened: the user went to it from
+/// somewhere else, or clicked inside its page. The page the window opens on
+/// doesn't count by itself, so its chip stays until one of those.
+fn opened(last: &mut Option<Option<String>>, shown: Option<&str>, clicked: bool) -> bool {
+    let navigated = last.as_ref().is_some_and(|l| l.as_deref() != shown);
+    *last = Some(shown.map(String::from));
+    shown.is_some() && (navigated || clicked)
+}
+
+/// Called every window frame with the tool page on screen (`None` in
+/// Settings) and whether a click landed inside that page.
+pub fn frame(shown: Option<&str>, clicked: bool) {
+    if opened(&mut LAST.lock_ok(), shown, clicked) {
+        if let Some(id) = shown {
+            seen(id);
+        }
+    }
+}
+
+/// Tool `id` was opened: no chip until a later release changes it again.
 pub fn seen(id: &str) {
     if !shows(id) {
         return;
     }
     with(|s| {
-        s.seen.push(id.to_string());
-        save(s);
+        if see_all(s, CHANGED, Some(id)) {
+            save(s);
+        }
     });
 }
 
@@ -95,18 +144,57 @@ pub fn seen(id: &str) {
 mod tests {
     use super::*;
 
+    const V1: &[(&str, &str)] = &[("claude", "0.2.2"), ("cleanup", "0.2.2")];
+    const V2: &[(&str, &str)] = &[("claude", "0.2.2"), ("cleanup", "0.2.2"), ("claude", "0.3.0")];
+
     #[test]
-    fn shows_after_an_update_until_opened_never_on_a_fresh_install() {
-        let v = "0.3.0";
-        // fresh install: nothing shows
-        let s = load(None, v, true);
-        assert!(CHANGED.iter().all(|id| s.seen.iter().any(|x| x == id)));
-        // an update from before this file existed: everything changed shows
-        assert!(load(None, v, false).seen.is_empty());
-        // the same version keeps what was opened
-        let opened = State { version: v.into(), seen: vec!["claude".into()] };
-        assert_eq!(load(Some(opened.clone()), v, false), opened);
-        // the next version starts over
-        assert!(load(Some(opened), "0.3.1", false).seen.is_empty());
+    fn fresh_install_shows_nothing() {
+        let s = load(None, V1, true);
+        assert!(!shows_in(&s, V1, "claude") && !shows_in(&s, V1, "cleanup"));
+    }
+
+    #[test]
+    fn update_shows_until_opened() {
+        let mut s = load(None, V1, false);
+        assert!(shows_in(&s, V1, "claude") && shows_in(&s, V1, "cleanup"));
+        see_all(&mut s, V1, Some("claude"));
+        assert!(!shows_in(&s, V1, "claude"));
+        assert!(shows_in(&s, V1, "cleanup"));
+        assert!(!shows_in(&s, V1, "lens"));
+    }
+
+    #[test]
+    fn a_later_release_shows_a_tool_again_but_not_old_rows() {
+        let mut s = load(None, V1, false);
+        see_all(&mut s, V1, None);
+        // next release lists claude again; cleanup's old row stays seen
+        assert!(shows_in(&s, V2, "claude"));
+        assert!(!shows_in(&s, V2, "cleanup"));
+        see_all(&mut s, V2, Some("claude"));
+        assert!(!shows_in(&s, V2, "claude"));
+    }
+
+    #[test]
+    fn the_start_page_counts_only_after_a_click_or_coming_back() {
+        let mut last = None;
+        // window opens on cleanup: not opened yet, nor on later idle frames
+        assert!(!opened(&mut last, Some("cleanup"), false));
+        assert!(!opened(&mut last, Some("cleanup"), false));
+        // a click in the page opens it
+        assert!(opened(&mut last, Some("cleanup"), true));
+        // going to another tool opens that one
+        let mut last = None;
+        opened(&mut last, Some("cleanup"), false);
+        assert!(opened(&mut last, Some("claude"), false));
+        // Settings is no tool; coming back from it opens cleanup
+        opened(&mut last, Some("cleanup"), false);
+        assert!(!opened(&mut last, None, true));
+        assert!(opened(&mut last, Some("cleanup"), false));
+    }
+
+    #[test]
+    fn old_file_format_still_loads() {
+        let s: State = serde_json::from_str(r#"{"version":"0.2.1","seen":["claude"]}"#).unwrap();
+        assert!(shows_in(&s, V1, "claude"));
     }
 }
