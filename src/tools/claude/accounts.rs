@@ -17,6 +17,8 @@ struct Form {
     dir: String,
     /// The window it opened in (the main window or Settings).
     viewport: Option<egui::ViewportId>,
+    /// The folder as last typed, and when: it's checked once typing stops.
+    typed: (String, f64),
 }
 
 /// The last folder check: (folder typed, what it holds).
@@ -25,7 +27,7 @@ static CHECK: Mutex<Option<(String, Option<DirCheck>)>> = Mutex::new(None);
 static PICKED: Mutex<Option<String>> = Mutex::new(None);
 
 fn id() -> Id {
-    Id::new("ai-add-account")
+    Id::unique("ai-add-account")
 }
 
 /// Open the dialog.
@@ -92,8 +94,16 @@ pub fn dialog(ui: &mut Ui, demo: bool) {
     }
     let set = settings::get();
     let blocked = problem(&form.dir, &set);
-    if blocked.is_none() {
+    let now = ctx.input(|i| i.time);
+    if form.typed.0 != form.dir {
+        form.typed = (form.dir.clone(), now);
+    }
+    // half a second after the last key: one `claude auth status`, not one per letter
+    let settled = now - form.typed.1 >= 0.5;
+    if blocked.is_none() && settled {
         check(&ctx, &form.dir);
+    } else if !settled {
+        ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
     let result = CHECK.lock_ok().as_ref().filter(|(d, _)| *d == form.dir).map(|(_, c)| c.clone());
     let (add, close) = crate::kit::modal::details(&ctx, id(), 400.0, 268.0, |ui, m| {
@@ -121,7 +131,11 @@ pub fn dialog(ui: &mut Ui, demo: bool) {
             (None, Some(Some(c))) if !c.exists => (ts!("ai.acc.no_folder").to_string(), AMBER(), false),
             (None, Some(Some(c))) if c.signed_in == Some(false) => (t!("ai.acc.signed_out", dir = form.dir.trim()).into_owned(), AMBER(), true),
             (None, Some(Some(c))) => {
-                let plan = if c.plan.is_empty() { String::new() } else { format!("Claude {}{} · ", c.plan[..1].to_uppercase(), &c.plan[1..]) };
+                let mut ch = c.plan.chars();
+                let plan = match ch.next() {
+                    Some(f) => format!("Claude {}{} · ", f.to_uppercase(), ch.as_str()),
+                    None => String::new(),
+                };
                 (t!("ai.acc.signed_in", plan = plan, n = c.sessions).into_owned(), GREEN(), true)
             }
             _ => (ts!("ai.checking").to_string(), TEXT_DIM(), false),

@@ -588,6 +588,16 @@ fn multi_h(n: usize) -> f32 {
     (2.0 * sp::L + rows).max(LIMIT_H)
 }
 
+/// What's left of a limit across accounts, given for each whether it
+/// reported any limits and what it has left of this one: the mean over the
+/// accounts that reported (one without this limit, e.g. Opus unused, has all
+/// of it left), and how many that is. Accounts with no data don't count.
+fn mean_left(rows: &[(bool, Option<f32>)]) -> (f32, f32) {
+    let vals: Vec<f32> = rows.iter().filter(|(reported, _)| *reported).map(|(_, l)| l.unwrap_or(100.0)).collect();
+    let n = vals.len().max(1) as f32;
+    (vals.iter().sum::<f32>() / n, n)
+}
+
 /// SP22 for several accounts: on the left the limit across them ("90%
 /// left", the mean of what each has left) and the soonest comeback; on the
 /// right a row per account with its folder, what it has left, when it
@@ -600,9 +610,7 @@ fn multi_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, label: &str) {
     let accs = info.each_account();
     let rows: Vec<(&UsageInfo, Option<&Limit>)> = accs.iter().map(|a| (a, a.limits.iter().find(|l| l.label == label))).collect();
     let known: Vec<&Limit> = rows.iter().filter_map(|r| r.1).collect();
-    let n = rows.len().max(1) as f32;
-    // an account without this limit counts as all left
-    let left = rows.iter().map(|r| r.1.map(left_of).unwrap_or(100.0)).sum::<f32>() / n;
+    let (left, n) = mean_left(&rows.iter().map(|(a, l)| (!a.limits.is_empty(), l.map(left_of))).collect::<Vec<_>>());
     let out = known.iter().filter_map(|l| pace::of_limit(l, now).and_then(|pc| pc.out_at)).min();
     // left column
     let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &backend::short_label(label), ty::title(), TEXT(), LIMIT_LEFT_W);
@@ -1364,3 +1372,27 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     text_fit(&p, i.right_bottom(), Align2::RIGHT_BOTTOM, &f, ty::label(), if by_end > b { RED() } else { TEXT_DIM() }, i.width() * 0.65);
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_mean_skips_accounts_without_data() {
+        // Personal 50% left, Work signed out: 50%, not 75%
+        assert_eq!(mean_left(&[(true, Some(50.0)), (false, None)]), (50.0, 1.0));
+        // Work reported but never used Opus: all of it left
+        assert_eq!(mean_left(&[(true, Some(50.0)), (true, None)]), (75.0, 2.0));
+    }
+
+    #[test]
+    fn accounts_have_their_own_names() {
+        let mut main = UsageInfo::new(ai::claude::NAME);
+        assert_eq!(main.display_name(), "Claude");
+        main.account = "Personal".into();
+        main.accounts = vec![UsageInfo { account: "Work".into(), ..UsageInfo::new(ai::claude::NAME) }];
+        let each: Vec<String> = main.each_account().iter().map(|i| i.display_name()).collect();
+        assert_eq!(each, vec!["Claude · Personal", "Claude · Work"]);
+        assert!(main.each_account()[0].accounts.is_empty());
+    }
+}
