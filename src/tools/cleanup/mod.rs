@@ -6,6 +6,8 @@
 use crate::kit::sync::LockExt;
 pub use crate::kit::agent;
 mod agents;
+pub mod auto;
+mod auto_page;
 mod captures;
 pub mod engine;
 mod inuse;
@@ -49,6 +51,10 @@ pub struct Cleanup {
     pub(crate) ai: crate::kit::aicheck::Check,
     /// Screenshots: the page before any scan.
     pub(crate) demo_fresh: bool,
+    /// The Auto tab is showing.
+    pub(crate) auto_tab: bool,
+    pub(crate) auto: auto::Settings,
+    pub(crate) auto_run: auto::Runner,
 }
 
 impl Cleanup {
@@ -79,6 +85,9 @@ impl Cleanup {
                 c
             },
             demo_fresh: false,
+            auto_tab: false,
+            auto: if env.demo { auto::demo() } else { auto::Settings::load() },
+            auto_run: Default::default(),
         }
     }
 }
@@ -185,6 +194,16 @@ impl Tool for Cleanup {
         let scanning = matches!(self.clean.lock_ok().phase, engine::Phase::Scanning | engine::Phase::Judging | engine::Phase::Cleaning);
         scanning || self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
+    fn tick(&mut self, ctx: &egui::Context) -> bool {
+        if !self.demo {
+            let busy = self.busy();
+            self.auto_run.tick(&mut self.auto, busy, ctx);
+            if self.auto.active() || self.auto_run.busy {
+                ctx.request_repaint_after(std::time::Duration::from_secs(if self.auto_run.busy { 1 } else { 60 }));
+            }
+        }
+        false
+    }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         page::page(self, ui, rect, cx);
     }
@@ -217,6 +236,10 @@ impl Tool for Cleanup {
     fn demo_view(&mut self, view: &str) -> Option<View> {
         match view {
             "cleanup" => Some(View::Page),
+            "cleanup-auto" => {
+                self.auto_tab = true;
+                Some(View::Page)
+            }
             "cleanup-fresh" => {
                 self.demo_fresh = true;
                 Some(View::Page)

@@ -17,10 +17,22 @@ use std::path::PathBuf;
 const WIN_R: f32 = 12.0;
 
 pub fn page(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    if app.auto_tab {
+        super::auto_page::tab(app, ui, r);
+        return;
+    }
     let phase = app.clean.lock_ok().phase.clone();
-    match phase {
+    page_body(app, ui, r, cx, &phase);
+    // the Clean · Auto tabs left of the page action; under the clean loader they stay put
+    if !(phase == Phase::Cleaning || (phase == Phase::Done && app.clean_loading)) {
+        super::auto_page::header(app, ui, r, &phase);
+    }
+}
+
+fn page_body(app: &mut App, ui: &mut Ui, r: Rect, cx: &mut Cx, phase: &Phase) {
+    match phase.clone() {
         Phase::Intro => intro(app, ui, r, cx),
-        Phase::Scanning | Phase::Judging => working(app, ui, r, phase),
+        Phase::Scanning | Phase::Judging => working(app, ui, r, phase.clone()),
         Phase::Results => results(app, ui, r),
         // the results stay under the loader; rows leave as they go
         Phase::Cleaning => {
@@ -138,7 +150,8 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let ly = block.top() + (block_h - left_h) / 2.0;
     disk_ring(&p, Pos2::new(lc, ly), ts!("health.macintosh_hd"), total, free, tint::CLEANUP());
     let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
-    if scan_button(ui, br) {
+    // an auto run is cleaning: a scan now would race it
+    if scan_button(ui, br) && !app.auto_run.busy {
         cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
     }
 
@@ -190,7 +203,7 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
 }
 
 /// A group's glyph (Developer: the SF hammer when there is one).
-fn group_icon(p: &egui::Painter, g: Group, r: Rect, col: Color32) {
+pub(super) fn group_icon(p: &egui::Painter, g: Group, r: Rect, col: Color32) {
     if matches!(g, Group::Developer) && symbol(p, "hammer", r, col) {
         return;
     }
@@ -356,9 +369,10 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     let ai_n = app.clean.lock_ok().items.iter().filter(|i| i.verdict != Verdict::Keep).count();
     let cw = aicheck::ui::chip_width(&app.ai, ui, ai_n > 0);
     let w = [ts!("cleanup.scan_again"), ts!("cleanup.stop"), ts!("cleanup.skip")].iter().map(|l| crate::kit::glass::icon_pill_width(&p, l, BTN_SECONDARY)).fold(0.0, f32::max);
-    let (btns, _) = page_header_room(&p, r, ts!("cleanup.name"), &sub, if ai_error.is_some() { AMBER() } else { TEXT_DIM() }, 0.0, r.right() - sp::PAGE_EDGE - w - sp::M - cw - sp::M);
+    let tabs = super::auto_page::reserve(&p);
+    let (btns, _) = page_header_room(&p, r, ts!("cleanup.name"), &sub, if ai_error.is_some() { AMBER() } else { TEXT_DIM() }, 0.0, r.right() - sp::PAGE_EDGE - w - sp::M - tabs - cw - sp::M);
     let sr = Rect::from_min_max(Pos2::new(btns.right() - w, btns.top()), btns.max);
-    let chip_at = Pos2::new(sr.left() - sp::M - cw, sr.center().y);
+    let chip_at = Pos2::new(sr.left() - sp::M - tabs - cw, sr.center().y);
     if crate::kit::glass::icon_pill(ui, sr, Icon::Refresh, ts!("cleanup.scan_again"), BTN_SECONDARY, true).clicked() {
         // back to the start screen, where the scan can be set up and started
         cleanup::stop_scan(&app.clean);

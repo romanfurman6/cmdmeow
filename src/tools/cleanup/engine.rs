@@ -214,6 +214,8 @@ pub struct State {
     /// Groups cleaned since this scan, with what each freed: the results
     /// say so when the person goes back to them.
     pub cleaned_groups: Vec<(Group, u64)>,
+    /// An auto run: no sounds.
+    pub quiet: bool,
 }
 
 /// One group's live progress while scanning.
@@ -666,9 +668,25 @@ const CHROMIUM_CACHES: [&str; 9] = [
 /// Scan, then (with `agent`) have that agent check the paths. A run still
 /// going is stopped first.
 pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent::Agent>) {
+    scan_with(shared, ctx, agent, None);
+}
+
+/// Auto clean: scan only `groups` (quietly, at background priority), then
+/// remove what [`super::auto::eligible`] allows. Ends in `Phase::Done`.
+pub fn start_auto(shared: Shared, ctx: egui::Context, groups: Vec<Group>) {
+    scan_with(shared, ctx, None, Some(groups));
+}
+
+fn scan_with(shared: Shared, ctx: egui::Context, agent: Option<super::agent::Agent>, only: Option<Vec<Group>>) {
     let use_ai = agent.is_some();
     let cancel = begin_run(&shared, agent);
+    let auto = only.is_some();
+    shared.lock_ok().quiet = auto;
     std::thread::spawn(move || {
+        if auto {
+            crate::kit::activity::low_priority();
+        }
+        let wants = |gs: &[Group]| only.as_ref().is_none_or(|o| gs.iter().any(|g| o.contains(g)));
         let (running_ids, running_names) = running_apps();
         // `brew cleanup --dry-run` takes ~10 s: it runs alongside the rest
         // and its answer joins once everything else is measured
@@ -677,26 +695,33 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
         // what's open right now (one lsof run, a few seconds) alongside the scan
         let open_job = std::thread::spawn(super::inuse::OpenFiles::snapshot);
         let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, tool: "", brew: brew_tool.is_some(), shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
-        let steps: [ScanStep; 12] = [
-            ("Claude", scan_claude),
-            ("AI tools", super::agents::scan),
-            ("User caches", scan_user_caches),
-            ("App caches", scan_app_caches),
-            ("Logs", scan_logs),
-            ("Xcode", super::xcode::scan),
-            ("Simulators", super::xcode::scan_simulators),
-            ("Developer caches", scan_developer),
-            ("Projects", super::projects::scan),
-            ("Installers", scan_installers),
-            ("Captures", super::captures::scan),
-            ("Trash", scan_trash),
+        // the groups each step can add to (an auto run skips the rest)
+        let steps: [(ScanStep, &[Group]); 12] = [
+            (("Claude", scan_claude), &[Group::AiTools]),
+            (("AI tools", super::agents::scan), &[Group::AiTools]),
+            (("User caches", scan_user_caches), &[Group::AppCaches, Group::Developer, Group::AiTools]),
+            (("App caches", scan_app_caches), &[Group::AppCaches, Group::AiTools]),
+            (("Logs", scan_logs), &[Group::Logs]),
+            (("Xcode", super::xcode::scan), &[Group::Developer]),
+            (("Simulators", super::xcode::scan_simulators), &[Group::Developer]),
+            (("Developer caches", scan_developer), &[Group::Developer]),
+            (("Projects", super::projects::scan), &[Group::Projects]),
+            (("Installers", scan_installers), &[Group::Installers]),
+            (("Captures", super::captures::scan), &[Group::Captures]),
+            (("Trash", scan_trash), &[Group::Trash]),
         ];
-        for (i, (_, f)) in steps.iter().enumerate() {
+        for (i, ((_, f), gs)) in steps.iter().enumerate() {
             if c.stopped() {
                 break;
             }
+            if !wants(gs) {
+                continue;
+            }
             c.status("", FIND * i as f32 / steps.len() as f32);
             f(&mut c);
+        }
+        if let Some(o) = &only {
+            c.items.retain(|it| o.contains(&it.group));
         }
         if !c.stopped() {
             measure(&mut c.items, &shared, &ctx, FIND, &cancel, brew_job.is_some());
@@ -709,7 +734,24 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
         }
         c.items.sort_by(|a, b| a.group.cmp(&b.group).then(b.bytes.cmp(&a.bytes)));
         for it in c.items.iter_mut() {
-            it.selected = it.verdict == Verdict::Safe && !it.permanent;
+            it.selected = match &only {
+                Some(o) => super::auto::eligible(it, o),
+                None => it.verdict == Verdict::Safe && !it.permanent,
+            };
+        }
+        if only.is_some() {
+            // what an open app holds waits for a manual clean (that one asks to quit it)
+            super::auto::skip_open_apps(&mut c.items, crate::kit::native::open_apps());
+            {
+                let mut g = shared.lock_ok();
+                if cancel.load(Ordering::SeqCst) {
+                    return;
+                }
+                g.items = std::mem::take(&mut c.items);
+                g.phase = Phase::Results;
+            }
+            start_clean(shared, ctx, false, Scope::default());
+            return;
         }
         {
             // stopped: Stop already took the page back to the start
@@ -735,7 +777,9 @@ pub fn start_scan(shared: Shared, ctx: egui::Context, agent: Option<super::agent
             finish_results(&mut g);
         }
         ctx.request_repaint();
-        crate::kit::sound::play(crate::kit::sound::Cue::Ready);
+        if !shared.lock_ok().quiet {
+            crate::kit::sound::play(crate::kit::sound::Cue::Ready);
+        }
     });
 }
 
@@ -1480,6 +1524,10 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
     };
     let cancel = shared.lock_ok().cancel.clone();
     std::thread::spawn(move || {
+        // an auto run stays out of the way
+        if shared.lock_ok().quiet {
+            crate::kit::activity::low_priority();
+        }
         let n = plan.len().max(1);
         // minutes may have passed since the scan: an app opened since then keeps its cache
         let (running_ids, running_names) = running_apps();
@@ -1620,6 +1668,9 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
             super::journal::record(journal);
         }
         ctx.request_repaint();
+        if g.quiet {
+            return;
+        }
         crate::kit::sound::play(if g.failed.is_empty() { crate::kit::sound::Cue::Done } else { crate::kit::sound::Cue::Oops });
     });
 }
@@ -1831,7 +1882,7 @@ fn empty_trash(p: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #[test]
     fn scan_bar_creeps_then_hands_over_without_going_back() {
         use super::{creep, Phase, State, CREEP_TO};
@@ -1987,7 +2038,7 @@ mod tests {
         assert_eq!(merge_verdict(Keep, Ask, false), Keep);
     }
 
-    fn it(group: Group, path: &str, kind: &'static str, verdict: Verdict, by: Who) -> Item {
+    pub(crate) fn it(group: Group, path: &str, kind: &'static str, verdict: Verdict, by: Who) -> Item {
         Item {
             group,
             title: String::new(),
