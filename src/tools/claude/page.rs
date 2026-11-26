@@ -29,7 +29,7 @@ const LIMIT_H: f32 = 2.0 * sp::L + 16.0 + sp::S + 28.0 + 6.0 + 14.0;
 const LIMIT_V_H: f32 = 2.0 * sp::L + 16.0 + sp::S + 28.0 + 14.0 + 8.0 + 10.0 + 14.0;
 /// The "This week" card: 16, head 16, 14, bars 96, 6, day labels 14, 16.
 const WEEK_H: f32 = 2.0 * sp::L + 16.0 + 14.0 + 96.0 + 6.0 + 14.0;
-/// A provider's section row (glyph 16, name, plan, outage chip).
+/// A provider's section row (glyph 16, name, plan).
 const SECTION_H: f32 = 20.0;
 /// A one-line card in a section (checking, signed out, an error).
 const NOTE_H: f32 = 52.0;
@@ -552,7 +552,7 @@ fn limits_tab(infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, a: Rect) {
     }
 }
 
-/// A provider's name row: its mark, name, plan (dim) and outage chip.
+/// A provider's name row: its mark, name and plan (dim).
 fn section_row(ui: &mut Ui, r: Rect, info: &UsageInfo) {
     let p = ui.painter().clone();
     let g = Rect::from_min_size(Pos2::new(r.left(), r.center().y - 8.0), Vec2::splat(16.0));
@@ -567,8 +567,9 @@ fn section_row(ui: &mut Ui, r: Rect, info: &UsageInfo) {
     if !info.accounts.is_empty() {
         plan = t!("ai.acc.n", n = info.accounts.len() + 1).into_owned();
     }
-    let x = if plan.is_empty() { t.right() } else { p.text(Pos2::new(t.right() + sp::S, r.center().y), Align2::LEFT_CENTER, plan, ty::body(), TEXT_DIM()).right() };
-    incident(ui, Pos2::new(x + sp::S, r.center().y), Align2::LEFT_CENTER, info);
+    if !plan.is_empty() {
+        p.text(Pos2::new(t.right() + sp::S, r.center().y), Align2::LEFT_CENTER, plan, ty::body(), TEXT_DIM());
+    }
 }
 
 /// Claude's burst and Codex's prompt square, a letter tile for the rest.
@@ -1380,71 +1381,6 @@ fn not_set_up(a: Availability, cl: &UsageInfo, ui: &mut Ui, r: Rect, cx: &mut Cx
         backend::request_refresh();
         cx.toast(t!("ai.looking_for", name = m.name));
     }
-}
-
-
-/// An outage chip (the provider's status page, not the person's usage).
-/// Hover shows the open incidents (name, state and since when, what it
-/// touches); a click opens the incident on the status page.
-fn incident(ui: &mut Ui, pos: Pos2, align: Align2, cl: &UsageInfo) -> Option<Rect> {
-    let p = ui.painter().clone();
-    let r = parts::incident_chip(&p, pos, align, cl)?;
-    let m = ai::meta(cl.provider);
-    let host = m.status_url.trim_start_matches("https://").split('/').next().unwrap_or("").to_owned();
-    let resp = ui.interact(r, ui.scope_id().with(("ai-incident", cl.provider)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    if resp.clicked() {
-        let link = cl.incidents.iter().map(|i| i.link.as_str()).find(|l| l.starts_with("https://")).map(str::to_owned).unwrap_or_else(|| format!("https://{host}"));
-        let _ = std::process::Command::new("open").arg(link).spawn();
-    }
-    let level = if cl.incident.as_deref() == Some("Outage") { RED() } else { AMBER() };
-    let mut t = egui::Tooltip::for_enabled(&resp);
-    t.popup = t.popup.align(egui::RectAlign::BOTTOM).gap(8.0);
-    t.show(|ui| incident_tip(ui, &cl.incidents, &host, level));
-    Some(r)
-}
-
-/// The badge's hover: each open incident split by a hairline, then the
-/// status page's host.
-fn incident_tip(ui: &mut Ui, incidents: &[ai::status::Incident], host: &str, level: egui::Color32) {
-    use egui::RichText;
-    ui.set_width(300.0 - 2.0 * sp::M);
-    ui.spacing_mut().item_spacing.y = 4.0;
-    for (n, i) in incidents.iter().enumerate() {
-        if n > 0 {
-            ui.add_space(4.0);
-            ui.separator();
-            ui.add_space(4.0);
-        }
-        ui.add(egui::Label::new(RichText::new(&i.name).font(bold(13.0)).color(TEXT())).wrap());
-        let state = parts::incident_state(&i.state);
-        let since = i.since.map(parts::incident_since);
-        if state.is_some() || since.is_some() {
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                if let Some(s) = &state {
-                    ui.label(RichText::new(s.as_str()).font(bold(12.0)).color(level));
-                }
-                if let Some(w) = &since {
-                    let w = if state.is_some() { format!(" · {w}") } else { w.clone() };
-                    ui.label(RichText::new(w).font(font(12.0)).color(TEXT_DIM()));
-                }
-            });
-        }
-        if !i.affects.is_empty() {
-            ui.add(egui::Label::new(RichText::new(i.affects.join(" · ")).font(font(12.0)).color(TEXT_FAINT())).wrap());
-        }
-    }
-    if !incidents.is_empty() {
-        ui.add_space(4.0);
-        ui.separator();
-        ui.add_space(4.0);
-    }
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(host).font(font(12.0)).color(TEXT_FAINT()));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(RichText::new("↗").font(font(12.0)).color(TEXT_FAINT()));
-        });
-    });
 }
 
 

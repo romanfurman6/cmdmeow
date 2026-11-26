@@ -1,12 +1,11 @@
 //! The background loop behind the usage tool. It drives every AI provider
 //! that's turned on: account and limits on a slow timer (they also feed
 //! the menu bar and the notifications, so they refresh while hidden),
-//! local tokens while the panel or window is open, the status pages now
-//! and then. Each provider's last limits and daily totals are kept, so the
+//! local tokens while the panel or window is open. Each provider's last limits and daily totals are kept, so the
 //! history chart has more than this month's logs.
 
 use crate::kit::activity::{self, Every, Wake};
-use crate::kit::ai::{self, alerts, history, settings, status, UsageInfo};
+use crate::kit::ai::{self, alerts, history, settings, UsageInfo};
 use crate::kit::claude_code as cc;
 use crate::kit::mechanics as m;
 use crate::kit::sync::LockExt;
@@ -18,8 +17,6 @@ pub use crate::kit::ai::{human_tokens, short_label, Shared};
 
 /// One `Shared` per provider, in `ai::PROVIDERS` order.
 pub type All = Arc<Vec<Shared>>;
-
-const STATUS_SECS: u64 = 15 * 60;
 
 /// The provider shown: the picked one, or the first that's on when "All"
 /// is picked.
@@ -204,7 +201,6 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
     // due right away the first time
     let mut limits_at = vec![Every::default(); n];
     let mut local_at = vec![Every::default(); n];
-    let mut status_at = Every::default();
     let mut memory: Vec<alerts::Memory> = (0..n).map(|_| alerts::Memory::default()).collect();
     let mut primed = vec![false; n];
     let mut extras: Vec<Extra> = Vec::new();
@@ -301,25 +297,6 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             REFRESHING.store(false, Ordering::Relaxed);
             activity::repaint(&ctx);
         }
-        // outages: a status page per provider that has one
-        if set.show_outages && status_at.due(Duration::from_secs(STATUS_SECS)) {
-            status_at.mark();
-            for (i, meta) in ai::PROVIDERS.iter().enumerate() {
-                if set.is_on(meta.id) && !meta.status_url.is_empty() {
-                    let report = status::fetch(meta.status_url);
-                    let mut s = all[i].lock_ok();
-                    s.incident = report.as_ref().map(|r| r.level.clone());
-                    s.incidents = report.map(|r| r.incidents).unwrap_or_default();
-                }
-            }
-            activity::repaint(&ctx);
-        } else if !set.show_outages {
-            for s in all.iter() {
-                let mut s = s.lock_ok();
-                s.incident = None;
-                s.incidents.clear();
-            }
-        }
         // wait, but wake early when someone asks for a refresh or the panel opens
         if activity::nap(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS), Some(cc::recheck())) == Wake::Kicked {
             for e in limits_at.iter_mut().chain(local_at.iter_mut()) {
@@ -329,7 +306,6 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
                 x.limits_at.reset();
                 x.local_at.reset();
             }
-            status_at.reset();
             asked = true;
         }
     }
