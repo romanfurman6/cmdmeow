@@ -19,6 +19,16 @@ mod ui;
 
 use crate::core::tool::{Badge, Cx, Tool, ToolEnv, ToolId, View};
 use crate::kit::fs::dir_size;
+
+/// Bytes a leftover frees: a folder's contents, or a single file (a
+/// preferences plist, a launch agent), which `dir_size` reads as 0.
+fn item_size(p: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    match p.symlink_metadata() {
+        Ok(md) if md.is_file() => md.blocks() * 512,
+        _ => dir_size(p),
+    }
+}
 use crate::kit::glass::Icon;
 use apps::Source;
 use egui::{Color32, Rect, Ui};
@@ -191,6 +201,9 @@ pub struct State {
     /// and scans only list the apps (enough to notice one being thrown away),
     /// leaving measuring them for later.
     pub page_seen: bool,
+    /// Apps the page waits on (the one shown, the ones under review):
+    /// the scan measures these before the rest.
+    pub urgent: Vec<PathBuf>,
 }
 
 
@@ -248,9 +261,19 @@ pub enum Sort {
 }
 
 /// The confirm sheet before anything moves.
+#[derive(Default)]
 pub struct Review {
     pub targets: Vec<Target>,
     pub open: HashSet<usize>,
+    /// Apps opened for review before they were measured: their files fill
+    /// in when the scan gets to them, and Move to Trash waits till then.
+    pub waiting: HashSet<PathBuf>,
+}
+
+impl Review {
+    pub fn new(targets: Vec<Target>, open: HashSet<usize>) -> Review {
+        Review { targets, open, waiting: HashSet::new() }
+    }
 }
 
 pub struct Uninstaller {
@@ -626,9 +649,9 @@ fn fill_items(row: &mut AppRow, index: &Index, all: &[Owner], roots: &Roots, app
     extra_items.extend(extra::spotlight_items(picks, roots));
     extra_items.retain(|i| remove::movable(&i.path, roots, app_roots));
     leftovers::tidy(&mut extra_items);
-    let mut items = vec![Item { path: row.path.clone(), kind: Kind::App, bytes: dir_size(&row.path), admin: remove::needs_root(&row.path), selected: true }];
+    let mut items = vec![Item { path: row.path.clone(), kind: Kind::App, bytes: item_size(&row.path), admin: remove::needs_root(&row.path), selected: true }];
     for mut it in extra_items {
-        it.bytes = dir_size(&it.path);
+        it.bytes = item_size(&it.path);
         items.push(it);
     }
     row.items = items;
@@ -646,7 +669,12 @@ fn drop_moved(g: &mut State, rep: &Report) {
     let gone = |p: &Path| p.ancestors().any(|a| moved.contains(a));
     g.apps.retain(|a| !gone(&a.path));
     for a in g.apps.iter_mut() {
-        a.items.retain(|i| !gone(&i.path));
+        // an app the removal touched (Reset, files that stayed) is read
+        // again before it can be removed: its old list no longer holds
+        if a.items.iter().any(|i| gone(&i.path)) {
+            a.items.clear();
+            a.sized = false;
+        }
     }
     for o in g.orphans.iter_mut() {
         o.items.retain(|i| !gone(&i.path));
@@ -704,6 +732,10 @@ fn scan(st: &Shared, app_roots: &[PathBuf], roots: &Roots, ctx: &egui::Context) 
                 r.items = old.items.clone();
                 r.sign = old.sign.clone();
                 r.pkgs = old.pkgs.clone();
+                // what was measured stays usable (shown, removable) while
+                // it's measured again: a rescan after every removal must not
+                // take the page back to placeholders
+                r.sized = old.sized;
             }
         }
         for r in &rows {
@@ -728,10 +760,20 @@ fn scan(st: &Shared, app_roots: &[PathBuf], roots: &Roots, ctx: &egui::Context) 
     // small apps first so most of the list is complete quickly
     let mut order: Vec<usize> = (0..rows.len()).collect();
     order.sort_by_key(|&i| rows[i].items.first().map(|x| x.bytes).unwrap_or(0));
-    for (n, i) in order.into_iter().enumerate() {
+    let mut left = order;
+    let mut n = 0;
+    while !left.is_empty() {
+        // what the page waits on goes first (the app shown, the ones under review)
+        let pick = {
+            let g = st.lock_ok();
+            g.urgent.iter().find_map(|p| left.iter().position(|&i| &rows[i].path == p)).unwrap_or(0)
+        };
+        let i = left.remove(pick);
+        n += 1;
         let mut row = rows[i].clone();
         fill_items(&mut row, &index, &owners, roots, app_roots, &found);
         let mut g = st.lock_ok();
+        g.urgent.retain(|p| p != &row.path);
         if let Some(slot) = g.apps.iter_mut().find(|a| a.path == row.path) {
             // keep the user's ticks on files
             for it in row.items.iter_mut() {
@@ -741,7 +783,7 @@ fn scan(st: &Shared, app_roots: &[PathBuf], roots: &Roots, ctx: &egui::Context) 
             }
             *slot = row;
         }
-        g.phase = Phase::Sizing { done: n + 1, total: rows.len() };
+        g.phase = Phase::Sizing { done: n, total: rows.len() };
         drop(g);
         ctx.request_repaint();
     }
@@ -756,7 +798,7 @@ fn scan(st: &Shared, app_roots: &[PathBuf], roots: &Roots, ctx: &egui::Context) 
         .into_iter()
         .map(|(id, mut items)| {
             for it in items.iter_mut() {
-                it.bytes = dir_size(&it.path);
+                it.bytes = item_size(&it.path);
             }
             let touched = items.iter().filter_map(|i| mtime(&i.path)).max();
             Orphan { name: names.get(&id).cloned().unwrap_or_else(|| pretty_name(&id)), id, items, touched, selected: true }
@@ -834,7 +876,7 @@ fn watch(st: Shared, app_roots: Vec<PathBuf>, roots: Roots, ctx: egui::Context) 
                         all.push(row.owner());
                         let mut items: Vec<Item> = index.for_app(&row.owner(), &all);
                         for it in items.iter_mut() {
-                            it.bytes = dir_size(&it.path);
+                            it.bytes = item_size(&it.path);
                         }
                         if items.iter().map(|i| i.bytes).sum::<u64>() < 100_000 {
                             continue;
@@ -1045,6 +1087,19 @@ mod tests {
     }
 
     #[test]
+    fn an_app_a_removal_touched_is_read_again() {
+        let item = |p: &str| super::leftovers::Item { path: PathBuf::from(p), kind: super::leftovers::Kind::Caches, bytes: 1, admin: false, selected: true };
+        let row = |name: &str, items: Vec<super::leftovers::Item>| AppRow { path: PathBuf::from(format!("/Applications/{name}.app")), name: name.into(), id: name.into(), version: String::new(), source: apps::Source::Direct, locked: None, last_used: None, items, sized: true, alt: Vec::new(), sign: Default::default(), pkgs: Vec::new() };
+        let mut g = State::default();
+        g.apps = vec![row("Reset", vec![item("/Applications/Reset.app"), item("/u/Library/Caches/reset")]), row("Other", vec![item("/Applications/Other.app"), item("/u/Library/Caches/other")])];
+        let rep = Report { moved: vec![remove::Moved { from: PathBuf::from("/u/Library/Caches/reset"), to: PathBuf::from("/u/.Trash/x"), admin: false, bytes: 1, owner: None }], ..Default::default() };
+        drop_moved(&mut g, &rep);
+        // a Reset app stays, but its old file list no longer counts as measured
+        assert!(!g.apps[0].sized && g.apps[0].items.is_empty());
+        assert!(g.apps[1].sized && g.apps[1].items.len() == 2);
+    }
+
+    #[test]
     fn pretty_names() {
         assert_eq!(pretty_name("com.hnc.Discord"), "Discord");
         assert_eq!(pretty_name("com.parallels.desktop.console"), "Console");
@@ -1078,5 +1133,24 @@ mod tests {
         u.search = "dock".into();
         let found = u.visible();
         assert_eq!(found.len(), 1);
+    }
+
+    #[test]
+    fn single_file_leftovers_have_a_size() {
+        let dir = std::env::temp_dir().join(format!("cmb-un-item-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plist = dir.join("com.example.app.plist");
+        {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&plist).unwrap();
+            f.write_all(&vec![1u8; 50_000]).unwrap();
+            f.sync_all().unwrap();
+        }
+        let file = item_size(&plist);
+        let folder = item_size(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        // a preferences file is not "0 B"
+        assert!(file >= 50_000, "file {file}");
+        assert!(folder >= 50_000, "folder {folder}");
     }
 }

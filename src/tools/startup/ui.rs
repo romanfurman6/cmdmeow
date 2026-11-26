@@ -331,6 +331,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let mut trash: Option<Job> = None;
     let mut turn_off_all = false;
     let mut do_undo = false;
+    let mut hold_undo = false;
     let mut retry = false;
     let mut set_notify: Option<bool> = None;
     let mut budget = ICONS_PER_FRAME;
@@ -351,6 +352,7 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 p.text(Pos2::new(cr.left() + 42.0, cr.center().y), Align2::LEFT_CENTER, line, font(13.0), TEXT_SOFT());
             } else if let Some(n) = undo {
                 glass_card(&p, cr, R_CARD, 0.0, false);
+                hold_undo = ui.rect_contains_pointer(cr);
                 let c = Pos2::new(cr.left() + 30.0, cr.center().y);
                 p.circle_filled(c, 17.0, with_alpha(GREEN(), 0.16));
                 icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(18.0)), GREEN());
@@ -690,6 +692,12 @@ pub fn page(s: &mut Startup, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     }
     if retry {
         s.retry_apps();
+    }
+    // the pointer on the Undo card holds it: the countdown starts again on leaving
+    if hold_undo {
+        if let Some((_, at)) = s.state().last.as_mut() {
+            *at = std::time::Instant::now();
+        }
     }
     if do_undo {
         s.undo();
