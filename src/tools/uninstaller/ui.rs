@@ -160,16 +160,20 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     if idle && fda() {
         u.rescan();
     }
-    let (n_apps, total, phase, orphan_bytes) = {
+    let (n_apps, total, phase, orphan_bytes, shown) = {
         let g = u.st.lock_ok();
-        (g.apps.len(), g.apps.iter().map(|a| a.total()).sum::<u64>(), g.phase, g.orphans.iter().map(|o| o.bytes()).sum::<u64>())
+        // "measuring N of M" counts the rows that show a size, so it matches
+        // the list (the scan goes out of order: the app being looked at first)
+        let removable = g.apps.iter().filter(|a| a.locked.is_none());
+        let shown = (removable.clone().filter(|a| a.sized).count(), removable.count());
+        (g.apps.len(), g.apps.iter().map(|a| a.total()).sum::<u64>(), g.phase, g.orphans.iter().map(|o| o.bytes()).sum::<u64>(), shown)
     };
     let sub = match (u.tab, phase) {
         (Tab::Leftovers, _) if orphan_bytes > 0 => human_bytes(orphan_bytes),
         (Tab::Leftovers, _) => String::new(),
         (_, Phase::Idle) => String::new(),
         (_, Phase::Listing) => ts!("un.looking_apps").to_string(),
-        (_, Phase::Sizing { done, total: t }) => t!("un.measuring", n = n_apps, done = done, total = t).into_owned(),
+        (_, Phase::Sizing { .. }) => t!("un.measuring", n = n_apps, done = shown.0, total = shown.1).into_owned(),
         _ => t!("un.apps_size", n = n_apps, size = human_bytes(total)).into_owned(),
     };
     // AI Check: a chip left of the tabs (SP17), on Leftovers
@@ -944,8 +948,15 @@ fn result_bar(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let Some(o) = result_text(u) else { return };
     let failed = o.failed;
     let life = if failed > 0 || o.can_retry { UNDO_FOR } else { TOAST_FOR };
-    let w = 560.0f32.min(r.width() - 48.0);
-    let bar = Rect::from_center_size(Pos2::new(r.center().x, r.bottom() - 46.0), Vec2::new(w, 48.0));
+    // on Apps the toast keeps to the list column, clear of the detail
+    // card's buttons, and sits above the batch bar when one is up
+    let (lane_l, lane_r, lift) = if u.tab == Tab::Apps {
+        (r.left() + 24.0, r.right() - 24.0 - ASIDE_W - 16.0, if u.checked.is_empty() { 0.0 } else { 52.0 + 10.0 })
+    } else {
+        (r.left(), r.right(), 0.0)
+    };
+    let w = 560.0f32.min(lane_r - lane_l - 48.0);
+    let bar = Rect::from_center_size(Pos2::new((lane_l + lane_r) / 2.0, r.bottom() - 46.0 - lift), Vec2::new(w, 48.0));
     {
         let mut g = u.st.lock_ok();
         let Some((_, at)) = g.last.as_mut() else { return };
