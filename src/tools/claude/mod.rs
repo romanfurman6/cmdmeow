@@ -173,8 +173,11 @@ impl Tool for Claude {
         true
     }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-        if self.route.take().is_some_and(|r| r == LIMITS) {
-            page::set_tab(ui.ctx(), page::Tab::Limits);
+        match self.route.take().as_deref() {
+            Some(LIMITS) => page::set_tab(ui.ctx(), page::Tab::Limits),
+            Some("cost") => page::set_tab(ui.ctx(), page::Tab::Cost),
+            Some("tokens") => page::set_tab(ui.ctx(), page::Tab::Tokens),
+            _ => {}
         }
         page::page(&self.all, &mut self.ai, self.demo, ui, rect, cx);
     }
@@ -199,6 +202,22 @@ impl Tool for Claude {
                 Some(View::Page)
             }
             "claude" => Some(View::Page),
+            // the tips chip open: Claude Code's /usage tips and two AI Check tips
+            "claude-tips" => {
+                use crate::kit::aicheck::Check;
+                self.ai.set_demo(
+                    "",
+                    vec![
+                        Check::demo_rec_for("limit:Claude:Current week (all models)", "show", ts!("ai.ac.show"), "Week runs out Fri 19:10", "81%", "Opus did 81% of this week; Sonnet for routine edits", "Claude"),
+                        Check::demo_rec_for("caches", "clean", ts!("ai.ac.clean"), "Claude caches · 2.1 GB", "2.1 GB", "Rebuilt when needed", "Claude"),
+                    ],
+                );
+                Some(View::Page)
+            }
+            "claude-cost" | "claude-tokens" => {
+                self.route = Some(view.trim_start_matches("claude-").into());
+                Some(View::Page)
+            }
             "codex" | "codex-detail" | "gemini" | "all" => {
                 backend::select(ai::index_of(view.trim_end_matches("-detail")), true);
                 if view.ends_with("-detail") {
