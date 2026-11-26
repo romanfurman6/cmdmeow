@@ -827,7 +827,6 @@
       "run": "Run",
       "low_disk": "When disk is almost full",
       "under_10": "Under 10% free",
-      "disk_short": "Disk full",
       "notify": "Notify when done",
       "run_now": "Run now",
       "never": "Not run yet",

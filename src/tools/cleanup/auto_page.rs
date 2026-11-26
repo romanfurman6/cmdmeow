@@ -1,41 +1,22 @@
-//! Cleanup's Auto tab (and, for the canvas, variant B: an Auto menu in the
-//! page header). See `auto.rs` for what a run does.
+//! Cleanup's Auto tab and the Clean · Auto header tabs (SP27). See
+//! `auto.rs` for what a run does.
 
 use super::auto::{Every, GROUPS};
 use super::engine::{Group, Phase};
 use super::Cleanup as App;
 use crate::kit::glass::*;
-use crate::kit::menu;
 use crate::kit::sync::LockExt;
 use egui::{Align2, Pos2, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2};
 
 const ROW_H: f32 = sp::SETTINGS_ROW_H;
-
-/// Canvas variant: "a" = Clean · Auto tabs (default), "b" = Auto menu.
-pub fn menu_variant() -> bool {
-    std::env::var("CMDMEOW_AUTO_UI").is_ok_and(|v| v == "b")
-}
 
 fn tab_labels() -> [&'static str; 2] {
     [ts!("cleanup.tab_clean"), ts!("cleanup.tab_auto")]
 }
 
 /// Room the header control takes left of the page action (and its gap).
-pub fn reserve(p: &egui::Painter, app: &App) -> f32 {
-    if menu_variant() {
-        icon_pill_width(p, &pill_label(app), BTN_SECONDARY).max(icon_pill_width(p, &format!("{} · {}", ts!("cleanup.tab_auto"), ts!("cleanup.auto.monthly")), BTN_SECONDARY)) + sp::M
-    } else {
-        tabs_width(p, &tab_labels()) + sp::M
-    }
-}
-
-fn pill_label(app: &App) -> String {
-    if app.auto.active() {
-        let e = if app.auto.every == Every::Off { ts!("cleanup.auto.disk_short") } else { app.auto.every.label() };
-        format!("{} · {}", ts!("cleanup.tab_auto"), e)
-    } else {
-        ts!("cleanup.tab_auto").to_string()
-    }
+pub fn reserve(p: &egui::Painter) -> f32 {
+    tabs_width(p, &tab_labels()) + sp::M
 }
 
 /// The page action slot's width (Stop / Skip / Scan again share it).
@@ -43,7 +24,7 @@ fn action_w(p: &egui::Painter) -> f32 {
     [ts!("cleanup.scan_again"), ts!("cleanup.stop"), ts!("cleanup.skip")].iter().map(|l| icon_pill_width(p, l, BTN_SECONDARY)).fold(0.0, f32::max)
 }
 
-/// The header control: tabs (A) or the Auto menu (B), left of the page
+/// The Clean · Auto tabs, left of the page
 /// action when the phase has one (SP16 order).
 pub fn header(app: &mut App, ui: &mut Ui, r: Rect, phase: &Phase) {
     let p = ui.painter().clone();
@@ -51,18 +32,6 @@ pub fn header(app: &mut App, ui: &mut Ui, r: Rect, phase: &Phase) {
     let right = r.right() - sp::PAGE_EDGE - if has_action { action_w(&p) + sp::M } else { 0.0 };
     let cy = r.top() + PAGE_HEADER_H / 2.0;
     let h = sp::HEADER_CONTROL_H / 2.0;
-    if menu_variant() {
-        let label = pill_label(app);
-        let w = reserve(&p, app) - sp::M;
-        let pr = Rect::from_min_max(Pos2::new(right - w, cy - h), Pos2::new(right, cy + h));
-        let resp = icon_pill(ui, pr, Icon::Clock, &label, BTN_SECONDARY, true);
-        let mut pop = menu::popup(&resp);
-        if app.demo_auto_menu {
-            pop = pop.open(true);
-        }
-        pop.show(|ui| menu_body(app, ui));
-        return;
-    }
     let tw = tabs_width(&p, &tab_labels());
     let tr = Rect::from_min_max(Pos2::new(right - tw, cy - h), Pos2::new(right, cy + h));
     if let Some(k) = segmented(ui, tr, ui.scope_id().with("cleanup-tabs"), &tab_labels(), app.auto_tab as usize) {
@@ -70,37 +39,7 @@ pub fn header(app: &mut App, ui: &mut Ui, r: Rect, phase: &Phase) {
     }
 }
 
-/// Variant B: everything in one menu.
-fn menu_body(app: &mut App, ui: &mut Ui) {
-    let mut changed = false;
-    for e in Every::ALL {
-        if menu::choice(ui, e.label(), app.auto.every == e).clicked() {
-            app.auto.every = e;
-            changed = true;
-        }
-    }
-    menu::separator(ui);
-    if menu::choice(ui, ts!("cleanup.auto.low_disk"), app.auto.low_disk).clicked() {
-        app.auto.low_disk = !app.auto.low_disk;
-        changed = true;
-    }
-    menu::separator(ui);
-    for g in GROUPS {
-        if menu::choice(ui, g.label(), app.auto.on(g)).clicked() {
-            app.auto.flip(g);
-            changed = true;
-        }
-    }
-    if let Some(l) = app.auto.last() {
-        menu::separator(ui);
-        menu::note(ui, &t!("cleanup.auto.last_line", when = super::engine::days_ago(l.when), size = human_bytes(l.bytes)), false);
-    }
-    if changed && !app.demo {
-        app.auto.save();
-    }
-}
-
-/// Variant A: the Auto tab.
+/// The Auto tab.
 pub fn tab(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     page_header(&p, r, ts!("cleanup.name"), "", TEXT_DIM());

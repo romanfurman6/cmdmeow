@@ -55,8 +55,6 @@ pub struct Cleanup {
     pub(crate) auto_tab: bool,
     pub(crate) auto: auto::Settings,
     pub(crate) auto_run: auto::Runner,
-    /// Screenshots: the header's Auto menu is open (canvas variant B).
-    pub(crate) demo_auto_menu: bool,
 }
 
 impl Cleanup {
@@ -90,7 +88,6 @@ impl Cleanup {
             auto_tab: false,
             auto: if env.demo { auto::demo() } else { auto::Settings::load() },
             auto_run: Default::default(),
-            demo_auto_menu: false,
         }
     }
 }
@@ -241,10 +238,6 @@ impl Tool for Cleanup {
             "cleanup" => Some(View::Page),
             "cleanup-auto" => {
                 self.auto_tab = true;
-                Some(View::Page)
-            }
-            "cleanup-auto-menu" => {
-                self.demo_auto_menu = true;
                 Some(View::Page)
             }
             "cleanup-fresh" => {
