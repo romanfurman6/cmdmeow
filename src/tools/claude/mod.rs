@@ -157,8 +157,9 @@ impl Tool for Claude {
         if widget != LIMITS {
             return;
         }
-        let cl = self.info();
-        let all = backend::enabled(&self.all);
+        // W13: the first provider in the person's order that's on and installed
+        let cl = backend::widget_pick(&self.all).map(|k| self.all[k].lock_ok().clone()).unwrap_or_else(|| self.info());
+        let all: Vec<_> = backend::enabled(&self.all).into_iter().filter(|i| i.unavailable() != Some(crate::kit::claude_code::Availability::NotInstalled)).collect();
         if ui::widget(ui, rect, size, &cl, &all, false).clicked() {
             cx.open_page(ID, "");
         }

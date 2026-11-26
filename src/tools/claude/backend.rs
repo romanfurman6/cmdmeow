@@ -29,13 +29,25 @@ pub fn current(all: &All) -> &Shared {
         return &all[i];
     }
     let s = settings::get();
-    ai::PROVIDERS.iter().position(|m| s.is_on(m.id)).map(|i| &all[i]).unwrap_or(&all[0])
+    s.ordered().into_iter().find(|k| s.is_on(ai::PROVIDERS[*k].id)).map(|i| &all[i]).unwrap_or(&all[0])
+}
+
+/// The provider the small widgets show (W13): the first in the person's
+/// order that's on and installed.
+pub fn widget_pick(all: &All) -> Option<usize> {
+    let s = settings::get();
+    s.ordered().into_iter().find(|&k| s.is_on(ai::PROVIDERS[k].id) && all.get(k).is_some_and(|i| i.lock_ok().unavailable() != Some(crate::kit::claude_code::Availability::NotInstalled)))
+}
+
+/// [`widget_pick`] for Settings, which has no `All` of its own.
+pub fn widget_provider() -> Option<usize> {
+    widget_pick(SHOWN.get()?)
 }
 
 /// The providers turned on in Settings, with their data.
 pub fn enabled(all: &All) -> Vec<UsageInfo> {
     let s = settings::get();
-    ai::PROVIDERS.iter().zip(all.iter()).filter(|(m, _)| s.is_on(m.id)).map(|(_, i)| i.lock_ok().clone()).collect()
+    s.ordered().into_iter().filter(|k| s.is_on(ai::PROVIDERS[*k].id)).filter_map(|k| all.get(k)).map(|i| i.lock_ok().clone()).collect()
 }
 
 static SHOWN: std::sync::OnceLock<All> = std::sync::OnceLock::new();

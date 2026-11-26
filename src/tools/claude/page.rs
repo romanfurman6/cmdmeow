@@ -17,7 +17,6 @@ use crate::kit::sync::LockExt;
 use chrono::{Datelike, NaiveDate};
 use egui::{Align2, Color32, Pos2, Rect, ScrollArea, Sense, Shape, Stroke, Ui, UiBuilder, Vec2};
 
-pub use parts::usage_color;
 
 const GAP: f32 = sp::L;
 /// SP22: a limit card's left column (name, how much is left, when it comes back).
@@ -131,16 +130,25 @@ fn header(all: &All, infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, r: Rec
     let mr = Rect::from_min_size(Pos2::new(at.x, at.y - sp::HEADER_CONTROL_H / 2.0), Vec2::new(mw, sp::HEADER_CONTROL_H));
     let resp = menu_button(ui, mr, label);
     let set = settings::get();
-    let on: Vec<usize> = (0..ai::ALL).filter(|i| set.is_on(ai::PROVIDERS[*i].id)).collect();
+    let on: Vec<usize> = set.ordered().into_iter().filter(|i| set.is_on(ai::PROVIDERS[*i].id)).collect();
+    // H10: drag a provider to reorder; the widgets show the first ("In widgets")
+    let pick = if on.len() > 1 { backend::widget_pick(all) } else { None };
     menu::popup(&resp).align(egui::RectAlign::BOTTOM_START).show(|ui| {
         if menu::choice(ui, ts!("ai.all_providers"), ai::shows_all()).clicked() {
             backend::select(ai::ALL, demo);
         }
         menu::separator(ui);
+        let mut rows = Vec::with_capacity(on.len());
         for i in &on {
-            if menu::choice(ui, ai::PROVIDERS[*i].name, !ai::shows_all() && ai::selected() == *i).clicked() {
+            let chip = if pick == Some(*i) { ts!("ai.in_widgets") } else { "" };
+            let r = menu::drag_choice(ui, ai::PROVIDERS[*i].name, !ai::shows_all() && ai::selected() == *i, chip);
+            if r.clicked() {
                 backend::select(*i, demo);
             }
+            rows.push(r);
+        }
+        if let Some((from, gap)) = crate::kit::reorder::rows(ui, &rows, menu::INSET) {
+            settings::update(!demo, |s| s.reorder(&on, from, gap));
         }
     });
 
@@ -457,7 +465,7 @@ fn section_row(ui: &mut Ui, r: Rect, info: &UsageInfo) {
 }
 
 /// Claude's burst and Codex's prompt square, a letter tile for the rest.
-fn provider_mark(p: &egui::Painter, r: Rect, provider: &str) {
+pub(super) fn provider_mark(p: &egui::Painter, r: Rect, provider: &str) {
     use crate::kit::agent::Agent;
     match ai::meta(provider).id {
         "claude" => aicheck::ui::agent_mark(p, r, Agent::Claude, None),

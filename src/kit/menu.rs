@@ -130,6 +130,24 @@ pub fn choice(ui: &mut Ui, label: &str, on: bool) -> Response {
     done(ui, r)
 }
 
+/// A [`choice`] that can be dragged to reorder (H10, with
+/// `kit::reorder::rows`), with an optional ACCENT chip after its label
+/// ("In widgets"). The grip shows in the left inset on hover.
+pub fn drag_choice(ui: &mut Ui, label: &str, on: bool, chip_label: &str) -> Response {
+    let cw = if chip_label.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(chip_label.to_string(), bold(11.0), TEXT()).size().x + 16.0 + 8.0 };
+    let lw = label_w(ui, label);
+    let w = width(ui, lw + cw + 2.0 * INSET + if on { 24.0 } else { 0.0 });
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), Sense::click_and_drag());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, label));
+    let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
+    paint_row(ui.painter(), r, label, h, on, false, true);
+    if !chip_label.is_empty() {
+        chip(ui.painter(), Pos2::new(r.left() + INSET + lw + 8.0, r.center().y), Align2::LEFT_CENTER, chip_label, (with_alpha(ACCENT(), 0.16), ACCENT()));
+    }
+    crate::kit::reorder::hover_grip(ui.painter(), &resp, INSET / 2.0);
+    done(ui, resp)
+}
+
 /// A row that opens a submenu `GAP` to its right, top aligned (MN5).
 pub fn sub<R>(ui: &mut Ui, label: &str, content: impl FnOnce(&mut Ui) -> R) -> Option<R> {
     let r = row(ui, label, false, true, true);

@@ -669,10 +669,6 @@
       "outages": "Provider outages",
       "main_agent": "Main agent"
     },
-    "session_resets": "Session · resets %{when}",
-    "week": "Week",
-    "n_tokens": "%{n} tokens",
-    "session": "Session",
     "tokens_7d": "Tokens · 7 days",
     "no_data": "No data yet",
     "tokens_today": "%{n} tokens today",
@@ -785,7 +781,9 @@
     "ac": {
       "show": "Show",
       "clean": "Clean"
-    }
+    },
+    "in_widgets": "In widgets",
+    "restores_at": "+%{pct}% at %{when}"
   },
   "cleanup": {
     "name": "Cleanup",

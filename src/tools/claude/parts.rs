@@ -4,30 +4,10 @@
 use crate::kit::ai::{alerts, pace, Day, DayRecord, Limit, UsageInfo};
 use chrono::{Datelike, NaiveDate};
 use crate::kit::glass::*;
-use egui::{Align2, Color32, Pos2, Rect, Stroke};
-
-/// Bar colour for a usage percentage: the tool's tint, amber from 70%,
-/// red from 90%.
-pub fn usage_color(pct: f32) -> Color32 {
-    if pct >= 90.0 {
-        RED()
-    } else if pct >= 70.0 {
-        AMBER()
-    } else {
-        tint::CLAUDE()
-    }
-}
+use egui::{Align2, Color32, Pos2, Rect};
 
 pub fn now() -> i64 {
     chrono::Utc::now().timestamp()
-}
-
-/// Colour of a limit: red when ahead of pace or nearly full.
-pub fn limit_color(l: &Limit) -> Color32 {
-    match pace::of_limit(l, now()) {
-        Some(p) if p.state == pace::State::Ahead && l.pct >= 20.0 => RED(),
-        _ => usage_color(l.pct),
-    }
 }
 
 /// "Runs out Sat 14:00" when the current rate runs out before the reset, else
@@ -48,15 +28,6 @@ pub fn reset_when(l: &Limit) -> String {
 fn reset_short(s: &str) -> String {
     let s = s.split(" (").next().unwrap_or(s);
     if s.is_empty() { String::new() } else { t!("ai.resets", when = s).into_owned() }
-}
-
-/// A thin bar with the even-use tick.
-pub fn pace_bar(p: &egui::Painter, r: Rect, l: &Limit) {
-    bar(p, r, (l.pct / 100.0).max(0.01), limit_color(l));
-    if let Some(pc) = pace::of_limit(l, now()) {
-        let x = r.left() + r.width() * pc.expected / 100.0;
-        p.line_segment([Pos2::new(x, r.top() - 3.0), Pos2::new(x, r.bottom() + 3.0)], Stroke::new(1.5, TEXT()));
-    }
 }
 
 /// "$38.40", "$664".

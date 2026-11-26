@@ -36,6 +36,7 @@ pub mod own;
 pub mod perms;
 pub mod plist;
 pub mod remove;
+pub mod reorder;
 pub mod repaint_log;
 pub mod settings_window;
 pub mod smc;
