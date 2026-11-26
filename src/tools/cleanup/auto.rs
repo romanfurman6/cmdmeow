@@ -141,6 +141,15 @@ pub fn eligible(it: &engine::Item, groups: &[Group]) -> bool {
         && (it.group == Group::Trash || it.rebuilds())
 }
 
+/// Untick what an open app's files hold: the same items the manual clean's
+/// sheet would ask to quit that app for. An auto run never asks, so it skips them.
+pub fn skip_open_apps(items: &mut [engine::Item], apps: Vec<crate::kit::native::OpenApp>) {
+    let held: Vec<usize> = super::page::quit_rows(items, apps, engine::Scope::default()).into_iter().flat_map(|r| r.idx).collect();
+    for i in held {
+        items[i].selected = false;
+    }
+}
+
 /// Seconds since the last keyboard, mouse or trackpad input.
 pub fn idle_secs() -> f64 {
     #[cfg(target_os = "macos")]
@@ -283,6 +292,21 @@ mod tests {
         let trash = it(Group::Trash, "/t", "Trash", Verdict::Safe, Who::Rule);
         assert!(!eligible(&trash, &gs));
         assert!(eligible(&trash, &[Group::Trash]));
+    }
+
+    #[test]
+    fn skips_what_an_open_app_holds() {
+        use crate::tools::cleanup::engine::{tests::it, Who};
+        let claude = crate::kit::native::OpenApp { pid: 1, id: "com.anthropic.claudefordesktop".into(), name: "Claude".into(), bundle: None };
+        let mut items = vec![
+            it(Group::AiTools, "/u/Library/Caches/com.anthropic.claudefordesktop", "Caches", Verdict::Safe, Who::Rule),
+            it(Group::AiTools, "/u/.claude/cache", "Caches", Verdict::Safe, Who::Rule),
+            it(Group::AppCaches, "/u/Library/Caches/com.other.app", "Caches", Verdict::Safe, Who::Rule),
+        ];
+        items[1].title = "Claude cache".into();
+        skip_open_apps(&mut items, vec![claude]);
+        assert!(!items[0].selected && !items[1].selected);
+        assert!(items[2].selected);
     }
 
     #[test]

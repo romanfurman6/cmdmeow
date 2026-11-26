@@ -110,8 +110,10 @@ fn schedule_card(app: &mut App, ui: &mut Ui, p: &egui::Painter, at: Pos2, w: f32
         changed = true;
     }
     label(p, card, 2, ts!("cleanup.auto.notify"));
-    if switch_at(ui, card, 2, "notify", app.auto.notify) {
-        app.auto.notify = !app.auto.notify;
+    // on only while macOS lets it through; turning it on asks macOS
+    let shown = app.demo && app.auto.notify || crate::kit::notify::shown(app.auto.notify);
+    if switch_at(ui, card, 2, "notify", shown) {
+        crate::kit::notify::flip(&mut app.auto.notify);
         changed = true;
     }
     // last run + Run now

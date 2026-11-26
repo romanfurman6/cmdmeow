@@ -740,6 +740,8 @@ fn scan_with(shared: Shared, ctx: egui::Context, agent: Option<super::agent::Age
             };
         }
         if only.is_some() {
+            // what an open app holds waits for a manual clean (that one asks to quit it)
+            super::auto::skip_open_apps(&mut c.items, crate::kit::native::open_apps());
             {
                 let mut g = shared.lock_ok();
                 if cancel.load(Ordering::SeqCst) {
