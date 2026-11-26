@@ -779,6 +779,48 @@
         "sign_in": "Connect a provider"
       },
       "come_back": "Come back and press Check again"
+    },
+    "all_providers": "All providers",
+    "cost": "Cost",
+    "left": "left",
+    "restores_in": "↻ +%{pct}% in %{time}",
+    "window_h": "%{h} h window",
+    "usage_source": "Claude Code /usage",
+    "copy_command": "Copy command",
+    "copied": "Copied %{cmd}",
+    "daily_cost": "Daily cost",
+    "weekly_cost": "Weekly cost",
+    "monthly_cost": "Monthly cost",
+    "daily_tokens": "Daily tokens",
+    "weekly_tokens": "Weekly tokens",
+    "monthly_tokens": "Monthly tokens",
+    "total": "Total",
+    "plans_usd": "At API prices · plans %{usd}",
+    "breakdown": "Breakdown",
+    "pop": {
+      "left": "Left",
+      "even": "Even pace",
+      "even_v": "%{pct}% left by now",
+      "resets": "Resets",
+      "resets_v": "%{when} · in %{time}",
+      "restores": "Restores"
+    },
+    "cap": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month"
+    },
+    "by": {
+      "model": "Model",
+      "project": "Project",
+      "day": "Day"
+    },
+    "col": {
+      "share": "Share"
+    },
+    "ac": {
+      "show": "Show",
+      "clean": "Clean"
     }
   },
   "cleanup": {

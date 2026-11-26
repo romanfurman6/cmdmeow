@@ -111,13 +111,15 @@ pub mod keychain {
 pub struct Claude {
     all: backend::All,
     demo: bool,
-    /// What to open on the page: [`LIMITS`] opens the limits popup.
+    /// What to open on the page: [`LIMITS`] opens the Limits tab.
     route: Option<String>,
+    /// The tips chip: Claude Code's own /usage tips and AI Check.
+    ai: crate::kit::aicheck::Check,
 }
 
 impl Claude {
     pub fn new(env: &ToolEnv) -> Self {
-        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, route: None }
+        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, route: None, ai: crate::kit::aicheck::Check::new(ID, env.demo) }
     }
 }
 
@@ -172,9 +174,9 @@ impl Tool for Claude {
     }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         if self.route.take().is_some_and(|r| r == LIMITS) {
-            page::open_limits(ui.ctx(), true);
+            page::set_tab(ui.ctx(), page::Tab::Limits);
         }
-        page::page(&self.all, self.demo, ui, rect, cx);
+        page::page(&self.all, &mut self.ai, self.demo, ui, rect, cx);
     }
     fn open_page(&mut self, route: &str) {
         self.route = (!route.is_empty()).then(|| route.to_string());

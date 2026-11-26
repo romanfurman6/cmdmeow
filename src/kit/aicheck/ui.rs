@@ -31,7 +31,12 @@ pub enum Event {
 /// Not on a locked page (a missing permission disables it), and only once the
 /// tool has something to check and the main agent can run (screenshots: always).
 pub fn shown(c: &Check, ui: &Ui, has_data: bool) -> bool {
-    ui.is_enabled() && (c.demo || (has_data && crate::kit::agent::main().ready()))
+    ui.is_enabled() && (c.demo || !c.pinned.is_empty() || (has_data && crate::kit::agent::main().ready()))
+}
+
+/// The popover opens before any check: the tool's own tips are there.
+fn has_pinned(c: &Check) -> bool {
+    !c.pinned.is_empty()
 }
 
 fn agent_of(c: &Check) -> Agent {
@@ -40,7 +45,9 @@ fn agent_of(c: &Check) -> Agent {
 
 /// The chip's text for the current phase.
 fn chip_label(c: &Check) -> String {
+    let tips = |n: usize| tn!("kit.ac.tips", n = n).into_owned();
     match c.phase() {
+        Phase::Idle if has_pinned(c) => tips(c.pinned.len()),
         Phase::Idle => t!("kit.ac.check_with", agent = agent_of(c).name()).into_owned(),
         Phase::Running => ts!("kit.ac.checking").into(),
         Phase::Failed(_) => ts!("kit.ac.failed").into(),
@@ -52,8 +59,7 @@ fn chip_label(c: &Check) -> String {
         Phase::Done => {
             let recs = c.recs();
             let a = recs.iter().filter(|r| c.is_answer(r)).count();
-            let t = recs.len() - a;
-            let tips = |n: usize| tn!("kit.ac.tips", n = n).into_owned();
+            let t = recs.len() - a + c.pinned.len();
             match (a, t) {
                 (0, 0) => ts!("kit.ac.all_good").into(),
                 (0, t) => tips(t),
@@ -95,7 +101,7 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     let id = ui.scope_id().with(("ai-chip", c.tool));
     let k = crate::kit::key::press(ui, r, id, true, Some(crate::kit::sound::Click::Chip));
     let resp = k.resp.clone();
-    let filled = matches!(phase, Phase::Done) && !(if c.inline { c.tips() } else { c.recs() }).is_empty() || c.open;
+    let filled = matches!(phase, Phase::Done) && !(if c.inline { c.tips() } else { c.recs() }).is_empty() || c.open || has_pinned(c);
     let failed = matches!(phase, Phase::Failed(_));
     let face = crate::kit::key::paint(&p, r, &ai_look(filled, failed, c.open), &k);
     let gx = face.left() + 10.0 + 7.0;
@@ -116,12 +122,13 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
     let mut ev = None;
     if resp.clicked() {
         match phase {
+            Phase::Idle if has_pinned(c) => c.open = !c.open,
             Phase::Idle => ev = Some(Event::Start),
             Phase::Running => c.stop(),
             Phase::Done | Phase::Failed(_) => c.open = !c.open,
         }
     }
-    if c.open && matches!(phase, Phase::Done | Phase::Failed(_)) {
+    if c.open && (matches!(phase, Phase::Done | Phase::Failed(_)) || has_pinned(c)) {
         if let Some(e) = popover(c, ui, r, 1.0) {
             ev = Some(e);
         }
@@ -131,7 +138,7 @@ pub fn chip(c: &mut Check, ui: &mut Ui, at: Pos2, has_data: bool) -> Option<Even
         // after a click in it the popover fades out instead of vanishing
         if let Some(t0) = c.closing {
             let t = ((ctx.input(|i| i.time) - t0) / POP_FADE) as f32;
-            if t < 1.0 && matches!(phase, Phase::Done) {
+            if t < 1.0 && (matches!(phase, Phase::Done) || has_pinned(c)) {
                 popover(c, ui, r, 1.0 - t);
                 ctx.request_repaint();
             } else {
@@ -154,21 +161,37 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
     let w = POP_W.min(screen.width() - 2.0 * sp::L);
     let answers: Vec<Rec> = recs.iter().filter(|r| c.is_answer(r)).cloned().collect();
     let others: Vec<Rec> = recs.iter().filter(|r| !c.is_answer(r)).cloned().collect();
-    let sections = if answers.is_empty() { 0.0 } else if others.is_empty() { 1.0 } else { 2.0 };
+    let pinned = c.pinned.clone();
+    let has_answers = !answers.is_empty();
+    // the page's own tips first, then what waited on the user, then the rest;
+    // with the page's tips each group says whose it is
+    let agent = agent_of(c).name();
+    let groups: Vec<(String, Vec<Rec>)> = if pinned.is_empty() {
+        let also = if answers.is_empty() { String::new() } else { ts!("kit.ac.also").to_string() };
+        vec![(format!("{} · {}", ts!("kit.ac.needs_ok"), answers.len()), answers), (also, others)]
+    } else {
+        vec![(format!("{} · {}", c.pinned_label, pinned.len()), pinned), (format!("{} · {}", ts!("kit.ac.needs_ok"), answers.len()), answers), (format!("{agent} · {}", others.len()), others)]
+    };
+    let groups: Vec<(String, Vec<Rec>)> = groups.into_iter().filter(|g| !g.1.is_empty()).collect();
+    let labelled = has_pinned(c) || has_answers;
+    let sections = if labelled { groups.len() as f32 } else { 0.0 };
     let (line, col) = match &phase {
         Phase::Failed(e) => (e.clone(), AMBER()),
-        _ => {
+        Phase::Running => (ts!("kit.ac.checking").to_string(), TEXT_DIM()),
+        Phase::Idle => (String::new(), TEXT_DIM()),
+        Phase::Done => {
             let hl = c.headline();
-            (if recs.is_empty() && hl.is_empty() { ts!("kit.ac.nothing").to_string() } else { hl }, TEXT_DIM())
+            (if recs.is_empty() && hl.is_empty() && !has_pinned(c) { ts!("kit.ac.nothing").to_string() } else { hl }, TEXT_DIM())
         }
     };
     // the agent's words wrap, never cut (R10): rows grow to fit them
     let pm = ui.painter().clone();
     let line_h = wrapped_h(&pm, &line, ty::body(), w - 28.0, 3);
-    let head_h = POP_HEAD_H + line_h + sp::M;
+    let head_h = if line_h > 0.0 { POP_HEAD_H + line_h + sp::M } else { POP_HEAD_H };
     // one text width for every row, so the values line up in a column
-    let btn_w = recs.iter().map(|r| rec_buttons(&pm, c, r).1).fold(0.0, f32::max);
-    let row_hs: Vec<f32> = answers.iter().chain(others.iter()).map(|r| rec_height(&pm, r, w, btn_w)).collect();
+    let all: Vec<&Rec> = groups.iter().flat_map(|g| g.1.iter()).collect();
+    let btn_w = all.iter().map(|r| rec_buttons(&pm, c, r).1).fold(0.0, f32::max);
+    let row_hs: Vec<f32> = all.iter().map(|r| rec_height(&pm, r, w, btn_w)).collect();
     let h = head_h + row_hs.iter().sum::<f32>() + sections * POP_SEC_H;
     let x = chip.left().min(screen.right() - sp::L - w).max(screen.left() + sp::L);
     let rect = Rect::from_min_size(Pos2::new(x, chip.bottom() + 6.0), Vec2::new(w, h));
@@ -188,28 +211,35 @@ fn popover(c: &mut Check, ui: &mut Ui, chip: Rect, alpha: f32) -> Option<Event> 
         // the headline (or the error) under it
         let cy = rr.top() + POP_HEAD_H / 2.0;
         agent_mark(&p, Rect::from_center_size(Pos2::new(rr.left() + 14.0 + 7.0, cy), Vec2::splat(12.0)), agent_of(c), None);
-        p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, ts!("kit.ac.title"), ty::title(), TEXT());
-        let again = if matches!(phase, Phase::Failed(_)) { ts!("kit.ac.try_again") } else { ts!("kit.ac.check_again") };
-        let aw = p.layout_no_wrap(again.into(), ty::body(), TEXT()).size().x;
-        let ar = Rect::from_min_size(Pos2::new(rr.right() - 14.0 - aw, cy - 10.0), Vec2::new(aw, 20.0));
-        if ghost(ui, ar, again) {
-            ev = Some(Event::Start);
+        let (title, sub) = c.title.clone().unwrap_or_else(|| (ts!("kit.ac.title").to_string(), String::new()));
+        let again = match phase {
+            Phase::Failed(_) => Some(ts!("kit.ac.try_again").to_string()),
+            Phase::Done => Some(ts!("kit.ac.check_again").to_string()),
+            // the page's own tips are up before any check: ask from here
+            Phase::Idle if crate::kit::agent::main().ready() || c.demo => Some(t!("kit.ac.check_with", agent = agent).into_owned()),
+            _ => None,
+        };
+        let aw = again.as_ref().map(|a| p.layout_no_wrap(a.clone(), ty::body(), TEXT()).size().x).unwrap_or(0.0);
+        let tr = p.text(Pos2::new(rr.left() + 14.0 + 20.0, cy), Align2::LEFT_CENTER, &title, ty::title(), TEXT());
+        if !sub.is_empty() {
+            text_fit(&p, Pos2::new(tr.right() + sp::S, cy), Align2::LEFT_CENTER, &sub, ty::label(), TEXT_FAINT(), rr.right() - 14.0 - aw - sp::L - tr.right() - sp::S);
+        }
+        if let Some(again) = &again {
+            let ar = Rect::from_min_size(Pos2::new(rr.right() - 14.0 - aw, cy - 10.0), Vec2::new(aw, 20.0));
+            if ghost(ui, ar, again) {
+                ev = Some(Event::Start);
+            }
         }
         text_wrap(&p, Pos2::new(rr.left() + 14.0, rr.top() + POP_HEAD_H - sp::XS), Align2::LEFT_TOP, &line, ty::body(), col, rr.width() - 28.0, 3);
         c.hovered = None;
         let mut y = rr.top() + head_h;
         let mut k = 0;
-        // what waited on the user first, under its own label; then the rest
-        let groups: [(&str, &Vec<Rec>); 2] = [(ts!("kit.ac.needs_ok"), &answers), (ts!("kit.ac.also"), &others)];
+        // each group under its own label when there's more than one
         let n_rows = row_hs.len();
-        for (label, list) in groups {
-            if list.is_empty() {
-                continue;
-            }
-            if sections > 0.0 {
+        for (label, list) in &groups {
+            if labelled {
                 hairline(&p, Pos2::new(rr.left(), y), Pos2::new(rr.right(), y));
-                let t = if label == "Also" { label.to_string() } else { format!("{label} · {}", list.len()) };
-                p.text(Pos2::new(rr.left() + 14.0, y + POP_SEC_H / 2.0), Align2::LEFT_CENTER, t, ty::label(), TEXT_FAINT());
+                p.text(Pos2::new(rr.left() + 14.0, y + POP_SEC_H / 2.0), Align2::LEFT_CENTER, label, ty::label(), TEXT_FAINT());
                 y += POP_SEC_H;
             }
             for r in list.iter() {
@@ -320,6 +350,10 @@ fn wrapped_h(p: &egui::Painter, text: &str, font: egui::FontId, w: f32, rows: us
 /// A recommendation's buttons: the agent's pick, then Skip (an answer: the
 /// other choice). Their labels and the width they take on the right.
 fn rec_buttons(p: &egui::Painter, c: &Check, r: &Rec) -> (Option<(&'static str, &'static str)>, f32) {
+    // the page's own tips: one quiet button at most, no Skip
+    if c.pinned.contains(r) {
+        return (None, if r.label.is_empty() { 0.0 } else { 14.0 + button_width(p, &r.label, BTN_SECONDARY) });
+    }
     let alt = if c.is_answer(r) { c.actions.iter().find(|(id, _)| *id != r.action).copied() } else { None };
     let second = match alt {
         Some((_, label)) => button_width(p, label, BTN_SECONDARY),
@@ -350,8 +384,10 @@ fn rec_height(p: &egui::Painter, r: &Rec, w: f32, bw: f32) -> f32 {
 fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool) -> Option<Event> {
     let p = ui.painter().clone();
     let cy = rr.center().y;
+    let pinned = c.pinned.contains(r);
+    let locate = c.locate && !pinned;
     // first, so the buttons drawn after it take their own clicks
-    let row = ui.interact(rr, ui.scope_id().with(("ai-row", &r.key)), if c.locate { Sense::click() } else { Sense::hover() });
+    let row = ui.interact(rr, ui.scope_id().with(("ai-row", &r.key)), if locate { Sense::click() } else { Sense::hover() });
     let lit = row.hovered() || ui.rect_contains_pointer(rr);
     if lit {
         c.hovered = Some(r.key.clone());
@@ -362,13 +398,24 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool
     }
     // H2: no hairline touches a lit row
     row_divider(ui, &p, rr.left_top(), rr.right_top(), lit, rr.bottom());
-    if c.locate && row.hovered() {
+    if locate && row.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let ic = Rect::from_center_size(Pos2::new(rr.left() + 14.0 + 12.0, cy), Vec2::splat(24.0));
     rec_icon(c, ui.ctx(), &p, ic, r);
     let mut ev = None;
     let (alt, _) = rec_buttons(&p, c, r);
+    if pinned {
+        if !r.label.is_empty() {
+            let bw = button_width(&p, &r.label, BTN_SECONDARY);
+            let br = Rect::from_min_size(Pos2::new(rr.right() - 14.0 - bw, cy - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
+            if pill_button(ui, br, &r.label, BTN_SECONDARY, true).clicked() {
+                ev = Some(Event::Act(r.clone()));
+            }
+        }
+        rec_text(&p, rr, r, btn_w);
+        return ev;
+    }
     let sr = if let Some((id, label)) = alt {
         let aw = button_width(&p, label, BTN_SECONDARY);
         let ar = Rect::from_min_size(Pos2::new(rr.right() - 14.0 - aw, cy - sp::CONTROL_H / 2.0), Vec2::new(aw, sp::CONTROL_H));
@@ -392,20 +439,26 @@ fn rec_row(c: &mut Check, ui: &mut Ui, rr: Rect, r: &Rec, btn_w: f32, last: bool
     if ev.is_none() && c.locate && row.clicked() {
         ev = Some(Event::Show(r.clone()));
     }
+    rec_text(&p, rr, r, btn_w);
+    ev
+}
+
+/// A recommendation's title and value over its why, left of the buttons.
+fn rec_text(p: &egui::Painter, rr: Rect, r: &Rec, btn_w: f32) {
+    let cy = rr.center().y;
     let (tx, tw) = rec_text_span(rr.width(), btn_w);
     let tx = rr.left() + tx;
     let vw = if r.value.is_empty() { 0.0 } else { p.layout_no_wrap(r.value.clone(), ty::title(), TEXT()).size().x + sp::M };
-    let th = wrapped_h(&p, &r.title, ty::title(), tw - vw, 2);
-    let wh = wrapped_h(&p, &r.why, ty::label(), tw, 3);
+    let th = wrapped_h(p, &r.title, ty::title(), tw - vw, 2);
+    let wh = wrapped_h(p, &r.why, ty::label(), tw, 3);
     let top = cy - (th + if wh > 0.0 { sp::LINE_GAP + wh } else { 0.0 }) / 2.0;
-    let t = text_wrap(&p, Pos2::new(tx, top), Align2::LEFT_TOP, &r.title, ty::title(), TEXT(), tw - vw, 2);
+    let t = text_wrap(p, Pos2::new(tx, top), Align2::LEFT_TOP, &r.title, ty::title(), TEXT(), tw - vw, 2);
     if !r.value.is_empty() {
         p.text(Pos2::new(tx + tw, top), Align2::RIGHT_TOP, &r.value, ty::title(), AI());
     }
     if wh > 0.0 {
-        text_wrap(&p, Pos2::new(tx, t.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, &r.why, ty::label(), TEXT_DIM(), tw, 3);
+        text_wrap(p, Pos2::new(tx, t.bottom() + sp::LINE_GAP), Align2::LEFT_TOP, &r.why, ty::label(), TEXT_DIM(), tw, 3);
     }
-    ev
 }
 
 fn rec_icon(c: &mut Check, ctx: &egui::Context, p: &egui::Painter, r: Rect, rec: &Rec) {
