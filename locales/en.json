@@ -816,7 +816,8 @@
       "already": "Already added",
       "remove": "Remove",
       "section": "Claude accounts"
-    }
+    },
+    "not_installed_short": "Not installed"
   },
   "cleanup": {
     "name": "Cleanup",

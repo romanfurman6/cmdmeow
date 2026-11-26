@@ -598,6 +598,20 @@ fn mean_left(rows: &[(bool, Option<f32>)]) -> (f32, f32) {
     (vals.iter().sum::<f32>() / n, n)
 }
 
+/// An account row's word when it has no number: Checking, Signed out,
+/// Not installed or No data.
+fn account_status(a: &UsageInfo) -> &'static str {
+    if a.loading || !a.scanned {
+        ts!("ai.checking")
+    } else if !a.installed {
+        ts!("ai.not_installed_short")
+    } else if a.signed_out || !a.logged_in {
+        ts!("ai.signed_out")
+    } else {
+        ts!("ai.no_data")
+    }
+}
+
 /// SP22 for several accounts: on the left the limit across them ("90%
 /// left", the mean of what each has left) and the soonest comeback; on the
 /// right a row per account with its folder, what it has left, when it
@@ -638,8 +652,14 @@ fn multi_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, label: &str) {
                 let when = if idle(l) { ts!("ai.not_started").to_string() } else if reset.is_empty() { String::new() } else { t!("ai.resets", when = reset).into_owned() };
                 (format!("{:.0}% {}", left_of(l), ts!("ai.left")), if red { RED() } else { TEXT() }, when)
             }
-            None => (a.error.clone().unwrap_or_else(|| if a.loading || !a.scanned { ts!("ai.checking").to_string() } else { ts!("ai.no_data").to_string() }), TEXT_DIM(), String::new()),
+            // a word here (R-minimal); what to do is in the row's hover
+            None => (account_status(a).to_string(), TEXT_DIM(), String::new()),
         };
+        if l.is_none() {
+            if let Some(err) = a.error.as_deref().filter(|e| !e.is_empty()) {
+                let _ = ui.interact(rr, ui.scope_id().with(("ai-acc-row", &a.folder, label)), Sense::hover()).on_hover_text(err);
+            }
+        }
         let wr = if when.is_empty() { Rect::from_min_size(Pos2::new(rr.right(), rr.top()), Vec2::ZERO) } else { p.text(Pos2::new(rr.right(), rr.top()), Align2::RIGHT_TOP, format!(" · {when}"), ty::label(), TEXT_DIM()) };
         let vr = text_fit(&p, Pos2::new(wr.left(), rr.top()), Align2::RIGHT_TOP, &v, bold(12.0), vc, rr.width() * 0.6);
         let nr = text_fit(&p, rr.left_top(), Align2::LEFT_TOP, &a.account, bold(12.0), TEXT_SOFT(), vr.left() - rr.left() - sp::S);
