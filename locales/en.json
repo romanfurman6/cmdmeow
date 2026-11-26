@@ -2156,7 +2156,8 @@
     "removing_app": "Removing Cmd+Meow…",
     "automation_access": "Automation access",
     "finder_access": "Finder access",
-    "finder": "Finder"
+    "finder": "Finder",
+    "updated": "Updated"
   },
   "setup": {
     "back": "Back",
