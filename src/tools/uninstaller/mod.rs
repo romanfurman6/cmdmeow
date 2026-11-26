@@ -669,7 +669,12 @@ fn drop_moved(g: &mut State, rep: &Report) {
     let gone = |p: &Path| p.ancestors().any(|a| moved.contains(a));
     g.apps.retain(|a| !gone(&a.path));
     for a in g.apps.iter_mut() {
-        a.items.retain(|i| !gone(&i.path));
+        // an app the removal touched (Reset, files that stayed) is read
+        // again before it can be removed: its old list no longer holds
+        if a.items.iter().any(|i| gone(&i.path)) {
+            a.items.clear();
+            a.sized = false;
+        }
     }
     for o in g.orphans.iter_mut() {
         o.items.retain(|i| !gone(&i.path));
@@ -1079,6 +1084,19 @@ mod tests {
         assert_eq!(g.orphans.len(), 1);
         assert_eq!(g.orphans[0].items.len(), 1);
         assert_eq!(g.orphans[0].items[0].path, PathBuf::from("/u/Library/Caches/b"));
+    }
+
+    #[test]
+    fn an_app_a_removal_touched_is_read_again() {
+        let item = |p: &str| super::leftovers::Item { path: PathBuf::from(p), kind: super::leftovers::Kind::Caches, bytes: 1, admin: false, selected: true };
+        let row = |name: &str, items: Vec<super::leftovers::Item>| AppRow { path: PathBuf::from(format!("/Applications/{name}.app")), name: name.into(), id: name.into(), version: String::new(), source: apps::Source::Direct, locked: None, last_used: None, items, sized: true, alt: Vec::new(), sign: Default::default(), pkgs: Vec::new() };
+        let mut g = State::default();
+        g.apps = vec![row("Reset", vec![item("/Applications/Reset.app"), item("/u/Library/Caches/reset")]), row("Other", vec![item("/Applications/Other.app"), item("/u/Library/Caches/other")])];
+        let rep = Report { moved: vec![remove::Moved { from: PathBuf::from("/u/Library/Caches/reset"), to: PathBuf::from("/u/.Trash/x"), admin: false, bytes: 1, owner: None }], ..Default::default() };
+        drop_moved(&mut g, &rep);
+        // a Reset app stays, but its old file list no longer counts as measured
+        assert!(!g.apps[0].sized && g.apps[0].items.is_empty());
+        assert!(g.apps[1].sized && g.apps[1].items.len() == 2);
     }
 
     #[test]
