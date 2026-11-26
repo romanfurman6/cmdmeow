@@ -603,8 +603,13 @@
     "get": "Get %{name}",
     "open_terminal": "Open Terminal",
     "looking_for": "Looking for %{name}…",
-    "incident_outage": "%{host} reports an outage right now. It's about %{name}'s servers, not your usage.",
-    "incident_degraded": "%{host} reports degraded service right now. It's about %{name}'s servers, not your usage.",
+    "inc": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "yesterday": "Yesterday %{time}",
+      "since": "since %{when}"
+    },
     "checking": "Checking…",
     "api_key_suffix": " · API key",
     "asking_limits": "Asking %{provider} for your limits…",

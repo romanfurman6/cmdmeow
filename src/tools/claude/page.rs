@@ -112,16 +112,68 @@ fn not_set_up(a: Availability, cl: &UsageInfo, demo: bool, ui: &mut Ui, r: Rect,
     }
 }
 
-/// An outage chip (the provider's status page, not the person's usage),
-/// with a hover that says so.
+/// An outage chip (the provider's status page, not the person's usage).
+/// Hover shows the open incidents (name, state and since when, what it
+/// touches); a click opens the incident on the status page.
 fn incident(ui: &mut Ui, pos: Pos2, align: Align2, cl: &UsageInfo) -> Option<Rect> {
     let p = ui.painter().clone();
     let r = parts::incident_chip(&p, pos, align, cl)?;
     let m = ai::meta(cl.provider);
-    let host = m.status_url.trim_start_matches("https://").split('/').next().unwrap_or("");
-    let tip = if cl.incident.as_deref() == Some("Outage") { t!("ai.incident_outage", host = host, name = m.name) } else { t!("ai.incident_degraded", host = host, name = m.name) };
-    ui.interact(r, ui.scope_id().with(("ai-incident", cl.provider)), egui::Sense::hover()).on_hover_text(tip);
+    let host = m.status_url.trim_start_matches("https://").split('/').next().unwrap_or("").to_owned();
+    let resp = ui.interact(r, ui.scope_id().with(("ai-incident", cl.provider)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    if resp.clicked() {
+        let link = cl.incidents.iter().map(|i| i.link.as_str()).find(|l| l.starts_with("https://")).map(str::to_owned).unwrap_or_else(|| format!("https://{host}"));
+        let _ = std::process::Command::new("open").arg(link).spawn();
+    }
+    let level = if cl.incident.as_deref() == Some("Outage") { RED() } else { AMBER() };
+    let mut t = egui::Tooltip::for_enabled(&resp);
+    t.popup = t.popup.align(egui::RectAlign::BOTTOM).gap(8.0);
+    t.show(|ui| incident_tip(ui, &cl.incidents, &host, level));
     Some(r)
+}
+
+/// The badge's hover: each open incident split by a hairline, then the
+/// status page's host.
+fn incident_tip(ui: &mut Ui, incidents: &[ai::status::Incident], host: &str, level: egui::Color32) {
+    use egui::RichText;
+    ui.set_width(300.0 - 2.0 * sp::M);
+    ui.spacing_mut().item_spacing.y = 4.0;
+    for (n, i) in incidents.iter().enumerate() {
+        if n > 0 {
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(4.0);
+        }
+        ui.add(egui::Label::new(RichText::new(&i.name).font(bold(13.0)).color(TEXT())).wrap());
+        let state = parts::incident_state(&i.state);
+        let since = i.since.map(parts::incident_since);
+        if state.is_some() || since.is_some() {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                if let Some(s) = &state {
+                    ui.label(RichText::new(s.as_str()).font(bold(12.0)).color(level));
+                }
+                if let Some(w) = &since {
+                    let w = if state.is_some() { format!(" · {w}") } else { w.clone() };
+                    ui.label(RichText::new(w).font(font(12.0)).color(TEXT_DIM()));
+                }
+            });
+        }
+        if !i.affects.is_empty() {
+            ui.add(egui::Label::new(RichText::new(i.affects.join(" · ")).font(font(12.0)).color(TEXT_FAINT())).wrap());
+        }
+    }
+    if !incidents.is_empty() {
+        ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(4.0);
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(host).font(font(12.0)).color(TEXT_FAINT()));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new("↗").font(font(12.0)).color(TEXT_FAINT()));
+        });
+    });
 }
 
 pub fn page(all: &All, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
