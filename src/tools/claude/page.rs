@@ -690,7 +690,7 @@ fn cost_tab(infos: &[UsageInfo], ui: &mut Ui, a: Rect, m: Measure, demo: bool) {
     let ky = a.top() + COST_ROW_H + GAP;
     let half = (a.width() - GAP) / 2.0;
     kinds_totals(&p, Rect::from_min_size(Pos2::new(a.left(), ky), Vec2::new(half, KINDS_H)), &all, &kinds);
-    by_type(&p, Rect::from_min_size(Pos2::new(a.left() + half + GAP, ky), Vec2::new(half, KINDS_H)), &kinds, m);
+    by_type(&p, Rect::from_min_size(Pos2::new(a.left() + half + GAP, ky), Vec2::new(half, KINDS_H)), &kinds, &all, m);
     let br = Rect::from_min_size(Pos2::new(a.left(), ky + KINDS_H + GAP), Vec2::new(a.width(), breakdown_height()));
     breakdown(ui, br, infos, &lines, m, period);
 }
@@ -702,8 +702,10 @@ fn kinds_totals(p: &egui::Painter, r: Rect, all: &[Series], k: &ai::Kinds) {
     data_card(p, r);
     let i = r.shrink(sp::L);
     p.text(i.left_top(), Align2::LEFT_TOP, ts!("ai.totals"), ty::title(), TEXT());
-    let tokens: u64 = all.iter().flat_map(|s| s.days.iter()).map(|d| d.tokens).sum();
-    let requests: u64 = all.iter().flat_map(|s| s.days.iter()).map(|d| d.requests).sum();
+    // tokens and requests as the "30 days" card counts them (with the days
+    // kept only in the app's history); the kinds come from the logs
+    let tokens: u64 = all.iter().flat_map(|s| s.days.iter()).map(|d| d.tokens).sum::<u64>().max(k.tokens());
+    let requests: u64 = all.iter().flat_map(|s| s.days.iter()).map(|d| d.requests).sum::<u64>().max(k.requests);
     let mut stats: Vec<(String, &str)> = vec![
         (ai::human_tokens(tokens), ts!("ai.kind.tokens")),
         (ai::human_tokens(k.cache_read), ts!("ai.kind.cached_input")),
@@ -726,18 +728,26 @@ fn kinds_totals(p: &egui::Painter, r: Rect, all: &[Series], k: &ai::Kinds) {
 
 /// "Cost by type" (or "Tokens by type"): input, cache reads, cache writes
 /// and output as one stacked bar, a legend with each under it.
-fn by_type(p: &egui::Painter, r: Rect, k: &ai::Kinds, m: Measure) {
+fn by_type(p: &egui::Painter, r: Rect, k: &ai::Kinds, all: &[Series], m: Measure) {
     data_card(p, r);
     let i = r.shrink(sp::L);
     let title = if m == Measure::Usd { ts!("ai.cost_by_type") } else { ts!("ai.tokens_by_type") };
     p.text(i.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
-    let parts_: [(&str, f64, f64, Color32); 4] = [
+    let mut parts_: Vec<(&str, f64, f64, Color32)> = vec![
         (ts!("ai.kind.input"), k.input as f64, k.usd_input, series::monitor(2)),
         (ts!("ai.kind.cache_read"), k.cache_read as f64, k.usd_cache_read, with_alpha(series::monitor(0), 0.45)),
         (ts!("ai.kind.cache_write"), k.cache_write as f64, k.usd_cache_write, series::monitor(0)),
         (ts!("ai.kind.output"), k.output as f64, k.usd_output, series::monitor(1)),
     ];
     let val = |t: f64, u: f64| if m == Measure::Usd { u } else { t };
+    // days the app kept after the logs were cleaned up have totals but no
+    // split: one more part, so the parts add up to the "30 days" card
+    let card: f64 = all.iter().flat_map(|s| s.days.iter()).map(|d| value(d, m)).sum();
+    let known: f64 = parts_.iter().map(|(_, t, u, _)| val(*t, *u)).sum();
+    if card - known > card * 0.005 {
+        let rest = card - known;
+        parts_.push((ts!("ai.no_details"), rest, rest, white(46)));
+    }
     let total: f64 = parts_.iter().map(|(_, t, u, _)| val(*t, *u)).sum();
     let body = Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::M), i.max);
     if total <= 0.0 {
@@ -746,11 +756,12 @@ fn by_type(p: &egui::Painter, r: Rect, k: &ai::Kinds, m: Measure) {
     }
     let segs: Vec<(f32, Color32)> = parts_.iter().map(|(_, t, u, c)| ((val(*t, *u) / total) as f32, *c)).collect();
     stacked_bar(p, Rect::from_min_size(Pos2::new(body.left(), body.top() + sp::S), Vec2::new(body.width(), 8.0)), &segs);
-    // the legend: two to a line
+    // the legend: two to a line, three when there's a fifth part
     let ly = body.top() + sp::S + 8.0 + sp::L;
-    let cw = body.width() / 2.0;
+    let per = if parts_.len() > 4 { 3 } else { 2 };
+    let cw = body.width() / per as f32;
     for (n, (lab, t, u, c)) in parts_.iter().enumerate() {
-        let lr = Rect::from_min_size(Pos2::new(body.left() + (n % 2) as f32 * cw - 12.0, ly + (n / 2) as f32 * sp::LEGEND_H), Vec2::new(cw + 12.0, sp::LEGEND_H));
+        let lr = Rect::from_min_size(Pos2::new(body.left() + (n % per) as f32 * cw - 12.0, ly + (n / per) as f32 * sp::LEGEND_H), Vec2::new(cw + 12.0, sp::LEGEND_H));
         let v = val(*t, *u);
         legend_row(p, lr, *c, lab, &fmt(v, m), TEXT());
     }

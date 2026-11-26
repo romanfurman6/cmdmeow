@@ -585,10 +585,17 @@ pub struct Kinds {
     /// What the cache reads saved: their cost as fresh input less what
     /// they cost.
     pub savings: f64,
+    pub requests: u64,
 }
 
 impl Kinds {
+    /// Tokens that count toward limits (all but cache reads), as
+    /// [`UsageEntry::tokens`].
+    pub fn tokens(&self) -> u64 {
+        self.input + self.output + self.cache_write
+    }
     fn add(&mut self, e: &UsageEntry) {
+        self.requests += 1;
         self.input += e.input;
         self.output += e.output;
         self.cache_write += e.cache_write + e.cache_write_1h;
@@ -612,6 +619,7 @@ impl Kinds {
         self.usd_cache_write += o.usd_cache_write;
         self.usd_cache_read += o.usd_cache_read;
         self.savings += o.savings;
+        self.requests += o.requests;
         self
     }
 }
@@ -899,7 +907,8 @@ mod tests {
         let mut k = Kinds::default();
         k.add(&e);
         let p = price::of("claude-sonnet-4-5").unwrap();
-        assert_eq!((k.input, k.output, k.cache_write, k.cache_read), (1_000_000, 1_000_000, 1_000_000, 1_000_000));
+        assert_eq!((k.input, k.output, k.cache_write, k.cache_read, k.requests), (1_000_000, 1_000_000, 1_000_000, 1_000_000, 1));
+        assert_eq!(k.tokens(), e.tokens());
         let total = k.usd_input + k.usd_output + k.usd_cache_write + k.usd_cache_read;
         assert!((total - e.usd().unwrap()).abs() < 1e-9);
         assert!((k.savings - (p.input - p.cache_read)).abs() < 1e-9);
