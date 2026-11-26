@@ -199,6 +199,7 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     // a dialog on top (the review, or the move under way) holds the page
     // still: its lists don't scroll along with the dialog's
     let modal = u.review.is_some() || u.st.lock_ok().working.is_some();
+    want_first(u);
     ui.scope(|ui| {
         if modal {
             ui.disable();
@@ -222,7 +223,7 @@ pub fn page(u: &mut Uninstaller, ui: &mut Ui, r: Rect, cx: &mut Cx) {
                 u.st.lock_ok().drop = Drop::Idle;
                 u.selected = t.app.clone();
                 u.tab = Tab::Apps;
-                u.review = Some(Review { targets: vec![t], open: [0].into() });
+                u.review = Some(Review::new(vec![t], [0].into()));
             }
             Drop::Refused(name, why) => {
                 u.st.lock_ok().drop = Drop::Idle;
@@ -493,7 +494,7 @@ fn batch_bar(u: &mut Uninstaller, ui: &mut Ui, bar: Rect) {
         let g = u.st.lock_ok();
         let targets: Vec<Target> = g.apps.iter().filter(|a| u.checked.contains(&a.path) && a.locked.is_none()).map(|a| a.target(false)).collect();
         drop(g);
-        u.review = Some(Review { targets, open: Default::default() });
+        u.review = Some(Review::new(targets, Default::default()));
     }
     let cw = button_width(&p, ts!("un.clear"), BTN_SECONDARY);
     let cr = Rect::from_min_size(Pos2::new(br.left() - 8.0 - cw, br.top()), Vec2::new(cw, 30.0));
@@ -605,11 +606,11 @@ fn app_detail(u: &mut Uninstaller, ui: &mut Ui, r: Rect, sel: &Path) {
     let main_r = Rect::from_min_max(Pos2::new(reset_r.right() + gap, btn_top), Pos2::new(x1, btn_top + 30.0));
     let has_data = a.items.iter().any(|i| !i.kind.is_part());
     if pill_button(ui, reset_r, ts!("un.reset_btn"), BTN_SECONDARY, has_data).on_hover_text(ts!("un.reset_tip")).clicked() {
-        u.review = Some(Review { targets: vec![a.target(true)], open: [0].into() });
+        u.review = Some(Review::new(vec![a.target(true)], [0].into()));
     }
     let label = if running { ts!("un.quit_uninstall") } else { ts!("un.uninstall_btn") };
     if pill_button(ui, main_r, label, BTN_PRIMARY, n_sel > 0).clicked() {
-        u.review = Some(Review { targets: vec![a.target(false)], open: [0].into() });
+        u.review = Some(Review::new(vec![a.target(false)], [0].into()));
     }
 }
 
@@ -619,8 +620,46 @@ fn review(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     crate::kit::modal::layer(ui, "un-review", |ui| review_body(u, ui, r));
 }
 
+/// Tell the scan which apps to measure first: the ones under review still
+/// waiting for their files, the app shown, the ones ticked. An app left
+/// unmeasured after a scan gets a new one.
+fn want_first(u: &mut Uninstaller) {
+    let mut want: Vec<PathBuf> = u.review.as_ref().map(|rv| rv.waiting.iter().cloned().collect()).unwrap_or_default();
+    want.extend(u.selected.iter().cloned());
+    want.extend(u.checked.iter().cloned());
+    let mut g = u.st.lock_ok();
+    want.retain(|p| g.apps.iter().any(|a| &a.path == p && !a.sized && a.locked.is_none()));
+    let stuck = !want.is_empty() && g.phase == Phase::Ready;
+    g.urgent = want;
+    drop(g);
+    if stuck {
+        u.rescan();
+    }
+}
+
+/// Apps opened for review before they were measured wait for their files
+/// (only while a scan runs, which measures them first), then take them in.
+fn refresh_review(u: &mut Uninstaller) {
+    let g = u.st.lock_ok();
+    let Some(rv) = u.review.as_mut() else { return };
+    let scanning = matches!(g.phase, Phase::Listing | Phase::Sizing { .. });
+    for t in rv.targets.iter_mut() {
+        let Some(app) = t.app.clone() else { continue };
+        match g.apps.iter().find(|a| a.path == app) {
+            Some(a) if !a.sized && scanning && (t.items.is_empty() || rv.waiting.contains(&app)) => {
+                rv.waiting.insert(app);
+            }
+            Some(a) if a.sized && rv.waiting.remove(&app) => t.items = a.target(t.reset).items,
+            _ => {
+                rv.waiting.remove(&app);
+            }
+        }
+    }
+}
+
 fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let ctx = ui.ctx().clone();
+    refresh_review(u);
     scrim(ui, r, "un-review-scrim");
     let p = ui.painter().clone();
     let Some(rv) = u.review.as_ref() else { return };
@@ -668,6 +707,7 @@ fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let mut toggle_item: Option<(usize, PathBuf)> = None;
     let targets = rv.targets.clone();
     let opened = rv.open.clone();
+    let waiting = rv.waiting.clone();
     let mut budget = ICONS_PER_FRAME;
     ScrollArea::vertical().id_salt("un-review").auto_shrink([false, false]).show(&mut child, |ui| {
         let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), rows_h), Sense::hover());
@@ -683,12 +723,26 @@ fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
             icon(&p, if open { Icon::Down } else { Icon::Forward }, Rect::from_center_size(Pos2::new(row.left() + 16.0, row.center().y), Vec2::splat(11.0)), TEXT_FAINT());
             let ir = Rect::from_center_size(Pos2::new(row.left() + 44.0, row.center().y), Vec2::splat(28.0));
             app_icon(u, &ctx, &p, ir, t.app.as_deref(), &t.name, &mut budget);
-            let sz = p.text(Pos2::new(row.right() - 12.0, row.center().y), Align2::RIGHT_CENTER, human_bytes(target_bytes(t)), font(13.0), TEXT());
+            let measuring = t.app.as_ref().is_some_and(|a| waiting.contains(a));
+            // still measuring: a spinner where the size goes, until the files are in
+            let sz = if measuring {
+                let c = Pos2::new(row.right() - 12.0 - 7.0, row.center().y);
+                spinner(&p, c, 7.0, ctx.input(|i| i.time), ACCENT());
+                Rect::from_center_size(c, Vec2::splat(14.0))
+            } else {
+                p.text(Pos2::new(row.right() - 12.0, row.center().y), Align2::RIGHT_CENTER, human_bytes(target_bytes(t)), font(13.0), TEXT())
+            };
             let (ly1, ly2) = two_lines_y(&p, row.center().y, &bold(13.0), &font(11.0));
             text_fit(&p, Pos2::new(ir.right() + 10.0, ly1), Align2::LEFT_CENTER, &t.name, bold(13.0), TEXT(), sz.left() - ir.right() - 20.0);
             let open_now = t.app.is_some() && running.contains(&t.name);
-            let line = if open_now { t!("un.open_now_line", line = target_line(t)).into_owned() } else { target_line(t) };
-            text_fit(&p, Pos2::new(ir.right() + 10.0, ly2), Align2::LEFT_CENTER, &line, font(11.0), if open_now { AMBER() } else { TEXT_FAINT() }, sz.left() - ir.right() - 20.0);
+            let line = if measuring {
+                ts!("un.finding").to_string()
+            } else if open_now {
+                t!("un.open_now_line", line = target_line(t)).into_owned()
+            } else {
+                target_line(t)
+            };
+            text_fit(&p, Pos2::new(ir.right() + 10.0, ly2), Align2::LEFT_CENTER, &line, font(11.0), if open_now && !measuring { AMBER() } else { TEXT_FAINT() }, sz.left() - ir.right() - 20.0);
             if resp.clicked() {
                 toggle_open = Some(k);
             }
@@ -741,16 +795,24 @@ fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     }
     let Some(rv) = u.review.as_ref() else { return };
     let bytes: u64 = rv.targets.iter().map(target_bytes).sum();
-    let any = rv.targets.iter().any(|t| target_bytes(t) > 0 || visible_items(t).iter().any(|i| i.selected));
+    let measuring = !rv.waiting.is_empty();
+    if measuring {
+        crate::kit::glass::poll(&ctx);
+    }
+    // nothing goes to the Trash on half-read files: wait for the scan,
+    // which measures these apps before any other
+    let any = !measuring && rv.targets.iter().any(|t| target_bytes(t) > 0 || visible_items(t).iter().any(|i| i.selected));
     let by = m.bottom() - 18.0 - 30.0;
     let ok_label = if reset { ts!("un.reset") } else { ts!("un.move_to_trash") };
     let okw = button_width(&p, ok_label, BTN_PRIMARY);
     let ok = Rect::from_min_size(Pos2::new(x1 - okw, by), Vec2::new(okw, 30.0));
     let cw = button_width(&p, ts!("un.cancel"), BTN_SECONDARY);
     let cancel = Rect::from_min_size(Pos2::new(ok.left() - 8.0 - cw, by), Vec2::new(cw, 30.0));
-    let fr = p.text(Pos2::new(x0, ok.center().y), Align2::LEFT_CENTER, ts!("un.frees"), font(13.0), TEXT_DIM());
-    let br = p.text(Pos2::new(fr.right(), ok.center().y), Align2::LEFT_CENTER, human_bytes(bytes), bold(13.0), TEXT());
-    p.text(Pos2::new(br.right(), ok.center().y), Align2::LEFT_CENTER, ts!("un.after_empty"), font(13.0), TEXT_DIM());
+    if !measuring {
+        let fr = p.text(Pos2::new(x0, ok.center().y), Align2::LEFT_CENTER, ts!("un.frees"), font(13.0), TEXT_DIM());
+        let br = p.text(Pos2::new(fr.right(), ok.center().y), Align2::LEFT_CENTER, human_bytes(bytes), bold(13.0), TEXT());
+        p.text(Pos2::new(br.right(), ok.center().y), Align2::LEFT_CENTER, ts!("un.after_empty"), font(13.0), TEXT_DIM());
+    }
     if pill_button(ui, cancel, ts!("un.cancel"), BTN_SECONDARY, true).clicked() || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         u.review = None;
         return;
@@ -871,16 +933,34 @@ fn retry(u: &mut Uninstaller) {
     u.run(again);
 }
 
+/// How long a result that went fine stays up. One with problems (Try
+/// again, files that stayed) keeps UNDO_FOR.
+const TOAST_FOR: Duration = Duration::from_secs(10);
+
 fn result_bar(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
-    let fresh = u.st.lock_ok().last.as_ref().is_some_and(|(_, t)| t.elapsed() < UNDO_FOR);
-    if !fresh || u.st.lock_ok().working.is_some() {
+    if u.st.lock_ok().working.is_some() {
         return;
     }
     let Some(o) = result_text(u) else { return };
     let failed = o.failed;
-    let p = ui.painter().clone();
+    let life = if failed > 0 || o.can_retry { UNDO_FOR } else { TOAST_FOR };
     let w = 560.0f32.min(r.width() - 48.0);
     let bar = Rect::from_center_size(Pos2::new(r.center().x, r.bottom() - 46.0), Vec2::new(w, 48.0));
+    {
+        let mut g = u.st.lock_ok();
+        let Some((_, at)) = g.last.as_mut() else { return };
+        // the pointer on it holds it: the countdown starts again on leaving
+        if ui.rect_contains_pointer(bar) {
+            *at = Instant::now();
+        }
+        let left = life.saturating_sub(at.elapsed());
+        if left.is_zero() {
+            return;
+        }
+        // gone on time even with no input to wake the window
+        ui.ctx().request_repaint_after(left);
+    }
+    let p = ui.painter().clone();
     crate::kit::glass::float_shadow(&p, bar, 12.0, 1.0);
     p.rect_filled(bar, 12.0, POPOVER());
     p.rect_stroke(bar, 12.0, Stroke::new(1.0, crate::kit::glass::POPOVER_EDGE()), StrokeKind::Inside);
@@ -953,7 +1033,7 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
             Some(Event::Act(r)) => {
                 if let Some(o) = orphans.iter().find(|o| o.id == r.key) {
                     if r.action == "remove" {
-                        u.review = Some(Review { targets: vec![o.target()], open: [0].into() });
+                        u.review = Some(Review::new(vec![o.target()], [0].into()));
                     } else {
                         // an older answer's "review": show the row instead
                         u.ai.show(&o.id, ui.ctx().input(|i| i.time));
@@ -985,7 +1065,7 @@ fn leftovers_tab(u: &mut Uninstaller, ui: &mut Ui, body: Rect, chip_at: Pos2) {
     p.text(Pos2::new(hero.left() + 70.0, hero.center().y), Align2::LEFT_CENTER, title, bold(15.0), TEXT());
     if !orphans.is_empty() && pill_button(ui, br, &label, BTN_PRIMARY, !sel.is_empty()).on_hover_text(t!("un.n_selected", size = human_bytes(sel_bytes))).clicked() {
         let targets: Vec<Target> = sel.iter().map(|o| o.target()).collect();
-        u.review = Some(Review { targets, open: Default::default() });
+        u.review = Some(Review::new(targets, Default::default()));
     }
     y = hero.bottom() + 14.0;
 
@@ -1165,7 +1245,7 @@ fn inline_confirm(u: &mut Uninstaller, ui: &mut Ui, rect: Rect, d: &Drop) {
                 u.st.lock_ok().drop = Drop::Idle;
                 u.selected = t.app.clone();
                 u.tab = Tab::Apps;
-                u.review = Some(Review { targets: vec![t.clone()], open: [0].into() });
+                u.review = Some(Review::new(vec![t.clone()], [0].into()));
                 u.want_page = true;
             }
             if pill_button(ui, mr, main, BTN_PRIMARY, true).clicked() {
@@ -1345,7 +1425,7 @@ fn notice(u: &mut Uninstaller, ctx: &egui::Context, cx: &mut Cx) {
         Some(true) => {
             u.st.lock_ok().notice = None;
             u.tab = Tab::Leftovers;
-            u.review = Some(Review { targets: vec![n.target], open: [0].into() });
+            u.review = Some(Review::new(vec![n.target], [0].into()));
             cx.open_page(ID, "leftovers");
         }
         Some(false) => u.st.lock_ok().notice = None,
@@ -1502,7 +1582,7 @@ pub mod demo {
                 u.checked = g.apps.iter().filter(|a| pick.contains(&a.name.as_str())).map(|a| a.path.clone()).collect();
                 drop(g);
                 u.selected = Some(PathBuf::from("/Applications/Android Studio.app"));
-                u.review = Some(Review { targets, open: [0].into() });
+                u.review = Some(Review::new(targets, [0].into()));
             }
             "uninstaller-done" => {
                 let t = u.st.lock_ok().apps.iter().find(|a| a.name == "Android Studio").unwrap().target(false);
@@ -1511,7 +1591,7 @@ pub mod demo {
             }
             "uninstaller-reset" => {
                 let t = u.st.lock_ok().apps.iter().find(|a| a.name == "Docker").unwrap().target(true);
-                u.review = Some(Review { targets: vec![t], open: [0].into() });
+                u.review = Some(Review::new(vec![t], [0].into()));
             }
             _ => return None,
         }
