@@ -20,6 +20,9 @@ pub struct Settings {
     pub plan_usd: HashMap<String, f64>,
     /// Ids of providers turned off.
     pub off: Vec<String>,
+    /// Provider ids in the person's order (H10: dragged in the page menu
+    /// or Settings). Ids not named keep their place after these.
+    pub order: Vec<String>,
     /// Id of the agent the person mainly uses (picked in setup): Cleanup's
     /// AI check runs with it.
     pub main: String,
@@ -53,6 +56,7 @@ impl Default for Settings {
             budgets: HashMap::new(),
             plan_usd: HashMap::new(),
             off: Vec::new(),
+            order: Vec::new(),
             main: "claude".into(),
             show_cost: true,
             notify_at: vec![80, 95],
@@ -71,6 +75,45 @@ impl Settings {
     pub fn is_on(&self, id: &str) -> bool {
         !self.off.iter().any(|o| o == id)
     }
+    /// Indexes into `PROVIDERS` in the person's order.
+    pub fn ordered(&self) -> Vec<usize> {
+        order_of(&self.order, &ids())
+    }
+    /// Drag row `from` of `shown` (indexes into `PROVIDERS`, in order) to
+    /// the gap before row `gap`; providers not shown keep their places.
+    pub fn reorder(&mut self, shown: &[usize], from: usize, gap: usize) {
+        let ids = ids();
+        self.order = reordered(&self.ordered(), shown, from, gap).into_iter().map(|k| ids[k].to_string()).collect();
+    }
+}
+
+fn ids() -> Vec<&'static str> {
+    super::PROVIDERS.iter().map(|m| m.id).collect()
+}
+
+/// Indexes into `ids`: the ones `order` names first, in its order, then
+/// the rest as listed.
+fn order_of(order: &[String], ids: &[&str]) -> Vec<usize> {
+    let mut v: Vec<usize> = (0..ids.len()).collect();
+    v.sort_by_key(|&k| match order.iter().position(|o| o == ids[k]) {
+        Some(at) => (0, at),
+        None => (1, k),
+    });
+    v
+}
+
+/// `full` with row `from` of `shown` moved to the gap before row `gap`
+/// (0..=shown.len()); the rest keep their slots.
+fn reordered(full: &[usize], shown: &[usize], from: usize, gap: usize) -> Vec<usize> {
+    if from >= shown.len() {
+        return full.to_vec();
+    }
+    let mut sub = shown.to_vec();
+    let k = sub.remove(from);
+    let to = if gap > from { gap - 1 } else { gap };
+    sub.insert(to.min(sub.len()), k);
+    let mut it = sub.into_iter();
+    full.iter().map(|k| if shown.contains(k) { it.next().unwrap_or(*k) } else { *k }).collect()
 }
 
 fn path() -> PathBuf {
@@ -108,6 +151,23 @@ pub fn update(save: bool, f: impl FnOnce(&mut Settings)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn order_names_first_then_the_rest() {
+        let ids = ["claude", "codex", "gemini", "opencode"];
+        assert_eq!(order_of(&[], &ids), vec![0, 1, 2, 3]);
+        assert_eq!(order_of(&["gemini".into(), "gone".into(), "claude".into()], &ids), vec![2, 0, 1, 3]);
+    }
+
+    #[test]
+    fn dragging_moves_only_shown_rows() {
+        // Codex dragged above Claude; Gemini (off, not shown) keeps its slot
+        assert_eq!(reordered(&[0, 2, 1, 3], &[0, 1, 3], 1, 0), vec![1, 2, 0, 3]);
+        // Claude dragged to the end
+        assert_eq!(reordered(&[0, 1, 2], &[0, 1, 2], 0, 3), vec![1, 2, 0]);
+        // dropped where it was
+        assert_eq!(reordered(&[0, 1, 2], &[0, 1, 2], 1, 2), vec![0, 1, 2]);
+    }
 
     #[test]
     fn a_file_without_version_is_old() {

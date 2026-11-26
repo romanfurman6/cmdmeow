@@ -70,7 +70,7 @@ impl Ask {
 }
 
 /// A suggestion the agent made, checked against the ask.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rec {
     pub key: String,
     pub action: String,
@@ -128,6 +128,17 @@ pub struct Check {
     scroll: bool,
     /// When the popover started to fade out after a click in it.
     pub(crate) closing: Option<f64>,
+    /// Tips the tool already has without asking the agent (AI Usage: what
+    /// Claude Code's `/usage` says uses the limits). They count on the
+    /// chip from the start, sit in their own section above the agent's
+    /// and have no Skip; a row with an empty label has no button.
+    pub pinned: Vec<Rec>,
+    /// The pinned section's label ("Claude Code /usage").
+    pub pinned_label: String,
+    /// The popover's title and the faint words after it, when the page
+    /// names them ("What uses your limits", "last 24h · 115 requests");
+    /// else "AI Check".
+    pub title: Option<(String, String)>,
 }
 
 impl Check {
@@ -149,6 +160,9 @@ impl Check {
             reveal: None,
             scroll: false,
             closing: None,
+            pinned: Vec::new(),
+            pinned_label: String::new(),
+            title: None,
         }
     }
 

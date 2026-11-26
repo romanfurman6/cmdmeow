@@ -9,4 +9,5 @@ pub mod panel;
 pub mod settings;
 pub mod shell;
 pub mod tool;
+pub mod updated;
 pub mod window;

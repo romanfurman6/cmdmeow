@@ -143,6 +143,8 @@ pub fn mark_done() {
         let _ = std::fs::create_dir_all(d);
     }
     let _ = std::fs::write(m, b"");
+    // a fresh install has nothing "Updated" (SP24)
+    super::updated::setup_finished();
 }
 
 /// How often macOS is asked again once every permission in view is allowed

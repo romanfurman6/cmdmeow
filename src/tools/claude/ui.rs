@@ -1,111 +1,223 @@
-//! The Claude card for the panel and the limits popup on the AI Usage page.
+//! The AI Usage widgets (W13): what's left, as on the page's limit cards
+//! (SP22), with a bar of what's left and no even-pace tick. Small, half
+//! and wide show the first provider in the person's order, named with its
+//! mark; the tall one shows the providers that are on, in order, up to 3.
 
-use crate::kit::sync::LockExt;
 use super::backend;
-use crate::kit::ai::UsageInfo;
-use crate::core::tool::{Cx, Size};
-use crate::kit::tile;
+use super::parts;
+use crate::core::tool::Size;
+use crate::kit::ai::{alerts, pace, Limit, UsageInfo};
 use crate::kit::glass::*;
+use crate::kit::tile;
 use egui::{Align2, Color32, Pos2, Rect, Ui, Vec2};
 
 /// The Cleanup tool, linked to by id only.
 pub const CLEANUP: &str = "cleanup";
-const GAP: f32 = 12.0;
 
-/// The Claude widget at `size`.
+/// The AI Usage widget at `size`: `cl` is the provider the small sizes
+/// show, `all` the providers that are on, in order.
 pub fn widget(ui: &mut Ui, r: Rect, size: Size, cl: &UsageInfo, all: &[UsageInfo], sel: bool) -> egui::Response {
     let id = ui.scope_id().with("w-claude");
-    let session = cl.session().cloned();
-    let pct = session.as_ref().map(|l| l.pct).unwrap_or(0.0);
-    let col = super::page::usage_color(pct);
-    let value = session.as_ref().map(|_| format!("{pct:.0}%")).unwrap_or_else(|| "–".into());
+    let lim = main_limit(cl);
     match size {
-        // W4: the ring and the number; Session and its reset in the tip
-        Size::S11 => {
-            let tip = session.as_ref().map(|l| t!("ai.session_resets", when = super::parts::reset_when(l)).into_owned()).unwrap_or_else(|| status(cl));
-            tile::small_ring(ui, r, id, Icon::Gauge, pct / 100.0, col, &value, sel).on_hover_text(tip)
-        }
-        // W3, W8: "AI Usage", the session %, when it resets
-        Size::S12 | Size::S14 => {
-            let ring_ = session.as_ref().map(|_| ((pct / 100.0).max(0.01), col));
-            let caption = match &session {
-                Some(l) => {
-                    // the same time as the page and the sheet ("Resets 20:29",
-                    // C6); another day reads "Resets Sun 08:52": where that
-                    // doesn't fit beside the ring, the day alone (the hour
-                    // is in the sheet)
-                    let when = super::parts::reset_when(l);
-                    let full = t!("ai.resets", when = when).into_owned();
-                    let room = if size == Size::S12 { r.width() } else { tile::ROW_SPLIT } - (tile::PAD + 50.0 + tile::PAD) - tile::PAD;
-                    let fits = ui.painter().layout_no_wrap(full.clone(), ty::caption(), TEXT()).size().x <= room;
-                    if when.is_empty() { ts!("ai.not_started").to_string() } else if fits { full } else { t!("ai.resets", when = when.split(' ').next().unwrap_or(&when)).into_owned() }
-                }
-                None => status(cl),
-            };
-            let value = if session.is_some() { value } else { "–".to_string() };
-            if size == Size::S12 {
-                return tile::wide_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, ts!("ai.name"), &value, &caption, ty::caption_color(), sel);
-            }
-            // the right part adds what the left doesn't have: the week and today's tokens
-            let (resp, right) = tile::row_split_full(ui, r, id, Icon::Gauge, tint::CLAUDE(), ring_, ts!("ai.name"), &value, &caption, ty::caption_color(), sel);
-            let mut lines: Vec<(String, Option<(f32, Color32)>, String)> = Vec::new();
-            if let Some(w) = cl.weekly() {
-                lines.push((ts!("ai.week").into(), Some(((w.pct / 100.0).max(0.01), super::page::usage_color(w.pct))), format!("{:.0}%", w.pct)));
-            }
-            if cl.local.tokens_today > 0 {
-                lines.push((ts!("ai.today").into(), None, t!("ai.n_tokens", n = backend::human_tokens(cl.local.tokens_today)).into_owned()));
-            }
-            tile::lines(ui.painter(), right, &lines, &status(cl));
-            resp
-        }
-        _ if all.iter().filter(|i| !i.limits.is_empty()).count() >= 2 => {
-            let resp = tile::card(ui, r, id, sel);
-            providers(ui.painter(), r, all);
-            resp
-        }
-        _ => {
-            let resp = tile::card(ui, r, id, sel);
-            let p = ui.painter();
-            let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), ts!("ai.name"), &status(cl));
-            let rows: Vec<(&str, _, String)> = [(ts!("ai.session"), cl.session()), (ts!("ai.week"), cl.weekly())]
-                .into_iter()
-                .map(|(label, l)| (label, l, l.map(|l| format!("{:.0}% · {}", l.pct, super::parts::reset_when(l))).unwrap_or_default()))
-                .collect();
-            let cols = tile::bar_cols(p, &rows.iter().map(|r| (r.0, r.2.as_str())).collect::<Vec<_>>());
-            for (k, (label, l, v)) in rows.iter().enumerate() {
-                let lr = Rect::from_min_size(Pos2::new(body.left(), body.top() + k as f32 * 22.0), Vec2::new(body.width(), 22.0));
-                tile::bar_line(p, lr, label, l.map(|l| ((l.pct / 100.0).max(0.01), super::page::usage_color(l.pct))), v, cols);
-            }
-            let lr = Rect::from_min_max(Pos2::new(body.left(), body.top() + 52.0), body.max);
-            p.text(lr.left_top(), Align2::LEFT_TOP, ts!("ai.tokens_7d"), font(11.0), TEXT_FAINT());
-            super::parts::day_bars(p, Rect::from_min_max(lr.left_top() + Vec2::new(0.0, 17.0), lr.max), &cl.local.daily, 5.0);
-            resp
-        }
+        Size::S11 => small(ui, r, id, cl, lim, sel),
+        Size::S12 => half(ui, r, id, cl, lim, sel),
+        Size::S14 => wide(ui, r, id, cl, lim, sel),
+        _ => tall(ui, r, id, cl, all, sel),
     }
 }
 
-/// Two or more providers with limits: a row each, session and week side
-/// by side with the even-use tick, and the dollars of all of them today.
-fn providers(p: &egui::Painter, r: Rect, all: &[UsageInfo]) {
+/// The limit that runs out first: the session, else the first one.
+fn main_limit(i: &UsageInfo) -> Option<&Limit> {
+    i.session().or(i.limits.first())
+}
+
+fn left_of(l: &Limit) -> f32 {
+    (100.0 - l.pct).clamp(0.0, 100.0)
+}
+
+/// When this pace empties `l`, if before it resets.
+fn out_at(l: &Limit) -> Option<i64> {
+    pace::of_limit(l, parts::now()).and_then(|p| p.out_at)
+}
+
+fn fill(l: &Limit) -> Color32 {
+    if out_at(l).is_some() { RED() } else { tint::CLAUDE() }
+}
+
+/// "81%" (red when it runs out first) or "–".
+fn value(l: Option<&Limit>) -> (String, Color32) {
+    match l {
+        Some(l) => (format!("{:.0}%", left_of(l)), if out_at(l).is_some() { RED() } else { TEXT() }),
+        None => ("–".into(), TEXT()),
+    }
+}
+
+/// "+19% at 18:04", red "Runs out 16:10", "Not started", or the status.
+fn caption(i: &UsageInfo, l: Option<&Limit>) -> (String, Color32) {
+    let Some(l) = l else { return (status(i), ty::caption_color()) };
+    let reset = parts::reset_when(l);
+    if l.pct <= 0.0 && reset.is_empty() {
+        (ts!("ai.not_started").into(), ty::caption_color())
+    } else if let Some(at) = out_at(l) {
+        (t!("ai.runs_out", when = alerts::when(at, parts::now())).into_owned(), RED())
+    } else if !reset.is_empty() {
+        (t!("ai.restores_at", pct = l.pct : {:.0}, when = reset).into_owned(), ty::caption_color())
+    } else {
+        (parts::forecast(l), ty::caption_color())
+    }
+}
+
+/// The 4 pt bar of what's left.
+fn left_bar(p: &egui::Painter, r: Rect, l: Option<&Limit>) {
+    match l {
+        Some(l) => {
+            let left = left_of(l);
+            bar(p, r, (left / 100.0).max(if left > 0.0 { 0.01 } else { 0.0 }), fill(l));
+        }
+        None => bar(p, r, 0.0, tint::CLAUDE()),
+    }
+}
+
+/// The provider's mark (12) and name at `pos` (left centre). Returns its rect.
+fn name_line(p: &egui::Painter, pos: Pos2, i: &UsageInfo, f: egui::FontId, col: Color32, w: f32) -> Rect {
+    let mr = Rect::from_min_size(Pos2::new(pos.x, pos.y - 6.0), Vec2::splat(12.0));
+    super::page::provider_mark(p, mr, i.provider);
+    let t = text_fit(p, Pos2::new(mr.right() + 5.0, pos.y), Align2::LEFT_CENTER, i.provider, f, col, w - 17.0);
+    mr.union(t)
+}
+
+/// Small (1:1): the provider, "81%", the bar. The caption is in the tip.
+fn small(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, lim: Option<&Limit>, sel: bool) -> egui::Response {
+    let resp = tile::card(ui, r, id, sel);
+    let p = ui.painter();
+    let x = r.left() + tile::SMALL_SIDE;
+    let w = r.width() - 2.0 * tile::SMALL_SIDE;
+    // name 15, 2, value 20, 6, bar 4: centred
+    let top = r.center().y - (15.0 + 2.0 + 20.0 + 6.0 + 4.0) / 2.0;
+    name_line(p, Pos2::new(x, top + 7.5), cl, ty::label(), ty::caption_color(), w);
+    let (v, vc) = value(lim);
+    p.text(Pos2::new(x, top + 17.0 + 10.0), Align2::LEFT_CENTER, v, bold(15.0), vc);
+    left_bar(p, Rect::from_min_size(Pos2::new(x, top + 43.0), Vec2::new(w, 4.0)), lim);
+    let (cap, _) = caption(cl, lim);
+    resp.on_hover_text(cap)
+}
+
+/// "81%" and a dim "left" after it, at `pos` (left centre). Returns its rect.
+fn value_left(p: &egui::Painter, pos: Pos2, lim: Option<&Limit>) -> Rect {
+    let (v, vc) = value(lim);
+    let vr = p.text(pos, Align2::LEFT_CENTER, v, ty::lead(), vc);
+    if lim.is_none() {
+        return vr;
+    }
+    vr.union(p.text(Pos2::new(vr.right() + 4.0, vr.bottom() - 2.0), Align2::LEFT_BOTTOM, ts!("ai.left"), ty::label(), TEXT_DIM()))
+}
+
+/// Half (1:2): the glyph; the provider, "81% left" and the bar beside it.
+fn half(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, lim: Option<&Limit>, sel: bool) -> egui::Response {
+    let resp = tile::card(ui, r, id, sel);
+    let p = ui.painter();
+    let x0 = tile::visual(p, r, Icon::Gauge, tint::CLAUDE(), None);
+    let w = r.right() - tile::PAD - x0;
+    // name 15, 2, value 20, 6, bar 4
+    let top = r.center().y - (15.0 + 2.0 + 20.0 + 6.0 + 4.0) / 2.0;
+    name_line(p, Pos2::new(x0, top + 7.5), cl, ty::label(), ty::caption_color(), w);
+    value_left(p, Pos2::new(x0, top + 27.0), lim);
+    left_bar(p, Rect::from_min_size(Pos2::new(x0, top + 43.0), Vec2::new(w, 4.0)), lim);
+    resp
+}
+
+/// One limit as a line: its name and "81%" over a bar of what's left.
+fn limit_line(p: &egui::Painter, r: Rect, label: &str, l: Option<&Limit>, suffix: bool) {
+    let (v, vc) = value(l);
+    let v = if suffix && l.is_some() { format!("{v} {}", ts!("ai.left")) } else { v };
+    let vr = p.text(Pos2::new(r.right(), r.top()), Align2::RIGHT_TOP, v, ty::label(), vc);
+    text_fit(p, r.left_top(), Align2::LEFT_TOP, label, ty::label(), TEXT_DIM(), vr.left() - r.left() - 6.0);
+    left_bar(p, Rect::from_min_size(Pos2::new(r.left(), r.top() + 20.0), Vec2::new(r.width(), 4.0)), l);
+}
+
+/// The two limits a provider shows side by side: session and week, else
+/// its first two.
+fn two_limits(i: &UsageInfo) -> Vec<(String, &Limit)> {
+    let mut v: Vec<&Limit> = [i.session(), i.weekly()].into_iter().flatten().collect();
+    if v.is_empty() {
+        v = i.limits.iter().take(2).collect();
+    }
+    v.into_iter().map(|l| (backend::short_label(&l.label), l)).collect()
+}
+
+/// Wide (1:4): the provider's main limit on the left ("81% left",
+/// "+19% at 18:04"); session and week as lines on the right.
+fn wide(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, lim: Option<&Limit>, sel: bool) -> egui::Response {
+    let resp = tile::card(ui, r, id, sel);
+    let p = ui.painter();
+    let split = r.center().x.round();
+    let x0 = tile::visual(p, r, Icon::Gauge, tint::CLAUDE(), None);
+    let w = split - tile::PAD - x0;
+    let top = r.center().y - (15.0 + 2.0 + 20.0 + 2.0 + 14.0) / 2.0;
+    name_line(p, Pos2::new(x0, top + 7.5), cl, ty::label(), ty::caption_color(), w);
+    value_left(p, Pos2::new(x0, top + 27.0), lim);
+    let (cap, cc) = caption(cl, lim);
+    text_fit(p, Pos2::new(x0, top + 39.0 + 7.0), Align2::LEFT_CENTER, &cap, ty::caption(), cc, w);
+    let inset = r.height() * 0.06;
+    p.line_segment([Pos2::new(split, r.top() + inset), Pos2::new(split, r.bottom() - inset)], egui::Stroke::new(1.0, white(HAIRLINE_STRONG)));
+    let right = Rect::from_min_max(Pos2::new(split + tile::PAD, r.top()), Pos2::new(r.right() - tile::PAD, r.bottom()));
+    let lines = two_limits(cl);
+    if lines.is_empty() {
+        tile::empty_note(p, right, &status(cl));
+        return resp;
+    }
+    // lines 24 tall, 9 apart, centred
+    let h = lines.len() as f32 * 24.0 + (lines.len() - 1) as f32 * 9.0;
+    for (k, (label, l)) in lines.iter().enumerate() {
+        let lr = Rect::from_min_size(Pos2::new(right.left(), right.center().y - h / 2.0 + k as f32 * 33.0), Vec2::new(right.width(), 24.0));
+        limit_line(p, lr, label, Some(l), true);
+    }
+    resp
+}
+
+/// Tall (2:4): "AI limits" and today's dollars; then each provider that's
+/// on, in order (up to 3): its mark, name, plan, and its two limits side by
+/// side. One provider adds its tokens of the last 7 days.
+fn tall(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, all: &[UsageInfo], sel: bool) -> egui::Response {
+    let resp = tile::card(ui, r, id, sel);
+    let p = ui.painter();
     let usd: f64 = all.iter().map(|i| i.local.usd_today).sum();
-    let note = if crate::kit::ai::settings::get().show_cost { t!("ai.usd_today", usd = super::parts::usd(usd)).into_owned() } else { String::new() };
+    let note = if crate::kit::ai::settings::get().show_cost && usd > 0.0 { t!("ai.usd_today", usd = parts::usd(usd)).into_owned() } else { String::new() };
     let body = tile::head(p, r, Icon::Gauge, tint::CLAUDE(), ts!("ai.widget_title"), &note);
-    let rows: Vec<&UsageInfo> = all.iter().filter(|i| !i.limits.is_empty()).take(2).collect();
-    let rh = (body.height() / rows.len().max(1) as f32).min(48.0);
-    for (k, info) in rows.iter().enumerate() {
-        let y = body.top() + k as f32 * rh;
-        let mut x = body.left();
-        let name = text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, &info.plan_title(), bold(12.0), TEXT(), body.width() * 0.5);
-        super::parts::incident_chip(p, Pos2::new(name.right() + 6.0, name.center().y), Align2::LEFT_CENTER, info);
-        let half = (body.width() - 12.0) / 2.0;
-        for l in [info.session(), info.weekly()].into_iter().flatten() {
-            let lr = Rect::from_min_size(Pos2::new(x, y + 18.0), Vec2::new(half, 22.0));
-            let v = p.text(Pos2::new(lr.right(), lr.top()), Align2::RIGHT_TOP, format!("{:.0}%", l.pct), font(12.0), TEXT());
-            text_fit(p, lr.left_top(), Align2::LEFT_TOP, &backend::short_label(&l.label), font(11.0), TEXT_FAINT(), v.left() - lr.left() - 4.0);
-            super::parts::pace_bar(p, Rect::from_min_size(Pos2::new(lr.left(), lr.top() + 17.0), Vec2::new(half, 4.0)), l);
-            x += half + 12.0;
+    let with: Vec<&UsageInfo> = all.iter().filter(|i| !i.limits.is_empty()).collect();
+    let rows: Vec<&UsageInfo> = if with.is_empty() { vec![cl] } else { with };
+    // a provider takes name 16, 6, a line 24; 10 between
+    const ROW: f32 = 16.0 + 6.0 + 24.0;
+    let n = rows.len().min(3).min(((body.height() + 10.0) / (ROW + 10.0)).floor().max(1.0) as usize);
+    let half = (body.width() - 12.0) / 2.0;
+    for (k, info) in rows.iter().take(n).enumerate() {
+        let y = body.top() + k as f32 * (ROW + 10.0);
+        let nr = name_line(p, Pos2::new(body.left(), y + 8.0), info, bold(12.0), TEXT(), body.width() * 0.5);
+        let mut x = nr.right() + sp::S;
+        let title = info.plan_title();
+        let plan = title.strip_prefix(info.provider).unwrap_or("").trim();
+        if !plan.is_empty() {
+            x = p.text(Pos2::new(x, y + 8.0), Align2::LEFT_CENTER, plan, ty::label(), TEXT_DIM()).right() + sp::S;
+        }
+        parts::incident_chip(p, Pos2::new(x, y + 8.0), Align2::LEFT_CENTER, info);
+        let lines = two_limits(info);
+        if lines.is_empty() {
+            p.text(Pos2::new(body.left(), y + 22.0), Align2::LEFT_TOP, status(info), ty::caption(), ty::caption_color());
+        }
+        for (j, (label, l)) in lines.iter().enumerate() {
+            let lr = Rect::from_min_size(Pos2::new(body.left() + j as f32 * (half + 12.0), y + 22.0), Vec2::new(half, 24.0));
+            limit_line(p, lr, label, Some(l), true);
         }
     }
+    if n == 1 {
+        let lr = Rect::from_min_max(Pos2::new(body.left(), body.top() + ROW + 14.0), body.max);
+        if lr.height() > 40.0 {
+            p.text(lr.left_top(), Align2::LEFT_TOP, ts!("ai.tokens_7d"), font(11.0), TEXT_FAINT());
+            parts::day_bars(p, Rect::from_min_max(lr.left_top() + Vec2::new(0.0, 17.0), lr.max), &rows[0].local.daily, 5.0);
+        }
+    }
+    resp
 }
 
 fn status(cl: &UsageInfo) -> String {
@@ -120,116 +232,4 @@ fn status(cl: &UsageInfo) -> String {
     } else {
         t!("ai.tokens_today", n = backend::human_tokens(cl.local.tokens_today)).into_owned()
     }
-}
-
-/// What the limits popup shows under the limits: "What uses your limits"
-/// (Claude's breakdown of the last day) or the provider's note on them.
-fn contrib_lines(cl: &UsageInfo) -> (&'static str, Vec<(String, Color32, f32)>) {
-    let mut lines: Vec<(String, Color32, f32)> = Vec::new();
-    match cl.contrib.first() {
-        Some(c) => {
-            lines.push((c.title.clone(), TEXT_FAINT(), 12.0));
-            for l in &c.lines {
-                lines.push((l.clone(), TEXT_SOFT(), 13.0));
-            }
-        }
-        None if !cl.note.is_empty() && cl.provider != crate::kit::ai::claude::NAME => lines.push((cl.note.clone(), TEXT_DIM(), 13.0)),
-        None => lines.push((t!("ai.reports_once", provider = cl.provider).into_owned(), TEXT_DIM(), 13.0)),
-    }
-    let title = if cl.contrib.is_empty() && cl.provider != crate::kit::ai::claude::NAME { ts!("ai.about_limits") } else { ts!("ai.what_uses") };
-    (title, lines)
-}
-
-/// Height of one limit's rows in the popup.
-const LIMIT_ROW: f32 = 58.0;
-
-/// The limits popup's height for `w` wide: header, limits, what uses
-/// them, the button row.
-pub fn details_height(ui: &Ui, cl: &UsageInfo, w: f32) -> f32 {
-    let p = ui.painter().clone().with_clip_rect(Rect::NOTHING);
-    let n = cl.limits.len();
-    let lim_h = if n == 0 { 64.0 } else { n as f32 * LIMIT_ROW + 13.0 };
-    let (_, lines) = contrib_lines(cl);
-    let text: f32 = lines.iter().map(|(l, c, s)| p.layout(l.clone(), font(*s), *c, w - 56.0).size().y + 6.0).sum();
-    SHEET_HEADER_H + 16.0 + lim_h + GAP + CARD_TITLE_H + 12.0 + text + 6.0 + 16.0 + BTN_H + 16.0
-}
-
-/// The limits popup on the AI Usage page: every limit with its pace and
-/// forecast, what uses them, and a way to Claude's caches in Cleanup. True
-/// when its close button was clicked.
-pub fn details(all: &backend::All, ui: &mut Ui, rect: Rect, cx: &mut Cx) -> bool {
-    let ctx = ui.ctx().clone();
-    let cl = backend::current(all).lock_ok().clone();
-    let p = ui.painter().clone();
-    let t = ctx.input(|i| i.time);
-    let busy = cl.loading || !cl.scanned || backend::refreshing();
-    let sub = if busy { ts!("ai.updating").to_string() } else { super::parts::fresh(&cl).0 };
-    let close = sheet_header(ui, rect, Icon::Gauge, tint::CLAUDE(), ts!("ai.limits"), &sub);
-    let rb = Rect::from_center_size(Pos2::new(rect.right() - 27.0 - 34.0, rect.top() + 29.0), Vec2::splat(26.0));
-    if busy {
-        spinner(&p, rb.center(), 6.0, t, TEXT_DIM());
-        crate::kit::glass::poll(&ctx);
-    } else if round_button(ui, rb, Icon::Refresh, ts!("ai.refresh_limits")).clicked() {
-        backend::request_refresh();
-        cx.toast(t!("ai.asking_limits", provider = cl.provider));
-    }
-    let x0 = rect.left() + 16.0;
-    let w = rect.width() - 32.0;
-    let mut y = rect.top() + SHEET_HEADER_H + 16.0;
-
-    // limits
-    let n = cl.limits.len();
-    let lim_h = if n == 0 { 64.0 } else { n as f32 * LIMIT_ROW + 13.0 };
-    let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, lim_h));
-    data_card(&p, lr);
-    if n == 0 {
-        let msg = cl.error.clone().unwrap_or_else(|| t!("ai.asking_limits", provider = cl.provider).into_owned());
-        paragraph(&p, lr.min + Vec2::new(12.0, 12.0), &msg, font(13.0), TEXT_DIM(), w - 24.0);
-    }
-    for (i, l) in cl.limits.iter().enumerate() {
-        let yy = lr.top() + 12.0 + i as f32 * LIMIT_ROW;
-        p.text(Pos2::new(lr.left() + 12.0, yy), Align2::LEFT_TOP, backend::short_label(&l.label), font(13.0), TEXT());
-        p.text(Pos2::new(lr.right() - 12.0, yy), Align2::RIGHT_TOP, format!("{:.0}%", l.pct), bold(13.0), TEXT());
-        super::parts::pace_bar(&p, Rect::from_min_size(Pos2::new(lr.left() + 12.0, yy + 20.0), Vec2::new(w - 24.0, 6.0)), l);
-        // no pace words (T9): the marker on the bar shows the pace
-        let f = super::parts::forecast(l);
-        let col = if super::parts::runs_out(l) { RED() } else { TEXT_FAINT() };
-        text_fit(&p, Pos2::new(lr.left() + 12.0, yy + 32.0), Align2::LEFT_TOP, &f, font(12.0), col, w - 24.0);
-    }
-    y = lr.bottom() + GAP;
-
-    // what uses your limits
-    let by = rect.bottom() - 16.0 - BTN_H;
-    let (title, lines) = contrib_lines(&cl);
-    card_title(&p, Pos2::new(x0, y), title);
-    y += CARD_TITLE_H;
-    let heights: Vec<f32> = lines.iter().map(|(l, c, s)| p.layout(l.clone(), font(*s), *c, w - 24.0).size().y).collect();
-    let mut h = 12.0;
-    let mut shown = 0;
-    for hh in &heights {
-        if y + h + hh + 6.0 + 6.0 > by - 16.0 {
-            break;
-        }
-        h += hh + 6.0;
-        shown += 1;
-    }
-    let ur = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(w, h + 6.0));
-    data_card(&p, ur);
-    let mut ly = ur.top() + 12.0;
-    for ((l, c, s), hh) in lines.iter().zip(&heights).take(shown) {
-        paragraph(&p, Pos2::new(ur.left() + 12.0, ly), l, font(*s), *c, w - 24.0);
-        ly += hh + 6.0;
-    }
-
-    // Cleanup knows Claude's caches only
-    if cl.provider == crate::kit::ai::claude::NAME {
-        let primary = ts!("ai.clean_caches");
-        let pw = button_width(&p, primary, BTN_PRIMARY);
-        // right under what uses the limits, or on the bottom when that's cut
-        let pr = Rect::from_min_size(Pos2::new(rect.right() - 16.0 - pw, (ur.bottom() + 16.0).min(by)), Vec2::new(pw, BTN_H));
-        if pill_button(ui, pr, primary, BTN_PRIMARY, true).clicked() {
-            cx.open_page(CLEANUP, "claude");
-        }
-    }
-    close
 }

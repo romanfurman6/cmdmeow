@@ -57,8 +57,12 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
 
     // providers: the ones on this Mac first, the rest dim below them
     let found: Vec<bool> = (0..ai::PROVIDERS.len()).map(|k| demo || ai::make(k).data_dir().is_some_and(|d| d.exists())).collect();
-    let mut order: Vec<usize> = (0..ai::PROVIDERS.len()).collect();
+    // in the person's order (H10), the ones not on this Mac last
+    let mut order: Vec<usize> = set.ordered();
     order.sort_by_key(|k| !found[*k]);
+    let pick = if order.iter().filter(|k| set.is_on(ai::PROVIDERS[**k].id)).count() > 1 { super::backend::widget_provider() } else { None };
+    // found rows drag to reorder; the switches and buttons drawn after them win their clicks
+    let mut drag_rows = Vec::new();
     let card = section(&p, x, w, &mut y, ts!("ai.set.providers"), ai::PROVIDERS.len());
     // column heads on the title's line: the radio picks the main agent, the
     // switch tracks its usage (the same words as setup)
@@ -80,7 +84,15 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
             GREEN()
         };
         p.circle_filled(Pos2::new(r.left() + 20.0, r.center().y), 4.0, dot);
-        p.text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, m.name, font(13.0), if found[k] { TEXT() } else { TEXT_FAINT() });
+        if found[k] {
+            let resp = ui.interact(r, ui.scope_id().with(("ai-row", m.id)), egui::Sense::click_and_drag());
+            crate::kit::reorder::hover_grip(&p, &resp, 8.0);
+            drag_rows.push(resp);
+        }
+        let nr = p.text(Pos2::new(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, m.name, font(13.0), if found[k] { TEXT() } else { TEXT_FAINT() });
+        if pick == Some(k) {
+            chip(&p, Pos2::new(nr.right() + sp::S, r.center().y), Align2::LEFT_CENTER, ts!("ai.in_widgets"), (with_alpha(ACCENT(), 0.16), ACCENT()));
+        }
         let rr = Rect::from_center_size(Pos2::new(r.right() - 58.0 - 8.0, r.center().y), Vec2::splat(16.0));
         let resp = radio(ui, rr, ui.scope_id().with(("ai-main", m.id)), main, true).on_hover_text(ts!("ai.set.main_agent"));
         if resp.clicked() && !main {
@@ -121,6 +133,11 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
                 }
             }));
         }
+    }
+
+    if let Some((from, gap)) = crate::kit::reorder::rows(ui, &drag_rows, 16.0) {
+        let shown: Vec<usize> = order.iter().copied().filter(|k| found[*k]).collect();
+        change = Some(Box::new(move |s| s.reorder(&shown, from, gap)));
     }
 
     // notifications

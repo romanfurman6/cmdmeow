@@ -111,13 +111,15 @@ pub mod keychain {
 pub struct Claude {
     all: backend::All,
     demo: bool,
-    /// What to open on the page: [`LIMITS`] opens the limits popup.
+    /// What to open on the page: [`LIMITS`] opens the Limits tab.
     route: Option<String>,
+    /// The tips chip: Claude Code's own /usage tips and AI Check.
+    ai: crate::kit::aicheck::Check,
 }
 
 impl Claude {
     pub fn new(env: &ToolEnv) -> Self {
-        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, route: None }
+        Claude { all: backend::start(env.ctx.clone(), env.demo), demo: env.demo, route: None, ai: crate::kit::aicheck::Check::new(ID, env.demo) }
     }
 }
 
@@ -155,8 +157,9 @@ impl Tool for Claude {
         if widget != LIMITS {
             return;
         }
-        let cl = self.info();
-        let all = backend::enabled(&self.all);
+        // W13: the first provider in the person's order that's on and installed
+        let cl = backend::widget_pick(&self.all).map(|k| self.all[k].lock_ok().clone()).unwrap_or_else(|| self.info());
+        let all: Vec<_> = backend::enabled(&self.all).into_iter().filter(|i| i.unavailable() != Some(crate::kit::claude_code::Availability::NotInstalled)).collect();
         if ui::widget(ui, rect, size, &cl, &all, false).clicked() {
             cx.open_page(ID, "");
         }
@@ -171,10 +174,13 @@ impl Tool for Claude {
         true
     }
     fn page_ui(&mut self, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
-        if self.route.take().is_some_and(|r| r == LIMITS) {
-            page::open_limits(ui.ctx(), true);
+        match self.route.take().as_deref() {
+            Some(LIMITS) => page::set_tab(ui.ctx(), page::Tab::Limits),
+            Some("cost") => page::set_tab(ui.ctx(), page::Tab::Cost),
+            Some("tokens") => page::set_tab(ui.ctx(), page::Tab::Tokens),
+            _ => {}
         }
-        page::page(&self.all, self.demo, ui, rect, cx);
+        page::page(&self.all, &mut self.ai, self.demo, ui, rect, cx);
     }
     fn open_page(&mut self, route: &str) {
         self.route = (!route.is_empty()).then(|| route.to_string());
@@ -197,6 +203,22 @@ impl Tool for Claude {
                 Some(View::Page)
             }
             "claude" => Some(View::Page),
+            // the tips chip open: Claude Code's /usage tips and two AI Check tips
+            "claude-tips" => {
+                use crate::kit::aicheck::Check;
+                self.ai.set_demo(
+                    "",
+                    vec![
+                        Check::demo_rec_for("limit:Claude:Current week (all models)", "show", ts!("ai.ac.show"), "Week runs out Fri 19:10", "81%", "Opus did 81% of this week; Sonnet for routine edits", "Claude"),
+                        Check::demo_rec_for("caches", "clean", ts!("ai.ac.clean"), "Claude caches · 2.1 GB", "2.1 GB", "Rebuilt when needed", "Claude"),
+                    ],
+                );
+                Some(View::Page)
+            }
+            "claude-cost" | "claude-tokens" => {
+                self.route = Some(view.trim_start_matches("claude-").into());
+                Some(View::Page)
+            }
             "codex" | "codex-detail" | "gemini" | "all" => {
                 backend::select(ai::index_of(view.trim_end_matches("-detail")), true);
                 if view.ends_with("-detail") {
