@@ -798,6 +798,24 @@
       "input": "Input",
       "cache_read": "Cache read",
       "cache_write": "Cache write"
+    },
+    "acc": {
+      "main": "Personal",
+      "n": "%{n} accounts",
+      "add_menu": "Add account…",
+      "title": "Add Claude account",
+      "name": "Name",
+      "name_hint": "Work",
+      "folder": "Config folder",
+      "choose": "Choose…",
+      "cancel": "Cancel",
+      "add": "Add",
+      "signed_in": "✓ Signed in · %{plan}%{n} sessions found",
+      "signed_out": "Not signed in. In Terminal: CLAUDE_CONFIG_DIR=%{dir} claude",
+      "no_folder": "No such folder",
+      "already": "Already added",
+      "remove": "Remove",
+      "section": "Claude accounts"
     }
   },
   "cleanup": {

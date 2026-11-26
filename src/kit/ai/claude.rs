@@ -23,6 +23,18 @@ pub struct ClaudeCode {
     /// When the sign-in was last looked for (the Keychain is asked at most
     /// every few minutes).
     creds_at: Option<Instant>,
+    /// Another account's config folder (`CLAUDE_CONFIG_DIR`); None for
+    /// `~/.claude`.
+    dir: Option<PathBuf>,
+}
+
+impl ClaudeCode {
+    /// The account whose config folder is `dir`. Its limits come from the
+    /// CLI run with `CLAUDE_CONFIG_DIR` (its sign-in isn't read from the
+    /// Keychain), its tokens from `<dir>/projects`.
+    pub fn for_dir(dir: PathBuf) -> ClaudeCode {
+        ClaudeCode { dir: Some(dir), ..Default::default() }
+    }
 }
 
 /// How often to look for Claude Code's sign-in again when there was none
@@ -159,11 +171,17 @@ impl Provider for ClaudeCode {
         cc::tool_on()
     }
     fn fetch_account(&mut self, s: &Shared) {
-        if !self.fetch_api(s) {
-            fetch_cli(s);
+        if let Some(dir) = self.dir.clone() {
+            fetch_cli(s, Some(&dir));
+        } else if !self.fetch_api(s) {
+            fetch_cli(s, None);
         }
     }
     fn local_tokens(&mut self) -> LocalTokens {
+        if let Some(dir) = &self.dir {
+            let files = recent_jsonl(&dir.join("projects"), 3);
+            return self.cache.update(files, usage_entry);
+        }
         // project folders hold the session logs one level down
         // <project>/<session>.jsonl, and subagents' own logs in
         // <project>/<session>/subagents/, which count toward the limits too;
@@ -172,6 +190,9 @@ impl Provider for ClaudeCode {
         self.cache.update(files, usage_entry)
     }
     fn old_tokens(&mut self) -> Option<LocalTokens> {
+        if self.dir.is_some() {
+            return None;
+        }
         // logs kept past 30 days (a longer `cleanupPeriodDays`), read once
         let files = cc::log_dirs().iter().flat_map(|d| super::all_jsonl(d, 3)).collect();
         Some(super::LogCache::default().update(files, usage_entry))
@@ -184,9 +205,47 @@ impl Provider for ClaudeCode {
     }
 }
 
-fn fetch_cli(s: &Shared) {
+/// What an account's config folder holds, for Add account: whether it's
+/// there, the plan it's signed in with, and how many sessions it logged.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DirCheck {
+    pub exists: bool,
+    /// None when the CLI couldn't tell.
+    pub signed_in: Option<bool>,
+    pub plan: String,
+    pub sessions: usize,
+}
+
+/// Look at `dir` as a Claude Code config folder. Runs `claude auth status`
+/// with it (no tokens spent); call it off the ui thread.
+pub fn check_dir(dir: &std::path::Path) -> DirCheck {
+    let mut c = DirCheck { exists: dir.is_dir(), ..Default::default() };
+    if !c.exists {
+        return c;
+    }
+    c.sessions = super::all_jsonl(&dir.join("projects"), 1).len();
+    if let Some(bin) = claude_bin() {
+        let out = claude_cmd(&bin).env("CLAUDE_CONFIG_DIR", dir).args(["auth", "status", "--json"]).output();
+        let v: Value = out.ok().and_then(|o| serde_json::from_slice(&o.stdout).ok()).unwrap_or(Value::Null);
+        c.signed_in = v["loggedIn"].as_bool();
+        c.plan = v["subscriptionType"].as_str().unwrap_or("").to_string();
+    }
+    c
+}
+
+/// Limits and plan from the CLI; `dir` is another account's config folder.
+fn fetch_cli(s: &Shared, dir: Option<&std::path::Path>) {
+    let cmd = |bin: &std::path::Path| {
+        let mut c = claude_cmd(bin);
+        if let Some(d) = dir {
+            c.env("CLAUDE_CONFIG_DIR", d);
+        }
+        c
+    };
     let Some(bin) = claude_bin() else {
-        cc::set_signed_in(None);
+        if dir.is_none() {
+            cc::set_signed_in(None);
+        }
         let mut g = s.lock_ok();
         g.installed = false;
         g.signed_out = false;
@@ -195,15 +254,17 @@ fn fetch_cli(s: &Shared) {
         return;
     };
     // plan + login
-    let status = claude_cmd(&bin).args(["auth", "status", "--json"]).output();
+    let status = cmd(&bin).args(["auth", "status", "--json"]).output();
     let status: Value = status.ok().and_then(|o| serde_json::from_slice(&o.stdout).ok()).unwrap_or(Value::Null);
     let known = status["loggedIn"].as_bool();
     let plan = status["subscriptionType"].as_str().unwrap_or("").to_string();
     let tier = ["rateLimitTier", "subscriptionTier", "tier"].iter().find_map(|k| status[*k].as_str()).unwrap_or("").to_string();
     let logged_in = known.unwrap_or(false);
-    cc::set_signed_in(known);
+    if dir.is_none() {
+        cc::set_signed_in(known);
+    }
     // limits (a local slash command: no model call, no tokens)
-    let usage = claude_cmd(&bin)
+    let usage = cmd(&bin)
         .args(["-p", "/usage", "--output-format", "json", "--no-session-persistence"])
         .output();
     let mut g = s.lock_ok();

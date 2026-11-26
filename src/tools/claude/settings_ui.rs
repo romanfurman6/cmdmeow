@@ -48,6 +48,7 @@ fn plan_name(i: &UsageInfo) -> String {
 
 /// Draws the tab into `body`; returns the bottom of what it drew.
 pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
+    super::accounts::dialog(ui, demo);
     let p = ui.painter().clone();
     let set = settings::get();
     let w = 600.0f32.min(body.width() - 48.0);
@@ -138,6 +139,27 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     if let Some((from, gap)) = crate::kit::reorder::rows(ui, &drag_rows, 16.0) {
         let shown: Vec<usize> = order.iter().copied().filter(|k| found[*k]).collect();
         change = Some(Box::new(move |s| s.reorder(&shown, from, gap)));
+    }
+
+    // Claude's other accounts: a row each with Remove, then Add account…
+    if set.is_on("claude") {
+        let card = section(&p, x, w, &mut y, ts!("ai.acc.section"), set.accounts.len() + 1);
+        for (n, a) in set.accounts.iter().enumerate() {
+            let r = row(card, n);
+            let nr = p.text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, &a.name, font(13.0), TEXT());
+            let bw = button_width(&p, ts!("ai.acc.remove"), BTN_SECONDARY);
+            let br = Rect::from_min_size(Pos2::new(r.right() - 12.0 - bw, r.center().y - 14.0), Vec2::new(bw, 28.0));
+            text_fit(&p, Pos2::new(nr.right() + sp::S, r.center().y), Align2::LEFT_CENTER, &a.dir, ty::label(), TEXT_DIM(), (br.left() - nr.right() - 2.0 * sp::S).max(0.0));
+            if pill_button(ui, br, ts!("ai.acc.remove"), BTN_SECONDARY, true).clicked() {
+                let dir = a.dir.clone();
+                change = Some(Box::new(move |s| s.accounts.retain(|x| x.dir != dir)));
+            }
+        }
+        let r = row(card, set.accounts.len());
+        let bw = button_width(&p, ts!("ai.acc.add_menu"), BTN_SECONDARY);
+        if pill_button(ui, Rect::from_min_size(Pos2::new(r.left() + 12.0, r.center().y - 14.0), Vec2::new(bw, 28.0)), ts!("ai.acc.add_menu"), BTN_SECONDARY, true).clicked() {
+            super::accounts::open(ui.ctx());
+        }
     }
 
     // notifications
