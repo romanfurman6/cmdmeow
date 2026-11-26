@@ -1522,6 +1522,10 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
     };
     let cancel = shared.lock_ok().cancel.clone();
     std::thread::spawn(move || {
+        // an auto run stays out of the way
+        if shared.lock_ok().quiet {
+            crate::kit::activity::low_priority();
+        }
         let n = plan.len().max(1);
         // minutes may have passed since the scan: an app opened since then keeps its cache
         let (running_ids, running_names) = running_apps();
@@ -1876,7 +1880,7 @@ fn empty_trash(p: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #[test]
     fn scan_bar_creeps_then_hands_over_without_going_back() {
         use super::{creep, Phase, State, CREEP_TO};
@@ -2032,7 +2036,7 @@ mod tests {
         assert_eq!(merge_verdict(Keep, Ask, false), Keep);
     }
 
-    fn it(group: Group, path: &str, kind: &'static str, verdict: Verdict, by: Who) -> Item {
+    pub(crate) fn it(group: Group, path: &str, kind: &'static str, verdict: Verdict, by: Who) -> Item {
         Item {
             group,
             title: String::new(),

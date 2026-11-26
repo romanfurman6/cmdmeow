@@ -256,6 +256,36 @@ mod tests {
     }
 
     #[test]
+    fn eligible_only_safe_rebuildable_in_picked_groups() {
+        use crate::tools::cleanup::engine::{tests::it, Who};
+        let gs = [Group::AppCaches, Group::Logs];
+        let safe = it(Group::AppCaches, "/c", "Caches", Verdict::Safe, Who::Rule);
+        assert!(eligible(&safe, &gs));
+        // a group not picked
+        assert!(!eligible(&it(Group::Developer, "/d", "Caches", Verdict::Safe, Who::Rule), &gs));
+        // needs the person
+        assert!(!eligible(&it(Group::AppCaches, "/a", "Caches", Verdict::Ask, Who::Rule), &gs));
+        // not rebuilt by its app
+        assert!(!eligible(&it(Group::AppCaches, "/s", "Stale Versions", Verdict::Safe, Who::Rule), &gs));
+        // the person said so before, an app holds it, or it's hard kept
+        assert!(!eligible(&it(Group::AppCaches, "/y", "Caches", Verdict::Safe, Who::You), &gs));
+        let mut open = safe.clone();
+        open.app_running = true;
+        assert!(!eligible(&open, &gs));
+        let mut hard = safe.clone();
+        hard.hard_keep = true;
+        assert!(!eligible(&hard, &gs));
+        // the rules weren't sure, even if the item now says safe
+        let mut relaxed = safe.clone();
+        relaxed.rule_verdict = Verdict::Ask;
+        assert!(!eligible(&relaxed, &gs));
+        // the Trash only when picked
+        let trash = it(Group::Trash, "/t", "Trash", Verdict::Safe, Who::Rule);
+        assert!(!eligible(&trash, &gs));
+        assert!(eligible(&trash, &[Group::Trash]));
+    }
+
+    #[test]
     fn no_groups_no_run() {
         let s = Settings { every: Every::Daily, groups: vec![], ..Default::default() };
         assert_eq!(s.due(1_000_000, 0.01), None);

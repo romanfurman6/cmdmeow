@@ -150,7 +150,8 @@ fn intro(app: &mut App, ui: &mut Ui, r: Rect, _cx: &mut Cx) {
     let ly = block.top() + (block_h - left_h) / 2.0;
     disk_ring(&p, Pos2::new(lc, ly), ts!("health.macintosh_hd"), total, free, tint::CLEANUP());
     let br = Rect::from_center_size(Pos2::new(lc, ly + DISK_RING_H + sp::XXL + BTN.y / 2.0), BTN);
-    if scan_button(ui, br) {
+    // an auto run is cleaning: a scan now would race it
+    if scan_button(ui, br) && !app.auto_run.busy {
         cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
     }
 
