@@ -68,7 +68,7 @@ pub fn list(ui: &mut Ui, body: Rect, demo: bool) -> f32 {
     let pick = if order.iter().filter(|k| set.is_on(ai::PROVIDERS[**k].id)).count() > 1 { super::backend::widget_provider() } else { None };
     // Claude's sub-rows: its accounts (the main one first) once there is
     // more than one, then "+ Add account"
-    let claude_on = order.iter().any(|k| ai::PROVIDERS[*k].id == "claude" && found[*k]) && set.is_on("claude");
+    let claude_on = order.iter().any(|k| ai::PROVIDERS[*k].id == "claude" && found[*k]) && (set.is_on("claude") || set.main == "claude");
     let subs = if !claude_on {
         0
     } else if set.accounts.is_empty() {
