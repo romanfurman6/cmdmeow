@@ -33,6 +33,8 @@ const TOKENS_H: f32 = 2.0 * sp::L + 22.0 + sp::XS + 14.0;
 const BUDGET_H: f32 = 140.0;
 /// The Cost / Tokens tab's top row (30 days, the chart).
 const COST_ROW_H: f32 = 300.0;
+/// The Cost / Tokens tab's second row (Totals, by type): two lines of stats.
+const KINDS_H: f32 = 2.0 * sp::L + 16.0 + sp::M + 2.0 * (22.0 + sp::XS + 14.0) + sp::L;
 /// Most rows in the breakdown.
 const BREAKDOWN_ROWS: usize = 8;
 
@@ -596,7 +598,7 @@ fn tokens_card(p: &egui::Painter, cr: Rect, info: &UsageInfo) {
 // -------------------------------------------------------------- cost/tokens
 
 fn cost_height() -> f32 {
-    COST_ROW_H + GAP + breakdown_height()
+    COST_ROW_H + GAP + KINDS_H + GAP + breakdown_height()
 }
 
 fn breakdown_height() -> f32 {
@@ -683,8 +685,75 @@ fn cost_tab(infos: &[UsageInfo], ui: &mut Ui, a: Rect, m: Measure, demo: bool) {
     } else {
         line_chart(ui, body, &lines, m, period.grain());
     }
-    let br = Rect::from_min_size(Pos2::new(a.left(), a.top() + COST_ROW_H + GAP), Vec2::new(a.width(), breakdown_height()));
+    // Totals and by type, the last 30 days like the card on the left
+    let kinds = infos.iter().filter(|i| has_usage(i)).fold(ai::Kinds::default(), |k, i| k.plus(&i.local.kinds_30d));
+    let ky = a.top() + COST_ROW_H + GAP;
+    let half = (a.width() - GAP) / 2.0;
+    kinds_totals(&p, Rect::from_min_size(Pos2::new(a.left(), ky), Vec2::new(half, KINDS_H)), &all, &kinds);
+    by_type(&p, Rect::from_min_size(Pos2::new(a.left() + half + GAP, ky), Vec2::new(half, KINDS_H)), &kinds, m);
+    let br = Rect::from_min_size(Pos2::new(a.left(), ky + KINDS_H + GAP), Vec2::new(a.width(), breakdown_height()));
     breakdown(ui, br, infos, &lines, m, period);
+}
+
+/// "Totals" of the last 30 days: tokens, cached and uncached input,
+/// output, what the cache saved (with dollars on) and requests; three
+/// stats to a line.
+fn kinds_totals(p: &egui::Painter, r: Rect, all: &[Series], k: &ai::Kinds) {
+    data_card(p, r);
+    let i = r.shrink(sp::L);
+    p.text(i.left_top(), Align2::LEFT_TOP, ts!("ai.totals"), ty::title(), TEXT());
+    let tokens: u64 = all.iter().flat_map(|s| s.days.iter()).map(|d| d.tokens).sum();
+    let requests: u64 = all.iter().flat_map(|s| s.days.iter()).map(|d| d.requests).sum();
+    let mut stats: Vec<(String, &str)> = vec![
+        (ai::human_tokens(tokens), ts!("ai.kind.tokens")),
+        (ai::human_tokens(k.cache_read), ts!("ai.kind.cached_input")),
+        (ai::human_tokens(k.input + k.cache_write), ts!("ai.kind.uncached_input")),
+        (ai::human_tokens(k.output), ts!("ai.kind.output")),
+    ];
+    if settings::get().show_cost {
+        stats.push((parts::usd(k.savings), ts!("ai.kind.savings")));
+    }
+    stats.push((requests.to_string(), ts!("ai.kind.requests")));
+    let top = i.top() + 16.0 + sp::M;
+    for (n, (v, lab)) in stats.iter().enumerate() {
+        let x = i.left() + (n % 3) as f32 * i.width() / 3.0;
+        let y = top + (n / 3) as f32 * (22.0 + sp::XS + 14.0 + sp::L);
+        let w = i.width() / 3.0 - sp::M;
+        text_fit(p, Pos2::new(x, y), Align2::LEFT_TOP, v, ty::number(), TEXT(), w);
+        text_fit(p, Pos2::new(x, y + 22.0 + sp::XS), Align2::LEFT_TOP, lab, ty::label(), TEXT_DIM(), w);
+    }
+}
+
+/// "Cost by type" (or "Tokens by type"): input, cache reads, cache writes
+/// and output as one stacked bar, a legend with each under it.
+fn by_type(p: &egui::Painter, r: Rect, k: &ai::Kinds, m: Measure) {
+    data_card(p, r);
+    let i = r.shrink(sp::L);
+    let title = if m == Measure::Usd { ts!("ai.cost_by_type") } else { ts!("ai.tokens_by_type") };
+    p.text(i.left_top(), Align2::LEFT_TOP, title, ty::title(), TEXT());
+    let parts_: [(&str, f64, f64, Color32); 4] = [
+        (ts!("ai.kind.input"), k.input as f64, k.usd_input, series::monitor(2)),
+        (ts!("ai.kind.cache_read"), k.cache_read as f64, k.usd_cache_read, with_alpha(series::monitor(0), 0.45)),
+        (ts!("ai.kind.cache_write"), k.cache_write as f64, k.usd_cache_write, series::monitor(0)),
+        (ts!("ai.kind.output"), k.output as f64, k.usd_output, series::monitor(1)),
+    ];
+    let val = |t: f64, u: f64| if m == Measure::Usd { u } else { t };
+    let total: f64 = parts_.iter().map(|(_, t, u, _)| val(*t, *u)).sum();
+    let body = Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::M), i.max);
+    if total <= 0.0 {
+        empty_note(p, body, ts!("ai.no_usage_30"));
+        return;
+    }
+    let segs: Vec<(f32, Color32)> = parts_.iter().map(|(_, t, u, c)| ((val(*t, *u) / total) as f32, *c)).collect();
+    stacked_bar(p, Rect::from_min_size(Pos2::new(body.left(), body.top() + sp::S), Vec2::new(body.width(), 8.0)), &segs);
+    // the legend: two to a line
+    let ly = body.top() + sp::S + 8.0 + sp::L;
+    let cw = body.width() / 2.0;
+    for (n, (lab, t, u, c)) in parts_.iter().enumerate() {
+        let lr = Rect::from_min_size(Pos2::new(body.left() + (n % 2) as f32 * cw - 12.0, ly + (n / 2) as f32 * sp::LEGEND_H), Vec2::new(cw + 12.0, sp::LEGEND_H));
+        let v = val(*t, *u);
+        legend_row(p, lr, *c, lab, &fmt(v, m), TEXT());
+    }
 }
 
 /// "30 days": the total at API prices (or in tokens), what the plans cost,
