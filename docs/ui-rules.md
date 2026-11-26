@@ -167,6 +167,7 @@ Approved 2026-11-15 (PR #209, shadow "1 Whisper").
 | H7 | A picked or selected item has no hover, because a click on it does nothing: sidebar, group rail, picked segment, picked radio, picked card (H4), single-choice tiles. Items where a click changes state (checkbox, toggle chip, a widget card with its sheet open) keep their hover. | ✅ (PR #242) |
 | H8 | A row's background shows only state: hover (H1) or selected (H3). Size or share never fills a row; show it as a number (R8), an R4 bar under the name, or on a chart or map. | ✅ (PR #242) |
 | H9 | **Content never touches a lit fill.** The first and last element of a row (checkbox, icon, chip, value) sit at least 12 pt (`sp::M`) inside the hover or selected fill. Sidebar rows (28 pt) keep 8. | ⏳ code |
+| H10 | **Reorder by drag**: a list the user can order shows a grip on row hover; the dragged row lifts (Whisper, P2), a 2 pt `ACTION` insert line shows where it lands. One order is used everywhere it applies (AI Usage providers: the "All providers ▾" menu, Settings › AI Usage, widgets W13). The first provider carries an "In widgets" R7 chip (`ACCENT` on a 16% tint, like SP24). | ⏳ code |
 
 ## 9. Motion
 
@@ -240,6 +241,7 @@ Approved by Roman 2026-11-17 (widget review canvas https://claude.ai/artifact/Gd
 | W10 | No permission. Only the glyph is dimmed; the widget name, what it needs (value line, e.g. "Bluetooth") and the caption "Needs access" stay readable. No lock badge, no "Locked". Tooltip "Needs Bluetooth" (T16). Click asks for the permission. Also for a widget fed by an optional permission (Devices: value "Bluetooth", caption "Needs access"). |
 | W11 | Empty. Header and buttons stay. Instead of data one centred line 12 TEXT_FAINT with icon: "No screenshots yet". No dashed frame. Action as ACCENT link: Resume, Connect. |
 | W12 | Hover. Only the whole card hovers (CARD → RAISED 50%). Nothing inside a widget highlights: no list rows, actions, segments or links. Every clickable shows the pointer cursor; bars, graphs and captions don't. Inner press feedback: the pressed action or row dims icon and label to 50% and drops 1 pt while held, no fill (B7/B10 exception for widgets). Pages and menus keep H1, H2, B8. |
+| W13 | AI Usage widgets: no ring. "% left" over a 4 bar of what is left; no even-pace tick (the tick lives on the page card, SP22). Small, half and wide show the first provider in the user's order (H10), named with its mark; tall 2×2 shows enabled providers in that order, up to 3. |
 
 ## 12. Writing text ✅
 
@@ -421,3 +423,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-26, Roman: AI Usage redesign: SP17 scope menu by the title, SP22 limit card (replaces the SP2 paced ring), SP23 tips chip; Cost/Tokens on R4, W5, SP15, SP18, C7 (canvas https://claude.ai/artifact/XfCqwCRbFSbXGc7aG81qwb).
 
 2026-11-26, Roman: SP24 "Updated" chip by the tool name in the sidebar until the first open (canvas https://claude.ai/artifact/Jq4ZpttWwqbJTd9m2LTbAg).
+
+2026-11-26, Roman: W13 AI Usage widgets ("% left" + bar, no ring), H10 reorder by drag, "In widgets" chip (canvas https://claude.ai/artifact/5JQ3anCHuZXJtPv26BX8zs, PR #413).
