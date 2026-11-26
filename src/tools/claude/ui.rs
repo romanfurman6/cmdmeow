@@ -171,7 +171,7 @@ fn wide(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, lim: Option<&Limit>,
     let h = lines.len() as f32 * 24.0 + (lines.len() - 1) as f32 * 9.0;
     for (k, (label, l)) in lines.iter().enumerate() {
         let lr = Rect::from_min_size(Pos2::new(right.left(), right.center().y - h / 2.0 + k as f32 * 33.0), Vec2::new(right.width(), 24.0));
-        limit_line(p, lr, label, Some(l), false);
+        limit_line(p, lr, label, Some(l), true);
     }
     resp
 }

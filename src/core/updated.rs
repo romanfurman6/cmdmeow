@@ -58,6 +58,23 @@ fn save(s: &State) {
     }
 }
 
+/// Setup just finished: this is a fresh install, so every tool this
+/// release changed counts as seen. The sidebar can be drawn during setup,
+/// before its marker exists, so the fresh check at load isn't enough.
+pub fn setup_finished() {
+    with(|s| {
+        let before = s.seen.len();
+        for id in CHANGED {
+            if !s.seen.iter().any(|x| x == id) {
+                s.seen.push(id.to_string());
+            }
+        }
+        if s.seen.len() != before {
+            save(s);
+        }
+    });
+}
+
 /// Whether the sidebar shows "Updated" on tool `id`.
 pub fn shows(id: &str) -> bool {
     CHANGED.contains(&id) && with(|s| !s.seen.iter().any(|x| x == id))

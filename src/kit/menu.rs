@@ -144,7 +144,7 @@ pub fn drag_choice(ui: &mut Ui, label: &str, on: bool, chip_label: &str) -> Resp
     if !chip_label.is_empty() {
         chip(ui.painter(), Pos2::new(r.left() + INSET + lw + 8.0, r.center().y), Align2::LEFT_CENTER, chip_label, (with_alpha(ACCENT(), 0.16), ACCENT()));
     }
-    crate::kit::reorder::hover_grip(ui.painter(), &resp, INSET / 2.0);
+    crate::kit::reorder::hover_grip(ui.painter(), &resp, INSET / 2.0 + 3.0);
     done(ui, resp)
 }
 
