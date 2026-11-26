@@ -482,7 +482,8 @@ fn row_h(row: &[Block], info: &UsageInfo) -> f32 {
 fn week_of(infos: &[UsageInfo]) -> Option<(&UsageInfo, &Limit)> {
     let [info] = infos else { return None };
     let l = info.weekly()?;
-    (l.resets_at.is_some() && l.pct > 0.0 && info.accounts.is_empty() && info.local.days.iter().any(|d| d.tokens > 0)).then_some((info, l))
+    // the same check the card draws with, so a card never comes out empty
+    (l.pct > 0.0 && info.accounts.is_empty() && week_days(info, l).is_some()).then_some((info, l))
 }
 
 fn limits_height(infos: &[UsageInfo]) -> f32 {
@@ -1574,6 +1575,20 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_week_card_without_tokens_since_the_reset() {
+        let today = chrono::Local::now().date_naive();
+        let mut info = UsageInfo::default();
+        info.local.days = (0..30).map(|k| Day { date: today - chrono::Days::new(29 - k), ..Default::default() }).collect();
+        // tokens 20 days ago only, the week reset 3 days ago
+        info.local.days[9].tokens = 1000;
+        let l = Limit { label: "Current week (all models)".into(), pct: 40.0, resets_at: Some(parts::now() + 4 * 86_400), ..Default::default() };
+        assert!(week_days(&info, &l).is_none());
+        info.local.days[29].tokens = 500;
+        let (_, days) = week_days(&info, &l).unwrap();
+        assert_eq!(days.iter().filter_map(|d| d.1).sum::<f32>().round(), 40.0);
+    }
 
     #[test]
     fn the_mean_skips_accounts_without_data() {
