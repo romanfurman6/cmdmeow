@@ -16,6 +16,8 @@ pub const INSET: f32 = 12.0;
 pub const GAP: f32 = 4.0;
 /// Narrowest menu.
 pub const MIN_W: f32 = 168.0;
+/// The grip column before the labels of a menu with draggable rows.
+pub const GRIP_W: f32 = 14.0;
 
 /// The menu frame: radius 10 (P1), 4 above and below, rows touching.
 pub fn style(s: &mut Style) {
@@ -42,6 +44,12 @@ pub fn context(resp: &Response) -> Popup<'_> {
 
 /// Paint one row: hover fill, picked fill and check, label, submenu chevron.
 pub fn paint_row(p: &egui::Painter, r: Rect, label: &str, hover: f32, on: bool, has_sub: bool, enabled: bool) {
+    paint_row_at(p, r, INSET, label, hover, on, has_sub, enabled);
+}
+
+/// [`paint_row`] with the label `lead` from the left edge.
+#[allow(clippy::too_many_arguments)]
+fn paint_row_at(p: &egui::Painter, r: Rect, lead: f32, label: &str, hover: f32, on: bool, has_sub: bool, enabled: bool) {
     if on {
         p.rect_filled(r, 0.0, with_alpha(ACTION(), 0.16));
     } else if hover > 0.0 && enabled {
@@ -49,7 +57,7 @@ pub fn paint_row(p: &egui::Painter, r: Rect, label: &str, hover: f32, on: bool, 
     }
     let fg = if !enabled { with_alpha(TEXT(), crate::kit::key::disabled_alpha()) } else if on { ACCENT() } else { TEXT() };
     let right = if on || has_sub { r.right() - INSET - 16.0 } else { r.right() - INSET };
-    text_fit(p, Pos2::new(r.left() + INSET, r.center().y), Align2::LEFT_CENTER, label, font(13.0), fg, right - r.left() - INSET);
+    text_fit(p, Pos2::new(r.left() + lead, r.center().y), Align2::LEFT_CENTER, label, font(13.0), fg, right - r.left() - lead);
     if on {
         let c = Pos2::new(r.right() - INSET - 5.0, r.center().y);
         let s = Stroke::new(1.6, ACCENT());
@@ -82,18 +90,35 @@ fn width(ui: &Ui, own: f32) -> f32 {
     if ui.is_sizing_pass() { cur } else { cur.max(last) }
 }
 
+/// Where this menu's labels start: after the grip column when any row can
+/// be dragged (this pass or the last), so every label lines up.
+fn lead(ui: &Ui, grip: bool) -> f32 {
+    let id = ui.scope_id().with("kit-menu-grip");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let (mut at, mut cur, mut last) = ui.data(|d| d.get_temp::<(u64, bool, bool)>(id)).unwrap_or((pass, false, false));
+    if at != pass {
+        last = cur;
+        cur = false;
+        at = pass;
+    }
+    cur |= grip;
+    ui.data_mut(|d| d.insert_temp(id, (at, cur, last)));
+    if cur || last { INSET + GRIP_W } else { INSET }
+}
+
 fn label_w(ui: &Ui, label: &str) -> f32 {
     ui.painter().layout_no_wrap(label.to_string(), font(13.0), TEXT()).size().x
 }
 
 fn row(ui: &mut Ui, label: &str, on: bool, has_sub: bool, enabled: bool) -> Response {
-    let w = width(ui, label_w(ui, label) + 2.0 * INSET + if on || has_sub { 24.0 } else { 0.0 });
+    let x = lead(ui, false);
+    let w = width(ui, label_w(ui, label) + x + INSET + if on || has_sub { 24.0 } else { 0.0 });
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), sense);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, enabled, label));
     // rows highlight only: no press, no sound (B10)
     let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
-    paint_row(ui.painter(), r, label, h, on, has_sub, enabled);
+    paint_row_at(ui.painter(), r, x, label, h, on, has_sub, enabled);
     resp
 }
 
@@ -112,7 +137,8 @@ pub fn item(ui: &mut Ui, label: &str) -> Response {
 
 /// A destructive row (Move to Trash…): `DANGER` text (B6).
 pub fn danger(ui: &mut Ui, label: &str, enabled: bool) -> Response {
-    let w = width(ui, label_w(ui, label) + 2.0 * INSET);
+    let x = lead(ui, false);
+    let w = width(ui, label_w(ui, label) + x + INSET);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), if enabled { Sense::click() } else { Sense::hover() });
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, enabled, label));
     let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
@@ -120,7 +146,7 @@ pub fn danger(ui: &mut Ui, label: &str, enabled: bool) -> Response {
         ui.painter().rect_filled(r, 0.0, white((ROW_HOVER as f32 * h) as u8));
     }
     let fg = if enabled { DANGER() } else { with_alpha(DANGER(), crate::kit::key::disabled_alpha()) };
-    ui.painter().text(Pos2::new(r.left() + INSET, r.center().y), Align2::LEFT_CENTER, label, font(13.0), fg);
+    ui.painter().text(Pos2::new(r.left() + x, r.center().y), Align2::LEFT_CENTER, label, font(13.0), fg);
     done(ui, resp)
 }
 
@@ -132,19 +158,21 @@ pub fn choice(ui: &mut Ui, label: &str, on: bool) -> Response {
 
 /// A [`choice`] that can be dragged to reorder (H10, with
 /// `kit::reorder::rows`), with an optional ACCENT chip after its label
-/// ("In widgets"). The grip shows in the left inset on hover.
+/// ("In widgets"). Its grip sits in the menu's grip column, before the
+/// label; the menu's other labels line up after that column.
 pub fn drag_choice(ui: &mut Ui, label: &str, on: bool, chip_label: &str) -> Response {
+    let x = lead(ui, true);
     let cw = if chip_label.is_empty() { 0.0 } else { ui.painter().layout_no_wrap(chip_label.to_string(), bold(11.0), TEXT()).size().x + 16.0 + 8.0 };
     let lw = label_w(ui, label);
-    let w = width(ui, lw + cw + 2.0 * INSET + if on { 24.0 } else { 0.0 });
+    let w = width(ui, lw + cw + x + INSET + if on { 24.0 } else { 0.0 });
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), Sense::click_and_drag());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MenuItem, true, label));
     let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.08);
-    paint_row(ui.painter(), r, label, h, on, false, true);
+    paint_row_at(ui.painter(), r, x, label, h, on, false, true);
     if !chip_label.is_empty() {
-        chip(ui.painter(), Pos2::new(r.left() + INSET + lw + 8.0, r.center().y), Align2::LEFT_CENTER, chip_label, (with_alpha(ACCENT(), 0.16), ACCENT()));
+        chip(ui.painter(), Pos2::new(r.left() + x + lw + 8.0, r.center().y), Align2::LEFT_CENTER, chip_label, (with_alpha(ACCENT(), 0.16), ACCENT()));
     }
-    crate::kit::reorder::hover_grip(ui.painter(), &resp, INSET / 2.0 + 3.0);
+    crate::kit::reorder::grip(ui.painter(), Pos2::new(r.left() + INSET + 3.0, r.center().y));
     done(ui, resp)
 }
 
