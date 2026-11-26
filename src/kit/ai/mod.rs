@@ -566,6 +566,62 @@ pub struct LocalTokens {
     /// in from the app's own history (`history::merge_days`) for the days
     /// they no longer cover. Model and project names are kept as logged.
     pub archive: Vec<DayRecord>,
+    /// The last 30 days by kind of token (Totals, Cost by type).
+    pub kinds_30d: Kinds,
+}
+
+/// Tokens and their cost at API prices by kind. Cache writes hold both the
+/// 5-minute and the 1-hour cache.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Kinds {
+    pub input: u64,
+    pub output: u64,
+    pub cache_write: u64,
+    pub cache_read: u64,
+    pub usd_input: f64,
+    pub usd_output: f64,
+    pub usd_cache_write: f64,
+    pub usd_cache_read: f64,
+    /// What the cache reads saved: their cost as fresh input less what
+    /// they cost.
+    pub savings: f64,
+    pub requests: u64,
+}
+
+impl Kinds {
+    /// Tokens that count toward limits (all but cache reads), as
+    /// [`UsageEntry::tokens`].
+    pub fn tokens(&self) -> u64 {
+        self.input + self.output + self.cache_write
+    }
+    fn add(&mut self, e: &UsageEntry) {
+        self.requests += 1;
+        self.input += e.input;
+        self.output += e.output;
+        self.cache_write += e.cache_write + e.cache_write_1h;
+        self.cache_read += e.cache_read;
+        if let Some(p) = price::of(&name(e.model)) {
+            self.usd_input += e.input as f64 * p.input / 1e6;
+            self.usd_output += e.output as f64 * p.output / 1e6;
+            self.usd_cache_write += (e.cache_write as f64 * p.cache_write + e.cache_write_1h as f64 * p.cache_write_1h) / 1e6;
+            self.usd_cache_read += e.cache_read as f64 * p.cache_read / 1e6;
+            self.savings += e.cache_read as f64 * (p.input - p.cache_read).max(0.0) / 1e6;
+        }
+    }
+    /// Another provider's kinds added in.
+    pub fn plus(mut self, o: &Kinds) -> Kinds {
+        self.input += o.input;
+        self.output += o.output;
+        self.cache_write += o.cache_write;
+        self.cache_read += o.cache_read;
+        self.usd_input += o.usd_input;
+        self.usd_output += o.usd_output;
+        self.usd_cache_write += o.usd_cache_write;
+        self.usd_cache_read += o.usd_cache_read;
+        self.savings += o.savings;
+        self.requests += o.requests;
+        self
+    }
 }
 
 /// One day with usage and what it went to. `models` and `projects` hold the
@@ -678,6 +734,7 @@ pub fn sum_at(entries: impl IntoIterator<Item = UsageEntry>, now: DateTime<Local
             l.usd_7d += usd.unwrap_or(0.0);
         }
         if days_ago < 30 {
+            l.kinds_30d.add(&e);
             l.usd_30d += usd.unwrap_or(0.0);
             if usd.is_none() {
                 l.unpriced_30d += tokens;
@@ -842,6 +899,19 @@ mod tests {
         assert_eq!(i.unavailable(), Some(Availability::NotInstalled));
         i.installed = true;
         assert_eq!(i.unavailable(), None);
+    }
+
+    #[test]
+    fn kinds_split_tokens_and_dollars() {
+        let e = UsageEntry { ts: 0, input: 1_000_000, output: 1_000_000, cache_write: 1_000_000, cache_write_1h: 0, cache_read: 1_000_000, model: intern("claude-sonnet-4-5"), project: 0 };
+        let mut k = Kinds::default();
+        k.add(&e);
+        let p = price::of("claude-sonnet-4-5").unwrap();
+        assert_eq!((k.input, k.output, k.cache_write, k.cache_read, k.requests), (1_000_000, 1_000_000, 1_000_000, 1_000_000, 1));
+        assert_eq!(k.tokens(), e.tokens());
+        let total = k.usd_input + k.usd_output + k.usd_cache_write + k.usd_cache_read;
+        assert!((total - e.usd().unwrap()).abs() < 1e-9);
+        assert!((k.savings - (p.input - p.cache_read)).abs() < 1e-9);
     }
 
     #[test]

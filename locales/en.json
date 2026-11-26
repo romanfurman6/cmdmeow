@@ -784,7 +784,21 @@
     },
     "in_widgets": "In widgets",
     "restores_at": "+%{pct}% at %{when}",
-    "no_details": "No details"
+    "no_details": "No details",
+    "totals": "Totals",
+    "cost_by_type": "Cost by type",
+    "tokens_by_type": "Tokens by type",
+    "kind": {
+      "tokens": "Tokens",
+      "cached_input": "Cached input",
+      "uncached_input": "Uncached input",
+      "output": "Output",
+      "savings": "Cache savings",
+      "requests": "Requests",
+      "input": "Input",
+      "cache_read": "Cache read",
+      "cache_write": "Cache write"
+    }
   },
   "cleanup": {
     "name": "Cleanup",
