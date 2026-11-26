@@ -646,18 +646,18 @@
     "api_key": "API key",
     "set": {
       "providers": "Providers",
-      "main": "Main",
-      "track": "Track",
+      "ai_check": "AI Check",
+      "checks_with": "Checks with",
+      "stale": "Couldn't update",
       "connect": "Connect",
       "connect_tip": "Claude limits from your account",
-      "main_tip": "The main agent is always tracked",
+      "main_tip": "AI Check uses it, so it stays on",
       "notifications": "Notifications",
       "limit_reaches": "Limit reaches",
       "limit_reset": "Limit reset",
       "weekly_unused": "Weekly unused, day before reset",
       "display": "Display",
-      "cost": "Cost in $",
-      "main_agent": "Main agent"
+      "cost": "Cost in $"
     },
     "tokens_7d": "Tokens · 7 days",
     "no_data": "No data yet",
@@ -798,6 +798,7 @@
       "main": "Personal",
       "n": "%{n} accounts",
       "add_menu": "Add account…",
+      "add_row": "+ Add account",
       "title": "Add Claude account",
       "name": "Name",
       "name_hint": "Work",
@@ -809,8 +810,7 @@
       "signed_out": "Not signed in. In Terminal: CLAUDE_CONFIG_DIR=%{dir} claude",
       "no_folder": "No such folder",
       "already": "Already added",
-      "remove": "Remove",
-      "section": "Claude accounts"
+      "remove": "Remove"
     },
     "not_installed_short": "Not installed"
   },
