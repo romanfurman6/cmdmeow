@@ -13,16 +13,15 @@ pub fn grip(p: &Painter, c: Pos2) {
     }
 }
 
-/// Call after the rows (top to bottom, equal height, touching) are drawn.
-/// Draws the lifted row and the insert line while one is dragged. Returns
-/// `(from, gap)` when it's dropped somewhere new: row `from` goes to the gap
-/// before row `gap` (0..=rows.len()).
+/// Call after the rows (top to bottom, touching; heights may differ, e.g.
+/// a provider with its accounts under it) are drawn. Draws the lifted row
+/// and the insert line while one is dragged. Returns `(from, gap)` when
+/// it's dropped somewhere new: row `from` goes to the gap before row `gap`
+/// (0..=rows.len()).
 pub fn rows(ui: &Ui, rows: &[Response], inset: f32) -> Option<(usize, usize)> {
     let from = rows.iter().position(|r| r.dragged() || r.drag_stopped())?;
-    let (first, last) = (rows.first()?.rect, rows.last()?.rect);
-    let h = first.height().max(1.0);
     let y = ui.ctx().input(|i| i.pointer.latest_pos())?.y;
-    let gap = ((y - first.top()) / h).round().clamp(0.0, rows.len() as f32) as usize;
+    let gap = gap_at(&rows.iter().map(|r| r.rect).collect::<Vec<_>>(), y);
     let moves = gap != from && gap != from + 1;
     if rows[from].drag_stopped() {
         return moves.then_some((from, gap));
@@ -35,16 +34,31 @@ pub fn rows(ui: &Ui, rows: &[Response], inset: f32) -> Option<(usize, usize)> {
     p.rect_filled(lift, 8.0, white(ROW_HOVER));
     p.rect_stroke(lift, 8.0, Stroke::new(1.0, white(HAIRLINE_STRONG)), egui::StrokeKind::Inside);
     if moves {
-        let gy = (first.top() + gap as f32 * h).min(last.bottom());
+        let gy = if gap == 0 { rows[0].rect.top() } else { rows[gap - 1].rect.bottom() };
         p.line_segment([Pos2::new(r.left() + inset, gy), Pos2::new(r.right() - inset, gy)], Stroke::new(2.0, ACCENT()));
     }
     None
 }
 
-/// The hovered row's grip, `x` from its left edge.
-pub fn hover_grip(p: &Painter, resp: &Response, x: f32) {
-    if resp.hovered() || resp.dragged() {
-        let r: Rect = resp.rect;
-        grip(p, Pos2::new(r.left() + x, r.center().y));
+/// The gap the pointer at `y` is nearest: the number of rows whose middle
+/// is above it.
+fn gap_at(rects: &[Rect], y: f32) -> usize {
+    rects.iter().filter(|r| r.center().y < y).count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gap_follows_rows_of_any_height() {
+        let r = |t: f32, h: f32| Rect::from_min_size(Pos2::new(0.0, t), Vec2::new(100.0, h));
+        // a 120-tall row (a provider and its accounts), then two 40s
+        let rows = [r(0.0, 120.0), r(120.0, 40.0), r(160.0, 40.0)];
+        assert_eq!(gap_at(&rows, -5.0), 0);
+        assert_eq!(gap_at(&rows, 59.0), 0);
+        assert_eq!(gap_at(&rows, 61.0), 1);
+        assert_eq!(gap_at(&rows, 150.0), 2);
+        assert_eq!(gap_at(&rows, 400.0), 3);
     }
 }
