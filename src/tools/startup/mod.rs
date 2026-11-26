@@ -30,8 +30,9 @@ pub const ID: ToolId = "startup";
 /// Our notifications' button handler.
 const NOTE: &str = "startup";
 const SUMMARY: &str = "summary";
-/// How long Undo stays offered after a batch.
-pub const UNDO_FOR: Duration = Duration::from_secs(60);
+/// How long the Undo card stays after a batch that went fine (P12: a
+/// success result hides after 10 s; the pointer on it holds it).
+pub const UNDO_FOR: Duration = Duration::from_secs(10);
 /// How often the launchd folders are read again.
 const POLL: Duration = Duration::from_secs(20);
 /// The same while nothing is on screen and folder events are on.
