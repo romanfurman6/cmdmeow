@@ -29,9 +29,11 @@ pub fn rows(ui: &Ui, rows: &[Response], inset: f32) -> Option<(usize, usize)> {
     }
     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     let p = ui.painter();
+    // the lifted row: the selection shape, inset 4, radius 8
     let r = rows[from].rect;
-    p.rect_filled(r, R_BUTTON, white(ROW_HOVER));
-    p.rect_stroke(r, R_BUTTON, Stroke::new(1.0, white(HAIRLINE_STRONG)), egui::StrokeKind::Inside);
+    let lift = r.shrink2(Vec2::new(4.0, 0.0));
+    p.rect_filled(lift, 8.0, white(ROW_HOVER));
+    p.rect_stroke(lift, 8.0, Stroke::new(1.0, white(HAIRLINE_STRONG)), egui::StrokeKind::Inside);
     if moves {
         let gy = (first.top() + gap as f32 * h).min(last.bottom());
         p.line_segment([Pos2::new(r.left() + inset, gy), Pos2::new(r.right() - inset, gy)], Stroke::new(2.0, ACCENT()));

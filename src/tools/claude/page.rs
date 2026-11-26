@@ -1,9 +1,10 @@
 //! The AI usage page in the full window. A header with the provider menu
-//! (All providers, or one), the tips chip and three tabs. Limits (first):
+//! (All providers, or one), the tips chip and two tabs. Limits (first):
 //! a section per provider, a card per limit with how much is left, when it
-//! comes back and the even-pace tick; hover shows the details. Cost and
-//! Tokens: the last 30 days per provider, the usage chart (a line per
-//! provider) and the breakdown by model, project or day.
+//! is full again and the even-pace tick; hover shows the details. Usage, in
+//! $ or tokens (a switch next to the tabs): the last 30 days per provider,
+//! the usage chart (a line per provider) and the breakdown by model,
+//! project or day.
 
 use super::backend::{self, All};
 use super::parts::{self, Measure, Period};
@@ -23,6 +24,11 @@ const GAP: f32 = sp::L;
 const LIMIT_LEFT_W: f32 = 184.0;
 /// SP22: a limit card: 16, title 16, 8, hero 28, 6, caption 14, 16.
 const LIMIT_H: f32 = 2.0 * sp::L + 16.0 + sp::S + 28.0 + 6.0 + 14.0;
+/// Two limit cards side by side: 16, title 16, 8, hero 28, 14, bar 8, 10,
+/// caption 14, 16.
+const LIMIT_V_H: f32 = 2.0 * sp::L + 16.0 + sp::S + 28.0 + 14.0 + 8.0 + 10.0 + 14.0;
+/// The "This week" card: 16, head 16, 14, bars 96, 6, day labels 14, 16.
+const WEEK_H: f32 = 2.0 * sp::L + 16.0 + 14.0 + 96.0 + 6.0 + 14.0;
 /// A provider's section row (glyph 16, name, plan, outage chip).
 const SECTION_H: f32 = 20.0;
 /// A one-line card in a section (checking, signed out, an error).
@@ -38,7 +44,7 @@ const KINDS_H: f32 = 2.0 * sp::L + 16.0 + sp::M + 2.0 * (22.0 + sp::XS + 14.0) +
 /// Most rows in the breakdown.
 const BREAKDOWN_ROWS: usize = 8;
 
-/// The page's tabs.
+/// What the page shows: Limits, or the Usage tab in $ (Cost) or tokens.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Tab {
     #[default]
@@ -68,14 +74,23 @@ fn tab(ctx: &egui::Context, show_usd: bool) -> Tab {
     if t == Tab::Cost && !show_usd { Tab::Tokens } else { t }
 }
 
-fn tabs(show_usd: bool) -> Vec<(Tab, &'static str)> {
-    let mut v = vec![(Tab::Limits, ts!("ai.limits"))];
-    if show_usd {
-        v.push((Tab::Cost, ts!("ai.cost")));
-    }
-    v.push((Tab::Tokens, ts!("ai.unit_tokens")));
-    v
+/// The tabs: Limits and Usage.
+fn tabs() -> [&'static str; 2] {
+    [ts!("ai.limits"), ts!("ai.usage_tab")]
 }
+
+/// The Usage tab in the unit last picked ($ unless tokens, or no $ at all).
+fn usage_tab(show_usd: bool) -> Tab {
+    if show_usd && !settings::get().usage_tokens { Tab::Cost } else { Tab::Tokens }
+}
+
+/// The Usage tab's unit switch: "$ | Tokens".
+fn units() -> [&'static str; 2] {
+    [ts!("ai.unit_usd"), ts!("ai.unit_tokens")]
+}
+
+/// The unit switch: 28 tall (SP18), its two segments as wide as the tabs'.
+const UNIT_H: f32 = 28.0;
 
 /// The providers on the page: the one picked, or every one that's on
 /// (tools that aren't installed get no section).
@@ -111,17 +126,20 @@ fn menu_button(ui: &mut Ui, r: Rect, label: &str) -> egui::Response {
 }
 
 /// Header (SP16/SP17): "AI Usage", the provider menu; on the right from
-/// the edge ↻ Refresh, 12, the tabs, 12, the tips chip. Returns the tab shown.
+/// the edge ↻ Refresh, 12, the tabs, 12, then the tips chip on Limits or
+/// the "$ | Tokens" switch on Usage. Returns the tab shown.
 #[allow(clippy::too_many_arguments)]
 fn header(all: &All, infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, r: Rect, (sub, sub_col): (&str, Color32), tip: &str, demo: bool, cx: &mut Cx) -> Tab {
     let p = ui.painter().clone();
     let show_usd = settings::get().show_cost;
-    let tabs = tabs(show_usd);
-    let labels: Vec<&str> = tabs.iter().map(|t| t.1).collect();
+    let labels = tabs();
     let tw = tabs_width(&p, &labels);
     let rw = icon_pill_width(&p, ts!("ai.refresh"), BTN_SECONDARY);
     let has_data = infos.iter().any(has_usage);
-    let cw = aicheck::ui::chip_width(check, ui, has_data);
+    let on_limits = tab(ui.ctx(), show_usd) == Tab::Limits;
+    let uw = tabs_width(&p, &units());
+    // the chip on Limits, the unit switch on Usage (only with $ on)
+    let cw = if on_limits { aicheck::ui::chip_width(check, ui, has_data) } else if show_usd { uw } else { 0.0 };
     let label = menu_label();
     let mw = menu_button_width(&p, label);
     let sub_right = r.right() - sp::PAGE_EDGE - rw - sp::M - tw - sp::M - if cw > 0.0 { cw + sp::M } else { 0.0 };
@@ -174,9 +192,22 @@ fn header(all: &All, infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, r: Rec
     }
 
     let cur = tab(ui.ctx(), show_usd);
-    let at_tab = tabs.iter().position(|t| t.0 == cur).unwrap_or(0);
+    let at_tab = usize::from(cur != Tab::Limits);
     if let Some(k) = segmented(ui, tr, ui.scope_id().with("ai-tab"), &labels, at_tab) {
-        set_tab(ui.ctx(), tabs[k].0);
+        set_tab(ui.ctx(), if k == 0 { Tab::Limits } else { usage_tab(show_usd) });
+    }
+
+    // Usage: the unit switch, 12 left of the tabs
+    if !on_limits {
+        if show_usd {
+            let ur = Rect::from_min_size(Pos2::new(tr.left() - sp::M - uw, tr.center().y - UNIT_H / 2.0), Vec2::new(uw, UNIT_H));
+            if let Some(k) = segmented(ui, ur, ui.scope_id().with("ai-unit"), &units(), usize::from(cur == Tab::Tokens)) {
+                settings::update(!demo, |s| s.usage_tokens = k == 1);
+                set_tab(ui.ctx(), if k == 1 { Tab::Tokens } else { Tab::Cost });
+            }
+        }
+        let _ = all;
+        return tab(ui.ctx(), show_usd);
     }
 
     // the tips chip, 12 left of the tabs
@@ -427,6 +458,34 @@ fn block_h(b: &Block, info: &UsageInfo) -> f32 {
     }
 }
 
+/// A provider's cards as rows: two limits in a row side by side, the rest
+/// one per row.
+fn rows_of(bs: Vec<Block<'_>>) -> Vec<Vec<Block<'_>>> {
+    let mut rows: Vec<Vec<Block>> = Vec::new();
+    for b in bs {
+        let pair = matches!(b, Block::Limit(_)) && rows.last().is_some_and(|r| r.len() == 1 && matches!(r[0], Block::Limit(_)));
+        if pair {
+            rows.last_mut().unwrap().push(b);
+        } else {
+            rows.push(vec![b]);
+        }
+    }
+    rows
+}
+
+fn row_h(row: &[Block], info: &UsageInfo) -> f32 {
+    if row.len() == 2 { LIMIT_V_H } else { block_h(&row[0], info) }
+}
+
+/// The weekly limit and the days since it last reset, when the page shows
+/// one provider and it has both.
+fn week_of(infos: &[UsageInfo]) -> Option<(&UsageInfo, &Limit)> {
+    let [info] = infos else { return None };
+    let l = info.weekly()?;
+    // the same check the card draws with, so a card never comes out empty
+    (l.pct > 0.0 && info.accounts.is_empty() && week_days(info, l).is_some()).then_some((info, l))
+}
+
 fn limits_height(infos: &[UsageInfo]) -> f32 {
     let mut h = 0.0;
     for (k, info) in infos.iter().enumerate() {
@@ -434,14 +493,18 @@ fn limits_height(infos: &[UsageInfo]) -> f32 {
             h += sp::XL;
         }
         h += SECTION_H;
-        for b in blocks(info) {
-            h += GAP + block_h(&b, info);
+        for row in rows_of(blocks(info)) {
+            h += GAP + row_h(&row, info);
         }
+    }
+    if week_of(infos).is_some() {
+        h += GAP + WEEK_H;
     }
     h
 }
 
-/// Every provider shown: its name row, then a card per limit.
+/// Every provider shown: its name row, then its limits, two to a row; with
+/// one provider, its week by day under them.
 fn limits_tab(infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, a: Rect) {
     let p = ui.painter().clone();
     let mut y = a.top();
@@ -451,28 +514,41 @@ fn limits_tab(infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, a: Rect) {
         }
         section_row(ui, Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), SECTION_H)), info);
         y += SECTION_H;
-        for b in blocks(info) {
+        for row in rows_of(blocks(info)) {
             y += GAP;
-            let cr = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), block_h(&b, info)));
-            match b {
-                Block::Limit(l) => {
-                    let key = limit_key(info, l);
-                    if check.take_scroll(&key) {
-                        ui.scroll_to_rect(cr, Some(egui::Align::Center));
+            let h = row_h(&row, info);
+            let two = row.len() == 2;
+            let w = if two { (a.width() - GAP) / 2.0 } else { a.width() };
+            for (j, b) in row.into_iter().enumerate() {
+                let cr = Rect::from_min_size(Pos2::new(a.left() + j as f32 * (w + GAP), y), Vec2::new(w, h));
+                match b {
+                    Block::Limit(l) => {
+                        let key = limit_key(info, l);
+                        if check.take_scroll(&key) {
+                            ui.scroll_to_rect(cr, Some(egui::Align::Center));
+                        }
+                        let ring = check.ring(ui.ctx(), &key);
+                        if two {
+                            limit_card_v(ui, cr, info, l, ring);
+                        } else {
+                            limit_card(ui, cr, info, l, ring);
+                        }
                     }
-                    let ring = check.ring(ui.ctx(), &key);
-                    limit_card(ui, cr, info, l, ring);
+                    Block::Multi(label) => multi_card(ui, cr, info, &label),
+                    Block::Note(msg) => {
+                        data_card(&p, cr);
+                        text_fit(&p, Pos2::new(cr.left() + sp::L, cr.center().y), Align2::LEFT_CENTER, &msg, ty::body(), TEXT_DIM(), cr.width() - 2.0 * sp::L);
+                    }
+                    Block::Tokens => tokens_card(&p, cr, info),
+                    Block::Budget => budget_card(ui, cr, info),
                 }
-                Block::Multi(label) => multi_card(ui, cr, info, &label),
-                Block::Note(msg) => {
-                    data_card(&p, cr);
-                    text_fit(&p, Pos2::new(cr.left() + sp::L, cr.center().y), Align2::LEFT_CENTER, &msg, ty::body(), TEXT_DIM(), cr.width() - 2.0 * sp::L);
-                }
-                Block::Tokens => tokens_card(&p, cr, info),
-                Block::Budget => budget_card(ui, cr, info),
             }
-            y += cr.height();
+            y += h;
         }
+    }
+    if let Some((info, l)) = week_of(infos) {
+        y += GAP;
+        week_card(ui, Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), WEEK_H)), info, l);
     }
 }
 
@@ -520,62 +596,164 @@ fn idle(l: &Limit) -> bool {
     l.pct <= 0.0 && parts::reset_when(l).is_empty()
 }
 
+/// What a limit card shows, both layouts: what's left, the caption under
+/// it and its colour, the head over the bar, the bar's fill and colour,
+/// and where even use would leave it by now.
+struct LimitView {
+    left: f32,
+    red: bool,
+    cap: String,
+    cap_col: Color32,
+    head: String,
+    filled: f32,
+    even: Option<f32>,
+}
+
+fn limit_view(l: &Limit) -> LimitView {
+    let now = parts::now();
+    let pc = pace::of_limit(l, now);
+    let out = pc.as_ref().and_then(|p| p.out_at);
+    let left = left_of(l);
+    let (cap, cap_col) = if idle(l) {
+        (ts!("ai.not_started").to_string(), TEXT_DIM())
+    } else if let Some(at) = out {
+        (t!("ai.runs_out", when = ai::alerts::when(at, now)).into_owned(), RED())
+    } else if let Some(at) = l.resets_at {
+        (t!("ai.full_in", time = until(at)).into_owned(), TEXT_DIM())
+    } else {
+        (parts::forecast(l), TEXT_DIM())
+    };
+    let reset = parts::reset_when(l);
+    let head = if reset.is_empty() { String::new() } else { t!("ai.resets", when = reset).into_owned() };
+    // not started: an empty track, it fills from the first message
+    let filled = if idle(l) { 0.0 } else { (left / 100.0).max(if left > 0.0 { 0.01 } else { 0.0 }) };
+    let even = pc.as_ref().map(|pc| (100.0 - pc.expected).clamp(0.0, 100.0));
+    LimitView { left, red: out.is_some(), cap, cap_col, head, filled, even }
+}
+
+/// The bar of what's left with the even-use tick.
+fn limit_bar(p: &egui::Painter, br: Rect, v: &LimitView) {
+    bar(p, br, v.filled, if v.red { RED() } else { tint::CLAUDE() });
+    if let Some(e) = v.even {
+        let x = br.left() + br.width() * e / 100.0;
+        p.line_segment([Pos2::new(x, br.top() - 4.0), Pos2::new(x, br.bottom() + 4.0)], Stroke::new(1.5, TEXT()));
+    }
+}
+
+/// Hover on a limit card: the details (P1 popover).
+fn limit_hover(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit, v: &LimitView) {
+    let resp = ui.interact(cr, ui.scope_id().with(("ai-limit", info.provider, &l.label)), Sense::hover());
+    let mut tip = egui::Tooltip::for_enabled(&resp);
+    tip.popup = tip.popup.align(egui::RectAlign::BOTTOM_END).gap(6.0);
+    let updated = info.fetched.map(|f| t!("ai.updated", time = f.format("%H:%M")).into_owned()).unwrap_or_default();
+    tip.show(|ui| limit_tip(ui, l, v.left, v.even, &updated));
+}
+
+fn limit_ring(p: &egui::Painter, cr: Rect, ring: f32) {
+    if ring > 0.0 {
+        p.rect_stroke(cr, R_CARD, Stroke::new(2.0, with_alpha(AI(), ring)), egui::StrokeKind::Inside);
+    }
+}
+
 /// SP22: one plan limit as a card. Left: its name, "48% left", and when
-/// it comes back ("↻ +52% in 2d 14h"; red "Runs out 16:10" when this pace
+/// it's full again ("Full in 2d 14h"; red "Runs out 16:10" when this pace
 /// empties it first). Right: when it resets over an 8 pt bar of what's
 /// left, with a tick where even use would leave it by now. Hover: the
 /// details (P1 popover).
 fn limit_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit, ring: f32) {
     let p = ui.painter().clone();
     data_card(&p, cr);
-    if ring > 0.0 {
-        p.rect_stroke(cr, R_CARD, Stroke::new(2.0, with_alpha(AI(), ring)), egui::StrokeKind::Inside);
-    }
+    limit_ring(&p, cr, ring);
     let i = cr.shrink(sp::L);
-    let now = parts::now();
-    let pc = pace::of_limit(l, now);
-    let out = pc.as_ref().and_then(|p| p.out_at);
-    let left = left_of(l);
+    let v = limit_view(l);
     // left column
     let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &backend::short_label(&l.label), ty::title(), TEXT(), LIMIT_LEFT_W);
-    let hero_col = if out.is_some() { RED() } else { TEXT() };
-    let hr = p.text(Pos2::new(i.left(), tr.bottom() + sp::S), Align2::LEFT_TOP, format!("{left:.0}%"), ty::hero(), hero_col);
+    let hr = p.text(Pos2::new(i.left(), tr.bottom() + sp::S), Align2::LEFT_TOP, format!("{:.0}%", v.left), ty::hero(), if v.red { RED() } else { TEXT() });
     p.text(Pos2::new(hr.right() + 6.0, hr.bottom() - 3.0), Align2::LEFT_BOTTOM, ts!("ai.left"), ty::label(), TEXT_DIM());
-    let (cap, cap_col) = if idle(l) {
-        (ts!("ai.not_started").to_string(), TEXT_DIM())
-    } else if let Some(at) = out {
-        (t!("ai.runs_out", when = ai::alerts::when(at, now)).into_owned(), RED())
-    } else if let Some(at) = l.resets_at {
-        (t!("ai.restores_in", pct = l.pct : {:.0}, time = until(at)).into_owned(), TEXT_DIM())
-    } else {
-        (parts::forecast(l), TEXT_DIM())
-    };
-    text_fit(&p, Pos2::new(i.left(), hr.bottom() + 6.0), Align2::LEFT_TOP, &cap, ty::label(), cap_col, LIMIT_LEFT_W);
+    text_fit(&p, Pos2::new(i.left(), hr.bottom() + 6.0), Align2::LEFT_TOP, &v.cap, ty::label(), v.cap_col, LIMIT_LEFT_W);
     // right: reset over the bar
     let bx = i.left() + LIMIT_LEFT_W + sp::L;
     let br = Rect::from_min_max(Pos2::new(bx, i.center().y + 16.0 - 8.0), Pos2::new(i.right(), i.center().y + 16.0));
-    let reset = parts::reset_when(l);
-    let head = if !reset.is_empty() {
-        t!("ai.resets", when = reset).into_owned()
-    } else if l.window_secs > 0 {
-        t!("ai.window_h", h = l.window_secs / 3600).into_owned()
-    } else {
-        String::new()
-    };
-    text_fit(&p, Pos2::new(br.right(), br.top() - 10.0), Align2::RIGHT_BOTTOM, &head, ty::label(), TEXT_DIM(), br.width());
-    let fill = if out.is_some() { RED() } else { tint::CLAUDE() };
-    bar(&p, br, (left / 100.0).max(if left > 0.0 { 0.01 } else { 0.0 }), fill);
-    let even = pc.as_ref().map(|pc| (100.0 - pc.expected).clamp(0.0, 100.0));
-    if let Some(e) = even {
-        let x = br.left() + br.width() * e / 100.0;
-        p.line_segment([Pos2::new(x, br.top() - 4.0), Pos2::new(x, br.bottom() + 4.0)], Stroke::new(1.5, TEXT()));
+    text_fit(&p, Pos2::new(br.right(), br.top() - 10.0), Align2::RIGHT_BOTTOM, &v.head, ty::label(), TEXT_DIM(), br.width());
+    limit_bar(&p, br, &v);
+    limit_hover(ui, cr, info, l, &v);
+}
+
+/// SP22, two to a row: name with the reset at its right, "40% left", the
+/// bar, then when it's full again.
+fn limit_card_v(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit, ring: f32) {
+    let p = ui.painter().clone();
+    data_card(&p, cr);
+    limit_ring(&p, cr, ring);
+    let i = cr.shrink(sp::L);
+    let v = limit_view(l);
+    let hw = if v.head.is_empty() { 0.0 } else { p.layout_no_wrap(v.head.clone(), ty::label(), TEXT_DIM()).size().x };
+    let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &backend::short_label(&l.label), ty::title(), TEXT(), i.width() - hw - sp::M);
+    p.text(Pos2::new(i.right(), tr.center().y), Align2::RIGHT_CENTER, &v.head, ty::label(), TEXT_DIM());
+    let hr = p.text(Pos2::new(i.left(), tr.bottom() + sp::S), Align2::LEFT_TOP, format!("{:.0}%", v.left), ty::hero(), if v.red { RED() } else { TEXT() });
+    p.text(Pos2::new(hr.right() + 6.0, hr.bottom() - 3.0), Align2::LEFT_BOTTOM, ts!("ai.left"), ty::label(), TEXT_DIM());
+    let br = Rect::from_min_size(Pos2::new(i.left(), hr.bottom() + 14.0), Vec2::new(i.width(), 8.0));
+    limit_bar(&p, br, &v);
+    text_fit(&p, Pos2::new(i.left(), br.bottom() + 10.0), Align2::LEFT_TOP, &v.cap, ty::label(), v.cap_col, i.width());
+    limit_hover(ui, cr, info, l, &v);
+}
+
+/// What each day since the weekly reset took of the weekly limit: the
+/// limit's used share split by that day's tokens. 7 days from the reset;
+/// days still to come are `None`.
+fn week_days(info: &UsageInfo, l: &Limit) -> Option<(i64, WeekDays)> {
+    use chrono::TimeZone;
+    let start = l.resets_at? - 7 * 86_400;
+    let first = chrono::Local.timestamp_opt(start, 0).single()?.date_naive();
+    let today = chrono::Local::now().date_naive();
+    let days: Vec<NaiveDate> = (0..7).map(|k| first + chrono::Days::new(k)).collect();
+    let tok = |d: NaiveDate| info.local.days.iter().find(|x| x.date == d).map_or(0, |x| x.tokens);
+    let sum: u64 = days.iter().filter(|d| **d <= today).map(|d| tok(*d)).sum();
+    if sum == 0 {
+        return None;
     }
-    // hover: the details
-    let resp = ui.interact(cr, ui.scope_id().with(("ai-limit", info.provider, &l.label)), Sense::hover());
-    let mut tip = egui::Tooltip::for_enabled(&resp);
-    tip.popup = tip.popup.align(egui::RectAlign::BOTTOM_END).gap(6.0);
-    let updated = info.fetched.map(|f| t!("ai.updated", time = f.format("%H:%M")).into_owned()).unwrap_or_default();
-    tip.show(|ui| limit_tip(ui, l, left, even, &updated));
+    Some((start, days.into_iter().map(|d| (d, (d <= today).then(|| l.pct * tok(d) as f32 / sum as f32))).collect()))
+}
+
+/// The 7 days of a weekly window and what each took (`None`: still to come).
+type WeekDays = Vec<(NaiveDate, Option<f32>)>;
+
+/// "This week": a bar per day since the weekly reset, how much of the
+/// limit it took, and a dashed line at even use (a seventh a day).
+fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
+    use chrono::TimeZone;
+    let p = ui.painter().clone();
+    data_card(&p, cr);
+    let i = cr.shrink(sp::L);
+    let Some((start, days)) = week_days(info, l) else { return };
+    let since = chrono::Local.timestamp_opt(start, 0).single().map(|t| t.format("%a %H:%M").to_string()).unwrap_or_default();
+    p.text(i.left_top(), Align2::LEFT_TOP, ts!("ai.this_week"), ty::title(), TEXT());
+    p.text(i.right_top(), Align2::RIGHT_TOP, t!("ai.week_used", pct = l.pct : {:.0}, since = since), ty::label(), TEXT_DIM());
+    let area = Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + 14.0), Pos2::new(i.right(), i.bottom() - 14.0 - 6.0));
+    let even = 100.0 / 7.0;
+    let top = days.iter().filter_map(|d| d.1).fold(even, f32::max) * 1.1;
+    let gap = 10.0;
+    let w = (area.width() - 6.0 * gap) / 7.0;
+    for (k, (d, v)) in days.iter().enumerate() {
+        let x = area.left() + k as f32 * (w + gap);
+        let (h, col) = match v {
+            Some(v) => ((area.height() * v / top).max(4.0), tint::CLAUDE()),
+            None => (4.0, white(20)),
+        };
+        p.rect_filled(Rect::from_min_max(Pos2::new(x, area.bottom() - h), Pos2::new(x + w, area.bottom())), egui::CornerRadius { nw: 4, ne: 4, sw: 2, se: 2 }, col);
+        let label = match v {
+            Some(v) => format!("{} · {:.0}%", d.format("%a"), v),
+            None => d.format("%a").to_string(),
+        };
+        text_fit(&p, Pos2::new(x + w / 2.0, area.bottom() + 6.0), Align2::CENTER_TOP, &label, ty::label(), TEXT_FAINT(), w);
+    }
+    // even use: a seventh of the limit a day
+    let ey = area.bottom() - area.height() * even / top;
+    let mut x = area.left();
+    while x < area.right() {
+        p.line_segment([Pos2::new(x, ey), Pos2::new((x + 4.0).min(area.right()), ey)], Stroke::new(1.5, with_alpha(TEXT(), 0.5)));
+        x += 8.0;
+    }
 }
 
 /// A row of the multi-account card: name 16, 8, bar 8, 16 between.
@@ -613,7 +791,7 @@ fn account_status(a: &UsageInfo) -> &'static str {
 }
 
 /// SP22 for several accounts: on the left the limit across them ("90%
-/// left", the mean of what each has left) and the soonest comeback; on the
+/// left", the mean of what each has left) and when all are full again; on the
 /// right a row per account with its folder, what it has left, when it
 /// resets, and its bar with the even-use tick.
 fn multi_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, label: &str) {
@@ -624,17 +802,18 @@ fn multi_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, label: &str) {
     let accs = info.each_account();
     let rows: Vec<(&UsageInfo, Option<&Limit>)> = accs.iter().map(|a| (a, a.limits.iter().find(|l| l.label == label))).collect();
     let known: Vec<&Limit> = rows.iter().filter_map(|r| r.1).collect();
-    let (left, n) = mean_left(&rows.iter().map(|(a, l)| (!a.limits.is_empty(), l.map(left_of))).collect::<Vec<_>>());
+    let (left, _) = mean_left(&rows.iter().map(|(a, l)| (!a.limits.is_empty(), l.map(left_of))).collect::<Vec<_>>());
     let out = known.iter().filter_map(|l| pace::of_limit(l, now).and_then(|pc| pc.out_at)).min();
     // left column
     let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &backend::short_label(label), ty::title(), TEXT(), LIMIT_LEFT_W);
     let hr = p.text(Pos2::new(i.left(), tr.bottom() + sp::S), Align2::LEFT_TOP, format!("{left:.0}%"), ty::hero(), if out.is_some() { RED() } else { TEXT() });
     p.text(Pos2::new(hr.right() + 6.0, hr.bottom() - 3.0), Align2::LEFT_BOTTOM, ts!("ai.left"), ty::label(), TEXT_DIM());
-    let soonest = known.iter().filter(|l| l.pct > 0.0).filter_map(|l| l.resets_at.map(|at| (at, l.pct))).min_by_key(|x| x.0);
+    // full again once the last used account resets
+    let full = known.iter().filter(|l| l.pct > 0.0).filter_map(|l| l.resets_at).max();
     let (cap, cap_col) = if let Some(at) = out {
         (t!("ai.runs_out", when = ai::alerts::when(at, now)).into_owned(), RED())
-    } else if let Some((at, pct)) = soonest {
-        (t!("ai.restores_in", pct = (pct / n) : {:.0}, time = until(at)).into_owned(), TEXT_DIM())
+    } else if let Some(at) = full {
+        (t!("ai.full_in", time = until(at)).into_owned(), TEXT_DIM())
     } else {
         (ts!("ai.not_started").to_string(), TEXT_DIM())
     };
@@ -1306,16 +1485,16 @@ fn empty_state(ui: &mut Ui, r: Rect, title: &str, msg: &str, button: Option<&str
 /// The first check after launch is still running.
 fn checking(cl: &UsageInfo, ui: &mut Ui, r: Rect) {
     let m = ai::meta(cl.provider);
-    empty_state(ui, r, &t!("ai.checking_name", name = m.name), &t!("ai.reading_logs", name = m.name), None);
+    empty_state(ui, r, &t!("ai.checking_name", name = m.name), ts!("ai.reading_logs"), None);
 }
 
 /// A provider that's set up but hasn't been used on this Mac yet. While a
 /// check runs the button says so and waits; the page stays as it is.
 fn no_usage(cl: &UsageInfo, ui: &mut Ui, r: Rect) {
     let m = ai::meta(cl.provider);
-    let msg = t!("ai.no_usage_msg", name = m.name);
+    let msg = ts!("ai.no_usage_msg");
     let label = if cl.loading || backend::refreshing() { ts!("ai.checking") } else { ts!("ai.check_again") };
-    if empty_state(ui, r, &t!("ai.no_usage_yet", name = m.name), &msg, Some(label)) {
+    if empty_state(ui, r, &t!("ai.no_usage_yet", name = m.name), msg, Some(label)) {
         backend::request_refresh();
     }
 }
@@ -1396,6 +1575,20 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn no_week_card_without_tokens_since_the_reset() {
+        let today = chrono::Local::now().date_naive();
+        let mut info = UsageInfo::default();
+        info.local.days = (0..30).map(|k| Day { date: today - chrono::Days::new(29 - k), ..Default::default() }).collect();
+        // tokens 20 days ago only, the week reset 3 days ago
+        info.local.days[9].tokens = 1000;
+        let l = Limit { label: "Current week (all models)".into(), pct: 40.0, resets_at: Some(parts::now() + 4 * 86_400), ..Default::default() };
+        assert!(week_days(&info, &l).is_none());
+        info.local.days[29].tokens = 500;
+        let (_, days) = week_days(&info, &l).unwrap();
+        assert_eq!(days.iter().filter_map(|d| d.1).sum::<f32>().round(), 40.0);
+    }
 
     #[test]
     fn the_mean_skips_accounts_without_data() {

@@ -53,7 +53,7 @@ fn value(l: Option<&Limit>) -> (String, Color32) {
     }
 }
 
-/// "+19% at 18:04", red "Runs out 16:10", "Not started", or the status.
+/// "Full at 18:04", red "Runs out 16:10", "Not started", or the status.
 fn caption(i: &UsageInfo, l: Option<&Limit>) -> (String, Color32) {
     let Some(l) = l else { return (status(i), ty::caption_color()) };
     let reset = parts::reset_when(l);
@@ -62,7 +62,7 @@ fn caption(i: &UsageInfo, l: Option<&Limit>) -> (String, Color32) {
     } else if let Some(at) = out_at(l) {
         (t!("ai.runs_out", when = alerts::when(at, parts::now())).into_owned(), RED())
     } else if !reset.is_empty() {
-        (t!("ai.restores_at", pct = l.pct : {:.0}, when = reset).into_owned(), ty::caption_color())
+        (t!("ai.full_at", when = reset).into_owned(), ty::caption_color())
     } else {
         (parts::forecast(l), ty::caption_color())
     }
@@ -143,11 +143,23 @@ fn two_limits(i: &UsageInfo) -> Vec<(String, &Limit)> {
     if v.is_empty() {
         v = i.limits.iter().take(2).collect();
     }
-    v.into_iter().map(|l| (backend::short_label(&l.label), l)).collect()
+    v.into_iter().map(|l| (tight_label(&l.label), l)).collect()
+}
+
+/// A limit's name where a widget has little room: "5 hours", "Week".
+fn tight_label(l: &str) -> String {
+    let low = l.to_lowercase();
+    if low.contains("session") {
+        ts!("ai.lim.session_short").into()
+    } else if low.contains("all models") {
+        ts!("ai.lim.week_short").into()
+    } else {
+        backend::short_label(l)
+    }
 }
 
 /// Wide (1:4): the provider's main limit on the left ("81% left",
-/// "+19% at 18:04"); session and week as lines on the right.
+/// "Full at 18:04"); session and week as lines on the right.
 fn wide(ui: &mut Ui, r: Rect, id: egui::Id, cl: &UsageInfo, lim: Option<&Limit>, sel: bool) -> egui::Response {
     let resp = tile::card(ui, r, id, sel);
     let p = ui.painter();
