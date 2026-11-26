@@ -846,7 +846,16 @@ fn breakdown(ui: &mut Ui, r: Rect, infos: &[UsageInfo], lines: &[Series], m: Mea
     let rows: Vec<Share> = match by {
         By::Model | By::Project => {
             let mut all: Vec<Share> = Vec::new();
+            // days kept from before models and projects were saved, or whose
+            // logs are gone, have totals without the split: they show as one
+            // row so the rows add up to the period's total
+            let mut rest = Share { name: ts!("ai.no_details").into(), ..Default::default() };
             for info in infos {
+                for r in parts::period_days(&info.local.archive, period, today) {
+                    let split = if by == By::Model { &r.models } else { &r.projects };
+                    rest.tokens += r.tokens.saturating_sub(split.iter().map(|s| s.tokens).sum());
+                    rest.usd += (r.usd - split.iter().map(|s| s.usd).sum::<f64>()).max(0.0);
+                }
                 for s in ai::shares_of(parts::period_days(&info.local.archive, period, today), by == By::Model) {
                     match all.iter_mut().find(|x| x.name == s.name) {
                         Some(x) => {
@@ -856,6 +865,9 @@ fn breakdown(ui: &mut Ui, r: Rect, infos: &[UsageInfo], lines: &[Series], m: Mea
                         None => all.push(s),
                     }
                 }
+            }
+            if rest.tokens > 0 || rest.usd >= 0.01 {
+                all.push(rest);
             }
             all
         }

@@ -783,7 +783,8 @@
       "clean": "Clean"
     },
     "in_widgets": "In widgets",
-    "restores_at": "+%{pct}% at %{when}"
+    "restores_at": "+%{pct}% at %{when}",
+    "no_details": "No details"
   },
   "cleanup": {
     "name": "Cleanup",
