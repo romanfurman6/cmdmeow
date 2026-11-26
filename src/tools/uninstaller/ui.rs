@@ -951,7 +951,8 @@ fn result_bar(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     // on Apps the toast keeps to the list column, clear of the detail
     // card's buttons, and sits above the batch bar when one is up
     let (lane_l, lane_r, lift) = if u.tab == Tab::Apps {
-        (r.left() + 24.0, r.right() - 24.0 - ASIDE_W - 16.0, if u.checked.is_empty() { 0.0 } else { 52.0 + 10.0 })
+        // 10 pt up keeps it off the list card's bottom edge
+        (r.left() + 24.0, r.right() - 24.0 - ASIDE_W - 16.0, if u.checked.is_empty() { 10.0 } else { 52.0 + 10.0 })
     } else {
         (r.left(), r.right(), 0.0)
     };
