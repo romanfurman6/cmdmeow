@@ -83,7 +83,7 @@ fn shown(all: &All) -> Vec<UsageInfo> {
     if ai::shows_all() {
         backend::enabled(all).into_iter().filter(|i| i.unavailable() != Some(Availability::NotInstalled)).collect()
     } else {
-        vec![backend::current(all).lock_ok().clone()]
+        vec![backend::with_accounts(backend::current(all).lock_ok().clone(), &settings::get())]
     }
 }
 
@@ -151,6 +151,13 @@ fn header(all: &All, infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, r: Rec
         }
         if let Some((from, gap)) = crate::kit::reorder::rows(ui, &rows, menu::INSET) {
             settings::update(!demo, |s| s.reorder(&on, from, gap));
+        }
+        // another Claude Code account (its own config folder)
+        if set.is_on("claude") {
+            menu::separator(ui);
+            if menu::item(ui, ts!("ai.acc.add_menu")).clicked() {
+                super::accounts::open(ui.ctx());
+            }
         }
     });
 
@@ -306,6 +313,7 @@ fn limit_key(info: &UsageInfo, l: &Limit) -> String {
 // -------------------------------------------------------------------- page
 
 pub fn page(all: &All, check: &mut Check, demo: bool, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    super::accounts::dialog(ui, demo);
     let infos = shown(all);
     let (pinned, title) = usage_tips(&infos);
     if !check.demo || !pinned.is_empty() {
@@ -366,6 +374,8 @@ pub fn page(all: &All, check: &mut Check, demo: bool, ui: &mut Ui, r: Rect, cx: 
 /// What a provider's section holds under its name.
 enum Block<'a> {
     Limit(&'a Limit),
+    /// One limit across every account (by its label).
+    Multi(String),
     Note(String),
     Tokens,
     Budget,
@@ -384,6 +394,20 @@ fn blocks(info: &UsageInfo) -> Vec<Block<'_>> {
     if info.is_api() {
         return vec![Block::Budget];
     }
+    if !info.accounts.is_empty() {
+        // a card per limit any account has, in the order they come
+        let mut labels: Vec<String> = Vec::new();
+        for a in info.each_account() {
+            for l in &a.limits {
+                if !labels.contains(&l.label) {
+                    labels.push(l.label.clone());
+                }
+            }
+        }
+        if !labels.is_empty() {
+            return labels.into_iter().map(Block::Multi).collect();
+        }
+    }
     if !info.limits.is_empty() {
         return info.limits.iter().map(Block::Limit).collect();
     }
@@ -393,9 +417,10 @@ fn blocks(info: &UsageInfo) -> Vec<Block<'_>> {
     vec![Block::Tokens]
 }
 
-fn block_h(b: &Block) -> f32 {
+fn block_h(b: &Block, info: &UsageInfo) -> f32 {
     match b {
         Block::Limit(_) => LIMIT_H,
+        Block::Multi(_) => multi_h(info.accounts.len() + 1),
         Block::Note(_) => NOTE_H,
         Block::Tokens => TOKENS_H,
         Block::Budget => BUDGET_H,
@@ -410,7 +435,7 @@ fn limits_height(infos: &[UsageInfo]) -> f32 {
         }
         h += SECTION_H;
         for b in blocks(info) {
-            h += GAP + block_h(&b);
+            h += GAP + block_h(&b, info);
         }
     }
     h
@@ -428,7 +453,7 @@ fn limits_tab(infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, a: Rect) {
         y += SECTION_H;
         for b in blocks(info) {
             y += GAP;
-            let cr = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), block_h(&b)));
+            let cr = Rect::from_min_size(Pos2::new(a.left(), y), Vec2::new(a.width(), block_h(&b, info)));
             match b {
                 Block::Limit(l) => {
                     let key = limit_key(info, l);
@@ -438,6 +463,7 @@ fn limits_tab(infos: &[UsageInfo], check: &mut Check, ui: &mut Ui, a: Rect) {
                     let ring = check.ring(ui.ctx(), &key);
                     limit_card(ui, cr, info, l, ring);
                 }
+                Block::Multi(label) => multi_card(ui, cr, info, &label),
                 Block::Note(msg) => {
                     data_card(&p, cr);
                     text_fit(&p, Pos2::new(cr.left() + sp::L, cr.center().y), Align2::LEFT_CENTER, &msg, ty::body(), TEXT_DIM(), cr.width() - 2.0 * sp::L);
@@ -461,6 +487,9 @@ fn section_row(ui: &mut Ui, r: Rect, info: &UsageInfo) {
     let mut plan = full.strip_prefix(info.provider).unwrap_or(&full).trim().to_string();
     if info.is_api() {
         plan = ts!("ai.api_key").into();
+    }
+    if !info.accounts.is_empty() {
+        plan = t!("ai.acc.n", n = info.accounts.len() + 1).into_owned();
     }
     let x = if plan.is_empty() { t.right() } else { p.text(Pos2::new(t.right() + sp::S, r.center().y), Align2::LEFT_CENTER, plan, ty::body(), TEXT_DIM()).right() };
     incident(ui, Pos2::new(x + sp::S, r.center().y), Align2::LEFT_CENTER, info);
@@ -549,6 +578,109 @@ fn limit_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit, ring: f32) {
     tip.show(|ui| limit_tip(ui, l, left, even, &updated));
 }
 
+/// A row of the multi-account card: name 16, 8, bar 8, 16 between.
+const ACC_ROW_H: f32 = 32.0;
+const ACC_ROW_GAP: f32 = 12.0;
+
+/// The height of a limit card for `n` accounts.
+fn multi_h(n: usize) -> f32 {
+    let rows = n as f32 * ACC_ROW_H + (n.saturating_sub(1)) as f32 * ACC_ROW_GAP;
+    (2.0 * sp::L + rows).max(LIMIT_H)
+}
+
+/// What's left of a limit across accounts, given for each whether it
+/// reported any limits and what it has left of this one: the mean over the
+/// accounts that reported (one without this limit, e.g. Opus unused, has all
+/// of it left), and how many that is. Accounts with no data don't count.
+fn mean_left(rows: &[(bool, Option<f32>)]) -> (f32, f32) {
+    let vals: Vec<f32> = rows.iter().filter(|(reported, _)| *reported).map(|(_, l)| l.unwrap_or(100.0)).collect();
+    let n = vals.len().max(1) as f32;
+    (vals.iter().sum::<f32>() / n, n)
+}
+
+/// An account row's word when it has no number: Checking, Signed out,
+/// Not installed or No data.
+fn account_status(a: &UsageInfo) -> &'static str {
+    if a.loading || !a.scanned {
+        ts!("ai.checking")
+    } else if !a.installed {
+        ts!("ai.not_installed_short")
+    } else if a.signed_out || !a.logged_in {
+        ts!("ai.signed_out")
+    } else {
+        ts!("ai.no_data")
+    }
+}
+
+/// SP22 for several accounts: on the left the limit across them ("90%
+/// left", the mean of what each has left) and the soonest comeback; on the
+/// right a row per account with its folder, what it has left, when it
+/// resets, and its bar with the even-use tick.
+fn multi_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, label: &str) {
+    let p = ui.painter().clone();
+    data_card(&p, cr);
+    let i = cr.shrink(sp::L);
+    let now = parts::now();
+    let accs = info.each_account();
+    let rows: Vec<(&UsageInfo, Option<&Limit>)> = accs.iter().map(|a| (a, a.limits.iter().find(|l| l.label == label))).collect();
+    let known: Vec<&Limit> = rows.iter().filter_map(|r| r.1).collect();
+    let (left, n) = mean_left(&rows.iter().map(|(a, l)| (!a.limits.is_empty(), l.map(left_of))).collect::<Vec<_>>());
+    let out = known.iter().filter_map(|l| pace::of_limit(l, now).and_then(|pc| pc.out_at)).min();
+    // left column
+    let tr = text_fit(&p, i.left_top(), Align2::LEFT_TOP, &backend::short_label(label), ty::title(), TEXT(), LIMIT_LEFT_W);
+    let hr = p.text(Pos2::new(i.left(), tr.bottom() + sp::S), Align2::LEFT_TOP, format!("{left:.0}%"), ty::hero(), if out.is_some() { RED() } else { TEXT() });
+    p.text(Pos2::new(hr.right() + 6.0, hr.bottom() - 3.0), Align2::LEFT_BOTTOM, ts!("ai.left"), ty::label(), TEXT_DIM());
+    let soonest = known.iter().filter(|l| l.pct > 0.0).filter_map(|l| l.resets_at.map(|at| (at, l.pct))).min_by_key(|x| x.0);
+    let (cap, cap_col) = if let Some(at) = out {
+        (t!("ai.runs_out", when = ai::alerts::when(at, now)).into_owned(), RED())
+    } else if let Some((at, pct)) = soonest {
+        (t!("ai.restores_in", pct = (pct / n) : {:.0}, time = until(at)).into_owned(), TEXT_DIM())
+    } else {
+        (ts!("ai.not_started").to_string(), TEXT_DIM())
+    };
+    text_fit(&p, Pos2::new(i.left(), hr.bottom() + 6.0), Align2::LEFT_TOP, &cap, ty::label(), cap_col, LIMIT_LEFT_W);
+    // right: a row per account
+    let bx = i.left() + LIMIT_LEFT_W + sp::L;
+    let total = rows.len() as f32 * ACC_ROW_H + (rows.len().saturating_sub(1)) as f32 * ACC_ROW_GAP;
+    let mut y = i.center().y - total / 2.0;
+    for (a, l) in &rows {
+        let rr = Rect::from_min_max(Pos2::new(bx, y), Pos2::new(i.right(), y + ACC_ROW_H));
+        let (v, vc, when) = match l {
+            Some(l) => {
+                let red = pace::of_limit(l, now).and_then(|pc| pc.out_at).is_some();
+                let reset = parts::reset_when(l);
+                let when = if idle(l) { ts!("ai.not_started").to_string() } else if reset.is_empty() { String::new() } else { t!("ai.resets", when = reset).into_owned() };
+                (format!("{:.0}% {}", left_of(l), ts!("ai.left")), if red { RED() } else { TEXT() }, when)
+            }
+            // a word here (R-minimal); what to do is in the row's hover
+            None => (account_status(a).to_string(), TEXT_DIM(), String::new()),
+        };
+        if l.is_none() {
+            if let Some(err) = a.error.as_deref().filter(|e| !e.is_empty()) {
+                let _ = ui.interact(rr, ui.scope_id().with(("ai-acc-row", &a.folder, label)), Sense::hover()).on_hover_text(err);
+            }
+        }
+        let wr = if when.is_empty() { Rect::from_min_size(Pos2::new(rr.right(), rr.top()), Vec2::ZERO) } else { p.text(Pos2::new(rr.right(), rr.top()), Align2::RIGHT_TOP, format!(" · {when}"), ty::label(), TEXT_DIM()) };
+        let vr = text_fit(&p, Pos2::new(wr.left(), rr.top()), Align2::RIGHT_TOP, &v, bold(12.0), vc, rr.width() * 0.6);
+        let nr = text_fit(&p, rr.left_top(), Align2::LEFT_TOP, &a.account, bold(12.0), TEXT_SOFT(), vr.left() - rr.left() - sp::S);
+        text_fit(&p, Pos2::new(nr.right() + sp::S, rr.top()), Align2::LEFT_TOP, &a.folder, ty::label(), TEXT_FAINT(), (vr.left() - nr.right() - 2.0 * sp::S).max(0.0));
+        let br = Rect::from_min_size(Pos2::new(rr.left(), rr.bottom() - 8.0), Vec2::new(rr.width(), 8.0));
+        match l {
+            Some(l) => {
+                let lf = left_of(l);
+                let red = pace::of_limit(l, now).and_then(|pc| pc.out_at).is_some();
+                bar(&p, br, (lf / 100.0).max(if lf > 0.0 { 0.01 } else { 0.0 }), if red { RED() } else { tint::CLAUDE() });
+                if let Some(pc) = pace::of_limit(l, now) {
+                    let x = br.left() + br.width() * (100.0 - pc.expected).clamp(0.0, 100.0) / 100.0;
+                    p.line_segment([Pos2::new(x, br.top() - 4.0), Pos2::new(x, br.bottom() + 4.0)], Stroke::new(1.5, TEXT()));
+                }
+            }
+            None => bar(&p, br, 0.0, tint::CLAUDE()),
+        }
+        y += ACC_ROW_H + ACC_ROW_GAP;
+    }
+}
+
 /// The limit card's hover: Left, Even pace, Resets, Restores, then when
 /// it was updated under a hairline.
 fn limit_tip(ui: &mut Ui, l: &Limit, left: f32, even: Option<f32>, updated: &str) {
@@ -628,7 +760,7 @@ fn series(infos: &[UsageInfo], period: Period) -> Vec<Series> {
                 }
                 _ => parts::buckets(&info.local.archive, period, today),
             };
-            Series { name: ai::meta(info.provider).name.to_string(), color: series::monitor(k), days }
+            Series { name: info.display_name(), color: series::monitor(k), days }
         })
         .collect()
 }
@@ -651,6 +783,9 @@ fn fmt(v: f64, m: Measure) -> String {
 /// period (SP18) on top, the breakdown under them.
 fn cost_tab(infos: &[UsageInfo], ui: &mut Ui, a: Rect, m: Measure, demo: bool) {
     let _ = demo;
+    // each account of a provider is its own line and row
+    let flat: Vec<UsageInfo> = infos.iter().flat_map(|i| i.each_account()).collect();
+    let infos = flat.as_slice();
     let p = ui.painter().clone();
     let cw = (a.width() - 3.0 * GAP) / 4.0;
     let top = Rect::from_min_size(a.min, Vec2::new(cw, COST_ROW_H));
@@ -1257,3 +1392,27 @@ fn budget_card(ui: &mut Ui, r: Rect, cl: &UsageInfo) {
     text_fit(&p, i.right_bottom(), Align2::RIGHT_BOTTOM, &f, ty::label(), if by_end > b { RED() } else { TEXT_DIM() }, i.width() * 0.65);
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_mean_skips_accounts_without_data() {
+        // Personal 50% left, Work signed out: 50%, not 75%
+        assert_eq!(mean_left(&[(true, Some(50.0)), (false, None)]), (50.0, 1.0));
+        // Work reported but never used Opus: all of it left
+        assert_eq!(mean_left(&[(true, Some(50.0)), (true, None)]), (75.0, 2.0));
+    }
+
+    #[test]
+    fn accounts_have_their_own_names() {
+        let mut main = UsageInfo::new(ai::claude::NAME);
+        assert_eq!(main.display_name(), "Claude");
+        main.account = "Personal".into();
+        main.accounts = vec![UsageInfo { account: "Work".into(), ..UsageInfo::new(ai::claude::NAME) }];
+        let each: Vec<String> = main.each_account().iter().map(|i| i.display_name()).collect();
+        assert_eq!(each, vec!["Claude · Personal", "Claude · Work"]);
+        assert!(main.each_account()[0].accounts.is_empty());
+    }
+}

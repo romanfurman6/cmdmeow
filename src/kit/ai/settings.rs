@@ -23,6 +23,11 @@ pub struct Settings {
     /// Provider ids in the person's order (H10: dragged in the page menu
     /// or Settings). Ids not named keep their place after these.
     pub order: Vec<String>,
+    /// More Claude Code accounts: each its own config folder
+    /// (`CLAUDE_CONFIG_DIR`). `~/.claude` is always the first.
+    pub accounts: Vec<Account>,
+    /// What `~/.claude` is called once there are more accounts.
+    pub main_name: String,
     /// Id of the agent the person mainly uses (picked in setup): Cleanup's
     /// AI check runs with it.
     pub main: String,
@@ -57,6 +62,8 @@ impl Default for Settings {
             plan_usd: HashMap::new(),
             off: Vec::new(),
             order: Vec::new(),
+            accounts: Vec::new(),
+            main_name: String::new(),
             main: "claude".into(),
             show_cost: true,
             notify_at: vec![80, 95],
@@ -71,7 +78,44 @@ impl Default for Settings {
     }
 }
 
+/// Another Claude Code account: a name and its config folder ("~/…").
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Account {
+    pub name: String,
+    pub dir: String,
+}
+
+impl Account {
+    /// The folder with `~` expanded.
+    pub fn path(&self) -> PathBuf {
+        expand(&self.dir)
+    }
+}
+
+/// `~/x` as a full path.
+pub fn expand(dir: &str) -> PathBuf {
+    match dir.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir().unwrap_or_default().join(rest),
+        None if dir == "~" => dirs::home_dir().unwrap_or_default(),
+        None => PathBuf::from(dir),
+    }
+}
+
+/// A full path as "~/x" when it's under the home folder.
+pub fn tilde(path: &std::path::Path) -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    match path.strip_prefix(&home) {
+        Ok(rest) if !home.as_os_str().is_empty() => format!("~/{}", rest.display()),
+        _ => path.display().to_string(),
+    }
+}
+
 impl Settings {
+    /// `~/.claude`'s name beside the other accounts.
+    pub fn main_account(&self) -> String {
+        if self.main_name.trim().is_empty() { ts!("ai.acc.main").to_string() } else { self.main_name.clone() }
+    }
     pub fn is_on(&self, id: &str) -> bool {
         !self.off.iter().any(|o| o == id)
     }
@@ -151,6 +195,14 @@ pub fn update(save: bool, f: impl FnOnce(&mut Settings)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_folders_round_trip_through_tilde() {
+        let home = dirs::home_dir().unwrap_or_default();
+        assert_eq!(expand("~/.claude-work"), home.join(".claude-work"));
+        assert_eq!(tilde(&home.join(".claude-work")), "~/.claude-work");
+        assert_eq!(expand("/opt/x"), PathBuf::from("/opt/x"));
+    }
 
     #[test]
     fn order_names_first_then_the_rest() {

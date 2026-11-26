@@ -47,10 +47,108 @@ pub fn widget_provider() -> Option<usize> {
 /// The providers turned on in Settings, with their data.
 pub fn enabled(all: &All) -> Vec<UsageInfo> {
     let s = settings::get();
-    s.ordered().into_iter().filter(|k| s.is_on(ai::PROVIDERS[*k].id)).filter_map(|k| all.get(k)).map(|i| i.lock_ok().clone()).collect()
+    s.ordered().into_iter().filter(|k| s.is_on(ai::PROVIDERS[*k].id)).filter_map(|k| all.get(k)).map(|i| with_accounts(i.lock_ok().clone(), &s)).collect()
 }
 
 static SHOWN: std::sync::OnceLock<All> = std::sync::OnceLock::new();
+
+/// Claude's other accounts, by config folder ("~/…"), as the loop last
+/// checked them.
+static EXTRA: Mutex<Vec<(String, Shared)>> = Mutex::new(Vec::new());
+
+/// Claude's info with its other accounts attached (`UsageInfo::accounts`),
+/// each named; unchanged while there are none.
+pub fn with_accounts(mut info: UsageInfo, set: &settings::Settings) -> UsageInfo {
+    if info.provider != ai::claude::NAME || set.accounts.is_empty() {
+        return info;
+    }
+    let extra = EXTRA.lock_ok();
+    info.account = set.main_account();
+    info.folder = "~/.claude".into();
+    info.accounts = set
+        .accounts
+        .iter()
+        .map(|a| {
+            let mut i = extra.iter().find(|(d, _)| *d == a.dir).map(|(_, s)| s.lock_ok().clone()).unwrap_or_else(|| UsageInfo { loading: true, ..UsageInfo::new(ai::claude::NAME) });
+            i.account = a.name.clone();
+            i.folder = a.dir.clone();
+            i
+        })
+        .collect();
+    info
+}
+
+/// Demo: a second Claude account, "Work", with its own limits and logs
+/// (not saved).
+pub fn demo_accounts() {
+    let mut work = ai::claude::demo_info();
+    for l in work.limits.iter_mut() {
+        l.pct = (l.pct * 2.2 + 12.0).min(100.0);
+    }
+    for d in work.local.days.iter_mut() {
+        d.tokens /= 2;
+        d.usd /= 2.0;
+    }
+    work.scanned = true;
+    let dir = "~/.claude-work".to_string();
+    *EXTRA.lock_ok() = vec![(dir.clone(), Arc::new(Mutex::new(work)))];
+    settings::update(false, |s| s.accounts = vec![settings::Account { name: "Work".into(), dir }]);
+}
+
+/// One of Claude's other accounts, as the loop keeps it.
+struct Extra {
+    dir: String,
+    p: ai::claude::ClaudeCode,
+    s: Shared,
+    limits_at: Every,
+    local_at: Every,
+}
+
+/// Keep `extras` in step with Settings: new accounts get a provider, removed
+/// ones go. Publishes the list for the page.
+fn sync_extras(extras: &mut Vec<Extra>, set: &settings::Settings) {
+    extras.retain(|x| set.accounts.iter().any(|a| a.dir == x.dir));
+    for a in &set.accounts {
+        if !extras.iter().any(|x| x.dir == a.dir) {
+            extras.push(Extra {
+                dir: a.dir.clone(),
+                p: ai::claude::ClaudeCode::for_dir(a.path()),
+                s: Arc::new(Mutex::new(UsageInfo { loading: true, ..UsageInfo::new(ai::claude::NAME) })),
+                limits_at: Every::default(),
+                local_at: Every::default(),
+            });
+        }
+    }
+    *EXTRA.lock_ok() = extras.iter().map(|x| (x.dir.clone(), x.s.clone())).collect();
+}
+
+/// Check Claude's other accounts that are due: limits through the CLI with
+/// their folder, tokens from their own logs.
+fn run_extras(ctx: &egui::Context, extras: &mut [Extra], on: bool) {
+    use ai::Provider;
+    for x in extras.iter_mut() {
+        if !on {
+            let mut g = x.s.lock_ok();
+            g.loading = false;
+            g.scanned = true;
+            continue;
+        }
+        let retry_empty = x.s.lock_ok().limits.is_empty() && x.limits_at.age().is_some_and(|a| a.as_secs() > 60);
+        if retry_empty || x.limits_at.due(Duration::from_secs(m::CLAUDE_LIMITS_REFRESH_SECS)) {
+            x.limits_at.mark();
+            x.p.fetch_account(&x.s);
+        }
+        if (activity::visible() || x.local_at.age().is_none()) && x.local_at.due(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS)) {
+            let local = x.p.local_tokens();
+            x.s.lock_ok().local = local;
+        }
+        let mut g = x.s.lock_ok();
+        g.loading = false;
+        g.scanned = true;
+        drop(g);
+        activity::repaint(ctx);
+    }
+}
 
 /// What provider `i` (an index into `ai::PROVIDERS`) last reported, for
 /// Settings.
@@ -109,6 +207,7 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
     let mut status_at = Every::default();
     let mut memory: Vec<alerts::Memory> = (0..n).map(|_| alerts::Memory::default()).collect();
     let mut primed = vec![false; n];
+    let mut extras: Vec<Extra> = Vec::new();
     // this pass answers a Refresh: every provider shows its spinner until its turn
     let mut asked = false;
     loop {
@@ -188,6 +287,15 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
                 }
             }
         }
+        // Claude's other accounts, after the providers
+        sync_extras(&mut extras, &set);
+        let claude_on = set.is_on("claude") && cc::tool_on();
+        if asked {
+            for x in extras.iter() {
+                x.s.lock_ok().loading = claude_on;
+            }
+        }
+        run_extras(&ctx, &mut extras, claude_on);
         if asked {
             asked = false;
             REFRESHING.store(false, Ordering::Relaxed);
@@ -216,6 +324,10 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
         if activity::nap(Duration::from_secs(m::CLAUDE_LOCAL_REFRESH_SECS), Some(cc::recheck())) == Wake::Kicked {
             for e in limits_at.iter_mut().chain(local_at.iter_mut()) {
                 e.reset();
+            }
+            for x in extras.iter_mut() {
+                x.limits_at.reset();
+                x.local_at.reset();
             }
             status_at.reset();
             asked = true;

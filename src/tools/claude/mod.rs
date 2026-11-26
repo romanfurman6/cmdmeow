@@ -4,6 +4,7 @@
 //! session % next to the menu-bar icon. Claude also lists its projects.
 
 use crate::kit::sync::LockExt;
+pub mod accounts;
 pub mod backend;
 mod page;
 mod parts;
@@ -213,6 +214,11 @@ impl Tool for Claude {
                         Check::demo_rec_for("caches", "clean", ts!("ai.ac.clean"), "Claude caches · 2.1 GB", "2.1 GB", "Rebuilt when needed", "Claude"),
                     ],
                 );
+                Some(View::Page)
+            }
+            // two Claude accounts (a made-up "Work" beside the demo one)
+            "claude-accounts" => {
+                backend::demo_accounts();
                 Some(View::Page)
             }
             "claude-cost" | "claude-tokens" => {

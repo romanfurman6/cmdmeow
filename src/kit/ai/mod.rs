@@ -93,11 +93,27 @@ pub struct UsageInfo {
     pub incident: Option<String>,
     /// The open incidents behind it, for the badge's hover.
     pub incidents: Vec<status::Incident>,
+    /// The account's name when the provider has more than one ("Work").
+    pub account: String,
+    /// The account's config folder, as "~/.claude-work".
+    pub folder: String,
+    /// The provider's other accounts (Claude), each with its own data.
+    pub accounts: Vec<UsageInfo>,
 }
 
 impl UsageInfo {
     pub fn new(provider: &'static str) -> Self {
         UsageInfo { provider, ..Default::default() }
+    }
+    /// "Claude", or "Claude · Work" for one of several accounts.
+    pub fn display_name(&self) -> String {
+        if self.account.is_empty() { self.provider.to_string() } else { format!("{} · {}", self.provider, self.account) }
+    }
+    /// This and its other accounts, each on its own.
+    pub fn each_account(&self) -> Vec<UsageInfo> {
+        let mut v = vec![UsageInfo { accounts: Vec::new(), ..self.clone() }];
+        v.extend(self.accounts.iter().cloned());
+        v
     }
     /// The assistant is missing or signed out (known only after the first check).
     pub fn unavailable(&self) -> Option<Availability> {
