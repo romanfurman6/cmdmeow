@@ -88,8 +88,11 @@ pub struct UsageInfo {
     /// The last check failed: the limits shown are the last ones known, as
     /// of `fetched`.
     pub stale: bool,
-    /// An outage or slowdown the provider's status page reports right now.
+    /// An outage or slowdown the provider's status page reports right now:
+    /// "Degraded" or "Outage".
     pub incident: Option<String>,
+    /// The open incidents behind it, for the badge's hover.
+    pub incidents: Vec<status::Incident>,
 }
 
 impl UsageInfo {

@@ -120,6 +120,35 @@ pub fn incident_chip(p: &egui::Painter, pos: Pos2, align: Align2, i: &UsageInfo)
     Some(chip(p, pos, align, &label, (with_alpha(c, 0.16), c)))
 }
 
+/// Statuspage's incident state in words: "Investigating".
+pub fn incident_state(s: &str) -> Option<String> {
+    Some(match s {
+        "investigating" => ts!("ai.inc.investigating"),
+        "identified" => ts!("ai.inc.identified"),
+        "monitoring" => ts!("ai.inc.monitoring"),
+        "" => return None,
+        other => return Some(other.to_owned()),
+    }
+    .to_owned())
+}
+
+/// When an incident started (T14, 24 h): "since 13:05" today, "since
+/// Yesterday 22:10", "since Mon 22:10" within the week, else "since Nov 3".
+pub fn incident_since(t: chrono::DateTime<chrono::Local>) -> String {
+    let today = chrono::Local::now().date_naive();
+    let d = t.date_naive();
+    let when = if d == today {
+        t.format("%H:%M").to_string()
+    } else if today.pred_opt() == Some(d) {
+        t!("ai.inc.yesterday", time = t.format("%H:%M")).into_owned()
+    } else if (today - d).num_days() < 7 {
+        t.format("%a %H:%M").to_string()
+    } else {
+        t.format("%b %-d").to_string()
+    };
+    t!("ai.inc.since", when = when).into_owned()
+}
+
 /// The caption's top under a stat's number in the day chart's readout.
 const STAT_CAP_Y: f32 = 20.0;
 

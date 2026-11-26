@@ -186,14 +186,18 @@ fn run(ctx: egui::Context, mut providers: Vec<Box<dyn ai::Provider>>, all: All) 
             status_at.mark();
             for (i, meta) in ai::PROVIDERS.iter().enumerate() {
                 if set.is_on(meta.id) && !meta.status_url.is_empty() {
-                    let incident = status::fetch(meta.status_url);
-                    all[i].lock_ok().incident = incident;
+                    let report = status::fetch(meta.status_url);
+                    let mut s = all[i].lock_ok();
+                    s.incident = report.as_ref().map(|r| r.level.clone());
+                    s.incidents = report.map(|r| r.incidents).unwrap_or_default();
                 }
             }
             activity::repaint(&ctx);
         } else if !set.show_outages {
             for s in all.iter() {
-                s.lock_ok().incident = None;
+                let mut s = s.lock_ok();
+                s.incident = None;
+                s.incidents.clear();
             }
         }
         // wait, but wake early when someone asks for a refresh or the panel opens
