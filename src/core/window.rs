@@ -40,6 +40,11 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
             app.page = first;
         }
     }
+    // SP24: a tool counts as opened once the user goes to it or clicks in its
+    // page; the page the window opens on doesn't count by itself
+    let shown = (!app.settings_open).then(|| app.tools.get(app.page).map(|t| t.id())).flatten();
+    let clicked = ctx.input(|i| i.pointer.primary_clicked() && i.pointer.interact_pos().is_some_and(|q| full.contains(q) && !side.contains(q)));
+    super::updated::frame(shown, clicked);
     let x = side.left() + 8.0;
     let w = side.width() - 16.0;
     // app mark under the traffic lights
@@ -96,16 +101,13 @@ pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, c
             app.page = i;
             app.settings_open = false;
             app.drag = None;
+            super::updated::seen(id);
         }
         // SP24: "Updated" 6 after the name until the tool's first open
         if super::updated::shows(id) {
-            if app.page == i && !app.settings_open {
-                super::updated::seen(id);
-            } else {
-                let nw = p.layout_no_wrap(label.to_owned(), font(13.0), TEXT()).size().x;
-                let x0 = r.left() + 8.0 + SIDEBAR_INDENT + 16.0 + 9.0 + nw + 6.0;
-                chip(&p, Pos2::new(x0, r.center().y), Align2::LEFT_CENTER, ts!("app.updated"), (with_alpha(ACCENT(), 0.16), ACCENT()));
-            }
+            let nw = p.layout_no_wrap(label.to_owned(), font(13.0), TEXT()).size().x;
+            let x0 = r.left() + 8.0 + SIDEBAR_INDENT + 16.0 + 9.0 + nw + 6.0;
+            chip(&p, Pos2::new(x0, r.center().y), Align2::LEFT_CENTER, ts!("app.updated"), (with_alpha(ACCENT(), 0.16), ACCENT()));
         }
         if locked && !busy {
             icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(r.right() - 14.0, r.center().y), Vec2::splat(12.0)), TEXT_FAINT());

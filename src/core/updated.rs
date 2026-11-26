@@ -106,6 +106,28 @@ pub fn shows(id: &str) -> bool {
     CHANGED.iter().any(|(t, _)| *t == id) && with(|s| shows_in(s, CHANGED, id))
 }
 
+/// Which page was shown last frame; `None` before the first frame.
+static LAST: Mutex<Option<Option<String>>> = Mutex::new(None);
+
+/// Whether the shown tool now counts as opened: the user went to it from
+/// somewhere else, or clicked inside its page. The page the window opens on
+/// doesn't count by itself, so its chip stays until one of those.
+fn opened(last: &mut Option<Option<String>>, shown: Option<&str>, clicked: bool) -> bool {
+    let navigated = last.as_ref().is_some_and(|l| l.as_deref() != shown);
+    *last = Some(shown.map(String::from));
+    shown.is_some() && (navigated || clicked)
+}
+
+/// Called every window frame with the tool page on screen (`None` in
+/// Settings) and whether a click landed inside that page.
+pub fn frame(shown: Option<&str>, clicked: bool) {
+    if opened(&mut LAST.lock_ok(), shown, clicked) {
+        if let Some(id) = shown {
+            seen(id);
+        }
+    }
+}
+
 /// Tool `id` was opened: no chip until a later release changes it again.
 pub fn seen(id: &str) {
     if !shows(id) {
@@ -150,6 +172,24 @@ mod tests {
         assert!(!shows_in(&s, V2, "cleanup"));
         see_all(&mut s, V2, Some("claude"));
         assert!(!shows_in(&s, V2, "claude"));
+    }
+
+    #[test]
+    fn the_start_page_counts_only_after_a_click_or_coming_back() {
+        let mut last = None;
+        // window opens on cleanup: not opened yet, nor on later idle frames
+        assert!(!opened(&mut last, Some("cleanup"), false));
+        assert!(!opened(&mut last, Some("cleanup"), false));
+        // a click in the page opens it
+        assert!(opened(&mut last, Some("cleanup"), true));
+        // going to another tool opens that one
+        let mut last = None;
+        opened(&mut last, Some("cleanup"), false);
+        assert!(opened(&mut last, Some("claude"), false));
+        // Settings is no tool; coming back from it opens cleanup
+        opened(&mut last, Some("cleanup"), false);
+        assert!(!opened(&mut last, None, true));
+        assert!(opened(&mut last, Some("cleanup"), false));
     }
 
     #[test]
