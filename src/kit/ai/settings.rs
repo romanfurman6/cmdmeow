@@ -33,6 +33,8 @@ pub struct Settings {
     pub main: String,
     /// Show dollar amounts.
     pub show_cost: bool,
+    /// The Usage tab counts tokens instead of dollars (its $ | Tokens switch).
+    pub usage_tokens: bool,
     /// Notify when a limit (or budget) passes these percentages.
     pub notify_at: Vec<u8>,
     /// Notify when a limit resets after being over the first threshold.
@@ -66,6 +68,7 @@ impl Default for Settings {
             main_name: String::new(),
             main: "claude".into(),
             show_cost: true,
+            usage_tokens: false,
             notify_at: vec![80, 95],
             notify_reset: true,
             notify_unused: true,

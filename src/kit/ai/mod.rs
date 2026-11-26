@@ -951,9 +951,9 @@ mod tests {
 
     #[test]
     fn limit_labels() {
-        assert_eq!(short_label("Current session"), "Session");
-        assert_eq!(short_label("Current week (all models)"), "Week");
-        assert_eq!(short_label("Current week (Opus)"), "Week · Opus");
+        assert_eq!(short_label("Current session"), "5-hour limit");
+        assert_eq!(short_label("Current week (all models)"), "Weekly limit");
+        assert_eq!(short_label("Current week (Opus)"), "Weekly · Opus");
         assert_eq!(short_label("Something else"), "Something else");
     }
 

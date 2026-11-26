@@ -42,12 +42,8 @@ pub fn context(resp: &Response) -> Popup<'_> {
     Popup::context_menu(resp).style(style)
 }
 
-/// Paint one row: hover fill, picked fill and check, label, submenu chevron.
-pub fn paint_row(p: &egui::Painter, r: Rect, label: &str, hover: f32, on: bool, has_sub: bool, enabled: bool) {
-    paint_row_at(p, r, INSET, label, hover, on, has_sub, enabled);
-}
-
-/// [`paint_row`] with the label `lead` from the left edge.
+/// Paint one row, its label `lead` from the left edge: hover fill, picked
+/// fill and check, label, submenu chevron.
 #[allow(clippy::too_many_arguments)]
 fn paint_row_at(p: &egui::Painter, r: Rect, lead: f32, label: &str, hover: f32, on: bool, has_sub: bool, enabled: bool) {
     if on {
