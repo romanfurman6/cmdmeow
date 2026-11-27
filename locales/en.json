@@ -1387,8 +1387,7 @@
       "left_n": "Remove what %{n} apps left?"
     },
     "sub": {
-      "reset": "Settings, caches and data go to the Trash. The app stays",
-      "all": "Everything goes to the Trash"
+      "reset": "Settings, caches and data go to the Trash. The app stays"
     },
     "open_now_line": "Open now · %{line}",
     "password_one": "%{n} item needs your password. macOS asks once.",

@@ -685,7 +685,9 @@ fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let w = 540.0;
     let list_max = (r.height() - 260.0 - warn_h).max(120.0);
     let list_h = rows_h.min(list_max);
-    let h = 18.0 + 22.0 + 8.0 + 36.0 + 14.0 + list_h + 14.0 + warn_h + 14.0 + 30.0 + 18.0;
+    // reset says what goes; an uninstall's footer already says "Moves X to the Trash"
+    let sub_h = if reset { 36.0 } else { 0.0 };
+    let h = 18.0 + 22.0 + 8.0 + sub_h + 14.0 + list_h + 14.0 + warn_h + 14.0 + 30.0 + 18.0;
     let m = Rect::from_center_size(r.center(), Vec2::new(w, h));
     modal_card(&p, m);
     let x0 = m.left() + 18.0;
@@ -699,9 +701,11 @@ fn review_body(u: &mut Uninstaller, ui: &mut Ui, r: Rect) {
     let title = if rv.targets.iter().all(|t| t.app.is_none()) && !reset { if n == 1 { t!("un.t.left", name = rv.targets[0].name).into_owned() } else { t!("un.t.left_n", n = n).into_owned() } } else { title };
     p.text(Pos2::new(x0, y), Align2::LEFT_TOP, title, bold(15.0), TEXT());
     y += 30.0;
-    let sub = if reset { ts!("un.sub.reset") } else { ts!("un.sub.all") };
-    paragraph(&p, Pos2::new(x0, y), sub, font(13.0), TEXT_DIM(), x1 - x0);
-    y += 36.0 + 8.0;
+    if reset {
+        paragraph(&p, Pos2::new(x0, y), ts!("un.sub.reset"), font(13.0), TEXT_DIM(), x1 - x0);
+        y += sub_h;
+    }
+    y += 8.0;
     let lr = Rect::from_min_size(Pos2::new(x0, y), Vec2::new(x1 - x0, list_h));
     p.rect_filled(lr, 10.0, RAISED());
     p.rect_stroke(lr, 10.0, Stroke::new(1.0, white(HAIRLINE)), StrokeKind::Inside);
