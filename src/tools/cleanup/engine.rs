@@ -419,6 +419,12 @@ impl Ctx {
     }
 }
 
+/// What AI Check is asked about: not locked, not the person's own Keep,
+/// not captures, big enough to matter.
+fn ai_judges(it: &Item) -> bool {
+    !it.hard_keep && it.by != Who::You && it.group != Group::Captures && it.bytes >= m::AI_MIN_BYTES
+}
+
 /// What the person kept before: under Kept, theirs to take back.
 fn you_keep(it: &mut Item) {
     it.verdict = Verdict::Keep;
@@ -1237,7 +1243,7 @@ fn judge(shared: &Shared, ctx: &egui::Context, agent: super::agent::Agent, cance
     let h = home().display().to_string();
     let candidates: Vec<usize> = {
         let g = shared.lock_ok();
-        g.items.iter().enumerate().filter(|(_, it)| !it.hard_keep && it.by != Who::You && it.group != Group::Captures && it.bytes >= m::AI_MIN_BYTES).map(|(i, _)| i).collect()
+        g.items.iter().enumerate().filter(|(_, it)| ai_judges(it)).map(|(i, _)| i).collect()
     };
     // what the person kept before tells Claude what they care about
     let mut system = SYSTEM.to_string();
@@ -2255,6 +2261,42 @@ pub(crate) mod tests {
         let left: Vec<String> = items.iter().map(|i| i.path.display().to_string()).collect();
         // the open macOS cache goes; an idle one, an app's (quit sheet) and logs stay
         assert_eq!(left, vec![format!("{u}/com.apple.tipsd"), format!("{u}/com.spotify.client"), "/Users/me/Library/Logs/com.apple.x".to_string()]);
+    }
+
+    fn test_ctx(kept: &[&Path]) -> Ctx {
+        Ctx { items: Vec::new(), kept: kept.iter().map(|p| p.to_path_buf()).collect(), hidden_kept: 0, running_ids: HashSet::new(), running_names: HashSet::new(), tool: "", brew: false, shared: Shared::default(), egui: egui::Context::default(), cancel: Arc::new(AtomicBool::new(false)) }
+    }
+
+    #[test]
+    fn ai_check_skips_what_you_kept() {
+        let mut it = plain(Group::Developer, "/x", "Caches", Verdict::Keep, Action::Files);
+        it.bytes = m::AI_MIN_BYTES;
+        assert!(ai_judges(&it));
+        it.by = Who::You;
+        assert!(!ai_judges(&it));
+    }
+
+    #[test]
+    fn what_you_kept_is_listed_as_yours() {
+        let base = std::env::temp_dir().join(format!("cmdmeow-youkept-{}", std::process::id()));
+        let (kept, inside, other) = (base.join("kept"), base.join("kept/inner"), base.join("other"));
+        for d in [&inside, &other] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let mut c = test_ctx(&[&kept]);
+        c.add(Group::Developer, "kept", kept.clone(), "Caches", Verdict::Safe, "rule");
+        c.add(Group::Developer, "inner", inside.clone(), "Caches", Verdict::Safe, "rule");
+        c.add(Group::Developer, "other", other.clone(), "Caches", Verdict::Safe, "rule");
+        c.add_action(Group::Developer, "act", kept.clone(), "Caches", Verdict::Ask, "rule", Action::Files, 10);
+        // the folder inside a kept one is hidden; the other stays the rules'
+        let got: Vec<(PathBuf, Who)> = c.items.iter().map(|i| (i.path.clone(), i.by)).collect();
+        assert_eq!(got, vec![(kept.clone(), Who::You), (other, Who::Rule), (kept.clone(), Who::You)]);
+        for i in c.items.iter().filter(|i| i.path == kept) {
+            assert!(i.verdict == Verdict::Keep && !i.selected);
+        }
+        assert_eq!(c.hidden_kept, 1);
+        assert_eq!(c.items[0].rule_verdict, Verdict::Safe);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     fn plain(group: Group, path: &str, kind: &'static str, verdict: Verdict, action: Action) -> Item {

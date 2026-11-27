@@ -1376,36 +1376,40 @@ fn undoable(it: &Item) -> bool {
 
 /// A kept item the person may take back: theirs, what the rules or Claude
 /// kept, and Claude Code projects in use (their chats are the person's
-/// call). Protected folders, kept caches and worktrees with work in them stay.
+/// call). Protected folders, kept caches and worktrees with work in them
+/// stay locked, also when the person kept them too.
 fn unkeepable(it: &Item) -> bool {
-    it.verdict == Verdict::Keep && (it.by == Who::You || !it.hard_keep || it.kind == "Projects")
+    it.verdict == Verdict::Keep && (!it.hard_keep || it.kind == "Projects")
 }
 
 /// Remove from Kept: the items go to "Needs your OK" (Clean / Keep), and
 /// what the person had kept is no longer remembered.
 fn unkeep_items(app: &mut App, idx: &[usize]) {
-    let mut forget = Vec::new();
-    {
-        let mut g = app.clean.lock_ok();
-        for &i in idx {
-            let it = &mut g.items[i];
-            if !unkeepable(it) {
-                continue;
-            }
-            if it.by == Who::You {
-                forget.push(it.path.clone());
-            }
-            it.verdict = Verdict::Ask;
-            it.by = Who::Rule;
-            it.hard_keep = false;
-            it.selected = false;
-            // "You used this project yesterday — kept" asks without the verdict
-            it.reason = it.rule_reason.trim_end_matches(" — kept").to_string();
-        }
-    }
+    let forget = unkeep(&mut app.clean.lock_ok().items, idx);
     for p in forget {
         cleanup::forget_kept_one(&p);
     }
+}
+
+/// [`unkeep_items`] on the list: returns the paths the person had kept.
+fn unkeep(items: &mut [Item], idx: &[usize]) -> Vec<PathBuf> {
+    let mut forget = Vec::new();
+    for &i in idx {
+        let it = &mut items[i];
+        if !unkeepable(it) {
+            continue;
+        }
+        if it.by == Who::You {
+            forget.push(it.path.clone());
+        }
+        it.verdict = Verdict::Ask;
+        it.by = Who::Rule;
+        it.hard_keep = false;
+        it.selected = false;
+        // "You used this project yesterday — kept" asks without the verdict
+        it.reason = it.rule_reason.trim_end_matches(" — kept").to_string();
+    }
+    forget
 }
 
 /// Screenshots only: the Kept row drawn as if under the pointer (and its
@@ -2076,6 +2080,36 @@ fn check_ask(clean: &cleanup::Shared) -> aicheck::Ask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_from_kept_asks_again_but_locks_hold() {
+        let mut st = demo_results();
+        let base = st.items[0].clone();
+        let mk = |kind: &'static str, by: Who, hard: bool| Item { kind, by, hard_keep: hard, verdict: Verdict::Keep, rule_verdict: Verdict::Keep, rule_reason: "You used this project today — kept".into(), path: PathBuf::from(format!("/k/{kind}/{hard}")), ..base.clone() };
+        st.items = vec![
+            mk("Projects", Who::Rule, true),  // in-use project: may go
+            mk("Caches", Who::You, false),    // the person's own Keep
+            mk("Caches", Who::Rule, true),    // kept cache: locked
+            mk("Worktrees", Who::You, true),  // protected, also kept by the person: locked
+        ];
+        let ok: Vec<bool> = st.items.iter().map(unkeepable).collect();
+        assert_eq!(ok, [true, true, false, false]);
+        let forget = unkeep(&mut st.items, &[0, 1, 2, 3]);
+        assert_eq!(forget, vec![PathBuf::from("/k/Caches/false")]);
+        for it in &st.items[..2] {
+            assert_eq!((it.verdict, it.by, it.hard_keep, it.selected), (Verdict::Ask, Who::Rule, false, false));
+            assert_eq!(it.reason, "You used this project today");
+        }
+        for it in &st.items[2..] {
+            assert!(it.verdict == Verdict::Keep && it.hard_keep);
+        }
+        // Undo on a project brings its lock back
+        let mut p = st.items[0].clone();
+        p.verdict = Verdict::Safe;
+        p.by = Who::You;
+        undo(&mut p);
+        assert!(p.verdict == Verdict::Keep && p.hard_keep);
+    }
 
     #[test]
     fn undo_puts_a_question_back() {
