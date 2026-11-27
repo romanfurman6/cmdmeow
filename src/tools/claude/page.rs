@@ -704,14 +704,17 @@ fn limit_card_v(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit, ring: f32) {
 }
 
 /// What each day since the weekly reset took of the weekly limit: the
-/// limit's used share split by that day's tokens. 7 days from the reset;
-/// days still to come are `None`.
+/// limit's used share split by that day's tokens. Every date the window
+/// touches (8 when it doesn't start at midnight); days still to come are
+/// `None`.
 fn week_days(info: &UsageInfo, l: &Limit) -> Option<(i64, WeekDays)> {
     use chrono::TimeZone;
-    let start = l.resets_at? - 7 * 86_400;
+    let end = l.resets_at?;
+    let start = end - week_len(l);
     let first = chrono::Local.timestamp_opt(start, 0).single()?.date_naive();
+    let last = chrono::Local.timestamp_opt(end - 1, 0).single()?.date_naive();
     let today = chrono::Local::now().date_naive();
-    let days: Vec<NaiveDate> = (0..7).map(|k| first + chrono::Days::new(k)).collect();
+    let days: Vec<NaiveDate> = first.iter_days().take_while(|d| *d <= last).collect();
     let tok = |d: NaiveDate| info.local.days.iter().find(|x| x.date == d).map_or(0, |x| x.tokens);
     let sum: u64 = days.iter().filter(|d| **d <= today).map(|d| tok(*d)).sum();
     if sum == 0 {
@@ -720,7 +723,12 @@ fn week_days(info: &UsageInfo, l: &Limit) -> Option<(i64, WeekDays)> {
     Some((start, days.into_iter().map(|d| (d, (d <= today).then(|| l.pct * tok(d) as f32 / sum as f32))).collect()))
 }
 
-/// The 7 days of a weekly window and what each took (`None`: still to come).
+/// A weekly window's length: its own, else 7 days.
+fn week_len(l: &Limit) -> i64 {
+    if l.window_secs > 0 { l.window_secs } else { 7 * 86_400 }
+}
+
+/// The dates of a weekly window and what each took (`None`: still to come).
 type WeekDays = Vec<(NaiveDate, Option<f32>)>;
 
 /// "This week" (SP25): a burn-up of the weekly limit since its reset. x is
@@ -734,7 +742,7 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
     data_card(&p, cr);
     let i = cr.shrink(sp::L);
     let Some((start, days)) = week_days(info, l) else { return };
-    let len = if l.window_secs > 0 { l.window_secs } else { 7 * 86_400 };
+    let len = week_len(l);
     let end = start + len;
     let now = parts::now().clamp(start, end);
     let local = |t: i64| chrono::Local.timestamp_opt(t, 0).single();
