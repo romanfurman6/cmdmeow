@@ -94,11 +94,13 @@ pub struct Setup {
     /// live ones would read the person's folders (Capture's Recent list
     /// lists ~/Desktop, and macOS asked about it on a hover).
     samples: Option<Vec<Box<dyn super::tool::Tool>>>,
+    /// A goal screen's shortcut being typed anew: (tool index, its id).
+    key_rec: Option<(usize, &'static str)>,
 }
 
 impl Setup {
     pub fn new(step: usize) -> Self {
-        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, samples: None }
+        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, samples: None, key_rec: None }
     }
 }
 
@@ -3050,7 +3052,7 @@ mod tests {
     #[test]
     fn allowed_permissions_are_read_less_often() {
         let mut w = PermWatch::default();
-        let rows = [Row { perm: Perm::Screen, optional: false, tools: vec![] }, Row { perm: Perm::Accessibility, optional: true, tools: vec![] }];
+        let rows = [Row { perm: Perm::Screen, optional: false, tools: vec![], why: "" }, Row { perm: Perm::Accessibility, optional: true, tools: vec![], why: "" }];
         // nothing read yet, then one still missing: every second
         assert!(!w.settled(&rows));
         w.apply(Perm::Screen, Status::Allowed, 0.0);
@@ -3214,6 +3216,8 @@ fn feature_why(g: usize, perm: Perm) -> &'static str {
         ("Screenshots & video", Perm::Camera) => ts!("setup.why_rec_camera"),
         ("Voice typing", Perm::Microphone) => ts!("setup.why_dict_mic"),
         ("Voice typing", Perm::Accessibility) => ts!("setup.why_dict_type"),
+        ("Watch my Mac", Perm::Accessibility) => ts!("setup.why_watch_keys"),
+        ("Watch my Mac", Perm::FullDisk) => ts!("setup.why_watch_disk"),
         _ => "",
     }
 }
@@ -3253,8 +3257,8 @@ fn has_feature(app: &App, g: usize) -> bool {
     if feature_tools(app, g).is_empty() {
         return false;
     }
-    let forced = app.demo && GOALS[g].name == "Watch my Mac" && std::env::var("CMDMEOW_SETUP_WATCH").is_ok();
-    forced || feature_rows(app, g).iter().any(|r| !r.optional) || !feature_keys(app, g).is_empty() || !feature_models(app, g).is_empty() || feature_ai(app, g).is_some()
+    // any permission, optional ones too (Watch my Mac has only those)
+    !feature_rows(app, g).is_empty() || !feature_keys(app, g).is_empty() || !feature_models(app, g).is_empty() || feature_ai(app, g).is_some()
 }
 
 /// Required permissions of tools no goal screen covers (picked from the full list).
@@ -3374,6 +3378,8 @@ fn keys_card(app: &mut App, ui: &mut Ui, p: &egui::Painter, top_left: Pos2, w: f
         p.line_segment([Pos2::new(mx, card.top() + sp::M), Pos2::new(mx, card.bottom() - sp::M)], Stroke::new(1.0, white(18)));
     }
     let mut flip: Option<(usize, &'static str, bool)> = None;
+    let rec = app.setup.as_ref().and_then(|s| s.key_rec);
+    let mut rec_next = rec;
     for (n, (i, key)) in keys.iter().enumerate() {
         // down the first column, then the second
         let (c, r) = (n / rows_n, n % rows_n);
@@ -3389,13 +3395,65 @@ fn keys_card(app: &mut App, ui: &mut Ui, p: &egui::Painter, top_left: Pos2, w: f
         }
         let sw = Rect::from_min_size(Pos2::new(cell.right() - sp::M - 30.0, cy - 9.0), Vec2::new(30.0, 18.0));
         let caps_right = Pos2::new(sw.left() - sp::M, cy);
-        let caps_w: f32 = caps(&key.keys).iter().map(|c| cap_w(p, c) + 3.0).sum::<f32>();
+        let recording = rec == Some((*i, key.id));
+        // the keys: a click types new ones (as in the tool's settings)
+        let caps_w: f32 = if recording {
+            p.layout_no_wrap(ts!("cap.type_shortcut").to_string(), font(12.0), TEXT()).size().x + 20.0
+        } else {
+            caps(&key.keys).iter().map(|c| cap_w(p, c) + 3.0).sum::<f32>()
+        };
+        let kr = Rect::from_min_max(Pos2::new(caps_right.x - caps_w - 2.0, cy - 13.0), Pos2::new(caps_right.x + 2.0, cy + 13.0));
         let lx = cell.left() + 40.0;
-        text_fit(p, Pos2::new(lx, cy), Align2::LEFT_CENTER, key.label, font(13.0), TEXT().gamma_multiply(dim * a), caps_right.x - caps_w - sp::S - lx);
-        keycaps_dim(p, caps_right, &key.keys, dim * a);
+        text_fit(p, Pos2::new(lx, cy), Align2::LEFT_CENTER, key.label, font(13.0), TEXT().gamma_multiply(dim * a), kr.left() - sp::S - lx);
+        let kresp = ui.interact(kr, ui.scope_id().with(("setup-key-rec", *i, key.id)), Sense::click());
+        if recording {
+            let br = kr.shrink2(Vec2::new(2.0, 1.0));
+            p.rect_filled(br, 6.0, with_alpha(ACTION(), 0.22));
+            p.rect_stroke(br, 6.0, Stroke::new(1.0, ACCENT()), StrokeKind::Inside);
+            p.text(br.center(), Align2::CENTER_CENTER, ts!("cap.type_shortcut"), font(12.0), TEXT());
+        } else {
+            if kresp.hovered() {
+                p.rect_filled(kr, 6.0, white(ROW_HOVER));
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            keycaps_dim(p, caps_right, &key.keys, dim * a);
+        }
+        if kresp.on_hover_text(ts!("cap.shortcut_tip")).clicked() {
+            rec_next = if recording { None } else { Some((*i, key.id)) };
+        }
         if switch(ui, sw, ui.scope_id().with(("setup-key", *i, key.id)), key.on, true).clicked() {
             flip = Some((*i, key.id, !key.on));
         }
+    }
+    // typing a shortcut: the next press with a modifier becomes it, Esc
+    // leaves it as it was, Delete turns it off
+    if let Some((i, id)) = rec_next {
+        use crate::kit::hotkeys::{listen, Heard};
+        let heard = if rec == rec_next { listen(ui.ctx()) } else { Heard::Nothing };
+        match heard {
+            Heard::Nothing => {
+                app.tools[i].record_setup_key(id, true);
+                ui.ctx().request_repaint();
+            }
+            Heard::Cancel => {
+                app.tools[i].record_setup_key(id, false);
+                rec_next = None;
+            }
+            Heard::Remove => {
+                app.tools[i].set_setup_key_to(id, None);
+                rec_next = None;
+            }
+            Heard::Set(k) => {
+                app.tools[i].set_setup_key_to(id, Some(k));
+                rec_next = None;
+            }
+        }
+    }
+    if let Some((i, id)) = rec.filter(|r| rec_next != Some(*r)) {
+        app.tools[i].record_setup_key(id, false);
+    }
+    if let Some(s) = app.setup.as_mut() {
+        s.key_rec = rec_next;
     }
     if let Some((i, id, on)) = flip {
         app.tools[i].set_setup_key(id, on);
@@ -3588,7 +3646,7 @@ fn keychain_row(app: &mut App, ui: &mut Ui, p: &egui::Painter, r: Rect, now: f64
 /// count must not jump while the person picks (CMDMEOW_DOTS picks a variant
 /// for the canvas: "group", "pill" or "late").
 fn draw_dots(p: &egui::Painter, full: Rect, kinds: &[Kind], from: usize, step: usize, t: f32) {
-    let variant = std::env::var("CMDMEOW_DOTS").unwrap_or_else(|_| "group".into());
+    let variant = std::env::var("CMDMEOW_DOTS").unwrap_or_else(|_| "late".into());
     let is_f = |k: &Kind| matches!(k, Kind::Feature(_));
     let tools_at = kinds.iter().position(|k| *k == Kind::Tools).unwrap_or(0);
     match variant.as_str() {

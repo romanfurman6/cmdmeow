@@ -914,6 +914,17 @@ impl Tool for Dictation {
         let keys = self.settings.shortcut.clone().unwrap_or_else(settings::default_shortcut).display();
         vec![crate::core::tool::SetupKey { id: "dictate", label: ts!("dict.dictate"), keys, on: self.settings.shortcut.is_some() }]
     }
+    fn set_setup_key_to(&mut self, _id: &str, keys: Option<Shortcut>) {
+        self.settings.shortcut = keys;
+        self.save_settings();
+        self.recording_key = false;
+    }
+    fn record_setup_key(&mut self, _id: &str, on: bool) {
+        self.recording_key = on;
+        if on {
+            self.recording_seen = Instant::now();
+        }
+    }
     fn set_setup_key(&mut self, _id: &str, on: bool) {
         if on != self.settings.shortcut.is_some() {
             self.settings.shortcut = if on { Some(settings::default_shortcut()) } else { None };

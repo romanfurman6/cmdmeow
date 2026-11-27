@@ -44,6 +44,29 @@ fn set_key(c: &mut Capture, id: &str, on: bool) {
     c.apply_keys();
 }
 
+/// Give one of [`keys_of`] other keys (None: off).
+fn set_key_to(c: &mut Capture, id: &str, keys: Option<crate::kit::hotkeys::Shortcut>) {
+    let Some(cmd) = Command::from_slug(id) else { return };
+    c.recording = None;
+    c.settings.set_shortcut(cmd, keys);
+    c.save_settings();
+    c.apply_keys();
+}
+
+/// Typing a new shortcut for `id`: no shortcut fires meanwhile.
+fn record_key(c: &mut Capture, id: &str, on: bool) {
+    let cmd = Command::from_slug(id);
+    if on && c.recording != cmd {
+        c.recording = cmd;
+        if let Some(k) = &mut c.keys {
+            k.clear();
+        }
+    } else if !on && c.recording.is_some() {
+        c.recording = None;
+        c.apply_keys();
+    }
+}
+
 fn key_icon(id: &str, p: &egui::Painter, r: Rect, col: egui::Color32) -> bool {
     match Command::from_slug(id) {
         Some(cmd) => {
@@ -117,6 +140,12 @@ impl Tool for Screenshot {
     }
     fn set_setup_key(&mut self, id: &str, on: bool) {
         set_key(&mut self.0.borrow_mut(), id, on);
+    }
+    fn set_setup_key_to(&mut self, id: &str, keys: Option<crate::kit::hotkeys::Shortcut>) {
+        set_key_to(&mut self.0.borrow_mut(), id, keys);
+    }
+    fn record_setup_key(&mut self, id: &str, on: bool) {
+        record_key(&mut self.0.borrow_mut(), id, on);
     }
     fn setup_key_icon(&self, id: &str, p: &egui::Painter, r: Rect, col: egui::Color32) -> bool {
         key_icon(id, p, r, col)
@@ -193,6 +222,12 @@ impl Tool for Video {
     }
     fn set_setup_key(&mut self, id: &str, on: bool) {
         set_key(&mut self.0.borrow_mut(), id, on);
+    }
+    fn set_setup_key_to(&mut self, id: &str, keys: Option<crate::kit::hotkeys::Shortcut>) {
+        set_key_to(&mut self.0.borrow_mut(), id, keys);
+    }
+    fn record_setup_key(&mut self, id: &str, on: bool) {
+        record_key(&mut self.0.borrow_mut(), id, on);
     }
     fn setup_key_icon(&self, id: &str, p: &egui::Painter, r: Rect, col: egui::Color32) -> bool {
         key_icon(id, p, r, col)

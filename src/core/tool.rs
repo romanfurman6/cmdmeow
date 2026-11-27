@@ -263,6 +263,11 @@ pub trait Tool {
     }
     /// Turn one of [`Tool::setup_keys`] on (its default keys) or off.
     fn set_setup_key(&mut self, _id: &str, _on: bool) {}
+    /// Give one of [`Tool::setup_keys`] other keys (None turns it off).
+    fn set_setup_key_to(&mut self, _id: &str, _keys: Option<crate::kit::hotkeys::Shortcut>) {}
+    /// A new shortcut is being typed for `id` (called every frame while
+    /// it is, then once with `on` false): the tool lets go of its keys.
+    fn record_setup_key(&mut self, _id: &str, _on: bool) {}
     /// Draw one of [`Tool::setup_keys`]' icons in `r`; false draws the badge's.
     fn setup_key_icon(&self, _id: &str, _p: &egui::Painter, _r: Rect, _col: Color32) -> bool {
         false

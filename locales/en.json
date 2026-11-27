@@ -2237,6 +2237,8 @@
     "why_rec_camera": "Your camera in recordings",
     "why_dict_mic": "Hears what you say",
     "why_dict_type": "Types the text for you",
+    "why_watch_keys": "Brightness and volume keys",
+    "why_watch_disk": "Disk use in Mac Health",
     "shortcuts": "Shortcuts",
     "model": "Model",
     "back": "Back",
