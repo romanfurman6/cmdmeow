@@ -1709,12 +1709,13 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                 (How::Command, Action::Upload { key, local }) => super::captures::delete_upload(local, key),
                 (How::Command, Action::Model(files)) => super::agents::remove_model(files),
                 (How::Command, a) => super::xcode::remove(a).or_else(|e| if matches!(a, Action::SimDevice(_)) && it.path.is_dir() { remove(&it.path) } else { Err(e) }),
-                (How::Trash, Action::Parts(ps)) => ps.iter().try_for_each(|p| if p.symlink_metadata().is_ok() { move_to_trash(p) } else { Ok(()) }),
-                (How::Deleted, Action::Parts(ps)) => ps.iter().try_for_each(|p| remove(p)),
+                (How::Trash, Action::Parts(ps)) => each_part(ps, |p| if p.symlink_metadata().is_ok() { move_to_trash(p) } else { Ok(()) }),
                 (How::Trash, _) => move_to_trash(&it.path),
                 (How::Deleted, _) => {
                     // file by file, so the counter moves and Stop cuts in
+                    // (a Parts item: part after part, on one running total)
                     let mut last = std::time::Instant::now();
+                    let mut before = 0u64;
                     let mut tick = |gone: u64| {
                         shared.lock_ok().clean_done = base + gone.min(it.bytes);
                         if last.elapsed().as_millis() >= 50 {
@@ -1722,7 +1723,32 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                             ctx.request_repaint();
                         }
                     };
-                    remove_tracked(&it.path, &cancel, &mut tick)
+                    let mut errs = Vec::new();
+                    let mut out = Ok(());
+                    for t in it.targets() {
+                        let mut gone_here = 0u64;
+                        let r = remove_tracked(&t, &cancel, &mut |g| {
+                            gone_here = g;
+                            tick(before + g)
+                        });
+                        before += gone_here;
+                        match r {
+                            Ok(()) => {}
+                            Err(e) if stopped_bytes(e.clone()).is_some() => {
+                                out = Err(format!("{STOPPED} {before}"));
+                                break;
+                            }
+                            Err(e) => errs.push(e),
+                        }
+                        if cancel.load(Ordering::SeqCst) {
+                            out = Err(format!("{STOPPED} {before}"));
+                            break;
+                        }
+                    }
+                    if out.is_ok() && !errs.is_empty() {
+                        out = Err(errs.join("; "));
+                    }
+                    out
                 }
             };
             if let (Ok(()), Some(repo)) = (&res, &wt_repo) {
@@ -1872,6 +1898,16 @@ pub fn days_ago(when: i64) -> String {
 struct Stopped(u64);
 
 const STOPPED: &str = "\u{0}stopped";
+
+/// Do `f` to every part, going on past a failure; the failures come back together.
+fn each_part(parts: &[PathBuf], f: impl Fn(&Path) -> Result<(), String>) -> Result<(), String> {
+    let errs: Vec<String> = parts.iter().filter_map(|p| f(p).err()).collect();
+    if errs.is_empty() {
+        Ok(())
+    } else {
+        Err(errs.join("; "))
+    }
+}
 
 /// `Err` of a cut-short [`remove_tracked`] reads "\0stopped <bytes>".
 fn stopped_bytes(e: String) -> Option<Stopped> {
