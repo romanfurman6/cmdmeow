@@ -1684,6 +1684,10 @@ fn sync_theme(ctx: &egui::Context, live: bool) {
         _ => glass::theme_choice().resolve(live && crate::kit::native::system_light()),
     };
     let light = theme == glass::Theme::Light;
+    if live {
+        // once per change (it remembers the last one), and on the first pass
+        crate::kit::native::set_dock_theme(theme);
+    }
     if glass::set_theme(theme) {
         install_fonts(ctx);
         if live {

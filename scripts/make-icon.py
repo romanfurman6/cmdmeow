@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build assets/AppIcon.icns from the icon artwork assets/icon/AppIcon-art.png.
 
-Needs: pip install pillow
+Needs: pip install pillow numpy
 The artwork is a full-bleed 1024 square: the cream keycap cat on the ink
 ground. This script fits it to the macOS icon grid (an 824 px rounded square
 inside the 1024 canvas, keycap scaled down so the ears clear the edge), clips
@@ -10,6 +10,10 @@ straight into the .icns, so it runs on Linux too (no `iconutil`).
 
     python3 scripts/make-icon.py               # write assets/AppIcon.icns
     python3 scripts/make-icon.py preview.png   # also save the 1024 render
+
+It also writes the Dock icons per theme (TH15), assets/icon/Dock-{dark,light,
+miami}.png: the same keycap on the theme's backdrop, ⌘ in the theme colour.
+The app sets one as the Dock icon while it runs (native::set_dock_theme).
 """
 import io
 import math
@@ -96,12 +100,67 @@ def png_bytes(img: Image.Image) -> bytes:
     return b.getvalue()
 
 
+# Dock icon per theme (TH15): the ground's gradient stops (0 = top centre),
+# and the colour of ⌘. Light's ground is deeper than the window's so the
+# cream keycap reads, and its ⌘ darker than ACTION for contrast on cream.
+DOCK = {
+    "dark": ([(0, 0x22401D), (.35, 0x132610), (.7, 0x0A150A), (1, 0x070D07)], 0xC8F05A),
+    "light": ([(0, 0xE6F0D8), (.55, 0xD3E4BE), (1, 0xBCD3A0)], 0x7DB519),
+    "miami": ([(0, 0x0B1240), (.45, 0x2A1452), (.78, 0x5E1D57), (1, 0x70283C)], 0xFF5FA2),
+}
+DOCK_PX = 512
+CREAM = (242, 236, 229)
+
+
+def dock_icon(theme: str) -> Image.Image:
+    import numpy as np
+
+    def rgb(h):
+        return np.array([(h >> 16) & 255, (h >> 8) & 255, h & 255], float)
+
+    stops, cmd = DOCK[theme]
+    art = Image.open(ART).convert("RGBA")
+    x0, y0, x1, y1 = content_box(art)
+    scale = KEYCAP_H / (y1 - y0)
+    art = art.resize((round(art.width * scale), round(art.height * scale)), Image.LANCZOS)
+    cx, cy = (x0 + x1) / 2 * scale, (y0 + y1) / 2 * scale
+    shape = Image.new("RGBA", (BODY, BODY), INK)
+    shape.alpha_composite(art, (round(BODY / 2 - cx), round(BODY / 2 - cy)))
+    base = np.asarray(shape.convert("RGB"), float)
+    ink = np.array(INK[:3], float)
+    # keycap coverage from lightness (the ground is near black), then the
+    # keycap's own colour with the ground taken out of its edge
+    a = np.clip((base.mean(axis=2) - 20) / 130, 0, 1)[..., None]
+    key = np.where(a > 1e-3, (base - (1 - a) * ink) / np.maximum(a, 1e-3), np.array(CREAM, float))
+    # ⌘ coverage: the orange is the only saturated part of the keycap
+    chroma = key.max(axis=2) - key.min(axis=2)
+    t = np.clip((chroma - 40) / 132, 0, 1)[..., None]
+    key = key * (1 - t) + rgb(cmd) * t
+    # the ground: Miami's dusk sky runs top to bottom, the others glow from the top centre
+    y, x = np.mgrid[0:BODY, 0:BODY] / (BODY - 1)
+    d = y if theme == "miami" else np.minimum(np.sqrt(((x - .5) / .95) ** 2 + (y / 1.15) ** 2), 1)
+    ground = np.zeros((BODY, BODY, 3))
+    for (t0, c0), (t1, c1) in zip(stops, stops[1:]):
+        m = (d >= t0) & (d <= t1)
+        k = ((d - t0) / (t1 - t0))[..., None]
+        ground[m] = (rgb(c0) * (1 - k) + rgb(c1) * k)[m]
+    img = Image.fromarray(np.clip(ground * (1 - a) + key * a, 0, 255).astype("uint8")).convert("RGBA")
+    img.putalpha(squircle_mask(BODY))
+    out = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    out.alpha_composite(img, ((CANVAS - BODY) // 2,) * 2)
+    return render(out, CANVAS).resize((DOCK_PX, DOCK_PX), Image.LANCZOS)
+
+
 def main() -> None:
     base = master()
     cache = {px: png_bytes(render(base, px)) for px in sorted({px for _, px in ENTRIES})}
     body = b"".join(t + struct.pack(">I", len(cache[px]) + 8) + cache[px] for t, px in ENTRIES)
     OUT.write_bytes(b"icns" + struct.pack(">I", len(body) + 8) + body)
     print(f"wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB)")
+    for theme in DOCK:
+        path = ART.parent / f"Dock-{theme}.png"
+        dock_icon(theme).save(path, optimize=True)
+        print(f"wrote {path.relative_to(ROOT)} ({path.stat().st_size // 1024} KB)")
     if len(sys.argv) > 1:
         render(base, 1024).save(sys.argv[1])
 
