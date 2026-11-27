@@ -2332,11 +2332,7 @@ mod tests {
 
     #[test]
     fn a_stopped_clean_counts_what_it_set_out_to_do() {
-        let mut st = cleanup::State::default();
-        st.clean_planned = 4;
-        st.cleaned_count = 1;
-        st.cleaned = vec![(Group::AiTools, 10), (Group::AiTools, 5)];
-        st.stopped = true;
+        let mut st = cleanup::State { clean_planned: 4, cleaned_count: 1, cleaned: vec![(Group::AiTools, 10), (Group::AiTools, 5)], stopped: true, ..Default::default() };
         assert_eq!(done_counts(&st), (2, 4));
         st.stopped = false;
         st.failed = vec![("x".into(), "why".into())];
