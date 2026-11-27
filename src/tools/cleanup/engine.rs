@@ -327,10 +327,7 @@ impl Ctx {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_action(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str, action: Action, bytes: u64) {
-        if self.kept.contains(&path) {
-            self.hidden_kept += 1;
-            return;
-        }
+        let you_kept = self.kept.contains(&path);
         let title = self.titled(title);
         self.items.push(Item {
             group,
@@ -351,6 +348,11 @@ impl Ctx {
             action,
             tool: self.tool,
         });
+        if you_kept {
+            if let Some(it) = self.items.last_mut() {
+                you_keep(it);
+            }
+        }
     }
 
     pub(super) fn add(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str) {
@@ -361,7 +363,9 @@ impl Ctx {
             return;
         }
         let own_cache = crate::kit::own::is_safe_cache(&path);
-        if self.kept.iter().any(|k| path.starts_with(k)) {
+        // kept by the person: listed under Kept; inside a kept folder: not offered
+        let you_kept = self.kept.contains(&path);
+        if !you_kept && self.kept.iter().any(|k| path.starts_with(k)) {
             self.hidden_kept += 1;
             return;
         }
@@ -408,8 +412,20 @@ impl Ctx {
             };
             it.reason = t!("cleanup.why.app_open", app = if app.is_empty() { title.to_string() } else { app }).into_owned();
         }
+        if you_kept {
+            you_keep(&mut it);
+        }
         self.items.push(it);
     }
+}
+
+/// What the person kept before: under Kept, theirs to take back.
+fn you_keep(it: &mut Item) {
+    it.verdict = Verdict::Keep;
+    it.by = Who::You;
+    it.selected = false;
+    it.app_running = false;
+    it.reason = ts!("cleanup.you_said_keep").into();
 }
 
 /// Cmd+Meow's own files are never offered (only its cache folder, which it
@@ -1221,7 +1237,7 @@ fn judge(shared: &Shared, ctx: &egui::Context, agent: super::agent::Agent, cance
     let h = home().display().to_string();
     let candidates: Vec<usize> = {
         let g = shared.lock_ok();
-        g.items.iter().enumerate().filter(|(_, it)| !it.hard_keep && it.group != Group::Captures && it.bytes >= m::AI_MIN_BYTES).map(|(i, _)| i).collect()
+        g.items.iter().enumerate().filter(|(_, it)| !it.hard_keep && it.by != Who::You && it.group != Group::Captures && it.bytes >= m::AI_MIN_BYTES).map(|(i, _)| i).collect()
     };
     // what the person kept before tells Claude what they care about
     let mut system = SYSTEM.to_string();
@@ -1338,10 +1354,6 @@ pub fn forget_kept_one(path: &std::path::Path) {
     crate::kit::fs::save_json(&kept_file(), &all, true);
 }
 
-/// Offer everything again.
-pub fn forget_kept() {
-    crate::kit::fs::save_json(&kept_file(), &Vec::<PathBuf>::new(), true);
-}
 
 /// Combine a rule's verdict with the AI's: the AI may always be more careful;
 /// it may relax a rule's "ask" to "safe", except for items the person must

@@ -276,6 +276,56 @@ impl Tool for Cleanup {
                 self.ai.open = false;
                 Some(View::Page)
             }
+            // AI Tools with the Kept list open, one row under the pointer
+            "results-kept" | "results-kept-menu" | "results-kept-after" => {
+                let v = self.demo_view("results");
+                self.clean_group = Some(engine::Group::AiTools);
+                let mut g = self.clean.lock_ok();
+                g.items.retain(|i| i.group != engine::Group::AiTools || i.verdict == engine::Verdict::Safe);
+                let base = g.items.iter().find(|i| i.group == engine::Group::AiTools).cloned();
+                if let Some(base) = base {
+                    for (name, bytes, ago) in [("fragbench", 3_330_000_000u64, "today"), ("pdf-editor", 1_150_000_000, "yesterday"), ("fillform-flow", 856_000_000, "2 days ago"), ("cleanmebro", 389_000_000, "today"), ("hdrezka-test", 186_000_000, "5 days ago"), ("senzo-app", 72_300_000, "a week ago"), ("paw-dashboard", 56_800_000, "a week ago"), ("breaking-bad", 24_000_000, "12 days ago")] {
+                        let mut it = base.clone();
+                        it.title = format!("Project · {name}");
+                        it.path = format!("~/.claude/projects/-Users-me-Projects-{name}").into();
+                        it.bytes = bytes;
+                        it.kind = "Projects";
+                        it.verdict = engine::Verdict::Keep;
+                        it.rule_verdict = engine::Verdict::Keep;
+                        it.reason = format!("You used this project {ago} — kept");
+                        it.rule_reason = it.reason.clone();
+                        it.by = engine::Who::Rule;
+                        it.selected = false;
+                        it.hard_keep = true;
+                        g.items.push(it);
+                    }
+                    // kept by the person in an earlier scan
+                    let mut vm = base.clone();
+                    vm.title = "Claude Desktop VM image".into();
+                    vm.path = "~/Library/Application Support/Claude/vm_bundles".into();
+                    vm.bytes = 9_000_000_000;
+                    vm.kind = "Downloads";
+                    vm.verdict = engine::Verdict::Keep;
+                    vm.rule_verdict = engine::Verdict::Ask;
+                    vm.rule_reason = "Agent sandbox image, large to download again".into();
+                    vm.reason = ts!("cleanup.you_said_keep").into();
+                    vm.by = engine::Who::You;
+                    vm.selected = false;
+                    g.items.push(vm);
+                }
+                let hover = g.items.iter().find(|i| i.title == "Project · pdf-editor").map(|i| i.path.display().to_string()).unwrap_or_default();
+                if view == "results-kept-after" {
+                    if let Some(it) = g.items.iter_mut().find(|i| i.title == "Project · pdf-editor") {
+                        it.verdict = engine::Verdict::Ask;
+                        it.by = engine::Who::Rule;
+                        it.hard_keep = false;
+                        it.selected = false;
+                    }
+                }
+                drop(g);
+                *page::DEMO_HOVER.lock_ok() = Some((if view == "results-kept-after" { String::new() } else { hover }, view == "results-kept-menu"));
+                v
+            }
             "results-captures" => {
                 let v = self.demo_view("results");
                 self.clean_group = Some(engine::Group::Captures);
