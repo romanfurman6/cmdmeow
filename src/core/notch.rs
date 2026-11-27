@@ -332,8 +332,8 @@ mod mac {
             // NSTrackingMouseEnteredAndExited | MouseMoved | ActiveAlways | InVisibleRect
             let opts: usize = 0x01 | 0x02 | 0x80 | 0x200;
             let bounds: NSRect = msg_send![view, bounds];
-            let area: *mut AnyObject = msg_send![class!(NSTrackingArea), alloc];
-            let area: Option<Retained<AnyObject>> = msg_send![area, initWithRect: bounds, options: opts, owner: view, userInfo: std::ptr::null::<AnyObject>()];
+            let area: objc2::rc::Allocated<AnyObject> = msg_send![class!(NSTrackingArea), alloc];
+            let area: Option<Retained<AnyObject>> = msg_send![area, initWithRect: bounds, options: opts, owner: view, userInfo: std::ptr::null_mut::<AnyObject>()];
             if let Some(area) = area {
                 let _: () = msg_send![view, addTrackingArea: &*area];
             }
