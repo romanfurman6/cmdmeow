@@ -67,9 +67,16 @@ pub fn ai_editor_dir(name: &str) -> bool {
 
 /// Tools whose open process means their newest files may be in use:
 /// (tool, process names, app bundle ids).
-const PROCESSES: [(&str, &[&str], &[&str]); 7] = [
+const PROCESSES: [(&str, &[&str], &[&str]); 14] = [
     (CODEX, &["codex"], &["com.openai.codex"]),
     (CURSOR, &["cursor-agent", "cursor"], &["com.todesktop.230313mzl4w4u92"]),
+    ("Windsurf", &["windsurf"], &["com.exafunction.windsurf"]),
+    ("Antigravity", &["antigravity"], &["com.google.antigravity"]),
+    ("Kiro", &["kiro"], &["dev.kiro.desktop"]),
+    ("Trae", &["trae"], &["com.trae.app"]),
+    ("VS Code", &["code", "visual studio code"], &["com.microsoft.vscode"]),
+    ("VS Code Insiders", &["code - insiders"], &["com.microsoft.vscodeinsiders"]),
+    ("VSCodium", &["vscodium"], &["com.vscodium"]),
     (GEMINI, &["gemini"], &[]),
     (COPILOT, &["copilot"], &[]),
     (OPENCODE, &["opencode"], &[]),
@@ -80,6 +87,7 @@ const PROCESSES: [(&str, &[&str], &[&str]); 7] = [
 pub(super) fn scan(c: &mut Ctx) {
     let h = home();
     codex(c, &env_dir("CODEX_HOME").unwrap_or_else(|| h.join(".codex")));
+    codex_app(c, &h.join("Library/Caches/Codex"));
     gemini(c, &h);
     copilot(c, &h);
     opencode(c, &h);
@@ -114,18 +122,131 @@ fn codex(c: &mut Ctx, home: &Path) {
     }
     c.add(Group::AiTools, ts!("cleanup.it.plugin_cache"), home.join("plugins/cache"), "Caches", Verdict::Safe, ts!("cleanup.why.plugin_cache"));
     c.add(Group::AiTools, ts!("cleanup.it.logs"), home.join("log"), "Logs", Verdict::Safe, ts!("cleanup.why.tool_logs"));
-    // sessions/<year>/<month>/<day>/rollout-….jsonl: one item per old day
+    // sessions/<year>/<month>/<day>/rollout-….jsonl, grouped by the
+    // project each ran in, as Claude Code's chats are
+    let mut by: HashMap<Option<PathBuf>, Vec<PathBuf>> = HashMap::new();
     for day in day_folders(&home.join("sessions")) {
-        if newest_age(&day) > OLD_SESSION_DAYS {
-            let when = day.strip_prefix(home.join("sessions")).map(|p| p.display().to_string().replace('/', "-")).unwrap_or_default();
-            c.add(Group::AiTools, &t!("cleanup.it.codex_day", day = when), day, "Old Sessions", Verdict::Ask, &t!("cleanup.why.codex_sessions", days = OLD_SESSION_DAYS as u64));
+        for f in children(&day).into_iter().filter(|f| f.extension().is_some_and(|e| e == "jsonl")) {
+            by.entry(first_line(&f).and_then(|l| session_cwd(&l))).or_default().push(f);
         }
+    }
+    let mut groups: Vec<(Option<PathBuf>, Vec<PathBuf>)> = by.into_iter().collect();
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+    for (cwd, files) in groups {
+        project_sessions(c, cwd.as_deref(), files, ts!("cleanup.it.codex_other"), &t!("cleanup.why.codex_sessions", days = OLD_SESSION_DAYS as u64));
     }
     for f in children(&home.join("archived_sessions")) {
         if age_days(&f) > OLD_SESSION_DAYS {
             c.add(Group::AiTools, ts!("cleanup.it.archived_session"), f, "Old Sessions", Verdict::Ask, &t!("cleanup.why.codex_sessions", days = OLD_SESSION_DAYS as u64));
         }
     }
+}
+
+/// The Codex app keeps its chats' index and state in ~/Library/Caches/Codex:
+/// only the web caches of its windows (and of each app it hosts) are offered.
+fn codex_app(c: &mut Ctx, caches: &Path) {
+    if !caches.is_dir() {
+        return;
+    }
+    c.tool = CODEX;
+    let mut profiles = vec![caches.join("Default"), caches.join("codex-browser-app")];
+    profiles.extend(children(&caches.join("Default/Partitions")).into_iter().filter(|p| p.is_dir()));
+    let open = c.running_ids.contains("com.openai.codex") || c.running_names.contains("codex");
+    let why = if open { t!("cleanup.why.tool_running", tool = CODEX).into_owned() } else { ts!("cleanup.why.webview").to_string() };
+    let verdict = if open { Verdict::Ask } else { Verdict::Safe };
+    for p in profiles {
+        for sub in ["Cache", "Code Cache"] {
+            c.add(Group::AiTools, ts!("cleanup.it.web_cache"), p.join(sub), "Caches", verdict, &why);
+        }
+    }
+}
+
+/// One project's sessions of a tool as one item, the way Claude Code's
+/// chats are offered: a project you used within [`OLD_SESSION_DAYS`] is
+/// kept; one whose folder is gone, or that sat unused, asks. Sessions with no
+/// known project only ask once they're old.
+fn project_sessions(c: &mut Ctx, cwd: Option<&Path>, mut files: Vec<PathBuf>, other: &str, other_why: &str) {
+    files.sort_by(|a, b| age_days(a).total_cmp(&age_days(b)));
+    let Some(newest) = files.first().cloned() else { return };
+    let idle = age_days(&newest);
+    let Some(dir) = cwd else {
+        if idle > OLD_SESSION_DAYS {
+            c.add_parts(Group::AiTools, other, newest, "Old Sessions", Verdict::Ask, other_why, files);
+        }
+        return;
+    };
+    let title = t!("cleanup.it.project", name = fname(dir));
+    let gone = !(crate::kit::fs::behind_folder_prompt(dir) || dir.exists() || on_missing_volume(dir));
+    if gone {
+        c.add_parts(Group::AiTools, &title, newest, "Old Sessions", Verdict::Ask, &t!("cleanup.why.chat_gone", when = super::engine::ago(idle)), files);
+    } else if idle > OLD_SESSION_DAYS {
+        c.add_parts(Group::AiTools, &title, newest, "Old Sessions", Verdict::Ask, &t!("cleanup.why.chat_idle", days = idle as u64), files);
+    } else {
+        keep_recent(c, &title, newest, files, idle, true);
+    }
+}
+
+/// Chats used lately: shown as kept ("Projects", so the person can take
+/// them off the Kept list) and never offered on their own.
+fn keep_recent(c: &mut Ctx, title: &str, path: PathBuf, parts: Vec<PathBuf>, idle: f64, project: bool) {
+    let when = super::engine::ago(idle);
+    let why = if project { t!("cleanup.why.project_used", when = when) } else { t!("cleanup.why.chats_used", when = when) };
+    let n = c.items.len();
+    c.add_parts(Group::AiTools, title, path, "Projects", Verdict::Keep, &why, parts);
+    if let Some(it) = c.items.get_mut(n) {
+        it.hard_keep = true;
+    }
+}
+
+/// A file's first line, read only that far (a Codex session starts with
+/// its metadata; the chat that follows is never read).
+fn first_line(p: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(p).ok()?;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    while buf.len() < FIRST_LINE_MAX {
+        let n = f.read(&mut chunk).ok()?;
+        if n == 0 {
+            break;
+        }
+        if let Some(end) = chunk[..n].iter().position(|&b| b == b'\n') {
+            buf.extend_from_slice(&chunk[..end]);
+            return Some(String::from_utf8_lossy(&buf).into_owned());
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    (!buf.is_empty()).then(|| String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// How much of a session's first line is read (its instructions can be long).
+const FIRST_LINE_MAX: usize = 512 * 1024;
+
+/// The working folder a Codex session ran in, from its first line
+/// (`{"type":"session_meta","payload":{"cwd":"/Users/me/app",…}}`), also when
+/// that line was cut short.
+pub fn session_cwd(line: &str) -> Option<PathBuf> {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+        let cwd = v.get("payload").and_then(|p| p.get("cwd")).or_else(|| v.get("cwd"))?.as_str()?;
+        return Some(PathBuf::from(cwd)).filter(|p| p.is_absolute());
+    }
+    let start = line.find("\"cwd\":\"")? + 7;
+    let rest = &line[start..];
+    let mut end = None;
+    let mut esc = false;
+    for (i, ch) in rest.char_indices() {
+        match ch {
+            _ if esc => esc = false,
+            '\\' => esc = true,
+            '"' => {
+                end = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let raw: String = serde_json::from_str(&format!("\"{}\"", &rest[..end?])).ok()?;
+    Some(PathBuf::from(raw)).filter(|p| p.is_absolute())
 }
 
 /// `root/<year>/<month>/<day>` folders.
@@ -148,10 +269,26 @@ fn newest_age(dir: &Path) -> f64 {
 fn gemini(c: &mut Ctx, h: &Path) {
     c.tool = GEMINI;
     // ~/.gemini/tmp/<sha256 of the project>: that project's chats and logs
+    let mut recent = Vec::new();
     for d in children(&h.join(".gemini/tmp")) {
-        if d.is_dir() && is_hex_id(&fname(&d)) && newest_age(&d) > OLD_SESSION_DAYS {
-            c.add(Group::AiTools, ts!("cleanup.it.old_chats"), d, "Old Sessions", Verdict::Ask, &t!("cleanup.why.gemini_chats", days = OLD_SESSION_DAYS as u64));
+        if !d.is_dir() || !is_hex_id(&fname(&d)) {
+            continue;
         }
+        if newest_age(&d) > OLD_SESSION_DAYS {
+            c.add(Group::AiTools, ts!("cleanup.it.old_chats"), d, "Old Sessions", Verdict::Ask, &t!("cleanup.why.gemini_chats", days = OLD_SESSION_DAYS as u64));
+        } else {
+            recent.push(d);
+        }
+    }
+    keep_recent_dirs(c, recent);
+}
+
+/// A tool's chat folders used lately, as one kept item.
+fn keep_recent_dirs(c: &mut Ctx, mut dirs: Vec<PathBuf>) {
+    dirs.sort_by(|a, b| newest_age(a).total_cmp(&newest_age(b)));
+    if let Some(first) = dirs.first().cloned() {
+        let idle = newest_age(&first);
+        keep_recent(c, ts!("cleanup.it.recent_chats"), first, dirs, idle, false);
     }
 }
 
@@ -167,11 +304,15 @@ fn copilot(c: &mut Ctx, h: &Path) {
     }
     c.tool = COPILOT;
     c.add(Group::AiTools, ts!("cleanup.it.logs"), home.join("logs"), "Logs", Verdict::Safe, ts!("cleanup.why.tool_logs"));
+    let mut recent = Vec::new();
     for d in children(&home.join("session-state")) {
         if age_days(&d) > OLD_SESSION_DAYS && newest_age(&d) > OLD_SESSION_DAYS {
             c.add(Group::AiTools, ts!("cleanup.it.old_session"), d, "Old Sessions", Verdict::Ask, &t!("cleanup.why.old_sessions", days = OLD_SESSION_DAYS as u64));
+        } else {
+            recent.push(d);
         }
     }
+    keep_recent_dirs(c, recent);
 }
 
 fn opencode(c: &mut Ctx, h: &Path) {
@@ -179,6 +320,11 @@ fn opencode(c: &mut Ctx, h: &Path) {
     let data = h.join(".local/share/opencode");
     c.add(Group::AiTools, ts!("cleanup.it.logs"), data.join("log"), "Logs", Verdict::Safe, ts!("cleanup.why.tool_logs"));
     c.add(Group::AiTools, ts!("cleanup.it.undo_snapshots"), data.join("snapshot"), "Old Sessions", Verdict::Ask, ts!("cleanup.why.undo_snapshots"));
+    let chats = data.join("storage/session");
+    if chats.is_dir() && newest_age(&chats) <= OLD_SESSION_DAYS {
+        let idle = newest_age(&chats);
+        keep_recent(c, ts!("cleanup.it.recent_chats"), chats.clone(), vec![chats], idle, false);
+    }
     c.add(Group::AiTools, ts!("cleanup.it.packages"), h.join(".cache/opencode"), "Caches", Verdict::Safe, ts!("cleanup.why.packages"));
     c.tool = CURSOR;
     for f in children(&h.join(".local/share/cursor-agent")) {
@@ -751,6 +897,27 @@ mod tests {
         std::fs::write(wt.join(".git"), "gitdir: /x/app/.git/worktrees/app\n").unwrap();
         // a worktree outside the agents' folders is a project: never offered
         assert!(!is_agent_worktree(&wt));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn codex_session_folder() {
+        let line = r#"{"timestamp":"2026-11-20T10:00:00Z","type":"session_meta","payload":{"id":"x","cwd":"/Users/me/Code/app","instructions":"long"}}"#;
+        assert_eq!(session_cwd(line), Some(PathBuf::from("/Users/me/Code/app")));
+        // cut short before the line ends: the folder still reads
+        let cut = r#"{"type":"session_meta","payload":{"cwd":"/Users/me/My \"q\" app","instructions":"very lo"#;
+        assert_eq!(session_cwd(cut), Some(PathBuf::from("/Users/me/My \"q\" app")));
+        assert_eq!(session_cwd(r#"{"payload":{"cwd":"relative"}}"#), None);
+        assert_eq!(session_cwd("not json"), None);
+    }
+
+    #[test]
+    fn first_line_only() {
+        let dir = std::env::temp_dir().join(format!("cmdmeow-first-line-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("s.jsonl");
+        std::fs::write(&f, "{\"a\":1}\n{\"secret\":2}\n").unwrap();
+        assert_eq!(first_line(&f).as_deref(), Some("{\"a\":1}"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

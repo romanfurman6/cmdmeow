@@ -115,6 +115,9 @@ pub enum Action {
     Upload { key: String, local: PathBuf },
     /// A local model: its manifest and the blobs no other model uses.
     Model(Vec<PathBuf>),
+    /// Some of a folder's files, not the folder (a tool's sessions of one
+    /// project, a chat folder without its memory): each goes like `Files`.
+    Parts(Vec<PathBuf>),
 }
 
 #[derive(Clone, Debug)]
@@ -150,7 +153,14 @@ impl Item {
     }
     /// Removed by a tool, not by moving files: can't go to the Trash.
     pub fn by_command(&self) -> bool {
-        self.action != Action::Files
+        !matches!(self.action, Action::Files | Action::Parts(_))
+    }
+    /// What goes when it's cleaned: the item's path, or its parts.
+    pub fn targets(&self) -> Vec<PathBuf> {
+        match &self.action {
+            Action::Parts(ps) => ps.clone(),
+            _ => vec![self.path.clone()],
+        }
     }
 }
 
@@ -353,6 +363,29 @@ impl Ctx {
         });
     }
 
+    /// Offer some of a folder's files as one item (`Action::Parts`): `path`
+    /// names it (shown, revealed, remembered when kept), `parts` are what
+    /// goes. Measured with the rest of the scan.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn add_parts(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str, parts: Vec<PathBuf>) {
+        if parts.is_empty() {
+            return;
+        }
+        let before = self.items.len();
+        self.add(group, title, path, kind, verdict, reason);
+        if self.items.len() == before {
+            return;
+        }
+        let it = self.items.last_mut().expect("just added");
+        it.age_days = parts.iter().map(|p| age_days(p)).fold(it.age_days, f64::min);
+        if let Some(why) = parts.iter().find_map(|p| guard(group, p)) {
+            it.verdict = Verdict::Keep;
+            it.reason = why.into();
+            it.hard_keep = true;
+        }
+        it.action = Action::Parts(parts);
+    }
+
     pub(super) fn add(&mut self, group: Group, title: &str, path: PathBuf, kind: &'static str, verdict: Verdict, reason: &str) {
         // The app's own files (also under its first name, CleanMeBro) are never
         // offered, only its cache folder, which it makes again. Old captures
@@ -520,7 +553,11 @@ fn measure(items: &mut Vec<Item>, shared: &Shared, ctx: &egui::Context, from: f3
                         break;
                     }
                     // a tool's item came with its size
-                    let size = if items[k].action == Action::Files { dir_size(&items[k].path) } else { items[k].bytes };
+                    let size = match &items[k].action {
+                        Action::Files => dir_size(&items[k].path),
+                        Action::Parts(ps) => ps.iter().map(|p| dir_size(p)).sum(),
+                        _ => items[k].bytes,
+                    };
                     sizes[k].store(size, std::sync::atomic::Ordering::Relaxed);
                     let mut g = shared.lock_ok();
                     // a stopped run no longer owns the shared state
@@ -696,11 +733,12 @@ fn scan_with(shared: Shared, ctx: egui::Context, agent: Option<super::agent::Age
         let open_job = std::thread::spawn(super::inuse::OpenFiles::snapshot);
         let mut c = Ctx { items: Vec::new(), kept: kept().into_iter().collect(), hidden_kept: 0, running_ids, running_names, tool: "", brew: brew_tool.is_some(), shared: shared.clone(), egui: ctx.clone(), cancel: cancel.clone() };
         // the groups each step can add to (an auto run skips the rest)
-        let steps: [(ScanStep, &[Group]); 12] = [
+        let steps: [(ScanStep, &[Group]); 13] = [
             (("Claude", scan_claude), &[Group::AiTools]),
             (("AI tools", super::agents::scan), &[Group::AiTools]),
             (("User caches", scan_user_caches), &[Group::AppCaches, Group::Developer, Group::AiTools]),
             (("App caches", scan_app_caches), &[Group::AppCaches, Group::AiTools]),
+            (("Deleted apps", scan_deleted_apps), &[Group::AppCaches]),
             (("Logs", scan_logs), &[Group::Logs]),
             (("Xcode", super::xcode::scan), &[Group::Developer]),
             (("Simulators", super::xcode::scan_simulators), &[Group::Developer]),
@@ -710,11 +748,12 @@ fn scan_with(shared: Shared, ctx: egui::Context, agent: Option<super::agent::Age
             (("Captures", super::captures::scan), &[Group::Captures]),
             (("Trash", scan_trash), &[Group::Trash]),
         ];
-        for (i, ((_, f), gs)) in steps.iter().enumerate() {
+        for (i, ((name, f), gs)) in steps.iter().enumerate() {
             if c.stopped() {
                 break;
             }
-            if !wants(gs) {
+            // an auto clean only removes what's safe: no questions to look for
+            if !wants(gs) || (only.is_some() && name == &"Deleted apps") {
                 continue;
             }
             c.status("", FIND * i as f32 / steps.len() as f32);
@@ -851,13 +890,14 @@ fn scan_claude(c: &mut Ctx) {
     c.add(Group::AiTools, ts!("cleanup.it.stats_cache"), cl.join("stats-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.stats"));
     c.add(Group::AiTools, ts!("cleanup.it.mcp_signin"), cl.join("mcp-needs-auth-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.mcp_signin"));
     c.add(Group::AiTools, ts!("cleanup.it.plugin_counts"), cl.join("plugins/install-counts-cache.json"), "Caches", Verdict::Safe, ts!("cleanup.why.plugin_counts"));
-    c.add(Group::AiTools, ts!("cleanup.it.paste_cache"), cl.join("paste-cache"), "Temp Files", Verdict::Safe, ts!("cleanup.why.paste_cache"));
+    // big pastes the chat history points to: resuming an old chat needs them
+    c.add(Group::AiTools, ts!("cleanup.it.paste_cache"), cl.join("paste-cache"), "Temp Files", Verdict::Ask, ts!("cleanup.why.paste_cache"));
     c.add(Group::AiTools, ts!("cleanup.it.cc_flags"), cl.join("statsig"), "Caches", Verdict::Safe, ts!("cleanup.why.cache_rebuilt"));
     // copies of ~/.claude.json it makes before each change: the newest stays
     let mut backups: Vec<PathBuf> = children(&cl.join("backups")).into_iter().chain(children(&h).into_iter().filter(|p| fname(p).starts_with(".claude.json.backup"))).filter(|p| p.is_file()).collect();
     backups.sort_by(|a, b| age_days(a).total_cmp(&age_days(b)));
     for b in backups.into_iter().skip(1).filter(|b| age_days(b) > CONFIG_BACKUP_DAYS) {
-        c.add(Group::AiTools, ts!("cleanup.it.config_backup"), b, "Temp Files", Verdict::Safe, ts!("cleanup.why.config_backup"));
+        c.add(Group::AiTools, ts!("cleanup.it.config_backup"), b, "Temp Files", Verdict::Ask, ts!("cleanup.why.config_backup"));
     }
     // shell snapshots: only the old ones (a running session uses the newest)
     let snaps = cl.join("shell-snapshots");
@@ -903,10 +943,15 @@ fn scan_claude(c: &mut Ctx) {
                     it.hard_keep = true;
                 }
             }
-        } else if !p.cwd_exists {
-            c.add(Group::AiTools, &t!("cleanup.it.project", name = name), p.folder.clone(), "Old Sessions", Verdict::Ask, &t!("cleanup.why.chat_gone", when = ago(idle)));
         } else {
-            c.add(Group::AiTools, &t!("cleanup.it.project", name = name), p.folder.clone(), "Old Sessions", Verdict::Ask, &t!("cleanup.why.chat_idle", days = idle as u64));
+            let why = if !p.cwd_exists { t!("cleanup.why.chat_gone", when = ago(idle)) } else { t!("cleanup.why.chat_idle", days = idle as u64) };
+            let title = t!("cleanup.it.project", name = name);
+            // the chats go; the notes Claude Code keeps about the project
+            // (its auto memory) stay
+            match without_memory(&p.folder) {
+                Some(parts) => c.add_parts(Group::AiTools, &title, p.folder.clone(), "Old Sessions", Verdict::Ask, &why, parts),
+                None => c.add(Group::AiTools, &title, p.folder.clone(), "Old Sessions", Verdict::Ask, &why),
+            }
         }
     }
     // old file-history snapshots and uploads
@@ -927,6 +972,13 @@ fn scan_claude(c: &mut Ctx) {
         }
     }
     c.tool = "";
+}
+
+/// A Claude Code project folder's entries except its `memory` folder, when
+/// it has one (`None`: the whole folder can go).
+pub(super) fn without_memory(folder: &Path) -> Option<Vec<PathBuf>> {
+    let all = children(folder);
+    all.iter().any(|p| fname(p) == "memory" && p.is_dir()).then(|| all.into_iter().filter(|p| fname(p) != "memory").collect())
 }
 
 /// Old config backups are offered once older than this (the newest stays).
@@ -974,7 +1026,9 @@ fn process_running(name: &str) -> bool {
 fn scan_user_caches(c: &mut Ctx) {
     let h = home();
     let caches = h.join("Library/Caches");
-    let skip = ["claude-cli-nodejs", "com.anthropic.claudefordesktop", "com.anthropic.claudefordesktop.ShipIt"];
+    // listed by their tools; the Codex app keeps its state here too, so only
+    // its web caches are offered (`agents::codex_app`)
+    let skip = ["claude-cli-nodejs", "com.anthropic.claudefordesktop", "com.anthropic.claudefordesktop.ShipIt", "Codex"];
     let keep = &super::rules::catalog().keep_caches;
     for p in children(&caches) {
         if c.stopped() {
@@ -992,7 +1046,13 @@ fn scan_user_caches(c: &mut Ctx) {
             }
             continue;
         }
-        let (v, why) = if n.starts_with("com.apple.") {
+        let ask = &super::rules::catalog().ask_caches;
+        let (v, why) = if let Some(a) = ask.iter().find(|a| a.matches(&n)) {
+            (Verdict::Ask, a.ask_reason())
+        } else if vendor_browsers(&n).is_some_and(|ids| ids.iter().any(|id| c.running_ids.contains(*id))) {
+            // a browser's cache under its maker's folder ("Google/Chrome"): open now
+            (Verdict::Ask, ts!("cleanup.why.browser_open"))
+        } else if n.starts_with("com.apple.") {
             (Verdict::Ask, ts!("cleanup.why.macos_cache"))
         } else if n == "Homebrew" {
             (Verdict::Safe, ts!("cleanup.why.brew_dl"))
@@ -1002,6 +1062,20 @@ fn scan_user_caches(c: &mut Ctx) {
         c.add(Group::AppCaches, &pretty(&n), p, "Caches", v, why);
     }
 }
+/// Browsers whose caches sit under their maker's folder in ~/Library/Caches
+/// (no bundle id in the name), by that folder: their bundle ids, lower case.
+fn vendor_browsers(folder: &str) -> Option<&'static [&'static str]> {
+    match folder {
+        "Google" => Some(&["com.google.chrome", "com.google.chrome.beta", "com.google.chrome.canary"]),
+        "BraveSoftware" => Some(&["com.brave.browser"]),
+        "Microsoft Edge" => Some(&["com.microsoft.edgemac"]),
+        "Mozilla" | "Firefox" => Some(&["org.mozilla.firefox"]),
+        "Vivaldi" => Some(&["com.vivaldi.vivaldi"]),
+        "Arc" => Some(&["company.thebrowser.browser"]),
+        _ => None,
+    }
+}
+
 // ---- App caches: hard-coded app rules from SystemJunkScanning + Electron + sandbox
 
 fn scan_app_caches(c: &mut Ctx) {
@@ -1039,6 +1113,34 @@ fn scan_app_caches(c: &mut Ctx) {
             let v = if n.starts_with("com.apple.") { Verdict::Ask } else { Verdict::Safe };
             c.add(Group::AppCaches, &t!("cleanup.it.sandboxed", name = pretty(&n)), p, "Caches", v, ts!("cleanup.why.sandboxed_cache"));
         }
+    }
+}
+
+// ---- data of deleted apps (the Uninstaller's Leftovers), only to ask
+
+/// Data of a deleted app is offered once nothing in it changed this long.
+const DELETED_APP_DAYS: i64 = 30;
+
+/// Never offered as a deleted app's data: keys, passwords and sign-ins.
+const NEVER_ORPHAN: [&str; 11] = ["keychain", "1password", "agilebits", "bitwarden", "lastpass", "keepass", "dashlane", "enpass", "ssh", "gpg", "gnupg"];
+
+fn scan_deleted_apps(c: &mut Ctx) {
+    let keep = &super::rules::catalog().keep_caches;
+    for (name, files) in crate::tools::uninstaller::deleted_app_data(DELETED_APP_DAYS * 86_400) {
+        if c.stopped() {
+            return;
+        }
+        let sensitive = |f: &PathBuf| {
+            let low = f.to_string_lossy().to_lowercase();
+            NEVER_ORPHAN.iter().any(|w| low.contains(w)) || keep.iter().any(|k| k.matches(&fname(f)))
+        };
+        if files.iter().any(sensitive) {
+            continue;
+        }
+        // what another rule already offers (its cache folder) isn't counted twice
+        let files: Vec<PathBuf> = files.into_iter().filter(|f| !c.items.iter().any(|it| f.starts_with(&it.path) || it.path.starts_with(f))).collect();
+        let Some(first) = files.first().cloned() else { continue };
+        c.add_parts(Group::AppCaches, &t!("cleanup.it.deleted_app", name = name), first, "App Data", Verdict::Ask, ts!("cleanup.why.deleted_app"), files);
     }
 }
 
@@ -1463,6 +1565,7 @@ pub fn kind_label(kind: &str) -> &str {
         "Projects" => ts!("cleanup.kind.projects"),
         "Old Sessions" => ts!("cleanup.kind.old_sessions"),
         "Local Models" => ts!("cleanup.kind.models"),
+        "App Data" => ts!("cleanup.kind.app_data"),
         "Build Data" => ts!("cleanup.kind.build"),
         "Device Support" => ts!("cleanup.kind.device_support"),
         "Simulators" => ts!("cleanup.kind.simulators"),
@@ -1532,7 +1635,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
         // minutes may have passed since the scan: an app opened since then keeps its cache
         let (running_ids, running_names) = running_apps();
         // and what every process has open right now (one lsof run)
-        let open = if plan.iter().any(|(it, _)| it.action == Action::Files && live_kind(it.kind)) { super::inuse::OpenFiles::snapshot() } else { None };
+        let open = if plan.iter().any(|(it, _)| matches!(it.action, Action::Files | Action::Parts(_)) && live_kind(it.kind)) { super::inuse::OpenFiles::snapshot() } else { None };
         let mut journal = super::journal::Entry::now();
         // bytes of the items before the one in hand
         let mut base = 0u64;
@@ -1560,9 +1663,9 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                 journal.failed.push((it.path.display().to_string(), why.clone()));
                 g.failed.push((it.title.clone(), why));
             };
-            if it.action == Action::Files {
+            if matches!(it.action, Action::Files | Action::Parts(_)) {
                 // last safety net
-                if let Some(why) = guard(it.group, &it.path).filter(|_| it.group != Group::Trash) {
+                if let Some(why) = it.targets().iter().find_map(|t| guard(it.group, t)).filter(|_| it.group != Group::Trash) {
                     skip(why.to_string(), &shared, &mut journal);
                     continue;
                 }
@@ -1573,7 +1676,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                 }
                 // even with the person's OK: an open database would be written to after it's gone
                 if live_kind(it.kind) {
-                    if let Some(why) = super::inuse::blocked(&it.path, open.as_ref()) {
+                    if let Some(why) = it.targets().iter().find_map(|t| super::inuse::blocked(t, open.as_ref())) {
                         skip(why.to_string(), &shared, &mut journal);
                         shared.lock_ok().in_way = true;
                         continue;
@@ -1588,6 +1691,8 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
                 (How::Command, Action::Upload { key, local }) => super::captures::delete_upload(local, key),
                 (How::Command, Action::Model(files)) => super::agents::remove_model(files),
                 (How::Command, a) => super::xcode::remove(a).or_else(|e| if matches!(a, Action::SimDevice(_)) && it.path.is_dir() { remove(&it.path) } else { Err(e) }),
+                (How::Trash, Action::Parts(ps)) => ps.iter().try_for_each(|p| if p.symlink_metadata().is_ok() { move_to_trash(p) } else { Ok(()) }),
+                (How::Deleted, Action::Parts(ps)) => ps.iter().try_for_each(|p| remove(p)),
                 (How::Trash, _) => move_to_trash(&it.path),
                 (How::Deleted, _) => {
                     // file by file, so the counter moves and Stop cuts in
@@ -1883,6 +1988,57 @@ fn empty_trash(p: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[test]
+    fn old_chats_keep_their_memory() {
+        let dir = std::env::temp_dir().join(format!("cmdmeow-memory-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("memory")).unwrap();
+        std::fs::write(dir.join("a.jsonl"), "x").unwrap();
+        std::fs::write(dir.join("memory/MEMORY.md"), "x").unwrap();
+        let parts = super::without_memory(&dir).unwrap();
+        assert_eq!(parts, vec![dir.join("a.jsonl")]);
+        std::fs::remove_dir_all(dir.join("memory")).unwrap();
+        assert_eq!(super::without_memory(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parts_go_like_files() {
+        let mut it = plain_item(Action::Parts(vec![PathBuf::from("/a/1"), PathBuf::from("/a/2")]));
+        assert!(!it.by_command());
+        assert_eq!(it.targets().len(), 2);
+        it.action = Action::Files;
+        assert_eq!(it.targets(), vec![it.path.clone()]);
+    }
+
+    #[test]
+    fn browsers_under_their_maker() {
+        assert!(super::vendor_browsers("Google").is_some_and(|ids| ids.contains(&"com.google.chrome")));
+        assert!(super::vendor_browsers("com.spotify.client").is_none());
+    }
+
+    fn plain_item(action: Action) -> Item {
+        Item {
+            group: Group::AiTools,
+            title: "t".into(),
+            path: PathBuf::from("/a"),
+            bytes: 0,
+            age_days: 0.0,
+            kind: "Old Sessions",
+            verdict: Verdict::Ask,
+            reason: String::new(),
+            rule_reason: String::new(),
+            rule_verdict: Verdict::Ask,
+            by: Who::Rule,
+            selected: false,
+            hard_keep: false,
+            permanent: false,
+            app_running: false,
+            action,
+            tool: "",
+        }
+    }
+
     #[test]
     fn scan_bar_creeps_then_hands_over_without_going_back() {
         use super::{creep, Phase, State, CREEP_TO};

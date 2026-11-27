@@ -508,6 +508,7 @@ fn bundle_of(it: &Item) -> Option<(String, usize)> {
     let apple = it.path.components().any(|c| c.as_os_str().to_string_lossy().starts_with("com.apple."));
     let fixed = match it.group {
         Group::AppCaches if apple => Some(ts!("cleanup.bundle.macos")),
+        Group::AppCaches if it.kind == "App Data" => Some(ts!("cleanup.bundle.deleted_apps")),
         Group::AiTools if parent_is(&it.path, "file-history") => Some(ts!("cleanup.bundle.edit_history")),
         Group::AiTools if parent_is(&it.path, "uploads") => Some(ts!("cleanup.bundle.claude_uploads")),
         Group::AiTools if it.kind == "Old Sessions" && parent_is(&it.path, "projects") => Some(ts!("cleanup.bundle.old_chats")),

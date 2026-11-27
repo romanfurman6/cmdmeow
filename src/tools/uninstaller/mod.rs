@@ -815,6 +815,31 @@ fn scan(st: &Shared, app_roots: &[PathBuf], roots: &Roots, ctx: &egui::Context) 
     true
 }
 
+/// Data in the home folder of apps no longer on this Mac (nothing in it
+/// touched for `min_age_secs`), per app: its name and its files. The same
+/// match as the Leftovers list; Cleanup offers these for review.
+pub fn deleted_app_data(min_age_secs: i64) -> Vec<(String, Vec<PathBuf>)> {
+    let roots = Roots::real();
+    let mut known: HashSet<String> = apps::find_bundles(&apps::app_roots()).iter().filter_map(|b| apps::read_info(b)).map(|i| i.id).collect();
+    if known.is_empty() {
+        // no apps found means the app folders couldn't be read: everything would look deleted
+        return Vec::new();
+    }
+    known.extend(apps::all_installed_ids());
+    #[cfg(target_os = "macos")]
+    known.extend(crate::kit::native::running_apps().0);
+    let names = Settings::load().known;
+    let home = roots.home();
+    Index::build(&roots)
+        .orphans(&known, now(), min_age_secs)
+        .into_iter()
+        .filter_map(|(id, items)| {
+            let files: Vec<PathBuf> = items.into_iter().filter(|i| !i.admin && i.path.starts_with(&home)).map(|i| i.path).collect();
+            (!files.is_empty()).then(|| (names.get(&id).cloned().unwrap_or_else(|| pretty_name(&id)), files))
+        })
+        .collect()
+}
+
 fn mtime(p: &Path) -> Option<i64> {
     let m = p.symlink_metadata().ok()?.modified().ok()?;
     Some(m.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64)
