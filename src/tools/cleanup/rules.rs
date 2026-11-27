@@ -12,6 +12,9 @@ use std::sync::OnceLock;
 #[derive(Deserialize)]
 pub struct Catalog {
     pub keep_caches: Vec<KeepCache>,
+    /// Caches that are slow to get back or hold the person's own media:
+    /// offered, but only with their OK. Same matching as `keep_caches`.
+    pub ask_caches: Vec<KeepCache>,
     pub app_caches: Vec<Place>,
     pub developer: Vec<Place>,
     pub project_roots: Vec<String>,
@@ -51,6 +54,10 @@ pub struct KeepCache {
 impl KeepCache {
     pub fn reason(&self) -> &'static str {
         crate::i18n::data(&format!("rules.keep.{}", self.id))
+    }
+    /// The reason of an `ask_caches` entry.
+    pub fn ask_reason(&self) -> &'static str {
+        crate::i18n::data(&format!("rules.ask.{}", self.id))
     }
     pub fn matches(&self, folder: &str) -> bool {
         let (f, n) = (folder.to_lowercase(), self.name.to_lowercase());
@@ -130,7 +137,7 @@ mod tests {
             // personal folders are never offered
             assert!(crate::kit::fs::is_protected(&crate::kit::fs::home().join(&p.path)).is_none(), "{} is protected", p.path);
         }
-        for k in &c.keep_caches {
+        for k in c.keep_caches.iter().chain(c.ask_caches.iter()) {
             assert!(["exact", "prefix", "contains"].contains(&k.how.as_str()), "{}", k.name);
         }
         for t in &c.projects {
@@ -150,7 +157,14 @@ mod tests {
         let c = catalog();
         let en: serde_json::Value = serde_json::from_str(include_str!("../../../locales/en.json")).unwrap();
         let texts = |sec: &str| en["rules"][sec].as_object().cloned().unwrap_or_default();
-        let (place, keep) = (texts("place"), texts("keep"));
+        let (place, keep, ask) = (texts("place"), texts("keep"), texts("ask"));
+        for k in &c.ask_caches {
+            assert!(ask.contains_key(&k.id), "rules.ask.{} isn't in en.json", k.id);
+            assert_eq!(k.ask_reason(), ask[&k.id].as_str().unwrap());
+        }
+        for id in ask.keys() {
+            assert!(c.ask_caches.iter().any(|k| &k.id == id), "rules.ask.{id} isn't used");
+        }
         for p in c.app_caches.iter().chain(c.developer.iter()) {
             assert!(place.contains_key(&p.id), "rules.place.{} isn't in en.json", p.id);
             assert_eq!(p.reason(), place[&p.id].as_str().unwrap());

@@ -31,6 +31,7 @@ pub mod modal;
 pub mod native;
 pub mod parakeet;
 pub mod notify;
+pub mod deleted_apps;
 pub mod old_captures;
 pub mod own;
 pub mod perms;
