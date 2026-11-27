@@ -109,6 +109,9 @@ DOCK = {
     "miami": ([(0, 0x0B1240), (.45, 0x2A1452), (.78, 0x5E1D57), (1, 0x70283C)], 0xFF5FA2),
 }
 DOCK_PX = 512
+# A thin light rim inside the edge, so a dark tile still shows its outline
+# on a dark Dock: (width, white alpha) in 1024 units. Dark Classic only.
+DOCK_RIM = {"dark": (5, 0.22)}
 CREAM = (242, 236, 229)
 
 
@@ -145,7 +148,15 @@ def dock_icon(theme: str) -> Image.Image:
         k = ((d - t0) / (t1 - t0))[..., None]
         ground[m] = (rgb(c0) * (1 - k) + rgb(c1) * k)[m]
     img = Image.fromarray(np.clip(ground * (1 - a) + key * a, 0, 255).astype("uint8")).convert("RGBA")
-    img.putalpha(squircle_mask(BODY))
+    mask = squircle_mask(BODY)
+    img.putalpha(mask)
+    if theme in DOCK_RIM:
+        width, alpha = DOCK_RIM[theme]
+        inner = mask.filter(ImageFilter.MinFilter(2 * width + 1)).filter(ImageFilter.GaussianBlur(0.6))
+        rim = ImageChops.subtract(mask, inner).point(lambda v: round(v * alpha))
+        white = Image.new("RGBA", (BODY, BODY), (255, 255, 255, 0))
+        white.putalpha(rim)
+        img.alpha_composite(white)
     out = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     out.alpha_composite(img, ((CANVAS - BODY) // 2,) * 2)
     return render(out, CANVAS).resize((DOCK_PX, DOCK_PX), Image.LANCZOS)
