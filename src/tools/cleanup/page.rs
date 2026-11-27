@@ -717,12 +717,17 @@ enum Line {
     KeptHead,
     /// An AI Check tip about nothing in the list.
     Tip(usize),
+    /// The question being asked (SP30): the first entry of Needs your OK.
+    Question,
+    /// The edges of the next questions under it: 1 or 2.
+    Peek(usize),
 }
 
 impl Line {
     fn card(self) -> Option<Sec> {
         match self {
             Line::Entry(s, _) | Line::Member(s, _, _) => Some(s),
+            Line::Question => Some(Sec::Ask),
             Line::KeptHead => Some(Sec::Kept),
             _ => None,
         }
@@ -739,6 +744,19 @@ enum Act {
     Unkeep(Vec<usize>),
     Fold(String),
     Tip(aicheck::Rec),
+    /// "Show all" (true) or "One at a time" (false) for the questions.
+    AllAsks(bool),
+}
+
+/// The questions as the whole list ("Show all") instead of one at a time.
+fn asks_all(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::unique("cleanup-asks-all")).unwrap_or(false))
+}
+
+/// Questions answered on the question card, by their first item's path:
+/// the "4 of 31" count. An Undo brings one back, so it counts again.
+fn asked(ctx: &egui::Context) -> std::collections::HashSet<String> {
+    ctx.data(|d| d.get_temp::<std::collections::HashSet<String>>(egui::Id::unique("cleanup-asked")).unwrap_or_default())
 }
 
 /// Which bundles (and Kept) are open, by key.
@@ -870,9 +888,19 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
             }
         }
     };
+    // one question at a time (SP30); "Show all" lists them
+    let one = !es[0].is_empty() && !asks_all(&ctx);
     if !es[0].is_empty() {
         lines.extend([Line::Label(Sec::Ask), Line::Gap(sp::M)]);
-        push_entries(&mut lines, Sec::Ask);
+        if one {
+            lines.push(Line::Question);
+            let more = (es[0].len() - 1).min(2);
+            if more > 0 {
+                lines.push(Line::Peek(more));
+            }
+        } else {
+            push_entries(&mut lines, Sec::Ask);
+        }
     }
     if !es[1].is_empty() {
         if !lines.is_empty() {
@@ -905,6 +933,8 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
             Line::Entry(Sec::Ask, k) => ask_height(&p, &items, &es[0][k], answers[k].as_ref(), agent, w),
             Line::Entry(Sec::Safe, k) => safe_height(&p, row_tip(&es[1][k]).as_ref(), agent, w),
             Line::Tip(k) => tip_height(&p, &tips[k], w),
+            Line::Question => question_height(&p, &items, &es[0][0], answers[0].as_ref(), agent, w),
+            Line::Peek(n) => peek_height(n),
             _ => sp::ROW_H,
         }
     };
@@ -958,10 +988,18 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
                 crate::kit::glass::row_divider_stroke(ui, &p, rr.left_top(), rr.left_top(), true, rr.bottom(), Stroke::NONE);
             }
             let act = match l {
+                Line::Label(Sec::Ask) if one => {
+                    let done = asked(&ctx).iter().filter(|k| items.iter().any(|it| it.path.display().to_string() == **k && !is_question(it))).count();
+                    let lab = ask_label(&p, rr.left_top(), done + 1, done + es[0].len(), asks.iter().map(|&i| items[i].bytes).sum());
+                    link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.show_all"), 12.0).clicked().then_some(Act::AllAsks(true))
+                }
                 Line::Label(Sec::Ask) => {
                     let lab = section_label(&p, rr.left_top(), ts!("cleanup.needs_ok"), AMBER(), asks.len(), asks.iter().map(|&i| items[i].bytes).sum());
-                    let a = link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.keep_all"), 12.0);
-                    if a.clicked() {
+                    let o = link(ui, Pos2::new(rr.right(), lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.one_at_a_time"), 12.0);
+                    let a = link(ui, Pos2::new(o.rect.left() - sp::L, lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.keep_all"), 12.0);
+                    if o.clicked() {
+                        Some(Act::AllAsks(false))
+                    } else if a.clicked() {
                         Some(Act::Answer(asks.clone(), Verdict::Keep))
                     } else if link(ui, Pos2::new(a.rect.left() - sp::M, lab.center().y), Align2::RIGHT_CENTER, ts!("cleanup.clean_all"), 12.0).clicked() {
                         Some(Act::Answer(asks.clone(), Verdict::Safe))
@@ -981,6 +1019,11 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
                 Line::Member(sec, e, m) => list_member(ui, rr, &items, sec, es[sec_i(sec)][e].idx[m]),
                 Line::KeptHead => kept_head(ui, rr, kept.len(), kept.iter().map(|&i| items[i].bytes).sum(), kept_open),
                 Line::Tip(t) => tip_row(ui, rr, &tips[t]).map(Act::Tip),
+                Line::Question => question(app, ui, rr, &items, &es[0][0], answers[0].as_ref(), agent),
+                Line::Peek(n) => {
+                    peek(&p, rr, n);
+                    None
+                }
             };
             acts.extend(act);
         }
@@ -988,7 +1031,20 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
 
     for act in acts {
         match act {
-            Act::Answer(idx, v) => answer_items(app, &idx, v),
+            Act::Answer(idx, v) => {
+                // answered on the card: it counts toward "4 of 31"
+                if one && es[0][0].idx == idx {
+                    ctx.data_mut(|d| {
+                        d.get_temp_mut_or_default::<std::collections::HashSet<String>>(egui::Id::unique("cleanup-asked")).insert(items[idx[0]].path.display().to_string());
+                    });
+                }
+                answer_items(app, &idx, v)
+            }
+            Act::AllAsks(on) => {
+                ctx.data_mut(|d| {
+                    d.insert_temp(egui::Id::unique("cleanup-asks-all"), on);
+                });
+            }
             Act::Select(idx, on, any) => {
                 let mut g = app.clean.lock_ok();
                 for i in idx {
@@ -1028,6 +1084,135 @@ fn section_label(p: &egui::Painter, at: Pos2, title: &str, col: Color32, n: usiz
     let t = p.text(Pos2::new(at.x, at.y + LABEL_H / 2.0), Align2::LEFT_CENTER, title, ty::title(), col);
     let s = p.text(Pos2::new(t.right() + sp::S, t.center().y), Align2::LEFT_CENTER, format!("{n} · {}", human_bytes(bytes)), ty::label(), TEXT_DIM());
     t.union(s)
+}
+
+/// "Needs your OK  4 of 31 · 27.8 GB" over the question card (SP30).
+fn ask_label(p: &egui::Painter, at: Pos2, k: usize, n: usize, bytes: u64) -> Rect {
+    let t = p.text(Pos2::new(at.x, at.y + LABEL_H / 2.0), Align2::LEFT_CENTER, ts!("cleanup.needs_ok"), ty::title(), AMBER());
+    let s = p.text(Pos2::new(t.right() + sp::S, t.center().y), Align2::LEFT_CENTER, format!("{} · {}", t!("cleanup.k_of_n", k = k, n = n), human_bytes(bytes)), ty::label(), TEXT_DIM());
+    t.union(s)
+}
+
+/// The question card's two answers, each with the arrow key that gives it.
+fn question_buttons(p: &egui::Painter) -> [(f32, &'static str, &'static str, u8, Verdict); 2] {
+    let w = |l: &str, k: u8| button_width(p, l, k) + KEY_HINT_W;
+    [(w(ts!("cleanup.keep"), BTN_SECONDARY), ts!("cleanup.keep"), "←", BTN_SECONDARY, Verdict::Keep), (w(ts!("cleanup.clean"), BTN_PRIMARY), ts!("cleanup.clean"), "→", BTN_PRIMARY, Verdict::Safe)]
+}
+/// The arrow key after an answer's label, drawn (not every font has ← →):
+/// 8 wide, centred on `c`.
+fn key_arrow(p: &egui::Painter, c: Pos2, left: bool, col: Color32) {
+    let d = if left { -1.0 } else { 1.0 };
+    let s = Stroke::new(1.3, col);
+    let tip = Pos2::new(c.x + 4.0 * d, c.y);
+    p.line_segment([Pos2::new(c.x - 4.0 * d, c.y), tip], s);
+    p.line_segment([tip, Pos2::new(tip.x - 3.0 * d, c.y - 3.0)], s);
+    p.line_segment([tip, Pos2::new(tip.x - 3.0 * d, c.y + 3.0)], s);
+}
+/// Room for the arrow after an answer's label.
+const KEY_HINT_W: f32 = 16.0;
+
+/// Room for the question's text: what's left of the card after the size
+/// and the answers.
+fn question_text_w(p: &egui::Painter, e: &Entry, w: f32) -> f32 {
+    let size = p.layout_no_wrap(human_bytes(e.bytes), ty::number(), TEXT()).size().x;
+    let btns: f32 = question_buttons(p).iter().map(|b| b.0).sum::<f32>() + sp::S;
+    w - 2.0 * sp::L - size - btns - 2.0 * sp::COL_GAP
+}
+
+/// The question card's height: its text with L around it, never less than
+/// the answers with L around them.
+fn question_height(p: &egui::Painter, items: &[Item], e: &Entry, ans: Option<&aicheck::Rec>, agent: &str, w: f32) -> f32 {
+    let tw = question_text_w(p, e, w).max(1.0);
+    let detail = p.layout(ask_detail(items, e), ty::label(), TEXT_SOFT(), tw).size().y;
+    let answer = ans.map(|a| sp::LINE_GAP + p.layout_job(answer_job(agent, a, tw)).size().y).unwrap_or(0.0);
+    (sp::L + line_h(p, &ty::title()) + sp::LINE_GAP + detail + answer + sp::L).max(sp::HEADER_CONTROL_H + 2.0 * sp::L)
+}
+
+/// The next questions peek out under the card: an edge 8 tall 12 in, and a
+/// second 6 tall 24 in when two or more wait.
+const PEEK: [(f32, f32); 2] = [(8.0, 12.0), (6.0, 24.0)];
+
+fn peek_height(n: usize) -> f32 {
+    PEEK.iter().take(n).map(|e| e.0).sum()
+}
+
+fn peek(p: &egui::Painter, rr: Rect, n: usize) {
+    let mut y = rr.top();
+    for (k, &(h, inset)) in PEEK.iter().take(n).enumerate() {
+        let r = Rect::from_min_max(Pos2::new(rr.left() + inset, y), Pos2::new(rr.right() - inset, y + h));
+        let cr = egui::CornerRadius { nw: 0, ne: 0, sw: R_CARD as u8, se: R_CARD as u8 };
+        p.rect_filled(r, cr, white(if k == 0 { 16 } else { 10 }));
+        y += h;
+    }
+}
+
+/// The question being asked (SP30): name, what it is, the agent's answer
+/// once it came, the size, then Keep ← and Clean →; the arrow keys answer
+/// too. A bundle is one question for all its items.
+fn question(app: &App, ui: &mut Ui, rr: Rect, items: &[Item], e: &Entry, ans: Option<&aicheck::Rec>, agent: &str) -> Option<Act> {
+    let p = ui.painter().clone();
+    let first = &items[e.idx[0]];
+    let resp = ui.interact(rr, ui.scope_id().with(("question", &first.path)), Sense::click());
+    if e.name.is_none() && resp.on_hover_text(short_path(&first.path)).double_clicked() {
+        let _ = std::process::Command::new("open").arg("-R").arg(&first.path).spawn();
+    }
+    let x = rr.left() + sp::L;
+    let tw = question_text_w(&p, e, rr.width());
+    let th = line_h(&p, &ty::title());
+    let ty0 = rr.top() + sp::L + th / 2.0;
+    let mut right = x + tw;
+    let perm = e.idx.iter().any(|&i| items[i].permanent);
+    if perm {
+        right -= p.layout_no_wrap(ts!("cleanup.permanent").into(), bold(11.0), TEXT()).size().x + 16.0 + sp::S;
+    }
+    let t = text_fit(&p, Pos2::new(x, ty0), Align2::LEFT_CENTER, e.name.as_deref().unwrap_or(&first.title), ty::title(), TEXT(), right - x);
+    if perm {
+        chip(&p, Pos2::new(t.right() + sp::S, ty0), Align2::LEFT_CENTER, ts!("cleanup.permanent"), CHIP_RISK());
+    }
+    let dy = rr.top() + sp::L + th + sp::LINE_GAP;
+    let g = p.layout(ask_detail(items, e), ty::label(), TEXT_SOFT(), tw.max(1.0));
+    let dh = g.size().y;
+    p.galley(Pos2::new(x, dy), g, TEXT_SOFT());
+    if let Some(a) = ans {
+        let g = p.layout_job(answer_job(agent, a, tw));
+        p.galley(Pos2::new(x, dy + dh + sp::LINE_GAP), g, TEXT());
+    }
+    // the answers on the right, the size left of them
+    let cy = rr.center().y;
+    let btns = question_buttons(&p);
+    let mut bx = rr.right() - sp::L;
+    let mut picked = None;
+    for &(w, label, key, kind, v) in btns.iter().rev() {
+        let br = Rect::from_min_size(Pos2::new(bx - w, cy - sp::HEADER_CONTROL_H / 2.0), Vec2::new(w, sp::HEADER_CONTROL_H));
+        bx = br.left() - sp::S;
+        let (resp, face) = pill_button_at(ui, br, "", kind, true);
+        let col = if kind == BTN_SECONDARY { TEXT() } else { on_color(ACCENT()) };
+        let f = if kind == BTN_SECONDARY { font(13.0) } else { bold(13.0) };
+        let lw = p.layout_no_wrap(label.into(), f.clone(), col).size().x;
+        let lx = face.center().x - (lw + KEY_HINT_W) / 2.0;
+        p.text(Pos2::new(lx, face.center().y), Align2::LEFT_CENTER, label, f, col);
+        key_arrow(&p, Pos2::new(lx + lw + KEY_HINT_W - 4.0, face.center().y), key == "←", with_alpha(col, 0.6));
+        if resp.clicked() {
+            picked = Some(v);
+        }
+    }
+    p.text(Pos2::new(bx + sp::S - sp::COL_GAP, cy), Align2::RIGHT_CENTER, human_bytes(e.bytes), ty::number(), TEXT());
+    // ← keeps, → cleans: not while typing or with the confirm sheet up
+    let phase = app.clean.lock_ok().phase.clone();
+    if picked.is_none() && phase == Phase::Results && !app.clean_confirm && ui.ctx().memory(|m| m.focused().is_none()) {
+        picked = ui.input(|i| {
+            if i.modifiers.any() {
+                None
+            } else if i.key_pressed(egui::Key::ArrowLeft) {
+                Some(Verdict::Keep)
+            } else if i.key_pressed(egui::Key::ArrowRight) {
+                Some(Verdict::Safe)
+            } else {
+                None
+            }
+        });
+    }
+    picked.map(|v| Act::Answer(e.idx.clone(), v))
 }
 
 /// A light highlight under the pointer; true when the row was clicked.
