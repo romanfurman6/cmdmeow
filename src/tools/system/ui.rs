@@ -327,10 +327,13 @@ pub fn overview(mon: &monitor::Shared, ui: &mut Ui, r: Rect, cx: &mut Cx) {
     let net = format!("↓ {}", human_rate(s.net_down));
     let body = tile::head(&p, r, Icon::Pulse, tint::HEALTH(), ts!("health.widget.overview.title"), &net);
     let cw = body.width() / ms.len().max(1) as f32;
+    let rr = 24.0;
+    // ring, value and name sit in the middle of the body, not at its top
+    let block = 2.0 * rr + 8.0 + line_h(&p, &ty::title()) + 2.0 + line_h(&p, &ty::caption());
+    let top = body.top() + ((body.height() - block) / 2.0).max(0.0);
     for (k, m) in ms.iter().enumerate() {
         let x = body.left() + cw * (k as f32 + 0.5);
-        let rr = 24.0;
-        let c = Pos2::new(x, body.top() + 2.0 + rr);
+        let c = Pos2::new(x, top + rr);
         let (f, col) = m.bar.unwrap_or((1.0, tint::HEALTH()));
         tile::ring(&p, c, rr - 2.5, 5.0, f, col);
         icon(&p, m.glyph, Rect::from_center_size(c, egui::Vec2::splat(18.0)), TEXT_SOFT());
