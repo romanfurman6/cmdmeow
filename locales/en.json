@@ -1391,8 +1391,7 @@
       "left_n": "Remove what %{n} apps left?"
     },
     "sub": {
-      "reset": "Settings, caches and data go to the Trash. The app stays",
-      "all": "Everything goes to the Trash"
+      "reset": "Settings, caches and data go to the Trash. The app stays"
     },
     "open_now_line": "Open now · %{line}",
     "password_one": "%{n} item needs your password. macOS asks once.",
@@ -2238,7 +2237,6 @@
     "restart_open": "Restart and open",
     "open_panel": "Open panel",
     "later": "Later",
-    "tagline": "%{n} tools. One menu bar.",
     "set_up": "Set up",
     "crash_q": "Send crash reports?",
     "crash_what": "What went wrong and where in the app",
