@@ -323,6 +323,10 @@ pub fn now() -> i64 {
 
 impl Uninstaller {
     pub fn new(env: &ToolEnv) -> Self {
+        if !env.demo {
+            // Cleanup offers deleted apps' data for review
+            crate::kit::deleted_apps::register(deleted_app_data);
+        }
         let mut u = Uninstaller {
             st: Arc::new(Mutex::new(State::default())),
             roots: Roots::real(),

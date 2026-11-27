@@ -912,6 +912,37 @@ mod tests {
     }
 
     #[test]
+    fn project_chats_by_folder() {
+        use super::super::engine::Ctx;
+        let dir = crate::kit::fs::home().join(format!(".cmdmeow-test-sessions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("app")).unwrap();
+        let file = |n: &str, days: u64| {
+            let f = dir.join(n);
+            std::fs::write(&f, "x").unwrap();
+            let t = std::time::SystemTime::now() - std::time::Duration::from_secs(days * 86_400);
+            std::fs::File::options().write(true).open(&f).unwrap().set_modified(t).unwrap();
+            f
+        };
+        let (fresh, old) = (file("fresh.jsonl", 1), file("old.jsonl", 40));
+        let run = |cwd: Option<&Path>, files: Vec<PathBuf>| {
+            let mut c = Ctx::for_test();
+            project_sessions(&mut c, cwd, files, "other", "why");
+            c.items.into_iter().map(|i| (i.verdict, i.kind, i.hard_keep)).collect::<Vec<_>>()
+        };
+        let app = dir.join("app");
+        // used lately: kept, locked
+        assert_eq!(run(Some(&app), vec![old.clone(), fresh.clone()]), vec![(Verdict::Keep, "Projects", true)]);
+        // idle, or its folder gone: asked
+        assert_eq!(run(Some(&app), vec![old.clone()])[0].0, Verdict::Ask);
+        assert_eq!(run(Some(&dir.join("gone")), vec![fresh.clone()])[0].0, Verdict::Ask);
+        // no folder known: asked only once old
+        assert!(run(None, vec![fresh.clone()]).is_empty());
+        assert_eq!(run(None, vec![old.clone()])[0].0, Verdict::Ask);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn first_line_only() {
         let dir = std::env::temp_dir().join(format!("cmdmeow-first-line-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

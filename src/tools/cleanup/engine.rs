@@ -313,6 +313,12 @@ pub(super) struct Ctx {
 }
 
 impl Ctx {
+    /// An empty scan for tests.
+    #[cfg(test)]
+    pub(super) fn for_test() -> Ctx {
+        Ctx { items: Vec::new(), kept: HashSet::new(), hidden_kept: 0, running_ids: HashSet::new(), running_names: HashSet::new(), tool: "", brew: false, shared: Shared::default(), egui: egui::Context::default(), cancel: Arc::new(AtomicBool::new(false)) }
+    }
+
     pub(super) fn stopped(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
     }
@@ -1147,8 +1153,21 @@ const DELETED_APP_DAYS: i64 = 30;
 const NEVER_ORPHAN: [&str; 11] = ["keychain", "1password", "agilebits", "bitwarden", "lastpass", "keepass", "dashlane", "enpass", "ssh", "gpg", "gnupg"];
 
 fn scan_deleted_apps(c: &mut Ctx) {
+    offer_deleted_apps(c, crate::kit::deleted_apps::find(DELETED_APP_DAYS * 86_400));
+}
+
+#[cfg(test)]
+impl Ctx {
+    fn offer_deleted_apps_for_test(&mut self, found: Vec<(String, Vec<PathBuf>)>) {
+        offer_deleted_apps(self, found);
+    }
+}
+
+/// Each deleted app's data as one question, leaving out apps with keys or
+/// sign-ins in it and files another item already offers.
+fn offer_deleted_apps(c: &mut Ctx, found: Vec<(String, Vec<PathBuf>)>) {
     let keep = &super::rules::catalog().keep_caches;
-    for (name, files) in crate::tools::uninstaller::deleted_app_data(DELETED_APP_DAYS * 86_400) {
+    for (name, files) in found {
         if c.stopped() {
             return;
         }
@@ -2053,6 +2072,28 @@ pub(crate) mod tests {
         assert_eq!(parts, vec![dir.join("a.jsonl")]);
         std::fs::remove_dir_all(dir.join("memory")).unwrap();
         assert_eq!(super::without_memory(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleted_apps_skip_keys_and_what_is_offered() {
+        let dir = home().join(format!(".cmdmeow-test-deleted-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for f in ["Goneapp/a", "Goneapp/b", "Vault/1Password/x", "Cached/c"] {
+            std::fs::create_dir_all(dir.join(f).parent().unwrap()).unwrap();
+            std::fs::write(dir.join(f), "x").unwrap();
+        }
+        let mut c = Ctx::for_test();
+        c.add(Group::AppCaches, "Cached", dir.join("Cached"), "Caches", Verdict::Safe, "");
+        c.offer_deleted_apps_for_test(vec![
+            ("Goneapp".into(), vec![dir.join("Goneapp/a"), dir.join("Goneapp/b")]),
+            ("Vault".into(), vec![dir.join("Vault/1Password/x")]),
+            ("Cached".into(), vec![dir.join("Cached/c")]),
+        ]);
+        let asks: Vec<&Item> = c.items.iter().filter(|i| i.kind == "App Data").collect();
+        assert_eq!(asks.len(), 1, "keys and what another item offers stay out");
+        assert_eq!(asks[0].verdict, Verdict::Ask);
+        assert_eq!(asks[0].targets(), vec![dir.join("Goneapp/a"), dir.join("Goneapp/b")]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
