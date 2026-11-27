@@ -1603,6 +1603,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn week_days_cover_every_date_of_a_window_off_midnight() {
+        use chrono::TimeZone;
+        let today = chrono::Local::now().date_naive();
+        let reset = chrono::Local.from_local_datetime(&(today + chrono::Days::new(3)).and_hms_opt(5, 0, 0).unwrap()).earliest().unwrap().timestamp();
+        let mut info = UsageInfo::default();
+        info.local.days = vec![Day { date: today, tokens: 100, ..Default::default() }];
+        let l = Limit { label: "Current week (all models)".into(), pct: 40.0, resets_at: Some(reset), window_secs: 7 * 86_400, ..Default::default() };
+        let (start, days) = week_days(&info, &l).unwrap();
+        // 05:00 four days ago to 05:00 in three: 8 dates, the last one to come
+        assert_eq!(start, reset - 7 * 86_400);
+        assert_eq!(days.len(), 8);
+        assert_eq!(days.first().unwrap().0, today - chrono::Days::new(4));
+        assert_eq!(days.last().unwrap(), &(today + chrono::Days::new(3), None));
+    }
+
+    #[test]
     fn no_week_card_without_tokens_since_the_reset() {
         let today = chrono::Local::now().date_naive();
         let mut info = UsageInfo::default();
