@@ -737,13 +737,10 @@
     "left": "left",
     "full_in": "Full in %{time}",
     "left_at_reset": "~%{pct}% left at reset",
-<<<<<<< HEAD
     "wk": {
       "used": "Used",
       "week": "Week"
     },
-=======
->>>>>>> c95e836545aac39ba0fd48036cf70a4ec083f098
     "usage_tab": "Usage",
     "unit_usd": "$",
     "this_week": "This week",
