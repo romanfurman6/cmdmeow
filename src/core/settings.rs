@@ -134,6 +134,14 @@ mod tests {
     }
 
     #[test]
+    fn new_widget_of_an_arranged_tool_waits_in_the_gallery() {
+        // Mac Health's Monitor arrives next to the readings the user already shows
+        let prefs = WidgetPrefs { order: vec!["system/cpu".into()], hidden: vec![], sizes: Default::default() };
+        let e = prefs.resolve(&avail(&[("system/overview", true), ("system/cpu", false)]));
+        assert_eq!(e, vec![entry("system/cpu", true), entry("system/overview", false)]);
+    }
+
+    #[test]
     fn round_trip_and_reorder() {
         let mut e = WidgetPrefs::default().resolve(&avail(&[("a/x", true), ("b/y", true), ("c/z", true)]));
         hide_entry(&mut e, "b/y");
