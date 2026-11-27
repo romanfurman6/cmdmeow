@@ -840,7 +840,7 @@ impl Tool for Startup {
         self.ai.phase() == crate::kit::aicheck::Phase::Running
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: SUMMARY, title: ts!("startup.name"), about: ts!("startup.widget_about"), sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: SUMMARY, title: ts!("startup.name"), about: ts!("startup.widget_about"), sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: false }]
     }
     fn widget_loading(&self, _widget: &str) -> bool {
         !self.state().jobs_loaded

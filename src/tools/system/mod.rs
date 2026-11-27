@@ -40,14 +40,15 @@ impl System {
 
 const SMALL_TO_MEDIUM: &[Size] = UP_TO_MEDIUM;
 
-fn widgets() -> [WidgetSpec; 6] {
+fn widgets() -> [WidgetSpec; 7] {
     [
-        WidgetSpec { id: "storage", title: ts!("health.widget.storage.title"), about: ts!("health.widget.storage.about"), sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: true },
-        WidgetSpec { id: "memory", title: ts!("health.widget.memory.title"), about: ts!("health.widget.memory.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
-        WidgetSpec { id: "cpu", title: ts!("health.widget.cpu.title"), about: ts!("health.widget.cpu.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
-        WidgetSpec { id: "battery", title: ts!("health.widget.battery.title"), about: ts!("health.widget.battery.about"), sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: true },
-        WidgetSpec { id: "network", title: ts!("health.widget.network.title"), about: ts!("health.widget.network.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: true },
-        WidgetSpec { id: "devices", title: ts!("health.widget.devices.title"), about: ts!("health.widget.devices.about"), sizes: &[Size::S11, Size::S12, Size::S14, Size::S24, Size::S44], size: Size::S14, default_on: true },
+        WidgetSpec { id: "overview", title: ts!("health.widget.overview.title"), about: ts!("health.widget.overview.about"), sizes: &[Size::S24], size: Size::S24, default_on: true },
+        WidgetSpec { id: "storage", title: ts!("health.widget.storage.title"), about: ts!("health.widget.storage.about"), sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: false },
+        WidgetSpec { id: "memory", title: ts!("health.widget.memory.title"), about: ts!("health.widget.memory.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: false },
+        WidgetSpec { id: "cpu", title: ts!("health.widget.cpu.title"), about: ts!("health.widget.cpu.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: false },
+        WidgetSpec { id: "battery", title: ts!("health.widget.battery.title"), about: ts!("health.widget.battery.about"), sizes: &[Size::S11, Size::S12, Size::S14], size: Size::S12, default_on: false },
+        WidgetSpec { id: "network", title: ts!("health.widget.network.title"), about: ts!("health.widget.network.about"), sizes: SMALL_TO_MEDIUM, size: Size::S12, default_on: false },
+        WidgetSpec { id: "devices", title: ts!("health.widget.devices.title"), about: ts!("health.widget.devices.about"), sizes: &[Size::S11, Size::S12, Size::S14, Size::S24, Size::S44], size: Size::S14, default_on: false },
     ]
 }
 
@@ -92,6 +93,9 @@ impl Tool for System {
         !self.mon.lock_ok().ready
     }
     fn widget_ui(&mut self, widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
+        if widget == "overview" {
+            return ui::overview(&self.mon, ui, rect, cx);
+        }
         ui::widget(&self.mon, widget, size, ui, rect, cx);
     }
     fn has_page(&self) -> bool {

@@ -312,3 +312,40 @@ fn cap_first(s: &str) -> String {
     }
 }
 
+
+/// The one Monitor widget (2:4): the Mac's main readings in one card, so
+/// a person who picks "Watch my Mac" gets one widget, not seven. Four rings
+/// across (W2 ring, the reading's level colour), the value and name under
+/// each; the live download speed on the right of the title.
+pub fn overview(mon: &monitor::Shared, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    let s = mon.lock_ok().clone();
+    let wid = ui.scope_id().with("overview");
+    let resp = tile::card(ui, r, wid, false);
+    let p = ui.painter().clone();
+    let ms: Vec<Metric> = ["cpu", "memory", "storage", "battery"].iter().filter_map(|id| metric(&s, id)).collect();
+    // the panel's title line already names the Mac
+    let net = format!("↓ {}", human_rate(s.net_down));
+    let body = tile::head(&p, r, Icon::Pulse, tint::HEALTH(), ts!("health.widget.overview.title"), &net);
+    let cw = body.width() / ms.len().max(1) as f32;
+    let rr = 24.0;
+    // ring, value and name sit in the middle of the body, not at its top
+    let block = 2.0 * rr + 8.0 + line_h(&p, &ty::title()) + 2.0 + line_h(&p, &ty::caption());
+    let top = body.top() + ((body.height() - block) / 2.0).max(0.0);
+    for (k, m) in ms.iter().enumerate() {
+        let x = body.left() + cw * (k as f32 + 0.5);
+        let c = Pos2::new(x, top + rr);
+        let (f, col) = m.bar.unwrap_or((1.0, tint::HEALTH()));
+        tile::ring(&p, c, rr - 2.5, 5.0, f, col);
+        icon(&p, m.glyph, Rect::from_center_size(c, egui::Vec2::splat(18.0)), TEXT_SOFT());
+        let vr = text_fit(&p, Pos2::new(x, c.y + rr + 8.0), Align2::CENTER_TOP, &m.value(), ty::title(), TEXT(), cw - 6.0);
+        text_fit(&p, Pos2::new(x, vr.bottom() + 2.0), Align2::CENTER_TOP, &short_label(&m.label), ty::caption(), ty::caption_color(), cw - 6.0);
+    }
+    if resp.clicked() {
+        cx.open_page(ID, "");
+    }
+}
+
+/// "Macintosh HD" reads as Storage in a list of readings.
+fn short_label(l: &str) -> String {
+    if l == ts!("health.macintosh_hd") { ts!("health.widget.storage.title").to_string() } else { l.to_string() }
+}

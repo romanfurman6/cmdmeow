@@ -295,6 +295,10 @@
   },
   "health": {
     "widget": {
+      "overview": {
+        "title": "Monitor",
+        "about": "CPU, memory, storage and battery in one card"
+      },
       "storage": {
         "title": "Storage",
         "about": "Free space on your startup disk"
