@@ -10,4 +10,5 @@ pub mod settings;
 pub mod shell;
 pub mod tool;
 pub mod updated;
+pub mod whats_new;
 pub mod window;
