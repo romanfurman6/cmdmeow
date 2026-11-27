@@ -687,8 +687,7 @@ fn welcome(app: &mut App, ui: &mut Ui, body: Rect, t: f32, seen: bool) -> (bool,
         welcome_egui(&p, &scene, t);
     }
     let name = p.text(Pos2::new(c.x, c.y + ring + chip + 40.0), Align2::CENTER_TOP, "Cmd+Meow", bold(title), TEXT());
-    let line = p.text(Pos2::new(c.x, name.bottom() + sp::S), Align2::CENTER_TOP, t!("setup.tagline", n = app.tools.len()), font(16.0), TEXT_FAINT());
-    let r = Rect::from_min_size(Pos2::new(c.x - button.x / 2.0, line.bottom() + 36.0), button);
+    let r = Rect::from_min_size(Pos2::new(c.x - button.x / 2.0, name.bottom() + 36.0), button);
     (pill_button(ui, r, ts!("setup.set_up"), BTN_PRIMARY, true).clicked(), native)
 }
 
