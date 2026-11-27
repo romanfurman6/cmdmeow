@@ -588,11 +588,11 @@ mod tests {
         };
         let (t, d) = part.summary();
         assert!(t.starts_with("3 of 5 apps moved"), "{t}");
-        assert_eq!(d.as_deref(), Some("D and E stayed"));
+        assert_eq!(d.as_deref(), Some("D and E not removed"));
         // the app stayed, only its files went
         let one = Report { moved: vec![mv("/Users/a/Library/Caches/x", 5)], failed: vec![("/Applications/A.app".into(), "Password not given".into())], names: names(&["A"]), apps: names(&["A"]), kept: names(&["A"]), ..Default::default() };
         let (t, d) = one.summary();
-        assert!(t.starts_with("A stayed · "), "{t}");
+        assert!(t.starts_with("A not removed · "), "{t}");
         assert_eq!(d.as_deref(), Some("Password not given"));
     }
 

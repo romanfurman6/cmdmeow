@@ -204,7 +204,7 @@ fn stopped_page(app: &App, ui: &mut Ui, content: Rect, cx: &mut Cx) {
     let p = ui.painter().clone();
     let t = &app.tools[app.page];
     let title = t!("app.stopped", name = t.name()).into_owned();
-    let what = t!("app.stopped_why", name = t.name()).into_owned();
+    let what = ts!("app.stopped_why").to_string();
     let text_w = (content.width() - 2.0 * sp::PAGE_EDGE).min(380.0);
     let mut job = egui::text::LayoutJob::default();
     job.append(&what, 0.0, egui::TextFormat { font_id: ty::body(), color: TEXT_DIM(), line_height: Some(20.0), ..Default::default() });

@@ -1087,7 +1087,7 @@ mod tests {
         d.trying = true;
         working(&mut d);
         d.on_heard(Heard { job: d.next_job, text: Ok(String::new()) });
-        assert_eq!(d.try_note.as_deref(), Some("Didn't catch that"));
+        assert_eq!(d.try_note.as_deref(), Some("No speech found"));
         assert!(matches!(d.phase, Phase::Idle));
     }
 
