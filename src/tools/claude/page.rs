@@ -27,8 +27,10 @@ const LIMIT_H: f32 = 2.0 * sp::L + 16.0 + sp::S + 28.0 + 6.0 + 14.0;
 /// Two limit cards side by side: 16, title 16, 8, hero 28, 14, bar 8, 10,
 /// caption 14, 16.
 const LIMIT_V_H: f32 = 2.0 * sp::L + 16.0 + sp::S + 28.0 + 14.0 + 8.0 + 10.0 + 14.0;
-/// The "This week" card: 16, head 16, 14, bars 96, 6, day labels 14, 16.
-const WEEK_H: f32 = 2.0 * sp::L + 16.0 + 14.0 + 96.0 + 6.0 + 14.0;
+/// The "This week" card (SP25): 16, head 16, 16, plot 150, 8, day labels 14, 16.
+const WEEK_H: f32 = 2.0 * sp::L + 16.0 + sp::L + 150.0 + 8.0 + 14.0;
+/// The right gutter of the week chart, for "100%" and "50%".
+const WEEK_GUTTER: f32 = 40.0;
 /// A provider's section row (glyph 16, name, plan).
 const SECTION_H: f32 = 20.0;
 /// A one-line card in a section (checking, signed out, an error).
@@ -617,6 +619,8 @@ fn limit_view(l: &Limit) -> LimitView {
     let left = left_of(l);
     let (cap, cap_col) = if idle(l) {
         (ts!("ai.not_started").to_string(), TEXT_DIM())
+    } else if let Some(wc) = parts::week_word(l) {
+        wc
     } else if let Some(at) = out {
         (t!("ai.runs_out", when = ai::alerts::when(at, now)).into_owned(), RED())
     } else if let Some(at) = l.resets_at {
@@ -719,41 +723,119 @@ fn week_days(info: &UsageInfo, l: &Limit) -> Option<(i64, WeekDays)> {
 /// The 7 days of a weekly window and what each took (`None`: still to come).
 type WeekDays = Vec<(NaiveDate, Option<f32>)>;
 
-/// "This week": a bar per day since the weekly reset, how much of the
-/// limit it took, and a dashed line at even use (a seventh a day).
+/// "This week" (SP25): a burn-up of the weekly limit since its reset. x is
+/// the window's 7 days, y 0–100% of the limit; the used line steps day by
+/// day to a dot at now, a dashed diagonal is even use, and a dotted
+/// forecast runs to the reset at the current rate (red to the run-out time
+/// when it crosses 100%). Hover a day: what it took and the total so far.
 fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
     use chrono::TimeZone;
     let p = ui.painter().clone();
     data_card(&p, cr);
     let i = cr.shrink(sp::L);
     let Some((start, days)) = week_days(info, l) else { return };
-    let since = chrono::Local.timestamp_opt(start, 0).single().map(|t| t.format("%a %H:%M").to_string()).unwrap_or_default();
+    let len = if l.window_secs > 0 { l.window_secs } else { 7 * 86_400 };
+    let end = start + len;
+    let now = parts::now().clamp(start, end);
+    let local = |t: i64| chrono::Local.timestamp_opt(t, 0).single();
+    let since = local(start).map(|t| crate::kit::date::then(crate::kit::date::wd(&t), &t.format("%H:%M").to_string())).unwrap_or_default();
     p.text(i.left_top(), Align2::LEFT_TOP, ts!("ai.this_week"), ty::title(), TEXT());
-    p.text(i.right_top(), Align2::RIGHT_TOP, t!("ai.week_used", pct = l.pct : {:.0}, since = since), ty::label(), TEXT_DIM());
-    let area = Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + 14.0), Pos2::new(i.right(), i.bottom() - 14.0 - 6.0));
-    let even = 100.0 / 7.0;
-    let top = days.iter().filter_map(|d| d.1).fold(even, f32::max) * 1.1;
-    let gap = 10.0;
-    let w = (area.width() - 6.0 * gap) / 7.0;
-    for (k, (d, v)) in days.iter().enumerate() {
-        let x = area.left() + k as f32 * (w + gap);
-        let (h, col) = match v {
-            Some(v) => ((area.height() * v / top).max(4.0), tint::CLAUDE()),
-            None => (4.0, white(20)),
-        };
-        p.rect_filled(Rect::from_min_max(Pos2::new(x, area.bottom() - h), Pos2::new(x + w, area.bottom())), egui::CornerRadius { nw: 4, ne: 4, sw: 2, se: 2 }, col);
-        let label = match v {
-            Some(v) => format!("{} · {:.0}%", d.format("%a"), v),
-            None => d.format("%a").to_string(),
-        };
-        text_fit(&p, Pos2::new(x + w / 2.0, area.bottom() + 6.0), Align2::CENTER_TOP, &label, ty::label(), TEXT_FAINT(), w);
+    p.text(i.right_top(), Align2::RIGHT_TOP, t!("ai.week_since", when = since), ty::label(), TEXT_DIM());
+    let plot = Rect::from_min_max(Pos2::new(i.left(), i.top() + 16.0 + sp::L), Pos2::new(i.right() - WEEK_GUTTER, i.bottom() - 8.0 - 14.0));
+    let x = |t: i64| plot.left() + plot.width() * ((t - start) as f32 / len as f32).clamp(0.0, 1.0);
+    let y = |v: f32| plot.bottom() - plot.height() * (v / 100.0).clamp(0.0, 1.0);
+    let ink = |a: f32| with_alpha(TEXT(), a);
+    // scale: 100% hairline, a faint 50%, the base
+    p.line_segment([Pos2::new(plot.left(), y(50.0)), Pos2::new(plot.right(), y(50.0))], Stroke::new(1.0, ink(0.07)));
+    p.line_segment([Pos2::new(plot.left(), y(100.0)), Pos2::new(plot.right(), y(100.0))], Stroke::new(1.0, ink(0.3)));
+    p.line_segment([Pos2::new(plot.left(), plot.bottom()), Pos2::new(plot.right(), plot.bottom())], Stroke::new(1.0, ink(0.12)));
+    p.text(Pos2::new(i.right(), y(100.0)), Align2::RIGHT_CENTER, "100%", ty::caption(), TEXT_FAINT());
+    p.text(Pos2::new(i.right(), y(50.0)), Align2::RIGHT_CENTER, "50%", ty::caption(), ink(0.4));
+    // each day's span in the window, its share and the total by its end
+    let today = chrono::Local::now().date_naive();
+    let midnight = |d: NaiveDate| d.and_hms_opt(0, 0, 0).and_then(|t| chrono::Local.from_local_datetime(&t).earliest()).map_or(start, |t| t.timestamp());
+    let mut cols = Vec::new();
+    let mut total = 0.0;
+    for (d, v) in &days {
+        let a = midnight(*d).max(start);
+        let b = midnight(*d + chrono::Days::new(1)).min(end);
+        total += v.unwrap_or(0.0);
+        cols.push((*d, a, b, *v, total));
     }
-    // even use: a seventh of the limit a day
-    let ey = area.bottom() - area.height() * even / top;
-    let mut x = area.left();
-    while x < area.right() {
-        p.line_segment([Pos2::new(x, ey), Pos2::new((x + 4.0).min(area.right()), ey)], Stroke::new(1.5, with_alpha(TEXT(), 0.5)));
-        x += 8.0;
+    for (_, a, _, _, _) in cols.iter().skip(1) {
+        p.line_segment([Pos2::new(x(*a), y(100.0)), Pos2::new(x(*a), plot.bottom())], Stroke::new(1.0, ink(0.05)));
+    }
+    // the day under the pointer
+    let resp = ui.interact(plot, ui.scope_id().with("ai-week"), Sense::hover());
+    let hover = resp.hover_pos().and_then(|q| cols.iter().find(|c| q.x >= x(c.1) && q.x < x(c.2) && c.3.is_some()));
+    if let Some((_, a, b, _, _)) = hover {
+        p.rect_filled(Rect::from_min_max(Pos2::new(x(*a), y(100.0)), Pos2::new(x(*b), plot.bottom())), 6.0, ink(0.04));
+    }
+    for (d, a, b, v, _) in &cols {
+        let (font, col) = if *d == today {
+            (bold(12.0), TEXT())
+        } else if v.is_none() {
+            (ty::label(), ink(0.35))
+        } else {
+            (ty::label(), TEXT_FAINT())
+        };
+        text_fit(&p, Pos2::new((x(*a) + x(*b)) / 2.0, plot.bottom() + 8.0), Align2::CENTER_TOP, crate::kit::date::wd(d), font, col, x(*b) - x(*a));
+    }
+    // even use: 0 at the reset to 100% at the next
+    p.extend(Shape::dashed_line(&[Pos2::new(plot.left(), plot.bottom()), Pos2::new(plot.right(), y(100.0))], Stroke::new(1.5, ink(0.4)), 4.0, 4.0));
+    // used: the total at each past midnight, then now
+    let mut pts = vec![Pos2::new(x(start), y(0.0))];
+    for (d, _, b, _, sum) in &cols {
+        if *d < today && *b <= now {
+            pts.push(Pos2::new(x(*b), y(*sum)));
+        }
+    }
+    let used = l.pct.clamp(0.0, 100.0);
+    let at = Pos2::new(x(now), y(used));
+    pts.push(at);
+    let mut mesh = egui::Mesh::default();
+    let fill = with_alpha(tint::CLAUDE(), 0.16);
+    for w in pts.windows(2) {
+        let base = mesh.vertices.len() as u32;
+        for q in [w[0], w[1], Pos2::new(w[1].x, plot.bottom()), Pos2::new(w[0].x, plot.bottom())] {
+            mesh.colored_vertex(q, fill);
+        }
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base, base + 2, base + 3);
+    }
+    p.add(Shape::mesh(mesh));
+    p.add(Shape::line(pts, Stroke::new(2.0, tint::CLAUDE())));
+    // forecast at the current rate, once there's a rate to tell
+    if let Some(pc) = pace::of(l.pct, start, end, now) {
+        if let Some(out) = pc.out_at.filter(|o| *o > now) {
+            let o = Pos2::new(x(out), y(100.0));
+            p.extend(Shape::dashed_line(&[at, o], Stroke::new(1.5, RED()), 2.0, 3.0));
+            p.circle_filled(o, 3.5, RED());
+            p.text(Pos2::new(o.x, o.y + 6.0), Align2::CENTER_TOP, ai::alerts::when(out, parts::now()), bold(12.0), RED());
+        } else if pc.out_at.is_none() && l.pct > 0.0 && (now - start) as f32 >= len as f32 * 0.03 {
+            let at_end = l.pct * len as f32 / (now - start) as f32;
+            let e = Pos2::new(plot.right(), y(at_end));
+            p.extend(Shape::dashed_line(&[at, e], Stroke::new(1.5, with_alpha(tint::CLAUDE(), 0.7)), 2.0, 3.0));
+            p.text(Pos2::new(e.x - 4.0, e.y - 6.0), Align2::RIGHT_BOTTOM, format!("{at_end:.0}%"), ty::label(), TEXT_FAINT());
+        }
+    }
+    p.circle(at, 4.5, tint::CLAUDE(), Stroke::new(2.0, BG()));
+    p.text(Pos2::new(at.x - 8.0, at.y - 7.0), Align2::RIGHT_BOTTOM, format!("{used:.0}%"), bold(13.0), TEXT());
+    // hover: the day's share and the total by its end
+    if let Some((d, _, _, Some(v), sum)) = hover {
+        let mut tip = egui::Tooltip::for_enabled(&resp);
+        tip.popup = tip.popup.align(egui::RectAlign::TOP).gap(6.0);
+        let (d, v, sum) = (*d, *v, *sum);
+        tip.show(|ui| {
+            use egui::RichText;
+            egui::Grid::new("ai-week-tip").num_columns(2).spacing([sp::M, 6.0]).show(ui, |ui| {
+                for (k, val) in [(crate::kit::date::wd(&d), format!("{v:.0}%")), (ts!("ai.total"), format!("{sum:.0}%"))] {
+                    ui.label(RichText::new(k).font(ty::label()).color(TEXT_DIM()));
+                    ui.label(RichText::new(val).font(ty::label()).color(TEXT()));
+                    ui.end_row();
+                }
+            });
+        });
     }
 }
 

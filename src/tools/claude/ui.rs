@@ -53,12 +53,15 @@ fn value(l: Option<&Limit>) -> (String, Color32) {
     }
 }
 
-/// "Full at 18:04", red "Runs out 16:10", "Not started", or the status.
+/// "Full at 18:04", red "Runs out 16:10", "Not started", the weekly
+/// "~15% left at reset" (SP22), or the status.
 fn caption(i: &UsageInfo, l: Option<&Limit>) -> (String, Color32) {
     let Some(l) = l else { return (status(i), ty::caption_color()) };
     let reset = parts::reset_when(l);
     if l.pct <= 0.0 && reset.is_empty() {
         (ts!("ai.not_started").into(), ty::caption_color())
+    } else if let Some(wc) = parts::week_word(l) {
+        wc
     } else if let Some(at) = out_at(l) {
         (t!("ai.runs_out", when = alerts::when(at, parts::now())).into_owned(), RED())
     } else if !reset.is_empty() {
