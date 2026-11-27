@@ -966,6 +966,7 @@
     "finished": "Finished",
     "cleanup_finished": "Cleanup finished",
     "cleanup_stopped": "Cleanup stopped",
+    "stopped": "Stopped",
     "n_of": "%{n} of %{items}",
     "freed": "freed",
     "to_trash": "to the Trash",
