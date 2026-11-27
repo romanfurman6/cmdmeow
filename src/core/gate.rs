@@ -56,7 +56,6 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     use crate::kit::empty::{self, Lead, HERO_H, TILE};
     let now = ui.ctx().input(|i| i.time);
     let p = ui.painter().clone();
-    let tool_id = app.tools[i].id();
     let (name, tint, needs) = {
         let t = &app.tools[i];
         let needs: Vec<_> = t.needs().into_iter().filter(|n| !matches!(n.perm, Perm::Own { .. })).collect();
@@ -70,10 +69,7 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     let chips: Vec<Perm> = needs.iter().filter(|n| n.optional || required > 1).map(|n| n.perm).collect();
     // the block is centred in the body: tile, name, why, button, chips
     let body = Rect::from_min_max(Pos2::new(content.left(), content.top() + PAGE_HEADER_H), content.max);
-    // optional ones say what they add, under an "Optional" title
-    let any_opt = needs.iter().any(|n| n.optional);
-    let opt_h = if any_opt { 14.0 + sp::S } else { 0.0 };
-    let chips_h = if chips.is_empty() { 0.0 } else { sp::L + opt_h + 34.0 };
+    let chips_h = if chips.is_empty() { 0.0 } else { sp::L + 34.0 };
     let h = TILE.y + sp::XL + 20.0 + sp::M + 16.0 + sp::XL + HERO_H + chips_h;
     let top = body.center().y - h / 2.0 - PAGE_HEADER_H / 2.0;
     let cx = body.center().x;
@@ -111,16 +107,12 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
         }
     }
     if !chips.is_empty() {
-        if any_opt {
-            p.text(Pos2::new(cx, y + HERO_H / 2.0 + sp::L), Align2::CENTER_TOP, ts!("setup.optional"), ty::section(), white(150));
-        }
-        let cy = y + HERO_H / 2.0 + sp::L + opt_h + 17.0;
-        let label = |perm: Perm| chip_label(tool_id, perm);
-        let ws: Vec<f32> = chips.iter().map(|c| empty::side_width(&p, label(*c), None)).collect();
+        let cy = y + HERO_H / 2.0 + sp::L + 17.0;
+        let ws: Vec<f32> = chips.iter().map(|c| empty::side_width(&p, c.name(), None)).collect();
         let mut x = cx - (ws.iter().sum::<f32>() + sp::S * (ws.len() - 1) as f32) / 2.0;
         for (&perm, w) in chips.iter().zip(ws) {
             let done = ok(app, perm);
-            let (r, _) = empty::side_button(ui, Pos2::new(x, cy), id.with(("chip", perm.name())), label(perm), None, true, |p, g| {
+            let (r, _) = empty::side_button(ui, Pos2::new(x, cy), id.with(("chip", perm.name())), perm.name(), None, true, |p, g| {
                 if done {
                     icon(p, Icon::Check, g, GREEN());
                 } else {
@@ -138,14 +130,3 @@ pub fn perm_page(app: &mut App, ui: &mut Ui, content: Rect, i: usize) {
     }
 }
 
-
-/// A permission chip's label on tool `tool`'s lock screen: what it adds
-/// there when that's not plain from its name.
-fn chip_label(tool: &str, perm: Perm) -> &'static str {
-    use crate::tools::capture;
-    match (tool, perm) {
-        (capture::ID | capture::VIDEO_ID, Perm::Microphone) => ts!("setup.why_rec_voice"),
-        (capture::ID | capture::VIDEO_ID, Perm::Camera) => ts!("setup.why_rec_camera"),
-        _ => perm.name(),
-    }
-}

@@ -3627,7 +3627,7 @@ fn draw_dots(p: &egui::Painter, full: Rect, kinds: &[Kind], from: usize, step: u
                     let seg = 10.0;
                     let bw = fs.len() as f32 * seg + (fs.len() as f32 - 1.0) * 2.0;
                     let bx = gx - bw / 2.0;
-                    p.rect_filled(Rect::from_min_size(Pos2::new(bx - 2.0, y - 5.0), Vec2::new(bw + 4.0, 10.0)), 5.0, pick(Color32::from_gray(250), Color32::from_rgb(20, 16, 40)));
+                    p.rect_filled(Rect::from_min_size(Pos2::new(bx - 2.0, y - 5.0), Vec2::new(bw + 4.0, 10.0)), 5.0, pick(Color32::from_rgb(20, 16, 40), Color32::from_gray(250)));
                     for (n, _) in fs.iter().enumerate() {
                         let r = Rect::from_min_size(Pos2::new(bx + n as f32 * (seg + 2.0), y - 3.0), Vec2::new(seg, 6.0));
                         p.rect_filled(r, 3.0, if n <= cur { ACTION() } else { pick(white(46), white(72)) });
