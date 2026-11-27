@@ -844,9 +844,9 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
     p.text(Pos2::new(at.x - 8.0, at.y - 7.0), Align2::RIGHT_BOTTOM, format!("{used:.0}%"), bold(13.0), TEXT());
     // hover: the day's share and the total by its end
     if let Some(((d, _, _, Some(v), sum), resp)) = hover {
-        // beside the day, inside the card: never over the cards above
+        // beside the day, its bottom on the plot's base: never over the day labels
         let mut tip = egui::Tooltip::for_enabled(&resp);
-        tip.popup = tip.popup.align(egui::RectAlign::RIGHT).align_alternatives(&[egui::RectAlign::LEFT]).gap(6.0);
+        tip.popup = tip.popup.align(egui::RectAlign::RIGHT_END).align_alternatives(&[egui::RectAlign::LEFT_END]).gap(6.0);
         let (d, v, sum) = (*d, *v, *sum);
         tip.show(|ui| day_tip(ui, info, d, v, sum));
     }
@@ -857,7 +857,7 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
 /// Painted at a fixed width so the popover fits its content, not the window.
 fn day_tip(ui: &mut Ui, info: &UsageInfo, d: NaiveDate, used: f32, week: f32) {
     const W: f32 = 208.0;
-    const ROW: f32 = 18.0;
+    const ROW: f32 = 16.0;
     let day = info.local.days.iter().find(|x| x.date == d);
     let rec = info.local.archive.iter().find(|x| x.date == d);
     let tokens = day.map(|x| x.tokens).or(rec.map(|x| x.tokens)).unwrap_or(0);
