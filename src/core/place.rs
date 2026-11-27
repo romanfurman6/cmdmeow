@@ -182,7 +182,7 @@ fn mini(app: &mut App, ui: &mut Ui, r: Rect, place: Place, a: f32, k: usize) {
     ctx.set_transform_layer(layer, to);
     let local = Rect::from_min_size(Pos2::ZERO, Vec2::new(pw, full_h));
     let mut child = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(local).disabled());
-    child.set_clip_rect(to.inverse() * clip);
+    child.set_clip_rect(to.inverse().mul_rect(clip));
     child.set_opacity(a);
     let was = glass::theme();
     if place.notch() {
