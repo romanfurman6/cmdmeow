@@ -250,6 +250,8 @@ Approved by Roman 2026-11-17 (widget review canvas https://claude.ai/artifact/Gd
 | W11 | Empty. Header and buttons stay. Instead of data one centred line 12 TEXT_FAINT with icon: "No screenshots yet". No dashed frame. Action as ACCENT link: Resume, Connect. |
 | W12 | Hover. Only the whole card hovers (CARD → RAISED 50%). Nothing inside a widget highlights: no list rows, actions, segments or links. Every clickable shows the pointer cursor; bars, graphs and captions don't. Inner press feedback: the pressed action or row dims icon and label to 50% and drops 1 pt while held, no fill (B7/B10 exception for widgets). Pages and menus keep H1, H2, B8. |
 | W13 | AI Usage widgets: no ring. "% left" over a 4 bar of what is left; no even-pace tick (the tick lives on the page card, SP22). Small, half and wide show the first provider in the user's order (H10), named with its mark; tall 2×2 shows enabled providers in that order, up to 3. |
+| W14 | **Monitor** (Mac Health, 2:4 only). Header `tile::head` "Monitor" (the panel title line already names the Mac), right note the live download speed "↓ 20 KB/s". Body: 4 equal columns, CPU · Memory · Storage · Battery; each a ring r24, stroke 5 (the W2 ring, the reading's level colour) with its glyph 18 inside, then the value 13/600 and the name as a caption. Storage's ring shows used, its value free (as Storage 1:1). A click anywhere opens Mac Health (⏳ code). |
+| W15 | **Defaults.** A fresh install shows only Monitor (W14) for Mac Health; Storage, Memory, CPU, Battery, Network, Devices and Startup are off by default and wait in the gallery, so onboarding "Watch my Mac" adds 1 widget. A new widget of a tool the user has already arranged starts hidden in the gallery, never as a duplicate on the panel (⏳ code). |
 
 ## 12. Writing text ✅
 
@@ -485,3 +487,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-27: SP25 day hover shipped (✅, code in #450).
 
 2026-11-27, Roman: TH15 Dock icon follows the theme (canvas https://claude.ai/artifact/B7RVnaSUGL6BKVxQmBukyp, option A); TH10 drops "the app icon stays lime".
+
+2026-11-27, Roman: W14 Monitor widget and W15 widget defaults (canvas https://claude.ai/artifact/T47QsQUYGajsdkea2VsJjd, variant A).
