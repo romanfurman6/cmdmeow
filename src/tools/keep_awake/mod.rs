@@ -264,7 +264,7 @@ impl Tool for KeepAwake {
         ts!("awake.about")
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: ts!("awake.name"), about: ts!("awake.widget_about"), sizes: &[Size::S11, Size::S12], size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("awake.name"), about: ts!("awake.widget_about"), sizes: &[Size::S05, Size::S11, Size::S12], size: Size::S12, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);

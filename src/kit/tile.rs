@@ -170,6 +170,30 @@ pub fn small(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32,
     resp
 }
 
+/// Button (0.5:1): one action, the glyph (14) and its name (12/600) side by
+/// side in the middle; the tint goes on both (Clean lime, Record red). The
+/// shortcut belongs in the caller's hover text.
+pub fn button(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32, label: &str) -> Response {
+    button_with(ui, rect, id, color, label, |p, r, c| icon(p, glyph, r, c))
+}
+
+/// [`button`] with a glyph the caller draws in the 14 pt square it's given.
+pub fn button_with(ui: &mut Ui, rect: Rect, id: egui::Id, color: Color32, label: &str, glyph: impl FnOnce(&egui::Painter, Rect, Color32)) -> Response {
+    let resp = card(ui, rect, id, false);
+    let p = ui.painter();
+    let gs = 14.0;
+    let gap = 6.0;
+    let room = rect.width() - 2.0 * 8.0 - gs - gap;
+    // a long name steps down to 11 before it's cut
+    let fid = [12.0, 11.0].into_iter().map(bold).find(|f| p.layout_no_wrap(label.to_string(), f.clone(), TEXT()).size().x <= room).unwrap_or_else(|| bold(11.0));
+    let tw = p.layout_no_wrap(label.to_string(), fid.clone(), TEXT()).size().x.min(room);
+    let x0 = rect.center().x - (gs + gap + tw) / 2.0;
+    let col = if color == TEXT() { TEXT() } else { lift(color) };
+    glyph(p, Rect::from_min_size(Pos2::new(x0, rect.center().y - gs / 2.0), Vec2::splat(gs)), col);
+    text_fit(p, Pos2::new(x0 + gs + gap, rect.center().y), Align2::LEFT_CENTER, label, fid, col, room);
+    resp
+}
+
 /// Side padding of a Small widget: "Screenshot" fits at 12 without shrinking.
 pub const SMALL_SIDE: f32 = 10.0;
 

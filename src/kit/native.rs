@@ -793,8 +793,8 @@ pub fn show_in_dock() -> bool {
 }
 
 pub fn set_show_in_dock(on: bool) {
-    // never both off: the app would have no way back in
-    let on = on || !show_in_menu_bar();
+    // never both off: the app would have no way back in (the notch island is one)
+    let on = on || !(show_in_menu_bar() || NOTCH_WAY.load(std::sync::atomic::Ordering::Relaxed));
     SHOW_IN_DOCK.store(on, std::sync::atomic::Ordering::Relaxed);
     let wanted = DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed);
     set_dock_icon(wanted);
@@ -815,8 +815,18 @@ pub fn show_in_menu_bar() -> bool {
 }
 
 pub fn set_show_in_menu_bar(on: bool) {
+    set_show_in_menu_bar_for(on, NOTCH_WAY.load(std::sync::atomic::Ordering::Relaxed));
+}
+
+/// The notch island is a way into the app (core::place): with it the Dock
+/// icon can go even when the menu bar icon is hidden.
+static NOTCH_WAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// [`set_show_in_menu_bar`], saying whether the notch island is another way in.
+pub fn set_show_in_menu_bar_for(on: bool, notch: bool) {
     SHOW_IN_MENU_BAR.store(on, std::sync::atomic::Ordering::Relaxed);
-    if !on {
+    NOTCH_WAY.store(notch, std::sync::atomic::Ordering::Relaxed);
+    if !on && !notch {
         SHOW_IN_DOCK.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     set_dock_icon(DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed));

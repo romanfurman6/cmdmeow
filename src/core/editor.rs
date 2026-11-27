@@ -816,18 +816,30 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     // off: a menu bar app only, no Dock icon even with this window open
     p.text(Pos2::new(r1.left() + 16.0, r1.center().y), Align2::LEFT_CENTER, ts!("app.show_dock"), font(13.0), TEXT());
     // with no menu bar icon the Dock is the only way back in: locked on
-    let bar = crate::kit::native::show_in_menu_bar() || app.demo;
+    let bar = crate::kit::native::show_in_menu_bar() || super::place::get().notch() || app.demo;
     let on = crate::kit::native::show_in_dock() || app.demo;
     if switch(ui, sw_in(r1), ui.scope_id().with("show-in-dock"), on, bar).clicked() && !app.demo {
         crate::kit::native::set_show_in_dock(!on);
     }
-    // off: no menu bar icon (it still shows the recording clock)
+    // where CmdMeow lives: its menu bar icon, the notch island, or both
+    // (without the icon it still shows the recording clock)
     let rb = row(2);
     hairline(&p, Pos2::new(rb.left() + 16.0, rb.top()), Pos2::new(rb.right() - 16.0, rb.top()));
-    p.text(Pos2::new(rb.left() + 16.0, rb.center().y), Align2::LEFT_CENTER, ts!("app.show_menu_bar"), font(13.0), TEXT());
-    if switch(ui, sw_in(rb), ui.scope_id().with("show-in-menu-bar"), bar, on).clicked() && !app.demo {
-        crate::kit::native::set_show_in_menu_bar(!bar);
+    p.text(Pos2::new(rb.left() + 16.0, rb.center().y), Align2::LEFT_CENTER, ts!("app.place.title"), font(13.0), TEXT());
+    {
+        use super::place::{self, Place};
+        let cur = if app.demo { Place::Menubar } else { place::get() };
+        let labels = Place::ALL.map(|c| c.label());
+        let seg_w = 300.0f32.min(w - 200.0);
+        let seg = Rect::from_min_size(Pos2::new(rb.right() - 12.0 - seg_w, rb.center().y - sp::CONTROL_H / 2.0), Vec2::new(seg_w, sp::CONTROL_H));
+        let sel = Place::ALL.iter().position(|c| *c == cur).unwrap_or(0);
+        if let Some(i) = segmented(ui, seg, ui.scope_id().with("place"), &labels, sel) {
+            if !app.demo {
+                place::set(Place::ALL[i]);
+            }
+        }
     }
+    let _ = on;
     let r2 = row(3);
     hairline(&p, Pos2::new(r2.left() + 16.0, r2.top()), Pos2::new(r2.right() - 16.0, r2.top()));
     p.text(Pos2::new(r2.left() + 16.0, r2.center().y), Align2::LEFT_CENTER, ts!("app.sounds"), font(13.0), TEXT());

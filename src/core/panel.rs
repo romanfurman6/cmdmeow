@@ -59,7 +59,12 @@ pub fn cell(width: f32) -> f32 {
 pub fn size_px(size: Size, width: f32) -> Vec2 {
     let c = cell(width);
     let (r, k) = size.dims();
-    Vec2::new(k as f32 * c + (k as f32 - 1.0) * GAP, r as f32 * c + (r as f32 - 1.0) * GAP)
+    let w = k as f32 * c + (k as f32 - 1.0) * GAP;
+    if r == 0 {
+        // the Button: two of them, a gap between, take one cell's height
+        return Vec2::new(w, ((c - GAP) / 2.0).max(1.0));
+    }
+    Vec2::new(w, r as f32 * c + (r as f32 - 1.0) * GAP)
 }
 
 /// A shown widget and where it goes, relative to the grid's origin.
@@ -356,7 +361,7 @@ fn widgets(app: &mut App, ui: &mut Ui, origin: Rect, cx: &mut Cx) {
     }
 }
 
-/// Five size chips; sizes the widget doesn't offer are struck out. Returns
+/// One chip per size; sizes the widget doesn't offer are struck out. Returns
 /// a newly picked size.
 pub fn size_chips(ui: &mut Ui, rect: Rect, id: Id, offered: &[Size], cur: Size) -> Option<Size> {
     let p = ui.painter().clone();

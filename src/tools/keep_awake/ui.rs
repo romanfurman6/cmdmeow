@@ -231,6 +231,15 @@ pub fn widget(k: &mut KeepAwake, size: Size, ui: &mut Ui, rect: Rect, _cx: &mut 
         let st = e.state(now);
         (st, e.mode(), detail_short(&e, st, now))
     };
+    if size == Size::S05 {
+        // the Button: lit while it keeps the Mac awake; a click turns On on or off
+        let col = if mode == Mode::Off { TEXT() } else { ACCENT() };
+        if tile::button(ui, rect, id, Icon::Cup, col, ts!("awake.name")).on_hover_text(if mode == Mode::On { ts!("awake.turn_off") } else { ts!("awake.keep_awake") }).clicked() {
+            k.toggle(Via::Panel);
+        }
+        let _ = (st, line2);
+        return;
+    }
     // one action in both sizes, so the whole card presses (W1)
     let resp = tile::card(ui, rect, id, false);
     let p = ui.painter().clone();

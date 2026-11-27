@@ -17,9 +17,11 @@ pub type ToolId = &'static str;
 pub const GRID_COLUMNS: u8 = 4;
 
 /// A widget's size on the panel grid, written rows × columns: one cell is
-/// square, so `S12` is one row tall and half the panel wide.
+/// square, so `S12` is one row tall and half the panel wide. `S05` is the
+/// Button: one cell wide, half a cell tall, one action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Size {
+    S05,
     S11,
     S12,
     S14,
@@ -28,10 +30,11 @@ pub enum Size {
 }
 
 impl Size {
-    pub const ALL: [Size; 5] = [Size::S11, Size::S12, Size::S14, Size::S24, Size::S44];
-    /// (rows, columns)
+    pub const ALL: [Size; 6] = [Size::S05, Size::S11, Size::S12, Size::S14, Size::S24, Size::S44];
+    /// (rows, columns); the Button's 0 rows mean half a row.
     pub fn dims(self) -> (u8, u8) {
         match self {
+            Size::S05 => (0, 1),
             Size::S11 => (1, 1),
             Size::S12 => (1, 2),
             Size::S14 => (1, 4),
@@ -45,6 +48,7 @@ impl Size {
     /// "1:2", also the saved form.
     pub fn label(self) -> &'static str {
         match self {
+            Size::S05 => "0.5:1",
             Size::S11 => "1:1",
             Size::S12 => "1:2",
             Size::S14 => "1:4",
@@ -54,6 +58,7 @@ impl Size {
     }
     pub fn name(self) -> &'static str {
         match self {
+            Size::S05 => ts!("app.size_button"),
             Size::S11 => ts!("app.size_small"),
             Size::S12 => ts!("app.size_wide"),
             Size::S14 => ts!("app.size_row"),
@@ -98,6 +103,8 @@ impl WidgetSpec {
 
 /// Every size but Large.
 pub const UP_TO_MEDIUM: &[Size] = &[Size::S11, Size::S12, Size::S14, Size::S24];
+/// The Button and every size but Large: action widgets.
+pub const BUTTON_UP_TO_MEDIUM: &[Size] = &[Size::S05, Size::S11, Size::S12, Size::S14, Size::S24];
 
 /// What a tool needs to start: the egui context (for repaints from its
 /// background threads) and whether it should show sample data.
@@ -176,6 +183,13 @@ impl Cx {
     }
     pub fn push(&mut self, a: Action) {
         self.actions.push(a);
+    }
+    /// How many actions are queued.
+    pub fn len(&self) -> usize {
+        self.actions.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.actions.is_empty()
     }
     pub fn take_actions(&mut self) -> Vec<Action> {
         std::mem::take(&mut self.actions)

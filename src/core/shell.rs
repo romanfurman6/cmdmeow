@@ -199,6 +199,10 @@ impl App {
         super::panel::set_keep_open(!demo && cc.storage.and_then(|s| eframe::get_value(s, super::panel::KEEP_OPEN_KEY)).unwrap_or(false));
         crate::kit::native::set_show_in_menu_bar(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_MENU_BAR_KEY)).unwrap_or(true));
         crate::kit::native::set_show_in_dock(demo || cc.storage.and_then(|s| eframe::get_value(s, crate::kit::native::SHOW_IN_DOCK_KEY)).unwrap_or(true));
+        // where CmdMeow lives; an older install without it keeps its menu bar switch
+        if let Some(saved) = cc.storage.and_then(|s| eframe::get_value::<String>(s, super::place::PLACE_KEY)).filter(|_| !demo) {
+            super::place::set(super::place::load(Some(saved)));
+        }
         if !demo {
             glass::set_theme_choice(cc.storage.and_then(|s| eframe::get_value(s, glass::THEME_KEY)).unwrap_or(glass::DEFAULT_THEME));
         }
@@ -401,6 +405,7 @@ impl App {
             eframe::set_value(storage, super::panel::KEEP_OPEN_KEY, &super::panel::keep_open());
             eframe::set_value(storage, crate::kit::native::SHOW_IN_DOCK_KEY, &crate::kit::native::show_in_dock());
             eframe::set_value(storage, crate::kit::native::SHOW_IN_MENU_BAR_KEY, &crate::kit::native::show_in_menu_bar());
+            eframe::set_value(storage, super::place::PLACE_KEY, &super::place::get().key().to_string());
             eframe::set_value(storage, glass::THEME_KEY, &glass::theme_choice());
             eframe::set_value(storage, crate::kit::cat::SWITCHES_KEY, &crate::kit::cat::switches());
         }
@@ -1153,7 +1158,7 @@ impl eframe::App for App {
                 ctx.request_repaint_after(DOCK_OFF_AFTER - at.elapsed());
             }
         }
-        let on_screen = self.visible || self.app_open || self.setup.is_some();
+        let on_screen = self.visible || self.app_open || self.setup.is_some() || super::notch::is_open();
         crate::kit::activity::set_visible(on_screen);
         if !on_screen {
             ctx.request_repaint_after(HIDDEN_HEARTBEAT);
@@ -1347,9 +1352,13 @@ impl eframe::App for App {
                 let _ = super::tool::guard(t.id(), || t.windows(&ctx, &mut cx));
             }
         }
+        // the notch island (Where CmdMeow lives: Notch or Both)
+        if self.screenshot.is_none() {
+            super::notch::ui(self, &ctx, &mut cx);
+        }
         self.run_actions(&ctx, &mut cx);
         self.draw_toast(ui, full);
-        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar());
+        let off_before = (self.tools_off.clone(), crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar(), super::place::get());
         if self.app_open {
             self.app_viewport(&ctx);
         } else if self.visible && self.mode == Mode::Panel && self.screenshot.is_none() {
@@ -1358,7 +1367,7 @@ impl eframe::App for App {
         if self.screenshot.is_none() {
             super::onboard::perm_helper(self, &ctx);
         }
-        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar()) != (&off_before.0, off_before.1, off_before.2, off_before.3, off_before.4, off_before.5) {
+        if (&self.tools_off, crate::kit::sound::on(), super::panel::keep_open(), glass::theme_choice(), crate::kit::native::show_in_dock(), crate::kit::native::show_in_menu_bar(), super::place::get()) != (&off_before.0, off_before.1, off_before.2, off_before.3, off_before.4, off_before.5, off_before.6) {
             if let Some(s) = frame.storage_mut() {
                 self.save_widgets(s);
             }
