@@ -2003,6 +2003,16 @@ pub(crate) fn demo_apps() -> Vec<OpenApp> {
 /// Failures listed on the Done card; "Show all" opens the log for the rest.
 const FAILED_SHOWN: usize = 3;
 
+/// "n of total" on the result card: what went of what was tried, or after
+/// Stop, what it got to (an item cut short counts) of all it set out to do.
+fn done_counts(st: &cleanup::State) -> (usize, usize) {
+    if st.stopped {
+        (st.cleaned.len(), st.clean_planned.max(st.cleaned.len()))
+    } else {
+        (st.cleaned_count, st.cleaned_count + st.failed.len())
+    }
+}
+
 fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let st = app.clean.lock_ok().clone();
@@ -2024,7 +2034,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let left_w = 340.0f32.min(body.width() * 0.4);
     let fail_w = left_w - 2.0 * sp::L;
     let fails_h: f32 = st.failed.iter().take(FAILED_SHOWN).map(|(name, err)| p.layout(name.clone(), ty::body(), TEXT(), fail_w).size().y + p.layout(err.clone(), ty::caption(), TEXT(), fail_w).size().y + sp::S).sum();
-    let left_h = 2.0 * sp::L + 44.0 + sp::L + 34.0 + sp::XS + 16.0 + sp::XL + 34.0 + if ok { 0.0 } else { 16.0 + sp::S + fails_h + if st.failed.len() > FAILED_SHOWN { 20.0 } else { 0.0 } + sp::L };
+    let left_h = 2.0 * sp::L + 44.0 + sp::L + 34.0 + sp::XS + 16.0 + sp::XL + 34.0 + if st.failed.is_empty() { 0.0 } else { 16.0 + sp::S + fails_h + if st.failed.len() > FAILED_SHOWN { 20.0 } else { 0.0 } + sp::L };
     let right_h = 2.0 * sp::L + 34.0 + sp::S + rows.len().max(1) as f32 * sp::ROW2_H;
     let h = if app.clean_log { body.height() } else { left_h.max(right_h).min(body.height()) };
     let left = Rect::from_min_size(body.min, Vec2::new(left_w, h));
@@ -2040,7 +2050,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     icon(&p, if ok { Icon::Check } else { Icon::Info }, Rect::from_center_size(c, Vec2::splat(18.0)), col);
     let tx = c.x + 22.0 + sp::M;
     // stopped: what it got to (an item cut short counts) of all it set out to do
-    let (n, total) = if st.stopped { (st.cleaned.len(), st.clean_planned.max(st.cleaned.len())) } else { (st.cleaned_count, st.cleaned_count + st.failed.len()) };
+    let (n, total) = done_counts(&st);
     let (ly1, ly2) = two_lines_y(&p, c.y, &ty::title(), &ty::caption());
     p.text(Pos2::new(tx, ly1), Align2::LEFT_CENTER, if st.stopped { ts!("cleanup.cleanup_stopped") } else { ts!("cleanup.cleanup_finished") }, ty::title(), TEXT());
     p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, t!("cleanup.n_of", n = n, items = items_n(total)), ty::caption(), ty::caption_color());
@@ -2059,7 +2069,7 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     p.text(Pos2::new(li.left() + gw + 6.0, y + 26.0), Align2::LEFT_BOTTOM, what, ty::body(), ty::caption_color());
     y += 34.0 + sp::XS;
     y += sp::L;
-    if !ok {
+    if !st.failed.is_empty() {
         let n = st.failed.len();
         p.text(Pos2::new(li.left(), y), Align2::LEFT_TOP, tn!("cleanup.failed", n = n), ty::title(), AMBER());
         y += 16.0 + sp::S;
@@ -2318,6 +2328,33 @@ mod tests {
         p.by = Who::You;
         undo(&mut p);
         assert!(p.verdict == Verdict::Keep && p.hard_keep);
+    }
+
+    #[test]
+    fn a_stopped_clean_counts_what_it_set_out_to_do() {
+        let mut st = cleanup::State::default();
+        st.clean_planned = 4;
+        st.cleaned_count = 1;
+        st.cleaned = vec![(Group::AiTools, 10), (Group::AiTools, 5)];
+        st.stopped = true;
+        assert_eq!(done_counts(&st), (2, 4));
+        st.stopped = false;
+        st.failed = vec![("x".into(), "why".into())];
+        assert_eq!(done_counts(&st), (1, 2));
+    }
+
+    #[test]
+    fn undo_after_keep_only_while_still_kept() {
+        let ctx = egui::Context::default();
+        let mut st = demo_results();
+        let i = st.items.iter().position(|i| i.verdict == Verdict::Ask).unwrap();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("cleanup-last-kept"), vec![st.items[i].path.clone()]));
+        assert!(last_kept(&ctx, &st.items).is_empty(), "not kept yet");
+        st.items[i].verdict = Verdict::Keep;
+        st.items[i].by = Who::You;
+        assert_eq!(last_kept(&ctx, &st.items), vec![i]);
+        undo(&mut st.items[i]);
+        assert!(last_kept(&ctx, &st.items).is_empty(), "undone: no link");
     }
 
     #[test]
