@@ -53,10 +53,18 @@ fn value(l: Option<&Limit>) -> (String, Color32) {
     }
 }
 
-/// "Full at 18:04", red "Runs out 16:10", "Not started", the weekly
-/// "~15% left at reset" (SP22), or the status.
+/// Red "Runs out 16:10" for the main limit, else the week's "~15% left at
+/// reset" / red "Runs out Sun 13:41" (SP22), else "Full at 18:04", "Not
+/// started", or the status.
 fn caption(i: &UsageInfo, l: Option<&Limit>) -> (String, Color32) {
     let Some(l) = l else { return (status(i), ty::caption_color()) };
+    // SP22: the week's ending speaks for the widget unless the main limit
+    // itself runs out first
+    if out_at(l).is_none() {
+        if let Some(wc) = i.weekly().and_then(parts::week_word) {
+            return wc;
+        }
+    }
     let reset = parts::reset_when(l);
     if l.pct <= 0.0 && reset.is_empty() {
         (ts!("ai.not_started").into(), ty::caption_color())

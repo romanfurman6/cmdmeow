@@ -774,9 +774,15 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
         p.line_segment([Pos2::new(x(*a), y(100.0)), Pos2::new(x(*a), plot.bottom())], Stroke::new(1.0, ink(0.05)));
     }
     // the day under the pointer
-    let resp = ui.interact(plot, ui.scope_id().with("ai-week"), Sense::hover());
-    let hover = resp.hover_pos().and_then(|q| cols.iter().find(|c| q.x >= x(c.1) && q.x < x(c.2) && c.3.is_some()));
-    if let Some((_, a, b, _, _)) = hover {
+    let mut hover = None;
+    for (k, c) in cols.iter().enumerate().filter(|(_, c)| c.3.is_some()) {
+        let col = Rect::from_min_max(Pos2::new(x(c.1), y(100.0)), Pos2::new(x(c.2), plot.bottom()));
+        let r = ui.interact(col, ui.scope_id().with(("ai-week", k)), Sense::hover());
+        if r.hovered() {
+            hover = Some((c, r));
+        }
+    }
+    if let Some(((_, a, b, _, _), _)) = &hover {
         p.rect_filled(Rect::from_min_max(Pos2::new(x(*a), y(100.0)), Pos2::new(x(*b), plot.bottom())), 6.0, ink(0.04));
     }
     for (d, a, b, v, _) in &cols {
@@ -824,15 +830,17 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
             let at_end = l.pct * len as f32 / (now - start) as f32;
             let e = Pos2::new(plot.right(), y(at_end));
             p.extend(Shape::dashed_line(&[at, e], Stroke::new(1.5, with_alpha(tint::CLAUDE(), 0.7)), 2.0, 3.0));
-            p.text(Pos2::new(e.x - 4.0, e.y - 6.0), Align2::RIGHT_BOTTOM, format!("{at_end:.0}%"), ty::label(), TEXT_FAINT());
+            // under the line's end, clear of the even-use diagonal and "100%"
+            p.text(Pos2::new(e.x - 4.0, e.y + 6.0), Align2::RIGHT_TOP, format!("{at_end:.0}%"), ty::label(), TEXT_FAINT());
         }
     }
     p.circle(at, 4.5, tint::CLAUDE(), Stroke::new(2.0, BG()));
     p.text(Pos2::new(at.x - 8.0, at.y - 7.0), Align2::RIGHT_BOTTOM, format!("{used:.0}%"), bold(13.0), TEXT());
     // hover: the day's share and the total by its end
-    if let Some((d, _, _, Some(v), sum)) = hover {
+    if let Some(((d, _, _, Some(v), sum), resp)) = hover {
+        // beside the day, inside the card: never over the cards above
         let mut tip = egui::Tooltip::for_enabled(&resp);
-        tip.popup = tip.popup.align(egui::RectAlign::TOP).gap(6.0);
+        tip.popup = tip.popup.align(egui::RectAlign::RIGHT_START).align_alternatives(&[egui::RectAlign::LEFT_START]).gap(6.0);
         let (d, v, sum) = (*d, *v, *sum);
         tip.show(|ui| {
             use egui::RichText;
