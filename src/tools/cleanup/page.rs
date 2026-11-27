@@ -380,7 +380,9 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         return;
     }
 
-    if total == 0 && pending == 0 {
+    // kept by the person only: the list still shows them under Kept
+    let you_kept = app.clean.lock_ok().items.iter().any(|i| i.verdict == Verdict::Keep && i.by == Who::You);
+    if total == 0 && pending == 0 && !you_kept {
         let c = Pos2::new(r.center().x, r.top() + PAGE_HEADER_H + 150.0);
         p.circle_filled(c, 28.0, tint::HEALTH());
         icon(&p, Icon::Check, Rect::from_center_size(c, Vec2::splat(28.0)), ON_ACTION);
@@ -389,15 +391,6 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
         let dr = Rect::from_center_size(c + Vec2::new(0.0, 130.0), Vec2::new(96.0, 32.0));
         if pill_button(ui, dr, ts!("cleanup.done"), BTN_PRIMARY, true).clicked() {
             app.clean.lock_ok().phase = Phase::Intro;
-        }
-        // everything found was kept before: offer it back here too
-        let hidden = app.clean.lock_ok().hidden_kept;
-        if hidden > 0 {
-            let label = t!("cleanup.show_kept", n = hidden);
-            if crate::kit::glass::link(ui, Pos2::new(dr.center().x, dr.bottom() + sp::L), Align2::CENTER_TOP, &label, 12.0).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
-                cleanup::forget_kept();
-                cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
-            }
         }
         return;
     }
@@ -428,20 +421,8 @@ fn results(app: &mut App, ui: &mut Ui, r: Rect) {
     }
 
     // the groups on the left, what the chosen one found on the right
-    // SP17 H3: one action in the header; items kept before are offered
-    // under the rail, which leaves room for that line
-    let hidden = app.clean.lock_ok().hidden_kept;
-    let kept_h = if hidden > 0 { sp::L + 16.0 } else { 0.0 };
-    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height() - kept_h));
-    let card = group_rail(app, ui, rail);
-    if hidden > 0 {
-        let label = t!("cleanup.show_kept", n = hidden);
-        if crate::kit::glass::link(ui, Pos2::new(card.left() + sp::M, card.bottom() + sp::L), Align2::LEFT_TOP, &label, 12.0).on_hover_text(ts!("cleanup.show_kept_tip")).clicked() {
-            cleanup::forget_kept();
-            cleanup::start_scan(app.clean.clone(), ctx.clone(), ai_agent(app));
-            return;
-        }
-    }
+    let rail = Rect::from_min_size(body.min, Vec2::new(RAIL_W, body.height()));
+    group_rail(app, ui, rail);
     // the list runs down to the footer, so rows scroll straight under it;
     // its own last gap keeps the end clear of the footer (result_list)
     let list = Rect::from_min_max(Pos2::new(rail.right() + sp::L, body.top()), Pos2::new(body.right(), r.bottom() - PAGE_FOOTER_H));
@@ -753,6 +734,8 @@ enum Act {
     /// Tick or untick; `true` also ticks items that can't be put back.
     Select(Vec<usize>, bool, bool),
     Undo(Vec<usize>),
+    /// Kept items back to "Needs your OK".
+    Unkeep(Vec<usize>),
     Fold(String),
     Tip(aicheck::Rec),
 }
@@ -864,7 +847,10 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
         Sec::Safe => 1,
         Sec::Kept => 2,
     };
-    let open = open_rows(&ctx);
+    let mut open = open_rows(&ctx);
+    if DEMO_HOVER.lock_ok().is_some() {
+        open.insert("kept".into());
+    }
     let agent = if app.demo { Agent::Claude.name() } else { super::agent::main().name() };
     let running = app.ai.phase() == aicheck::Phase::Running;
     let all_tips = app.ai.tips();
@@ -961,7 +947,7 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
             }
             // hairlines between the rows of a card, none next to a lit row (H2)
             let lit = match l {
-                Line::Entry(sec, e) => ui.rect_contains_pointer(rr) || app.ai.hovered.as_deref() == Some(items[es[sec_i(sec)][e].idx[0]].path.display().to_string().as_str()),
+                Line::Entry(sec, e) => ui.rect_contains_pointer(rr) || demo_hover(&items[es[sec_i(sec)][e].idx[0]].path.display().to_string()) || app.ai.hovered.as_deref() == Some(items[es[sec_i(sec)][e].idx[0]].path.display().to_string().as_str()),
                 Line::Member(..) | Line::KeptHead => ui.rect_contains_pointer(rr),
                 _ => false,
             };
@@ -1014,6 +1000,7 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
                     undo_item(app, i);
                 }
             }
+            Act::Unkeep(idx) => unkeep_items(app, &idx),
             Act::Fold(key) => fold(&ctx, key),
             Act::Tip(rec) => {
                 let i = items.iter().position(|it| it.path.display().to_string() == rec.key);
@@ -1201,6 +1188,11 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
     let lh = line_h(&p, &ty::body());
     let cy = if tip.is_some() { rr.top() + sp::M + lh / 2.0 } else { rr.center().y };
     let mut x = rr.left() + sp::L;
+    let hot = ui.rect_contains_pointer(rr) || demo_hover(&key);
+    if demo_hover(&key) {
+        crate::kit::glass::row_hover_fill(&p, rr);
+    }
+    let unkeep: Vec<usize> = if sec == Sec::Kept { e.idx.iter().copied().filter(|&i| unkeepable(&items[i])).collect() } else { Vec::new() };
     if sec == Sec::Safe {
         let can: Vec<usize> = e.idx.iter().copied().filter(|&i| !items[i].hard_keep).collect();
         let on = !can.is_empty() && can.iter().all(|&i| items[i].selected);
@@ -1216,6 +1208,11 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
     }
     let s = p.text(Pos2::new(rr.right() - sp::L, cy), Align2::RIGHT_CENTER, human_bytes(e.bytes), if dim { ty::body() } else { ty::title() }, if dim { TEXT_DIM() } else { TEXT() });
     let mut right = s.left() - sp::COL_GAP;
+    if sec == Sec::Kept {
+        let (a, r) = unkeep_control(ui, Pos2::new(right, cy), &key, &unkeep, if e.name.is_none() { Some(&first.path) } else { None }, hot);
+        act = act.or(a);
+        right = r;
+    }
     if let Some(t) = tip {
         let l = link(ui, Pos2::new(right, cy), Align2::RIGHT_CENTER, &t.label, 12.0);
         if l.clicked() {
@@ -1227,7 +1224,7 @@ fn list_row(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, e: &Entry, tip: Opt
     if perm {
         right = chip(&p, Pos2::new(right, cy), Align2::RIGHT_CENTER, ts!("cleanup.permanent"), CHIP_RISK()).left() - sp::S;
     }
-    let undo = e.name.is_none() && undoable(first);
+    let undo = e.name.is_none() && sec != Sec::Kept && undoable(first);
     let undo_w = if undo { p.layout_no_wrap(ts!("cleanup.undo").into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
     let title = e.name.as_deref().unwrap_or(&first.title);
     let t = text_fit(&p, Pos2::new(x, cy), Align2::LEFT_CENTER, title, ty::body(), if dim { TEXT_DIM() } else { TEXT() }, right - undo_w - x);
@@ -1262,11 +1259,19 @@ fn list_member(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, i: usize) -> Opt
             act = Some(Act::Select(vec![i], !it.selected, true));
         }
     }
+    let can = sec == Sec::Kept && unkeepable(it);
     let x = x0 + 16.0 + sp::M;
     let s = p.text(Pos2::new(rr.right() - sp::L, rr.center().y), Align2::RIGHT_CENTER, human_bytes(it.bytes), ty::body(), TEXT_DIM());
-    let undo = undoable(it);
+    let mut right = s.left() - sp::COL_GAP;
+    if sec == Sec::Kept {
+        let hot = ui.rect_contains_pointer(rr) || demo_hover(&key);
+        let (a, r) = unkeep_control(ui, Pos2::new(right, rr.center().y), &format!("m:{key}"), if can { std::slice::from_ref(&i) } else { &[] }, Some(&it.path), hot);
+        act = act.or(a);
+        right = r;
+    }
+    let undo = sec != Sec::Kept && undoable(it);
     let undo_w = if undo { p.layout_no_wrap(ts!("cleanup.undo").into(), bold(12.0), TEXT()).size().x + sp::S } else { 0.0 };
-    let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT_SOFT(), s.left() - sp::COL_GAP - undo_w - x);
+    let t = text_fit(&p, Pos2::new(x, rr.center().y), Align2::LEFT_CENTER, &it.title, ty::body(), TEXT_SOFT(), right - undo_w - x);
     if undo && link(ui, Pos2::new(t.right() + sp::S, rr.center().y), Align2::LEFT_CENTER, ts!("cleanup.undo"), 12.0).clicked() {
         act = Some(Act::Undo(vec![i]));
     }
@@ -1354,6 +1359,9 @@ fn undo_item(app: &mut App, i: usize) {
 /// Put an item back to what the rules said; true when it had been kept.
 fn undo(it: &mut Item) -> bool {
     let was_kept = it.verdict == Verdict::Keep;
+    if it.kind == "Projects" && it.rule_verdict == Verdict::Keep {
+        it.hard_keep = true;
+    }
     it.verdict = it.rule_verdict;
     it.by = Who::Rule;
     it.selected = it.rule_verdict == Verdict::Safe && !it.permanent && !it.hard_keep;
@@ -1364,6 +1372,97 @@ fn undo(it: &mut Item) -> bool {
 /// Whether the person decided this item here (it can go back).
 fn undoable(it: &Item) -> bool {
     it.by == Who::You
+}
+
+/// A kept item the person may take back: theirs, what the rules or Claude
+/// kept, and Claude Code projects in use (their chats are the person's
+/// call). Protected folders, kept caches and worktrees with work in them
+/// stay locked, also when the person kept them too.
+fn unkeepable(it: &Item) -> bool {
+    it.verdict == Verdict::Keep && (!it.hard_keep || it.kind == "Projects")
+}
+
+/// Remove from Kept: the items go to "Needs your OK" (Clean / Keep), and
+/// what the person had kept is no longer remembered.
+fn unkeep_items(app: &mut App, idx: &[usize]) {
+    let forget = unkeep(&mut app.clean.lock_ok().items, idx);
+    for p in forget {
+        cleanup::forget_kept_one(&p);
+    }
+}
+
+/// [`unkeep_items`] on the list: returns the paths the person had kept.
+fn unkeep(items: &mut [Item], idx: &[usize]) -> Vec<PathBuf> {
+    let mut forget = Vec::new();
+    for &i in idx {
+        let it = &mut items[i];
+        if !unkeepable(it) {
+            continue;
+        }
+        if it.by == Who::You {
+            forget.push(it.path.clone());
+        }
+        it.verdict = Verdict::Ask;
+        it.by = Who::Rule;
+        it.hard_keep = false;
+        it.selected = false;
+        // "You used this project yesterday — kept" asks without the verdict
+        it.reason = it.rule_reason.trim_end_matches(" — kept").to_string();
+    }
+    forget
+}
+
+/// Screenshots only: the Kept row drawn as if under the pointer (and its
+/// menu open).
+pub(crate) static DEMO_HOVER: std::sync::Mutex<Option<(String, bool)>> = std::sync::Mutex::new(None);
+
+fn demo_hover(key: &str) -> bool {
+    DEMO_HOVER.lock_ok().as_ref().is_some_and(|(k, _)| k == key)
+}
+
+/// A Kept row's "⋯" on hover (MN1–MN6): Remove from Kept (when it may be
+/// taken back), Show in Finder (one item). Returns the act and the x left
+/// of the button.
+fn unkeep_control(ui: &mut Ui, at: Pos2, key: &str, idx: &[usize], path: Option<&PathBuf>, hot: bool) -> (Option<Act>, f32) {
+    if idx.is_empty() && path.is_none() {
+        return (None, at.x);
+    }
+    let r = Rect::from_center_size(Pos2::new(at.x - 14.0, at.y), Vec2::splat(28.0));
+    let id = ui.scope_id().with(("unkeep-more", key));
+    let menu_id = id.with("popup");
+    let demo_open = DEMO_HOVER.lock_ok().as_ref().is_some_and(|(k, m)| *m && k == key);
+    if demo_open && !egui::Popup::is_id_open(ui.ctx(), menu_id) {
+        egui::Popup::open_id(ui.ctx(), menu_id);
+    }
+    let open = egui::Popup::is_id_open(ui.ctx(), menu_id);
+    if !hot && !open {
+        return (None, at.x);
+    }
+    let resp = ui.interact(r, id, Sense::click());
+    let h = ui.ctx().animate_bool(id.with("h"), resp.hovered() || open);
+    let p = ui.painter();
+    if h > 0.0 {
+        p.rect_filled(r, 6.0, white((18.0 * h) as u8));
+    }
+    for dx in [-5.0, 0.0, 5.0] {
+        p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_DIM());
+    }
+    let mut act = None;
+    // near the bottom of the list it opens upward, clear of the footer
+    let up = r.bottom() + 2.0 * crate::kit::menu::ROW_H + 16.0 > ui.clip_rect().bottom();
+    let popup = crate::kit::menu::popup(&resp);
+    let popup = if up { popup.align(egui::RectAlign::TOP_END) } else { popup };
+    popup.show(|ui| {
+        if !idx.is_empty() && crate::kit::menu::item(ui, ts!("cleanup.remove_from_kept")).clicked() {
+            act = Some(Act::Unkeep(idx.to_vec()));
+        }
+        if let Some(p) = path {
+            if crate::kit::menu::item(ui, ts!("cleanup.show_in_finder")).clicked() {
+                let _ = std::process::Command::new("open").arg("-R").arg(p).spawn();
+            }
+        }
+    });
+    (act, r.left() - sp::S)
 }
 
 // ---------------------------------------------------------------- confirm
@@ -1985,6 +2084,36 @@ fn check_ask(clean: &cleanup::Shared) -> aicheck::Ask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_from_kept_asks_again_but_locks_hold() {
+        let mut st = demo_results();
+        let base = st.items[0].clone();
+        let mk = |kind: &'static str, by: Who, hard: bool| Item { kind, by, hard_keep: hard, verdict: Verdict::Keep, rule_verdict: Verdict::Keep, rule_reason: "You used this project today — kept".into(), path: PathBuf::from(format!("/k/{kind}/{hard}")), ..base.clone() };
+        st.items = vec![
+            mk("Projects", Who::Rule, true),  // in-use project: may go
+            mk("Caches", Who::You, false),    // the person's own Keep
+            mk("Caches", Who::Rule, true),    // kept cache: locked
+            mk("Worktrees", Who::You, true),  // protected, also kept by the person: locked
+        ];
+        let ok: Vec<bool> = st.items.iter().map(unkeepable).collect();
+        assert_eq!(ok, [true, true, false, false]);
+        let forget = unkeep(&mut st.items, &[0, 1, 2, 3]);
+        assert_eq!(forget, vec![PathBuf::from("/k/Caches/false")]);
+        for it in &st.items[..2] {
+            assert_eq!((it.verdict, it.by, it.hard_keep, it.selected), (Verdict::Ask, Who::Rule, false, false));
+            assert_eq!(it.reason, "You used this project today");
+        }
+        for it in &st.items[2..] {
+            assert!(it.verdict == Verdict::Keep && it.hard_keep);
+        }
+        // Undo on a project brings its lock back
+        let mut p = st.items[0].clone();
+        p.verdict = Verdict::Safe;
+        p.by = Who::You;
+        undo(&mut p);
+        assert!(p.verdict == Verdict::Keep && p.hard_keep);
+    }
 
     #[test]
     fn undo_puts_a_question_back() {
