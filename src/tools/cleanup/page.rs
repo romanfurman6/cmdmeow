@@ -1017,7 +1017,10 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
                 Line::Member(Sec::Ask, e, m) => ask_member(app, ui, rr, &items, es[0][e].idx[m], agent),
                 Line::Entry(sec, e) => list_row(ui, rr, &items, sec, &es[sec_i(sec)][e], row_tip(&es[sec_i(sec)][e]).as_ref(), agent, open.contains(&fold_key(sec, &es[sec_i(sec)][e])), app.ai.hovered.as_deref()),
                 Line::Member(sec, e, m) => list_member(ui, rr, &items, sec, es[sec_i(sec)][e].idx[m]),
-                Line::KeptHead => kept_head(ui, rr, kept.len(), kept.iter().map(|&i| items[i].bytes).sum(), kept_open),
+                Line::KeptHead => {
+                    let last: Vec<usize> = last_kept(&ctx, &items);
+                    kept_head(ui, rr, kept.len(), kept.iter().map(|&i| items[i].bytes).sum(), kept_open, &last)
+                }
                 Line::Tip(t) => tip_row(ui, rr, &tips[t]).map(Act::Tip),
                 Line::Question => question(app, ui, rr, &items, &es[0][0], answers[0].as_ref(), agent),
                 Line::Peek(n) => {
@@ -1032,6 +1035,9 @@ fn result_list(app: &mut App, ui: &mut Ui, area: Rect) {
     for act in acts {
         match act {
             Act::Answer(idx, v) => {
+                // a Keep folds into Kept: its Undo sits on the Kept row
+                let paths: Vec<PathBuf> = idx.iter().map(|&i| items[i].path.clone()).collect();
+                ctx.data_mut(|d| d.insert_temp(egui::Id::unique("cleanup-last-kept"), if v == Verdict::Keep { paths } else { Vec::new() }));
                 // answered on the card: it counts toward "4 of 31"
                 if one && es[0][0].idx == idx {
                     ctx.data_mut(|d| {
@@ -1465,7 +1471,15 @@ fn list_member(ui: &mut Ui, rr: Rect, items: &[Item], sec: Sec, i: usize) -> Opt
 }
 
 /// "🔒 Kept  34 · 5.91 GB  ›": the kept items, folded until clicked.
-fn kept_head(ui: &mut Ui, rr: Rect, n: usize, bytes: u64, open: bool) -> Option<Act> {
+/// What the last answer kept, while it's still kept by that answer: the
+/// Kept row offers its Undo.
+fn last_kept(ctx: &egui::Context, items: &[Item]) -> Vec<usize> {
+    let paths = ctx.data(|d| d.get_temp::<Vec<PathBuf>>(egui::Id::unique("cleanup-last-kept")).unwrap_or_default());
+    let idx: Vec<usize> = paths.iter().filter_map(|p| items.iter().position(|it| &it.path == p && it.verdict == Verdict::Keep && it.by == Who::You)).collect();
+    if idx.len() == paths.len() { idx } else { Vec::new() }
+}
+
+fn kept_head(ui: &mut Ui, rr: Rect, n: usize, bytes: u64, open: bool, last: &[usize]) -> Option<Act> {
     let p = ui.painter().clone();
     let resp = row_hover(ui, rr, "kept-head");
     if resp.hovered() {
@@ -1474,7 +1488,11 @@ fn kept_head(ui: &mut Ui, rr: Rect, n: usize, bytes: u64, open: bool) -> Option<
     let cy = rr.center().y;
     icon(&p, Icon::Lock, Rect::from_center_size(Pos2::new(rr.left() + sp::L + 8.0, cy), Vec2::splat(14.0)), TEXT_FAINT());
     let t = p.text(Pos2::new(rr.left() + sp::L + 16.0 + sp::M, cy), Align2::LEFT_CENTER, ts!("cleanup.kept"), ty::title(), TEXT_DIM());
-    p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, n.to_string(), ty::label(), TEXT_DIM());
+    let c = p.text(Pos2::new(t.right() + sp::S, cy), Align2::LEFT_CENTER, n.to_string(), ty::label(), TEXT_DIM());
+    // just kept from a question: Undo puts it back
+    if !last.is_empty() && link(ui, Pos2::new(c.right() + sp::M, cy), Align2::LEFT_CENTER, ts!("cleanup.undo"), 12.0).clicked() {
+        return Some(Act::Undo(last.to_vec()));
+    }
     let ax = rr.right() - sp::L - 12.0;
     fold_arrow(&p, ax, cy, open);
     p.text(Pos2::new(ax - sp::M, cy), Align2::RIGHT_CENTER, human_bytes(bytes), ty::body(), TEXT_DIM());
@@ -1988,8 +2006,8 @@ const FAILED_SHOWN: usize = 3;
 fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
     let st = app.clean.lock_ok().clone();
-    page_header(&p, r, ts!("cleanup.name"), ts!("cleanup.finished"), TEXT_DIM());
-    let ok = st.failed.is_empty();
+    page_header(&p, r, ts!("cleanup.name"), if st.stopped { ts!("cleanup.stopped") } else { ts!("cleanup.finished") }, TEXT_DIM());
+    let ok = st.failed.is_empty() && !st.stopped;
     // removed items leave the list; the engine keeps what each one was
     let mut rows: Vec<(Group, usize, u64)> = Group::ALL
         .iter()
@@ -2021,10 +2039,11 @@ fn done(app: &mut App, ui: &mut Ui, r: Rect) {
     crate::kit::tile::ring(&p, c, 19.0, 4.0, 1.0, col);
     icon(&p, if ok { Icon::Check } else { Icon::Info }, Rect::from_center_size(c, Vec2::splat(18.0)), col);
     let tx = c.x + 22.0 + sp::M;
-    let total = st.cleaned_count + st.failed.len();
+    // stopped: what it got to (an item cut short counts) of all it set out to do
+    let (n, total) = if st.stopped { (st.cleaned.len(), st.clean_planned.max(st.cleaned.len())) } else { (st.cleaned_count, st.cleaned_count + st.failed.len()) };
     let (ly1, ly2) = two_lines_y(&p, c.y, &ty::title(), &ty::caption());
-    p.text(Pos2::new(tx, ly1), Align2::LEFT_CENTER, ts!("cleanup.cleanup_finished"), ty::title(), TEXT());
-    p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, t!("cleanup.n_of", n = st.cleaned_count, items = items_n(total)), ty::caption(), ty::caption_color());
+    p.text(Pos2::new(tx, ly1), Align2::LEFT_CENTER, if st.stopped { ts!("cleanup.cleanup_stopped") } else { ts!("cleanup.cleanup_finished") }, ty::title(), TEXT());
+    p.text(Pos2::new(tx, ly2), Align2::LEFT_CENTER, t!("cleanup.n_of", n = n, items = items_n(total)), ty::caption(), ty::caption_color());
     let mut y = li.top() + 44.0 + sp::L;
     let freed = st.cleaned_bytes.saturating_sub(st.trashed_bytes);
     let g = p.layout_no_wrap(human_bytes(if freed > 0 { freed } else { st.cleaned_bytes }), ty::hero(), TEXT());

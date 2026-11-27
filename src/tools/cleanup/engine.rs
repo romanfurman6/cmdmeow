@@ -197,6 +197,8 @@ pub struct State {
     pub clean_done: u64,
     /// The clean was stopped before the end.
     pub stopped: bool,
+    /// How many items the clean set out to remove.
+    pub clean_planned: usize,
     /// Group and size of each item removed (they leave `items`).
     pub cleaned: Vec<(Group, u64)>,
     pub failed: Vec<(String, String)>,
@@ -1660,6 +1662,7 @@ pub fn start_clean(shared: Shared, ctx: egui::Context, delete_now: bool, only: S
         let scoped: Vec<Item> = g.items.iter().filter(|i| in_scope(i, only)).cloned().collect();
         let plan = plan_clean(&scoped, delete_now);
         g.clean_total = plan.iter().map(|(it, _)| it.bytes).sum();
+        g.clean_planned = plan.len();
         plan
     };
     let cancel = shared.lock_ok().cancel.clone();
