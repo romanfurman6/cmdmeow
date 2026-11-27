@@ -821,7 +821,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     if switch(ui, sw_in(r1), ui.scope_id().with("show-in-dock"), on, bar).clicked() && !app.demo {
         crate::kit::native::set_show_in_dock(!on);
     }
-    // where CmdMeow lives: its menu bar icon, the notch island, or both
+    // where CmdMeow lives: its menu bar icon or the notch island
     // (without the icon it still shows the recording clock)
     let rb = row(2);
     hairline(&p, Pos2::new(rb.left() + 16.0, rb.top()), Pos2::new(rb.right() - 16.0, rb.top()));
@@ -830,7 +830,7 @@ fn general_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
         use super::place::{self, Place};
         let cur = if app.demo { Place::Menubar } else { place::get() };
         let labels = Place::ALL.map(|c| c.label());
-        let seg_w = 300.0f32.min(w - 200.0);
+        let seg_w = 220.0f32.min(w - 200.0);
         let seg = Rect::from_min_size(Pos2::new(rb.right() - 12.0 - seg_w, rb.center().y - sp::CONTROL_H / 2.0), Vec2::new(seg_w, sp::CONTROL_H));
         let sel = Place::ALL.iter().position(|c| *c == cur).unwrap_or(0);
         if let Some(i) = segmented(ui, seg, ui.scope_id().with("place"), &labels, sel) {

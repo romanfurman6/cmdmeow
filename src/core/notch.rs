@@ -1,5 +1,6 @@
-//! The notch island (Settings › General "Where CmdMeow lives": Notch or
-//! Both). Closed, a window the size of the notch sits over it and draws
+//! The notch island (Settings › General "Where CmdMeow lives": Notch).
+//! It takes the menu bar panel's place: the title, Quit and Open sit either
+//! side of the notch, the widgets under it. Closed, a window the size of the notch sits over it and draws
 //! nothing. The pointer resting on it for a moment opens a black island
 //! under the notch with the panel's widgets, the same ones, sizes and cards
 //! as the menu bar panel; only the background is black, so the island and
@@ -61,10 +62,17 @@ pub fn is_open() -> bool {
     STATE.with(|s| s.borrow().open)
 }
 
-/// The island's size when open: the panel's grid, under the notch.
+/// The top band of the open island: as tall as the notch, and room for
+/// the header's buttons where there is no notch.
+pub fn band(notch_h: f32) -> f32 {
+    notch_h.max(40.0)
+}
+
+/// The island's size when open: the header band, then the panel's grid.
 pub fn open_size(notch_h: f32, content_h: f32, max_h: f32) -> Vec2 {
-    let h = notch_h + panel::PAD + content_h + panel::PAD;
-    Vec2::new(m::PANEL_WIDTH + 2.0 * EAR, h.min(max_h).max(notch_h + 40.0))
+    let top = band(notch_h);
+    let h = top + panel::GAP + content_h + panel::PAD;
+    Vec2::new(m::PANEL_WIDTH + 2.0 * EAR, h.min(max_h).max(top + 40.0))
 }
 
 /// The window's rect: closed it covers only the notch (or the strip);
@@ -181,7 +189,8 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
         if was == Theme::Light {
             glass::set_theme(Theme::Dark);
         }
-        let grid = Rect::from_min_max(Pos2::new(body.left() + panel::PAD, body.top() + notch.height() + panel::PAD), Pos2::new(body.right() - panel::PAD, body.bottom() - panel::PAD));
+        let top = band(notch.height());
+        let grid = Rect::from_min_max(Pos2::new(body.left() + panel::PAD, body.top() + top + panel::GAP), Pos2::new(body.right() - panel::PAD, body.bottom() - panel::PAD));
         ui.set_opacity(((t - 0.6) / 0.4).clamp(0.0, 1.0));
         let (placed, need) = panel::place(app, grid.width());
         let mut draw = |ui: &mut egui::Ui, origin: Pos2| {
@@ -198,6 +207,16 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
             });
         } else {
             draw(ui, grid.min);
+        }
+        // the panel's header either side of the notch: the title on the
+        // left, Quit and Open on the right
+        let nl = full.center().x - notch.width() / 2.0;
+        let opened_app = app.app_open;
+        let x0 = body.left() + 16.0;
+        let title_right = if real { nl - 8.0 } else { body.center().x };
+        panel::header_at(app, ui, x0, title_right, body.right() - 14.0, body.top() + top / 2.0);
+        if app.app_open && !opened_app {
+            close = true;
         }
         if was == Theme::Light {
             glass::set_theme(was);
@@ -378,7 +397,7 @@ mod tests {
         assert_eq!(r.top(), 0.0);
         assert!((r.center().x - g.notch.center().x).abs() < 0.01);
         assert_eq!(r.width(), m::PANEL_WIDTH + 2.0 * EAR);
-        assert_eq!(r.height(), 32.0 + panel::PAD + 200.0 + panel::PAD);
+        assert_eq!(r.height(), band(32.0) + panel::GAP + 200.0 + panel::PAD);
         // never taller than most of the display
         assert!(window_rect(&g, true, 5000.0).height() <= g.screen.height() * 0.8 + 0.01);
     }

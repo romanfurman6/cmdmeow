@@ -2226,8 +2226,7 @@
     "place": {
       "title": "Where CmdMeow lives",
       "menubar": "Menu bar",
-      "notch": "Notch",
-      "both": "Both"
+      "notch": "Notch"
     },
     "size_button": "Button"
   },

@@ -1,33 +1,30 @@
 //! Where CmdMeow lives (Settings › General, and a setup step): under its
-//! menu bar icon, in a black island that opens from the notch, or both.
-//! One widget layout serves both places (the panel's).
+//! menu bar icon, or in a black island that opens from the notch. One or
+//! the other, never both. One widget layout serves both (the panel's).
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-/// Saved form: "menubar", "notch" or "both".
+/// Saved form: "menubar" or "notch".
 pub const PLACE_KEY: &str = "app.place";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
     Menubar,
     Notch,
-    Both,
 }
 
 impl Place {
-    pub const ALL: [Place; 3] = [Place::Menubar, Place::Notch, Place::Both];
+    pub const ALL: [Place; 2] = [Place::Menubar, Place::Notch];
     pub fn label(self) -> &'static str {
         match self {
             Place::Menubar => ts!("app.place.menubar"),
             Place::Notch => ts!("app.place.notch"),
-            Place::Both => ts!("app.place.both"),
         }
     }
     pub fn key(self) -> &'static str {
         match self {
             Place::Menubar => "menubar",
             Place::Notch => "notch",
-            Place::Both => "both",
         }
     }
     pub fn parse(s: &str) -> Option<Place> {
@@ -46,7 +43,7 @@ impl Place {
 static PLACE: AtomicU8 = AtomicU8::new(0);
 
 pub fn get() -> Place {
-    Place::ALL[(PLACE.load(Ordering::Relaxed) as usize).min(2)]
+    Place::ALL[(PLACE.load(Ordering::Relaxed) as usize).min(Place::ALL.len() - 1)]
 }
 
 /// Pick a place: the menu bar icon follows (the recording clock still
@@ -72,7 +69,8 @@ mod tests {
         }
         assert!(Place::Menubar.menubar() && !Place::Menubar.notch());
         assert!(!Place::Notch.menubar() && Place::Notch.notch());
-        assert!(Place::Both.menubar() && Place::Both.notch());
+        // an old "both" falls back to the menu bar
+        assert_eq!(load(Some("both".into())), Place::Menubar);
         assert_eq!(load(None), Place::Menubar);
         assert_eq!(load(Some("notch".into())), Place::Notch);
         assert_eq!(load(Some("bogus".into())), Place::Menubar);
@@ -85,14 +83,15 @@ use super::shell::App;
 use crate::kit::glass::*;
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
-/// The setup step (drawn by onboarding): "Where CmdMeow lives", three
+/// The setup step (drawn by onboarding): "Where CmdMeow lives", two
 /// picture cards like the Theme step. A click picks it at once.
 pub fn setup_place(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let p = ui.painter().clone();
     let gap = sp::M;
-    let cw = (body.width() - 2.0 * gap) / 3.0;
+    let n = Place::ALL.len() as f32;
+    let cw = (body.width() - (n - 1.0) * gap) / n;
     let title_h = 30.0 + 20.0;
-    let ch = (cw * 1.1).min(body.height() - title_h - sp::L);
+    let ch = (cw * 0.75).min(body.height() - title_h - sp::L);
     let head = body.center().y - (title_h + ch) / 2.0;
     p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, ts!("app.place.title"), bold(22.0), TEXT());
     let top = head + title_h;
@@ -134,7 +133,7 @@ pub fn setup_place(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
 }
 
 /// A card's picture: the top of a screen with its menu bar, and where the
-/// widgets open (under the icon, from the notch, or both).
+/// widgets open (under the icon, or from the notch).
 fn art(p: &egui::Painter, r: Rect, place: Place, a: f32) {
     let rad = CornerRadius::same(12);
     let f = |c: Color32| c.gamma_multiply(a);
@@ -185,9 +184,7 @@ fn art(p: &egui::Painter, r: Rect, place: Place, a: f32) {
         let icon = Rect::from_center_size(Pos2::new(r.right() - 22.0, bar.center().y), Vec2::new(10.0, 8.0));
         p.rect_filled(icon.expand(2.0), 3.0, f(Color32::from_white_alpha(60)));
         p.rect_filled(icon, 2.0, f(Color32::WHITE));
-        let pw = if place.notch() { r.width() * 0.4 } else { w };
-        let ph = if place.notch() { h * 0.75 } else { h };
-        let pr = Rect::from_min_size(Pos2::new(r.right() - 8.0 - pw, bar.bottom() + 4.0 + if place.notch() { h * 0.55 } else { 0.0 }), Vec2::new(pw, ph));
+        let pr = Rect::from_min_size(Pos2::new(r.right() - 8.0 - w, bar.bottom() + 4.0), Vec2::new(w, h));
         cards(pr, Color32::from_rgb(0x13, 0x20, 0x0F), true);
     }
 }

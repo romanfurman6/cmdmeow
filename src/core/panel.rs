@@ -233,11 +233,18 @@ const ARM_GUARD: f32 = 0.35;
 /// a click elsewhere, hiding the panel or 3 s without the pointer on it
 /// put it back.
 fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
+    header_at(app, ui, rect.left() + 16.0, f32::INFINITY, rect.right() - 14.0, rect.top() + 31.0);
+}
+
+/// The header's title and its Quit / Open buttons on a line centred at
+/// `cy`: the title from `x0` (and never past `title_right`), the buttons
+/// ending at `right`. The notch island puts them either side of the notch.
+pub fn header_at(app: &mut App, ui: &mut Ui, x0: f32, title_right: f32, right: f32, cy: f32) {
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
     let size = BTN_H_ROW;
-    let top = rect.top() + 31.0 - size / 2.0;
-    let at = |k: f32| Rect::from_min_size(Pos2::new(rect.right() - 14.0 - size * (k + 1.0) - sp::S * k, top), Vec2::splat(size));
+    let top = cy - size / 2.0;
+    let at = |k: f32| Rect::from_min_size(Pos2::new(right - size * (k + 1.0) - sp::S * k, top), Vec2::splat(size));
     let open_r = at(0.0);
     let quit_r = at(1.0);
     let id = Id::new("panel-quit");
@@ -268,7 +275,6 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
     if t > 0.0 && t < 1.0 {
         ctx.request_repaint();
     }
-    let x0 = rect.left() + 16.0;
     let quit_w = button_width(&p, ts!("app.quit"), BTN_DANGER).max(56.0);
     let mut clicked_quit = false;
     let mut hot = Rect::NOTHING;
@@ -276,7 +282,7 @@ fn header(app: &mut App, ui: &mut Ui, rect: Rect) {
         // ✕ grows left into a red "Quit" pill; Open stays at the corner
         let w = size + (quit_w - size) * t;
         let r = Rect::from_min_size(Pos2::new(quit_r.right() - w, top), Vec2::new(w, size));
-        title_line(app, &p, x0, rect.top(), r.left() - x0 - 10.0);
+        title_line(app, &p, x0, cy - 31.0, (r.left() - 10.0).min(title_right) - x0);
         if t < 0.01 {
             if round_button_in(ui, r, Icon::Close, ts!("app.quit_app")).clicked() {
                 quit_log("arm");
