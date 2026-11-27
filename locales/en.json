@@ -737,6 +737,10 @@
     "left": "left",
     "full_in": "Full in %{time}",
     "left_at_reset": "~%{pct}% left at reset",
+    "wk": {
+      "used": "Used",
+      "week": "Week"
+    },
     "usage_tab": "Usage",
     "unit_usd": "$",
     "week_since": "Since %{when}",

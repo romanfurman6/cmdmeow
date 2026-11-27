@@ -819,6 +819,12 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
     }
     p.add(Shape::mesh(mesh));
     p.add(Shape::line(pts, Stroke::new(2.0, tint::CLAUDE())));
+    // the hovered day's own stretch of the line
+    if let Some(((_, a, b, Some(v), sum), _)) = &hover {
+        let from = Pos2::new(x(*a), y(sum - v));
+        let to = if *b > now { at } else { Pos2::new(x(*b), y(*sum)) };
+        p.line_segment([from, to], Stroke::new(3.5, tint::CLAUDE()));
+    }
     // forecast at the current rate, once there's a rate to tell
     if let Some(pc) = pace::of(l.pct, start, end, now) {
         if let Some(out) = pc.out_at.filter(|o| *o > now) {
@@ -838,20 +844,65 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
     p.text(Pos2::new(at.x - 8.0, at.y - 7.0), Align2::RIGHT_BOTTOM, format!("{used:.0}%"), bold(13.0), TEXT());
     // hover: the day's share and the total by its end
     if let Some(((d, _, _, Some(v), sum), resp)) = hover {
-        // beside the day, inside the card: never over the cards above
+        // beside the day, its bottom on the plot's base: never over the day labels
         let mut tip = egui::Tooltip::for_enabled(&resp);
-        tip.popup = tip.popup.align(egui::RectAlign::RIGHT_START).align_alternatives(&[egui::RectAlign::LEFT_START]).gap(6.0);
+        tip.popup = tip.popup.align(egui::RectAlign::RIGHT_END).align_alternatives(&[egui::RectAlign::LEFT_END]).gap(6.0);
         let (d, v, sum) = (*d, *v, *sum);
-        tip.show(|ui| {
-            use egui::RichText;
-            egui::Grid::new("ai-week-tip").num_columns(2).spacing([sp::M, 6.0]).show(ui, |ui| {
-                for (k, val) in [(crate::kit::date::wd(&d), format!("{v:.0}%")), (ts!("ai.total"), format!("{sum:.0}%"))] {
-                    ui.label(RichText::new(k).font(ty::label()).color(TEXT_DIM()));
-                    ui.label(RichText::new(val).font(ty::label()).color(TEXT()));
-                    ui.end_row();
-                }
-            });
-        });
+        tip.show(|ui| day_tip(ui, info, d, v, sum));
+    }
+}
+
+/// SP25 day hover: the date, what the day took of the week and the total
+/// by its end; its tokens, cost (when shown) and requests; its top models.
+/// Painted at a fixed width so the popover fits its content, not the window.
+fn day_tip(ui: &mut Ui, info: &UsageInfo, d: NaiveDate, used: f32, week: f32) {
+    const W: f32 = 208.0;
+    const ROW: f32 = 16.0;
+    let day = info.local.days.iter().find(|x| x.date == d);
+    let rec = info.local.archive.iter().find(|x| x.date == d);
+    let tokens = day.map(|x| x.tokens).or(rec.map(|x| x.tokens)).unwrap_or(0);
+    let usd = day.map(|x| x.usd).or(rec.map(|x| x.usd)).unwrap_or(0.0);
+    let requests = day.map(|x| x.requests).or(rec.map(|x| x.requests)).unwrap_or(0);
+    let mut models = rec.map(|r| ai::shares_of(std::iter::once(r), true)).unwrap_or_default();
+    models.sort_by_key(|m| std::cmp::Reverse(m.tokens));
+    let mtotal: u64 = models.iter().map(|m| m.tokens).sum();
+    let row = |ui: &mut Ui, k: &str, v: String| {
+        let (r, _) = ui.allocate_exact_size(Vec2::new(W, ROW), Sense::hover());
+        let p = ui.painter();
+        let vr = p.text(r.right_center(), Align2::RIGHT_CENTER, v, ty::label(), TEXT());
+        text_fit(p, r.left_center(), Align2::LEFT_CENTER, k, ty::label(), TEXT_DIM(), vr.left() - r.left() - sp::M);
+    };
+    let rule = |ui: &mut Ui| {
+        let (r, _) = ui.allocate_exact_size(Vec2::new(W, 9.0), Sense::hover());
+        ui.painter().line_segment([Pos2::new(r.left(), r.center().y), Pos2::new(r.right(), r.center().y)], Stroke::new(1.0, white(HAIRLINE_STRONG)));
+    };
+    ui.spacing_mut().item_spacing.y = 2.0;
+    let (r, _) = ui.allocate_exact_size(Vec2::new(W, 20.0), Sense::hover());
+    text_fit(ui.painter(), r.left_center(), Align2::LEFT_CENTER, &crate::kit::date::day_title(&d), bold(12.5), TEXT(), W);
+    row(ui, ts!("ai.wk.used"), format!("+{used:.0}%"));
+    row(ui, ts!("ai.wk.week"), format!("{week:.0}%"));
+    if tokens > 0 {
+        rule(ui);
+        row(ui, ts!("ai.kind.tokens"), ai::human_tokens(tokens));
+        if settings::get().show_cost && usd > 0.0 {
+            row(ui, ts!("ai.cost"), parts::usd(usd));
+        }
+        if requests > 0 {
+            row(ui, ts!("ai.kind.requests"), requests.to_string());
+        }
+    }
+    if mtotal > 0 {
+        rule(ui);
+        // name, then a 56×4 bar and the share right-aligned in a 32 column
+        for m in models.iter().take(3) {
+            let share = m.tokens as f32 / mtotal as f32;
+            let (r, _) = ui.allocate_exact_size(Vec2::new(W, ROW), Sense::hover());
+            let p = ui.painter();
+            p.text(r.right_center(), Align2::RIGHT_CENTER, format!("{:.0}%", share * 100.0), ty::label(), TEXT());
+            let br = Rect::from_min_size(Pos2::new(r.right() - 32.0 - sp::S - 56.0, r.center().y - 2.0), Vec2::new(56.0, 4.0));
+            bar(p, br, share, tint::CLAUDE());
+            text_fit(p, r.left_center(), Align2::LEFT_CENTER, &m.name, ty::label(), TEXT_DIM(), br.left() - r.left() - sp::S);
+        }
     }
 }
 
