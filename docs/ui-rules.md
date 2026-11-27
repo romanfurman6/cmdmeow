@@ -318,7 +318,7 @@ Read this before §2: every colour rule there holds in each theme.
 | TH12 | **Theme switch animation ("ripple through blur")**: the old theme is laid over the new one as a picture and blurs to 10 pt (0.48 s ease-out), then a soft round wave from the clicked card (feather 20% of its reach, 0.8 s ease-in-out) cuts it away. Core Animation only (R-anim), no egui frames. No animation with Reduce motion or in screenshots. Onboarding only for now; Settings switches at once. |
 | TH13 | **Theme pictures**: one flat series (same cat, size and place, empty top third). Light Classic: day rooftops with dark roofs. Dark Classic: night rooftops. Dark Miami: dusk beach. The cat is in the theme's action colour with a soft glow. Files `assets/themes/{light,dark,miami}.jpg`, 1024×1536. |
 | TH14 | The recording dot on an `ACTION` fill (Record screen hero, Video header Record pill, Start recording) uses `REC_ON_ACTION()`: Dark Classic #FF9B7A, Light Classic #C2391D (= `RED`), Dark Miami wine #8A0A26 (3.4:1 on the pink, C12). Every other recording mark keeps `RED`; the live HUD dot over the screen stays fixed (C13). |
-| TH15 | **Dock icon follows the theme** while the app runs. Same keycap cat. The ground is the theme's backdrop: Dark Classic moss glow #22401D→#070D07, Light Classic sage #E6F0D8→#BCD3A0 (deeper than the window so the cream keycap reads), Dark Miami dusk sky #0B1240→#70283C, top to bottom. ⌘ in the theme colour: #C8F05A, #7DB519 (darker than `ACTION` for contrast on cream), #FF5FA2. Swapped once per theme switch. The bundle icon (Finder, Launchpad, Dock after quit) stays the default ink icon (⏳ code). |
+| TH15 | **Dock icon follows the theme** while the app runs. Same keycap cat. The ground is the theme's backdrop: Dark Classic moss glow #22401D→#070D07, Light Classic sage #E6F0D8→#BCD3A0 (deeper than the window so the cream keycap reads), Dark Miami dusk sky #0B1240→#70283C, top to bottom. ⌘ in the theme colour: #C8F05A, #7DB519 (darker than `ACTION` for contrast on cream), #FF5FA2. Swapped once per theme switch. The bundle icon (Finder, Launchpad, Dock after quit) stays the default ink icon. |
 
 Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glow pink. B6 `DANGER()`, P2 shadows and P4 `SCRIM()` use the dark values. C16 overlays and L5 HUD keep their fixed colours. L1–L8 are Light Classic rules.
 
@@ -489,3 +489,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-27, Roman: TH15 Dock icon follows the theme (canvas https://claude.ai/artifact/B7RVnaSUGL6BKVxQmBukyp, option A); TH10 drops "the app icon stays lime".
 
 2026-11-27, Roman: W14 Monitor widget and W15 widget defaults (canvas https://claude.ai/artifact/T47QsQUYGajsdkea2VsJjd, variant A).
+
+2026-11-27: TH15 Dock icon shipped (✅, code in #457).
