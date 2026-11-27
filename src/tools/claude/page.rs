@@ -819,6 +819,12 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
     }
     p.add(Shape::mesh(mesh));
     p.add(Shape::line(pts, Stroke::new(2.0, tint::CLAUDE())));
+    // the hovered day's own stretch of the line
+    if let Some(((_, a, b, Some(v), sum), _)) = &hover {
+        let from = Pos2::new(x(*a), y(sum - v));
+        let to = if *b > now { at } else { Pos2::new(x(*b), y(*sum)) };
+        p.line_segment([from, to], Stroke::new(3.5, tint::CLAUDE()));
+    }
     // forecast at the current rate, once there's a rate to tell
     if let Some(pc) = pace::of(l.pct, start, end, now) {
         if let Some(out) = pc.out_at.filter(|o| *o > now) {
@@ -842,15 +848,66 @@ fn week_card(ui: &mut Ui, cr: Rect, info: &UsageInfo, l: &Limit) {
         let mut tip = egui::Tooltip::for_enabled(&resp);
         tip.popup = tip.popup.align(egui::RectAlign::RIGHT_START).align_alternatives(&[egui::RectAlign::LEFT_START]).gap(6.0);
         let (d, v, sum) = (*d, *v, *sum);
-        tip.show(|ui| {
-            use egui::RichText;
-            egui::Grid::new("ai-week-tip").num_columns(2).spacing([sp::M, 6.0]).show(ui, |ui| {
-                for (k, val) in [(crate::kit::date::wd(&d), format!("{v:.0}%")), (ts!("ai.total"), format!("{sum:.0}%"))] {
-                    ui.label(RichText::new(k).font(ty::label()).color(TEXT_DIM()));
-                    ui.label(RichText::new(val).font(ty::label()).color(TEXT()));
-                    ui.end_row();
-                }
-            });
+        tip.show(|ui| day_tip(ui, info, d, v, sum));
+    }
+}
+
+/// SP25 day hover: the date, what the day took of the week and the total
+/// by its end; its tokens, cost (when shown) and requests; its top models.
+fn day_tip(ui: &mut Ui, info: &UsageInfo, d: NaiveDate, used: f32, week: f32) {
+    use egui::RichText;
+    let day = info.local.days.iter().find(|x| x.date == d);
+    let rec = info.local.archive.iter().find(|x| x.date == d);
+    let tokens = day.map(|x| x.tokens).or(rec.map(|x| x.tokens)).unwrap_or(0);
+    let usd = day.map(|x| x.usd).or(rec.map(|x| x.usd)).unwrap_or(0.0);
+    let requests = day.map(|x| x.requests).or(rec.map(|x| x.requests)).unwrap_or(0);
+    let models = rec.map(|r| ai::shares_of(std::iter::once(r), true)).unwrap_or_default();
+    let mtotal: u64 = models.iter().map(|m| m.tokens).sum();
+    let dim = |ui: &mut Ui, t: &str| ui.label(RichText::new(t).font(ty::label()).color(TEXT_DIM()));
+    let val = |ui: &mut Ui, t: String| ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label(RichText::new(t).font(ty::label()).color(TEXT())));
+    ui.label(RichText::new(crate::kit::date::day_title(&d)).font(bold(12.5)).color(TEXT()));
+    ui.add_space(4.0);
+    egui::Grid::new("ai-week-tip").num_columns(2).spacing([sp::L, 6.0]).show(ui, |ui| {
+        dim(ui, ts!("ai.wk.used"));
+        val(ui, format!("+{used:.0}%"));
+        ui.end_row();
+        dim(ui, ts!("ai.wk.week"));
+        val(ui, format!("{week:.0}%"));
+        ui.end_row();
+    });
+    if tokens > 0 {
+        ui.separator();
+        egui::Grid::new("ai-week-tip-use").num_columns(2).spacing([sp::L, 6.0]).show(ui, |ui| {
+            dim(ui, ts!("ai.kind.tokens"));
+            val(ui, ai::human_tokens(tokens));
+            ui.end_row();
+            if settings::get().show_cost && usd > 0.0 {
+                dim(ui, ts!("ai.cost"));
+                val(ui, parts::usd(usd));
+                ui.end_row();
+            }
+            if requests > 0 {
+                dim(ui, ts!("ai.kind.requests"));
+                val(ui, requests.to_string());
+                ui.end_row();
+            }
+        });
+    }
+    if mtotal > 0 {
+        ui.separator();
+        egui::Grid::new("ai-week-tip-models").num_columns(2).spacing([sp::L, 6.0]).show(ui, |ui| {
+            let mut models = models;
+            models.sort_by_key(|m| std::cmp::Reverse(m.tokens));
+            for m in models.iter().take(3) {
+                let share = m.tokens as f32 / mtotal as f32;
+                dim(ui, &m.name);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(RichText::new(format!("{:.0}%", share * 100.0)).font(ty::label()).color(TEXT()));
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(56.0, 4.0), Sense::hover());
+                    bar(ui.painter(), r, share, tint::CLAUDE());
+                });
+                ui.end_row();
+            }
         });
     }
 }
