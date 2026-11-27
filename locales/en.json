@@ -2206,7 +2206,15 @@
     "automation_access": "Automation access",
     "finder_access": "Finder access",
     "finder": "Finder",
-    "updated": "Updated"
+    "updated": "Updated",
+    "whats_new": "What's new"
+  },
+  "new": {
+    "title": "What's new",
+    "v022_claude": "Limits, Cost and Tokens tabs · More Claude accounts · History up to All time · New widgets",
+    "v022_cleanup": "Auto clean on a schedule · AI agent caches per tool",
+    "v022_uninstaller": "Sizes the app you open first",
+    "v022_settings": "About tab with updates and logs"
   },
   "setup": {
     "back": "Back",

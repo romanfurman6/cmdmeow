@@ -69,6 +69,8 @@ const TAB_ORDER: [usize; 7] = [2, 1, 3, 4, 5, 0, 6];
 pub const TAB_GENERAL: usize = 2;
 /// Settings › Tools.
 pub const TAB_TOOLS: usize = 1;
+/// Settings › About.
+pub const TAB_ABOUT: usize = 6;
 
 pub fn settings_page(app: &mut App, ui: &mut Ui, r: Rect) {
     let p = ui.painter().clone();
@@ -877,6 +879,9 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
     let btn = |bw: f32| Rect::from_min_size(Pos2::new(right - bw, head.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
     // screenshots: the state CMDMEOW_DEMO_UPDATE put it in, else "Up to date"
     let state = update::state();
+    // where the update state starts, for SP28's button left of it
+    let tw = |t: &str, f: egui::FontId| p.layout_no_wrap(t.to_owned(), f, TEXT()).size().x;
+    let mut left;
     match &state {
         State::Available(m) => {
             let label = ts!("app.update");
@@ -885,6 +890,7 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
                 update::install();
             }
             p.text(Pos2::new(b.left() - sp::S, head.center().y), Align2::RIGHT_CENTER, &m.version, bold(13.0), ACCENT());
+            left = b.left() - sp::S - tw(&m.version, bold(13.0));
         }
         State::Downloading(..) | State::Installing(_) | State::Restarting => {
             let f = if let State::Downloading(_, f) = &state { *f } else { 1.0 };
@@ -892,6 +898,7 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
             let tr = Rect::from_min_size(Pos2::new(right - 36.0, head.center().y - 8.0), Vec2::new(36.0, 16.0));
             p.text(tr.right_center(), Align2::RIGHT_CENTER, pct, font(12.0), TEXT_DIM());
             bar(&p, Rect::from_min_size(Pos2::new(tr.left() - 8.0 - 160.0, head.center().y - 2.0), Vec2::new(160.0, 4.0)), f, ACTION());
+            left = tr.left() - 8.0 - 160.0;
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
         State::Failed(_, why) => {
@@ -901,6 +908,7 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
                 update::open_releases();
             }
             p.text(Pos2::new(b.left() - sp::S, head.center().y), Align2::RIGHT_CENTER, ts!("app.update_failed"), font(13.0), RED());
+            left = b.left() - sp::S - tw(ts!("app.update_failed"), font(13.0));
         }
         State::Idle => {
             let label = ts!("app.check_updates");
@@ -910,14 +918,27 @@ fn about_list(app: &mut App, ui: &mut Ui, body: Rect) -> f32 {
                 update::check_now();
             }
             let at = Pos2::new(b.left() - sp::S, head.center().y);
+            left = b.left();
             if checking {
                 spinner(&p, Pos2::new(at.x - 7.0, at.y), 6.0, now, TEXT_DIM());
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                left = at.x - 14.0;
             } else if app.demo || update::up_to_date() {
                 p.text(at, Align2::RIGHT_CENTER, ts!("app.up_to_date"), font(13.0), TEXT_FAINT());
+                left = at.x - tw(ts!("app.up_to_date"), font(13.0));
             } else if update::check_failed() {
                 p.text(at, Align2::RIGHT_CENTER, ts!("app.cant_check"), font(13.0), AMBER());
+                left = at.x - tw(ts!("app.cant_check"), font(13.0));
             }
+        }
+    }
+    // SP28: the list of what this version changed, again
+    if super::whats_new::has_notes() {
+        let label = ts!("app.whats_new");
+        let bw = button_width(&p, label, BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(left - sp::M - bw, head.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
+        if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() {
+            super::whats_new::reopen();
         }
     }
     y = head.bottom() + sp::L;

@@ -16,6 +16,13 @@ fn planned() -> [(Icon, &'static str, &'static str); 4] {
 /// `draw_lights`: paint traffic lights ourselves (screenshots; the real
 /// window has native ones).
 pub fn window_ui(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, cx: &mut Cx) {
+    window_body(app, outer, full, draw_lights, cx);
+    // SP28: over the page or Settings, once per version
+    let ctx = outer.ctx().clone();
+    super::whats_new::window_frame(app, &ctx);
+}
+
+fn window_body(app: &mut App, outer: &mut Ui, full: Rect, draw_lights: bool, cx: &mut Cx) {
     let ui = &mut *outer;
     let ctx = ui.ctx().clone();
     let side = Rect::from_min_size(full.min, Vec2::new(SIDEBAR_W, full.height()));
