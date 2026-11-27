@@ -21,6 +21,42 @@ pub fn tools(env: &ToolEnv) -> (Screenshot, Video, Sharing) {
     (Screenshot(c.clone()), Video(c.clone()), Sharing(c))
 }
 
+
+/// The setup step's shortcuts of `cmds`: each with its keys, on or off.
+fn keys_of(c: &Capture, cmds: &[Command]) -> Vec<crate::core::tool::SetupKey> {
+    cmds.iter()
+        .filter_map(|&cmd| {
+            let cur = c.settings.shortcut(cmd).cloned();
+            let keys = cur.clone().or_else(|| cmd.default_shortcut())?.display();
+            Some(crate::core::tool::SetupKey { id: cmd.slug(), label: cmd.label(), keys, on: cur.is_some() })
+        })
+        .collect()
+}
+
+/// Turn one of [`keys_of`] on (its default keys) or off.
+fn set_key(c: &mut Capture, id: &str, on: bool) {
+    let Some(cmd) = Command::from_slug(id) else { return };
+    if on == c.settings.shortcut(cmd).is_some() {
+        return;
+    }
+    c.settings.set_shortcut(cmd, if on { cmd.default_shortcut() } else { None });
+    c.save_settings();
+    c.apply_keys();
+}
+
+fn key_icon(id: &str, p: &egui::Painter, r: Rect, col: egui::Color32) -> bool {
+    match Command::from_slug(id) {
+        Some(cmd) => {
+            super::icons::draw(p, ui::command_icon(cmd), r, col);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Screenshot's shortcuts on its setup step (Delayed and History have no default).
+const SHOT_SETUP: [Command; 6] = [Command::Area, Command::Window, Command::Screen, Command::Text, Command::Color, Command::Ruler];
+
 impl Tool for Sharing {
     fn id(&self) -> ToolId {
         SHARING_ID
@@ -75,6 +111,15 @@ impl Tool for Screenshot {
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
         c.settings.shortcut(Command::Area).map(|s| vec![(ts!("cap.sc.area"), s.display())]).unwrap_or_default()
+    }
+    fn setup_keys(&self) -> Vec<crate::core::tool::SetupKey> {
+        keys_of(&self.0.borrow(), &SHOT_SETUP)
+    }
+    fn set_setup_key(&mut self, id: &str, on: bool) {
+        set_key(&mut self.0.borrow_mut(), id, on);
+    }
+    fn setup_key_icon(&self, id: &str, p: &egui::Painter, r: Rect, col: egui::Color32) -> bool {
+        key_icon(id, p, r, col)
     }
     fn sidebar_meta(&self) -> String {
         key(&self.0.borrow(), Command::Area)
@@ -142,6 +187,15 @@ impl Tool for Video {
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         let c = self.0.borrow();
         c.settings.shortcut(Command::Record).map(|s| vec![(ts!("cap.sc.record"), s.display())]).unwrap_or_default()
+    }
+    fn setup_keys(&self) -> Vec<crate::core::tool::SetupKey> {
+        keys_of(&self.0.borrow(), &[Command::Record])
+    }
+    fn set_setup_key(&mut self, id: &str, on: bool) {
+        set_key(&mut self.0.borrow_mut(), id, on);
+    }
+    fn setup_key_icon(&self, id: &str, p: &egui::Painter, r: Rect, col: egui::Color32) -> bool {
+        key_icon(id, p, r, col)
     }
     fn sidebar_meta(&self) -> String {
         let c = self.0.borrow();

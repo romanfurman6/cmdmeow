@@ -256,6 +256,17 @@ pub trait Tool {
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         Vec::new()
     }
+    /// System-wide shortcuts the tool turns on, for its setup step: each
+    /// with its default keys, on or off.
+    fn setup_keys(&self) -> Vec<SetupKey> {
+        Vec::new()
+    }
+    /// Turn one of [`Tool::setup_keys`] on (its default keys) or off.
+    fn set_setup_key(&mut self, _id: &str, _on: bool) {}
+    /// Draw one of [`Tool::setup_keys`]' icons in `r`; false draws the badge's.
+    fn setup_key_icon(&self, _id: &str, _p: &egui::Painter, _r: Rect, _col: Color32) -> bool {
+        false
+    }
 
     // ---- panel widgets
     fn panel_header(&self) -> Option<PanelHeader> {
@@ -409,6 +420,16 @@ mod tests {
         assert_eq!(a[2], Action::OpenPage { tool: "system".into(), route: "cpu".into() });
         assert!(cx.take_actions().is_empty());
     }
+}
+
+/// A system-wide shortcut a tool turns on, as its setup step shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetupKey {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// The keys it gets ("⇧⌘2"): its own when set, else the default.
+    pub keys: String,
+    pub on: bool,
 }
 
 /// A model a tool needs, as setup shows it.

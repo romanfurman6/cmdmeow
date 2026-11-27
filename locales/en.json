@@ -2233,6 +2233,12 @@
     "v022_settings": "About tab with updates and logs"
   },
   "setup": {
+    "why_rec_voice": "Your voice in recordings",
+    "why_rec_camera": "Your camera in recordings",
+    "why_dict_mic": "Hears what you say",
+    "why_dict_type": "Types the text for you",
+    "shortcuts": "Shortcuts",
+    "model": "Model",
     "back": "Back",
     "continue": "Continue",
     "restart_open": "Restart and open",
