@@ -20,6 +20,31 @@ pub fn forecast(l: &Limit) -> String {
     }
 }
 
+/// A weekly window (by length, or by name when the length is unknown).
+pub fn is_weekly(l: &Limit) -> bool {
+    l.window_secs >= 6 * 86_400 || (l.window_secs <= 0 && l.label.to_lowercase().contains("week"))
+}
+
+/// SP22: a weekly limit's caption says how the week ends at this rate:
+/// green "~15% left at reset", or red "Runs out Fri 19:10". `None` for
+/// other limits, or before there's a rate to tell (3% of the window).
+pub fn week_word(l: &Limit) -> Option<(String, Color32)> {
+    if !is_weekly(l) {
+        return None;
+    }
+    let now = now();
+    let pc = pace::of_limit(l, now)?;
+    if let Some(at) = pc.out_at {
+        return Some((t!("ai.runs_out", when = alerts::when(at, now)).into_owned(), RED()));
+    }
+    let gone = (now - (l.resets_at? - l.window_secs)) as f32;
+    if l.window_secs <= 0 || gone < l.window_secs as f32 * 0.03 {
+        return None;
+    }
+    let left = (100.0 - l.pct * l.window_secs as f32 / gone).clamp(0.0, 100.0);
+    Some((t!("ai.left_at_reset", pct = left : {:.0}).into_owned(), GREEN()))
+}
+
 /// "21:10" / "Mon 05:00": when a limit resets.
 pub fn reset_when(l: &Limit) -> String {
     l.resets_at.map(|r| alerts::when(r, now())).unwrap_or_else(|| l.resets.split(" (").next().unwrap_or("").to_string())
@@ -187,9 +212,25 @@ pub fn day_bars(p: &egui::Painter, r: Rect, daily: &[u64], gap: f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::{buckets, period_days, project_names, Period};
+    use super::{buckets, now, period_days, project_names, week_word, Period};
+    use crate::kit::glass::{GREEN, RED};
     use crate::kit::ai::{DayRecord, Limit};
     use chrono::NaiveDate;
+
+    #[test]
+    fn week_word_tells_how_the_week_ends() {
+        let wk = |pct: f32| Limit { label: "Current week (all models)".into(), pct, resets_at: Some(now() + 2 * 86_400), window_secs: 7 * 86_400, ..Default::default() };
+        // 50% in 5 of 7 days: 70% by the reset, 30% left
+        let (w, c) = week_word(&wk(50.0)).unwrap();
+        assert_eq!((w.as_str(), c), ("~30% left at reset", GREEN()));
+        // 80% in 5 days runs out before the reset
+        let (w, c) = week_word(&wk(80.0)).unwrap();
+        assert!(w.starts_with("Runs out"));
+        assert_eq!(c, RED());
+        // the 5-hour limit keeps its own caption
+        let s = Limit { label: "Current session".into(), pct: 50.0, resets_at: Some(now() + 3600), window_secs: 5 * 3600, ..Default::default() };
+        assert!(week_word(&s).is_none());
+    }
 
     #[test]
     fn periods_add_up_days_into_weeks_and_months() {
