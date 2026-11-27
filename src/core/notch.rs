@@ -116,7 +116,8 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     // Esc closes it even when another app has the keys (opened by hover,
     // the island never takes them)
     let esc = mac::esc_down();
-    let esc_hit = esc && !STATE.with(|s| s.borrow().esc);
+    // a tap shorter than one look is still caught by the key monitor
+    let esc_hit = (esc && !STATE.with(|s| s.borrow().esc)) | mac::take_esc();
     STATE.with(|s| s.borrow_mut().esc = esc);
     // the pointer, from macOS: the window gets no moves while another app is in front
     let mouse = mac::mouse();
@@ -187,6 +188,7 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     crate::kit::viewport::show(ctx, id, builder, |ui, _| {
         if !STATE.with(|s| s.borrow().ready) {
             if mac::setup(id, rect) {
+                mac::watch_esc(ctx);
                 STATE.with(|s| s.borrow_mut().ready = true);
             }
         }
@@ -367,6 +369,48 @@ mod mac {
         Some(Geo { notch, screen, real: false })
     }
 
+    static ESC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// An Esc press seen since the last call.
+    pub fn take_esc() -> bool {
+        ESC.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Watch Esc presses for the app's life: the island never takes the
+    /// keys, so a global monitor (other apps in front; needs Accessibility,
+    /// as the shortcuts do) and a local one (ours in front).
+    pub fn watch_esc(ctx: &egui::Context) {
+        use std::sync::atomic::Ordering;
+        let ctx_g = ctx.clone();
+        let global = block2::RcBlock::new(move |e: std::ptr::NonNull<AnyObject>| {
+            let code: u16 = unsafe { msg_send![e.as_ref(), keyCode] };
+            if code == 0x35 {
+                ESC.store(true, Ordering::Relaxed);
+                ctx_g.request_repaint();
+            }
+        });
+        let ctx_l = ctx.clone();
+        let local = block2::RcBlock::new(move |e: std::ptr::NonNull<AnyObject>| -> *mut AnyObject {
+            let code: u16 = unsafe { msg_send![e.as_ref(), keyCode] };
+            if code == 0x35 {
+                ESC.store(true, Ordering::Relaxed);
+                ctx_l.request_repaint();
+            }
+            e.as_ptr()
+        });
+        unsafe {
+            // NSEventMaskKeyDown
+            let mask: u64 = 1 << 10;
+            let g: Option<Retained<AnyObject>> = msg_send![class!(NSEvent), addGlobalMonitorForEventsMatchingMask: mask, handler: &*global];
+            let l: Option<Retained<AnyObject>> = msg_send![class!(NSEvent), addLocalMonitorForEventsMatchingMask: mask, handler: &*local];
+            // watched for the app's whole life
+            std::mem::forget(g);
+            std::mem::forget(l);
+        }
+        std::mem::forget(global);
+        std::mem::forget(local);
+    }
+
     /// Esc is held, wherever the keys go (no permission needed to read it).
     pub fn esc_down() -> bool {
         #[link(name = "CoreGraphics", kind = "framework")]
@@ -430,6 +474,10 @@ mod mac {
     pub fn esc_down() -> bool {
         false
     }
+    pub fn take_esc() -> bool {
+        false
+    }
+    pub fn watch_esc(_ctx: &egui::Context) {}
     pub fn setup(_id: egui::ViewportId, _at: egui::Rect) -> bool {
         true
     }
