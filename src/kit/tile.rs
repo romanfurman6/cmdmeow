@@ -181,16 +181,28 @@ pub fn button(ui: &mut Ui, rect: Rect, id: egui::Id, glyph: Icon, color: Color32
 pub fn button_with(ui: &mut Ui, rect: Rect, id: egui::Id, color: Color32, label: &str, glyph: impl FnOnce(&egui::Painter, Rect, Color32)) -> Response {
     let resp = card(ui, rect, id, false);
     let p = ui.painter();
+    let col = if color == TEXT() { TEXT() } else { lift(color) };
+    let width = |f: &egui::FontId| p.layout_no_wrap(label.to_string(), f.clone(), TEXT()).size().x;
     let gs = 14.0;
     let gap = 6.0;
     let room = rect.width() - 2.0 * 8.0 - gs - gap;
-    // a long name steps down to 11 before it's cut
-    let fid = [12.0, 11.0].into_iter().map(bold).find(|f| p.layout_no_wrap(label.to_string(), f.clone(), TEXT()).size().x <= room).unwrap_or_else(|| bold(11.0));
-    let tw = p.layout_no_wrap(label.to_string(), fid.clone(), TEXT()).size().x.min(room);
-    let x0 = rect.center().x - (gs + gap + tw) / 2.0;
-    let col = if color == TEXT() { TEXT() } else { lift(color) };
-    glyph(p, Rect::from_min_size(Pos2::new(x0, rect.center().y - gs / 2.0), Vec2::splat(gs)), col);
-    text_fit(p, Pos2::new(x0 + gs + gap, rect.center().y), Align2::LEFT_CENTER, label, fid, col, room);
+    // the glyph beside the name; a long name steps down to 11
+    if let Some(fid) = [12.0, 11.0].into_iter().map(bold).find(|f| width(f) <= room) {
+        let tw = width(&fid);
+        let x0 = rect.center().x - (gs + gap + tw) / 2.0;
+        glyph(p, Rect::from_min_size(Pos2::new(x0, rect.center().y - gs / 2.0), Vec2::splat(gs)), col);
+        p.text(Pos2::new(x0 + gs + gap, rect.center().y), Align2::LEFT_CENTER, label, fid, col);
+        return resp;
+    }
+    // still too long ("Keep Awake" in one column): a smaller glyph over the
+    // name, never cut with "…"
+    let gs = 12.0;
+    let room = rect.width() - 2.0 * 6.0;
+    let fid = [11.0, 10.0].into_iter().map(bold).find(|f| width(f) <= room).unwrap_or_else(|| bold(10.0));
+    let th = p.layout_no_wrap(label.to_string(), fid.clone(), TEXT()).size().y;
+    let top = rect.center().y - (gs + 2.0 + th) / 2.0;
+    glyph(p, Rect::from_center_size(Pos2::new(rect.center().x, top + gs / 2.0), Vec2::splat(gs)), col);
+    text_fit(p, Pos2::new(rect.center().x, top + gs + 2.0), Align2::CENTER_TOP, label, fid, col, room);
     resp
 }
 

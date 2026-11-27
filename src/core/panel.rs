@@ -204,7 +204,9 @@ pub fn title_line(app: &App, p: &egui::Painter, x0: f32, top: f32, width: f32) {
         Some(h) => {
             // one line: "MacBook Pro  • All good"
             let cy = top + 31.0;
-            let t = text_fit(p, Pos2::new(x0, cy), Align2::LEFT_CENTER, &h.title, ty::lead(), TEXT(), width * 0.65);
+            // the name gets what the status leaves, at least 65 %
+            let status_w = if h.status.is_empty() { -21.0 } else { p.layout_no_wrap(h.status.clone(), ty::label(), TEXT()).size().x };
+            let t = text_fit(p, Pos2::new(x0, cy), Align2::LEFT_CENTER, &h.title, ty::lead(), TEXT(), (width * 0.65).max(width - status_w - 21.0));
             let dx = t.right() + 10.0;
             // a healthy Mac shows just its name; a dot and word only when something needs a look
             if h.status.is_empty() {
@@ -216,6 +218,17 @@ pub fn title_line(app: &App, p: &egui::Painter, x0: f32, top: f32, width: f32) {
         None => {
             text_fit(p, Pos2::new(x0, top + 31.0), Align2::LEFT_CENTER, "Cmd+Meow", bold(15.0), TEXT(), width);
         }
+    }
+}
+
+/// How wide the header's title line is drawn whole: the name, and the
+/// dot and status when there is one.
+pub fn title_width(app: &App, ctx: &egui::Context) -> f32 {
+    let w = |text: String, font: egui::FontId| ctx.fonts_mut(|f| f.layout_no_wrap(text, font, TEXT()).size().x);
+    match app.tools.iter().enumerate().filter(|(i, _)| app.tool_on(*i)).find_map(|(_, t)| t.panel_header()) {
+        Some(h) if h.status.is_empty() => w(h.title, ty::lead()),
+        Some(h) => w(h.title, ty::lead()) + 21.0 + w(h.status, ty::label()),
+        None => w("Cmd+Meow".into(), bold(15.0)),
     }
 }
 

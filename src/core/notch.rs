@@ -51,6 +51,8 @@ struct State {
     open: bool,
     /// The window is set up (level, Spaces, tracking area).
     ready: bool,
+    /// Esc was down on the last look.
+    esc: bool,
 }
 
 thread_local! {
@@ -68,20 +70,29 @@ pub fn band(notch_h: f32) -> f32 {
     notch_h.max(40.0)
 }
 
-/// The island's size when open: the header band, then the panel's grid.
-pub fn open_size(notch_h: f32, content_h: f32, max_h: f32) -> Vec2 {
+/// The island's width: the panel's, or wider when the header's title
+/// (`title_w`) wouldn't fit whole left of the notch (`notch_w`; 0 without
+/// one, where the title gets the left half).
+pub fn body_width(notch_w: f32, title_w: f32) -> f32 {
+    let side = 16.0 + title_w + 10.0;
+    m::PANEL_WIDTH.max(notch_w + 2.0 * side).min(m::PANEL_WIDTH + 240.0).ceil()
+}
+
+/// The island's size when open (`body_w` wide, plus the ears): the header
+/// band, then the panel's grid.
+pub fn open_size(notch_h: f32, body_w: f32, content_h: f32, max_h: f32) -> Vec2 {
     let top = band(notch_h);
     let h = top + panel::GAP + content_h + panel::PAD;
-    Vec2::new(m::PANEL_WIDTH + 2.0 * EAR, h.min(max_h).max(top + 40.0))
+    Vec2::new(body_w + 2.0 * EAR, h.min(max_h).max(top + 40.0))
 }
 
 /// The window's rect: closed it covers only the notch (or the strip);
 /// open, the island plus the ears, centred on the notch.
-pub fn window_rect(g: &Geo, open: bool, content_h: f32) -> Rect {
+pub fn window_rect(g: &Geo, open: bool, body_w: f32, content_h: f32) -> Rect {
     if !open {
         return g.notch;
     }
-    let size = open_size(g.notch.height(), content_h, g.screen.height() * 0.8);
+    let size = open_size(g.notch.height(), body_w, content_h, g.screen.height() * 0.8);
     let x = (g.notch.center().x - size.x / 2.0).clamp(g.screen.left(), g.screen.right() - size.x);
     Rect::from_min_size(Pos2::new(x, g.screen.top()), size)
 }
@@ -96,8 +107,14 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     let Some(g) = mac::geometry() else { return };
     let now = Instant::now();
     let content_h = panel::place(app, panel::inner_width()).1.max(40.0);
+    let body_w = body_width(if g.real { g.notch.width() } else { 0.0 }, panel::title_width(app, ctx));
     let open = STATE.with(|s| s.borrow().open);
-    let rect = window_rect(&g, open, content_h);
+    let rect = window_rect(&g, open, body_w, content_h);
+    // Esc closes it even when another app has the keys (opened by hover,
+    // the island never takes them)
+    let esc = mac::esc_down();
+    let esc_hit = esc && !STATE.with(|s| s.borrow().esc);
+    STATE.with(|s| s.borrow_mut().esc = esc);
     // the pointer, from macOS: the window gets no moves while another app is in front
     let mouse = mac::mouse();
     let over_notch = mouse.is_some_and(|p| g.notch.expand2(Vec2::new(0.0, 1.0)).contains(p));
@@ -133,12 +150,17 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     if open || rest {
         ctx.request_repaint_after(Duration::from_millis(60));
     }
+    // right after launch: come back until the window is set up, so the
+    // first hover already wakes the app
+    if !STATE.with(|s| s.borrow().ready) {
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
     if changed {
         ctx.request_repaint();
     }
     // stays big while it shrinks back into the notch
     let opened = ctx.animate_bool_with_time(egui::Id::new("notch-open"), open, 0.28);
-    let rect = window_rect(&g, open || opened > 0.01, content_h);
+    let rect = window_rect(&g, open || opened > 0.01, body_w, content_h);
     let builder = ViewportBuilder::default()
         .with_title(TITLE)
         .with_decorations(false)
@@ -154,7 +176,7 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     let notch = g.notch;
     let real = g.real;
     let queued = cx.len();
-    let mut close = false;
+    let mut close = open && esc_hit;
     crate::kit::viewport::show(ctx, id, builder, |ui, _| {
         if !STATE.with(|s| s.borrow().ready) {
             if mac::setup(id) {
@@ -190,17 +212,25 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
             glass::set_theme(Theme::Dark);
         }
         let top = band(notch.height());
-        let grid = Rect::from_min_max(Pos2::new(body.left() + panel::PAD, body.top() + top + panel::GAP), Pos2::new(body.right() - panel::PAD, body.bottom() - panel::PAD));
+        // the panel's own grid, at its own width all the way (laid out on a
+        // body still growing, cells had no room): the body only clips it
+        let gw = panel::inner_width();
+        let grid = Rect::from_min_max(Pos2::new(body.center().x - gw / 2.0, body.top() + top + panel::GAP), Pos2::new(body.center().x + gw / 2.0, body.bottom() - panel::PAD));
+        ui.set_clip_rect(body.intersect(full));
         ui.set_opacity(((t - 0.6) / 0.4).clamp(0.0, 1.0));
-        let (placed, need) = panel::place(app, grid.width());
+        let (placed, need) = panel::place(app, gw);
         let mut draw = |ui: &mut egui::Ui, origin: Pos2| {
             for w in &placed {
                 panel::draw_widget(app, ui, w, w.rect.translate(origin.to_vec2()), cx);
             }
         };
         if need > grid.height() + 0.5 {
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(grid).layout(egui::Layout::top_down(egui::Align::Min)));
-            child.set_clip_rect(grid.expand(4.0));
+            // as in the panel: the bar runs in the right padding, and the
+            // cards' edges stay inside the clip
+            let scroll_r = Rect::from_min_max(grid.min, Pos2::new(grid.right() + panel::PAD - 2.0, grid.bottom()));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(scroll_r).layout(egui::Layout::top_down(egui::Align::Min)));
+            child.spacing_mut().scroll.floating_allocated_width = 0.0;
+            child.set_clip_rect(grid.expand2(Vec2::new(panel::PAD, 8.0)).intersect(body));
             egui::ScrollArea::vertical().id_salt("notch-widgets").auto_shrink([false, false]).show(&mut child, |ui| {
                 let (origin, _) = ui.allocate_exact_size(Vec2::new(grid.width(), need), egui::Sense::hover());
                 draw(ui, origin.min);
@@ -212,6 +242,7 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
         // left, Quit and Open on the right
         let nl = full.center().x - notch.width() / 2.0;
         let opened_app = app.app_open;
+        ui.set_clip_rect(full);
         let x0 = body.left() + 16.0;
         let title_right = if real { nl - 8.0 } else { body.center().x };
         panel::header_at(app, ui, x0, title_right, body.right() - 14.0, body.top() + top / 2.0);
@@ -327,6 +358,16 @@ mod mac {
         Some(Geo { notch, screen, real: false })
     }
 
+    /// Esc is held, wherever the keys go (no permission needed to read it).
+    pub fn esc_down() -> bool {
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGEventSourceKeyState(state: i32, key: u16) -> bool;
+        }
+        // kCGEventSourceStateCombinedSessionState, kVK_Escape
+        unsafe { CGEventSourceKeyState(0, 0x35) }
+    }
+
     /// The pointer, top-left origin.
     pub fn mouse() -> Option<Pos2> {
         let mtm = MainThreadMarker::new()?;
@@ -370,6 +411,9 @@ mod mac {
     pub fn mouse() -> Option<egui::Pos2> {
         None
     }
+    pub fn esc_down() -> bool {
+        false
+    }
     pub fn setup(_id: egui::ViewportId) -> bool {
         true
     }
@@ -387,19 +431,29 @@ mod tests {
     #[test]
     fn closed_covers_only_the_notch() {
         let g = geo();
-        assert_eq!(window_rect(&g, false, 300.0), g.notch);
+        assert_eq!(window_rect(&g, false, 380.0, 300.0), g.notch);
     }
 
     #[test]
     fn open_is_the_panel_grid_centred_under_the_notch() {
         let g = geo();
-        let r = window_rect(&g, true, 200.0);
+        let r = window_rect(&g, true, m::PANEL_WIDTH, 200.0);
         assert_eq!(r.top(), 0.0);
         assert!((r.center().x - g.notch.center().x).abs() < 0.01);
         assert_eq!(r.width(), m::PANEL_WIDTH + 2.0 * EAR);
         assert_eq!(r.height(), band(32.0) + panel::GAP + 200.0 + panel::PAD);
         // never taller than most of the display
-        assert!(window_rect(&g, true, 5000.0).height() <= g.screen.height() * 0.8 + 0.01);
+        assert!(window_rect(&g, true, m::PANEL_WIDTH, 5000.0).height() <= g.screen.height() * 0.8 + 0.01);
+    }
+
+    #[test]
+    fn a_long_title_widens_the_island_so_it_fits_left_of_the_notch() {
+        // a short one keeps the panel's width
+        assert_eq!(body_width(188.0, 40.0), m::PANEL_WIDTH.ceil());
+        let w = body_width(188.0, 150.0);
+        assert!((w - 188.0) / 2.0 >= 16.0 + 150.0 + 10.0 - 0.01);
+        // never wider than the cap
+        assert_eq!(body_width(188.0, 2000.0), (m::PANEL_WIDTH + 240.0).ceil());
     }
 
     #[test]

@@ -79,7 +79,10 @@ mod tests {
 
 // ---------------------------------------------------------------- setup step
 
+use super::panel;
 use super::shell::App;
+use crate::kit::glass;
+use crate::kit::mechanics as m;
 use crate::kit::glass::*;
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 
@@ -91,7 +94,7 @@ pub fn setup_place(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
     let n = Place::ALL.len() as f32;
     let cw = (body.width() - (n - 1.0) * gap) / n;
     let title_h = 30.0 + 20.0;
-    let ch = (cw * 0.75).min(body.height() - title_h - sp::L);
+    let ch = (cw * 0.9).min(body.height() - title_h - sp::L);
     let head = body.center().y - (title_h + ch) / 2.0;
     p.text(Pos2::new(body.left(), head), Align2::LEFT_TOP, ts!("app.place.title"), bold(22.0), TEXT());
     let top = head + title_h;
@@ -106,6 +109,7 @@ pub fn setup_place(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
         let hov = ui.ctx().animate_bool(id.with("h"), resp.hovered());
         let r = r.translate(Vec2::new(0.0, -hov));
         art(&p, r, place, a);
+        mini(app, ui, r, place, a, k);
         let rad = CornerRadius::same(12);
         // H4: the picked card gets the 1.5 action ring
         p.rect_stroke(r, rad, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
@@ -147,46 +151,57 @@ fn art(p: &egui::Painter, r: Rect, place: Place, a: f32) {
     let notch_w = r.width() * 0.26;
     let notch = Rect::from_center_size(Pos2::new(r.center().x, bar.top() + 6.0), Vec2::new(notch_w, 12.0));
     p.rect_filled(notch, CornerRadius { nw: 0, ne: 0, sw: 5, se: 5 }, f(Color32::BLACK));
-    // a few mini widget cards in a grid
-    let cards = |area: Rect, bg: Color32, edge: bool| {
-        p.rect_filled(area, 8.0, f(bg));
-        if edge {
-            p.rect_stroke(area, 8.0, Stroke::new(1.0, f(Color32::from_white_alpha(30))), StrokeKind::Inside);
-        }
-        let pad = 5.0;
-        let g = 4.0;
-        let cell = (area.width() - 2.0 * pad - 3.0 * g) / 4.0;
-        let tint = [Color32::from_rgb(0x6F, 0xD6, 0xE8), Color32::from_rgb(0xB9, 0xA7, 0xFF), Color32::from_rgb(0x6F, 0xD6, 0xE8), Color32::from_rgb(0x8F, 0xD1, 0x4F)];
-        let mut y = area.top() + pad;
-        for row in 0..2 {
-            for c in 0..4 {
-                let cr = Rect::from_min_size(Pos2::new(area.left() + pad + c as f32 * (cell + g), y), Vec2::splat(cell));
-                if cr.bottom() > area.bottom() - pad + 0.5 {
-                    continue;
-                }
-                p.rect_filled(cr, 3.0, f(Color32::from_white_alpha(18)));
-                if row == 0 {
-                    p.circle_stroke(cr.center(), cell * 0.28, Stroke::new(1.5, f(tint[c])));
-                }
-            }
-            y += cell + g;
-        }
-    };
-    let w = r.width() * 0.62;
-    let h = (w - 10.0) / 4.0 * 2.0 + 14.0;
-    if place.notch() {
-        let isl = Rect::from_min_size(Pos2::new(r.center().x - w / 2.0, bar.top()), Vec2::new(w, h + 12.0));
-        p.rect_filled(isl, CornerRadius { nw: 0, ne: 0, sw: 10, se: 10 }, f(Color32::BLACK));
-        cards(Rect::from_min_max(Pos2::new(isl.left(), isl.top() + 12.0), isl.max), Color32::BLACK, false);
-    }
     if place.menubar() {
-        // the icon on the right of the menu bar, lit, and the panel under it
+        // the icon on the right of the menu bar, lit; the panel opens under it
         let icon = Rect::from_center_size(Pos2::new(r.right() - 22.0, bar.center().y), Vec2::new(10.0, 8.0));
         p.rect_filled(icon.expand(2.0), 3.0, f(Color32::from_white_alpha(60)));
         p.rect_filled(icon, 2.0, f(Color32::WHITE));
-        let pr = Rect::from_min_size(Pos2::new(r.right() - 8.0 - w, bar.bottom() + 4.0), Vec2::new(w, h));
-        cards(pr, Color32::from_rgb(0x13, 0x20, 0x0F), true);
     }
+}
+
+/// How small the real panel is drawn on a card.
+const MINI: f32 = 0.6;
+
+/// The user's own panel on a card, at 60 %: in the menu bar card the themed
+/// panel with its header under the icon, in the notch card the same widgets
+/// in the black island from the notch. Drawn for real (its own layer,
+/// scaled), but nothing on it takes a click.
+fn mini(app: &mut App, ui: &mut Ui, r: Rect, place: Place, a: f32, k: usize) {
+    let ctx = ui.ctx().clone();
+    let pw = m::PANEL_WIDTH;
+    let content = panel::content_height(app);
+    let (head, foot) = if place.notch() { (32.0, panel::PAD) } else { (panel::HEADER, panel::PAD) };
+    let full_h = head + content + foot;
+    // where it sits on the card, in card points
+    let size = Vec2::new(pw, full_h) * MINI;
+    let at = if place.notch() { Pos2::new(r.center().x - size.x / 2.0, r.top()) } else { Pos2::new(r.right() - 6.0 - size.x, r.top() + 20.0) };
+    // the card shows it down to just above the label
+    let clip = Rect::from_min_max(r.min, Pos2::new(r.max.x, r.bottom() - 44.0)).shrink(1.5);
+    let layer = egui::LayerId::new(egui::Order::Foreground, ui.id().with(("place-mini", k)));
+    let to = egui::emath::TSTransform::new(at.to_vec2(), MINI);
+    ctx.set_transform_layer(layer, to);
+    let local = Rect::from_min_size(Pos2::ZERO, Vec2::new(pw, full_h));
+    let mut child = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(local).disabled());
+    child.set_clip_rect(to.inverse() * clip);
+    child.set_opacity(a);
+    let was = glass::theme();
+    if place.notch() {
+        if was == glass::Theme::Light {
+            glass::set_theme(glass::Theme::Dark);
+        }
+        child.painter().rect_filled(local, egui::CornerRadius { nw: 0, ne: 0, sw: 26, se: 26 }, Color32::BLACK);
+    } else {
+        glass::backdrop_panel(child.painter(), local, 16.0, true);
+        child.painter().rect_stroke(local, 16.0, Stroke::new(1.0, glass::backdrop_edge()), StrokeKind::Inside);
+        panel::header_at(app, &mut child, local.left() + 16.0, f32::INFINITY, local.right() - 14.0, local.top() + 31.0);
+    }
+    let grid = Rect::from_min_size(Pos2::new(panel::PAD, head), Vec2::new(panel::inner_width(), content));
+    let (placed, _) = panel::place(app, grid.width());
+    let mut cx = super::tool::Cx::new();
+    for w in &placed {
+        panel::draw_widget(app, &mut child, w, w.rect.translate(grid.min.to_vec2()), &mut cx);
+    }
+    glass::set_theme(was);
 }
 
 fn ease(x: f32) -> f32 {
