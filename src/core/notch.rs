@@ -53,6 +53,9 @@ struct State {
     ready: bool,
     /// Esc was down on the last look.
     esc: bool,
+    /// Closed by Esc with the pointer still on the notch: hover waits
+    /// until it leaves, or it would open right back.
+    hold: bool,
 }
 
 thread_local! {
@@ -122,8 +125,11 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     let mut changed = false;
     STATE.with(|s| {
         let mut s = s.borrow_mut();
+        if s.hold && !over_notch {
+            s.hold = false;
+        }
         if !s.open {
-            if over_notch {
+            if over_notch && !s.hold {
                 let t = *s.rest.get_or_insert(now);
                 if now - t >= OPEN_AFTER {
                     s.open = true;
@@ -177,9 +183,10 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
     let real = g.real;
     let queued = cx.len();
     let mut close = open && esc_hit;
+    let mut by_esc = close;
     crate::kit::viewport::show(ctx, id, builder, |ui, _| {
         if !STATE.with(|s| s.borrow().ready) {
-            if mac::setup(id) {
+            if mac::setup(id, rect) {
                 STATE.with(|s| s.borrow_mut().ready = true);
             }
         }
@@ -254,6 +261,7 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
         }
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             close = true;
+            by_esc = true;
         }
     });
     // a widget asked for something (a page, a capture): the island steps aside
@@ -264,6 +272,7 @@ pub fn ui(app: &mut App, ctx: &egui::Context, cx: &mut Cx) {
                 s.open = false;
                 s.rest = None;
                 s.left = None;
+                s.hold = by_esc;
             }
         });
         ctx.request_repaint();
@@ -378,8 +387,8 @@ mod mac {
     /// Above the menu bar, on every Space and over full-screen apps, and a
     /// tracking area that wakes the app when the pointer comes in even while
     /// another app is in front. True once done.
-    pub fn setup(id: egui::ViewportId) -> bool {
-        let Some(_mtm) = MainThreadMarker::new() else { return false };
+    pub fn setup(id: egui::ViewportId, at: Rect) -> bool {
+        let Some(mtm) = MainThreadMarker::new() else { return false };
         let Some(view) = eframe::viewport_ns_view(id) else { return false };
         let Some(view) = (unsafe { (view as *const AnyObject).as_ref() }) else { return false };
         let window: Option<Retained<NSWindow>> = unsafe { msg_send![view, window] };
@@ -388,6 +397,13 @@ mod mac {
         window.setLevel(27);
         window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::FullScreenAuxiliary | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
         window.setHasShadow(false);
+        // made before its level was raised, macOS kept it under the menu
+        // bar: put it on the notch now (the builder won't ask again)
+        let frame = NSRect::new(
+            objc2_foundation::NSPoint::new(at.left() as f64, top(mtm) - at.bottom() as f64),
+            objc2_foundation::NSSize::new(at.width() as f64, at.height() as f64),
+        );
+        window.setFrame_display(frame, true);
         unsafe {
             // NSTrackingMouseEnteredAndExited | MouseMoved | ActiveAlways | InVisibleRect
             let opts: usize = 0x01 | 0x02 | 0x80 | 0x200;
@@ -414,7 +430,7 @@ mod mac {
     pub fn esc_down() -> bool {
         false
     }
-    pub fn setup(_id: egui::ViewportId) -> bool {
+    pub fn setup(_id: egui::ViewportId, _at: egui::Rect) -> bool {
         true
     }
 }
