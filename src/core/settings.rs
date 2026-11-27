@@ -53,7 +53,11 @@ impl WidgetPrefs {
         }
         for (k, default_on, d) in available {
             if !out.iter().any(|e| &e.key == k) {
-                let on = if self.hidden.contains(k) { false } else { *default_on };
+                // a new widget of a tool the user already arranged (Mac Health's
+                // Monitor next to its six readings) waits in the gallery
+                let tool = k.split_once('/').map_or(k.as_str(), |(t, _)| t);
+                let arranged = self.order.iter().any(|o| o.split_once('/').is_some_and(|(t, _)| t == tool));
+                let on = !self.hidden.contains(k) && *default_on && !arranged;
                 out.push(Entry { key: k.clone(), on, size: size(k, *d) });
             }
         }

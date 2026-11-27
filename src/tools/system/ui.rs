@@ -21,7 +21,8 @@ fn level_color(l: Level) -> Color32 {
 
 /// The panel's title line: the Mac's name and its overall state.
 pub fn header(s: &Snapshot) -> PanelHeader {
-    let title = if s.model.is_empty() { ts!("health.mac").to_string() } else { s.model.clone() };
+    // the panel's title line already names the Mac
+    let title = ts!("health.widget.overview.title").to_string();
     if !s.ready {
         return PanelHeader { title, status: String::new(), dot: TEXT_FAINT() };
     }
@@ -312,3 +313,88 @@ fn cap_first(s: &str) -> String {
     }
 }
 
+
+/// The one Monitor widget (2:4): the Mac's main readings in one card, so
+/// a person who picks "Watch my Mac" gets one widget, not seven.
+/// Canvas only: `CMDMEOW_DEMO_OVERVIEW=a|b|c` picks the layout.
+pub fn overview(mon: &monitor::Shared, ui: &mut Ui, r: Rect, cx: &mut Cx) {
+    let s = mon.lock_ok().clone();
+    let wid = ui.scope_id().with("overview");
+    let resp = tile::card(ui, r, wid, false);
+    let p = ui.painter().clone();
+    let variant = std::env::var("CMDMEOW_DEMO_OVERVIEW").unwrap_or_else(|_| "b".into());
+    let ids: &[&str] = &["cpu", "memory", "storage", "battery"];
+    let ms: Vec<(&str, Metric)> = ids.iter().filter_map(|id| metric(&s, id).map(|m| (*id, m))).collect();
+    // the panel's title line already names the Mac
+    let title = ts!("health.widget.overview.title").to_string();
+    let net = format!("↓ {}", human_rate(s.net_down));
+    match variant.as_str() {
+        // A: four rings across, the value and name under each
+        "a" => {
+            let body = tile::head(&p, r, Icon::Pulse, tint::HEALTH(), &title, &net);
+            let n = ms.len().max(1) as f32;
+            let cw = body.width() / n;
+            for (k, (_, m)) in ms.iter().enumerate() {
+                let cx_ = body.left() + cw * (k as f32 + 0.5);
+                let rr = 24.0;
+                let c = Pos2::new(cx_, body.top() + 2.0 + rr);
+                let (f, col) = m.bar.unwrap_or((1.0, tint::HEALTH()));
+                tile::ring(&p, c, rr - 2.5, 5.0, f, col);
+                icon(&p, m.glyph, Rect::from_center_size(c, egui::Vec2::splat(18.0)), TEXT_SOFT());
+                let vy = c.y + rr + 8.0;
+                let vr = text_fit(&p, Pos2::new(cx_, vy), Align2::CENTER_TOP, &m.value(), ty::title(), TEXT(), cw - 6.0);
+                text_fit(&p, Pos2::new(cx_, vr.bottom() + 2.0), Align2::CENTER_TOP, &short_label(&m.label), ty::caption(), ty::caption_color(), cw - 6.0);
+            }
+        }
+        // C: four readings, two by two, each with its graph or bar
+        "c" => {
+            let inner = r.shrink(tile::PAD);
+            let (cols, rows) = (2usize, 2usize);
+            let gx = 12.0;
+            let gy = 10.0;
+            let cw = (inner.width() - gx * (cols - 1) as f32) / cols as f32;
+            let ch = (inner.height() - gy * (rows - 1) as f32) / rows as f32;
+            for (k, (id, m)) in ms.iter().enumerate() {
+                let cell = Rect::from_min_size(Pos2::new(inner.left() + (k % cols) as f32 * (cw + gx), inner.top() + (k / cols) as f32 * (ch + gy)), egui::Vec2::new(cw, ch));
+                icon(&p, m.glyph, Rect::from_min_size(cell.min, egui::Vec2::splat(14.0)), lift(tint::HEALTH()));
+                text_fit(&p, Pos2::new(cell.left() + 19.0, cell.top() + 7.0), Align2::LEFT_CENTER, &short_label(&m.label), ty::caption(), ty::caption_color(), cw - 19.0);
+                let v = if *id == "storage" { format!("{} {}", m.value(), ts!("health.free")) } else { m.value() };
+                text_fit(&p, Pos2::new(cell.left(), cell.top() + 18.0), Align2::LEFT_TOP, &v, ty::lead(), TEXT(), cw);
+                let br = Rect::from_min_size(Pos2::new(cell.left(), cell.bottom() - 4.0), egui::Vec2::new(cw, 4.0));
+                match (id, m.bar) {
+                    (&"cpu", _) | (&"memory", _) => {
+                        let hist = if *id == "cpu" { &s.cpu_history } else { &s.mem_history };
+                        tile::spark(&p, Rect::from_min_max(Pos2::new(cell.left(), cell.bottom() - 16.0), cell.right_bottom()), hist, tint::HEALTH(), None);
+                    }
+                    (_, Some((f, col))) => bar(&p, br, f, col),
+                    _ => {}
+                }
+            }
+        }
+        // B: the card's title and four lines, name · bar · value (M-A)
+        _ => {
+            let body = tile::head(&p, r, Icon::Pulse, tint::HEALTH(), &title, &net);
+            let lines: Vec<Line> = ms
+                .iter()
+                .map(|(id, m)| {
+                    let v = if *id == "storage" { format!("{} {}", m.value(), ts!("health.free")) } else { m.value() };
+                    (short_label(&m.label), m.bar, v)
+                })
+                .collect();
+            let lh = (body.height() / lines.len().max(1) as f32).min(28.0);
+            let cols = tile::bar_cols(&p, &lines.iter().map(|l| (l.0.as_str(), l.2.as_str())).collect::<Vec<_>>());
+            for (k, (label, frac, value)) in lines.iter().enumerate() {
+                let lr = Rect::from_min_size(Pos2::new(body.left(), body.top() + k as f32 * lh), egui::Vec2::new(body.width(), lh));
+                tile::bar_line(&p, lr, label, *frac, value, cols);
+            }
+        }
+    }
+    if resp.clicked() {
+        cx.open_page(ID, "");
+    }
+}
+
+/// "Macintosh HD" reads as Storage in a list of readings.
+fn short_label(l: &str) -> String {
+    if l == ts!("health.macintosh_hd") { ts!("health.widget.storage.title").to_string() } else { l.to_string() }
+}

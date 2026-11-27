@@ -48,6 +48,7 @@ pub const DEFAULT_WIDGET_ORDER: &[&str] = &[
     "keep_awake/card",
     "clipboard/recent",
     "dictation/card",
+    "system/overview",
     "system/storage",
     "system/memory",
     "system/cpu",
