@@ -17,13 +17,14 @@ use std::sync::Mutex;
 /// Not a tool: the row opens Settings › About.
 const SETTINGS: &str = "settings";
 
-/// What a version changed: (version, tool id or [`SETTINGS`], text key).
+/// What a version changed: (version, tool id or [`SETTINGS`], its text).
 /// Every `CHANGED` row needs one here (a test checks). Append per release.
-const NOTES: &[(&str, &str, &str)] = &[
-    ("0.2.2", "claude", "new.v022_claude"),
-    ("0.2.2", "cleanup", "new.v022_cleanup"),
-    ("0.2.2", "uninstaller", "new.v022_uninstaller"),
-    ("0.2.2", SETTINGS, "new.v022_settings"),
+type Text = fn() -> &'static str;
+const NOTES: &[(&str, &str, Text)] = &[
+    ("0.2.2", "claude", || ts!("new.v022_claude")),
+    ("0.2.2", "cleanup", || ts!("new.v022_cleanup")),
+    ("0.2.2", "uninstaller", || ts!("new.v022_uninstaller")),
+    ("0.2.2", SETTINGS, || ts!("new.v022_settings")),
 ];
 
 /// This build's version; screenshots can show another one's list
@@ -33,7 +34,7 @@ fn version() -> &'static str {
     V.get_or_init(|| forced().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()))
 }
 
-fn notes_for(ver: &str) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {
+fn notes_for(ver: &str) -> impl Iterator<Item = (&'static str, Text)> + '_ {
     NOTES.iter().filter(move |(v, _, _)| *v == ver).map(|(_, id, k)| (*id, *k))
 }
 
@@ -136,7 +137,7 @@ pub fn window_frame(app: &mut App, ctx: &Context) {
         OPEN.store(true, Ordering::Relaxed);
     }
     // rows: the tools this version changed that are on, then the rest
-    let rows: Vec<(Option<usize>, &'static str)> = notes_for(version())
+    let rows: Vec<(Option<usize>, Text)> = notes_for(version())
         .filter_map(|(tid, k)| {
             if tid == SETTINGS {
                 return Some((None, k));
@@ -158,7 +159,7 @@ pub fn window_frame(app: &mut App, ctx: &Context) {
     let galleys: Vec<_> = rows
         .iter()
         .map(|(_, k)| {
-            let job = egui::text::LayoutJob::simple(t!(*k).into_owned(), font(13.0), TEXT_DIM(), text_w);
+            let job = egui::text::LayoutJob::simple(k().to_owned(), font(13.0), TEXT_DIM(), text_w);
             ctx.fonts_mut(|f| f.layout_job(job))
         })
         .collect();
@@ -175,7 +176,7 @@ pub fn window_frame(app: &mut App, ctx: &Context) {
         let mut y = m.top() + HEAD;
         for (((tool, k), g), rh) in rows.iter().zip(&galleys).zip(&row_h) {
             let r = Rect::from_min_size(Pos2::new(m.left() + 4.0, y), Vec2::new(W - 8.0, *rh));
-            let resp = ui.interact(r, id().with(*k), Sense::click());
+            let resp = ui.interact(r, id().with(k()), Sense::click());
             if resp.hovered() {
                 p.rect_filled(r, LIT_R, white(ROW_HOVER));
             }
@@ -250,9 +251,9 @@ mod tests {
 
     #[test]
     fn every_note_has_text() {
-        for (_, _, k) in NOTES {
-            assert_ne!(t!(*k), *k, "{k}");
+        for (v, t, f) in NOTES {
+            assert!(!f().is_empty() && !f().starts_with("new."), "{t}@{v}");
         }
-        assert_ne!(t!("new.title"), "new.title");
+        assert_ne!(ts!("new.title"), "new.title");
     }
 }
