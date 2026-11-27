@@ -292,9 +292,9 @@ When something is unclear, name it with one or two words. Don't explain it in a 
 | T19 | No rows of small unlabeled icons. Use words, or drop them. | tool icons next to each permission | "Used by Cleanup, Disk Map" on hover |
 | T20 | A control with no label gets one, or goes. | a radio button next to a switch | a column head ("Main") |
 | T21 | Shortcuts are written the macOS way: ⌃⌥⇧⌘, then the key, with no spaces (⇧⌘2, ⌥Space). A mouse button reads Mouse N (3 middle, 4 and 5 the side buttons), with modifiers before it (⌥Mouse 4). Never Back, Forward or Middle: mice map their buttons differently. On keycaps there is one cap per modifier, and Mouse N is one cap. | ⌥ Back, Mouse4, M4 | ⌥Mouse 4 |
-| T22 | One verb per result: Cleanup and Auto clean say "cleaned", Uninstaller and Disk Map "moved to the Trash", Dictation and model removal "deleted". Never "freed", "trimmed" or "reclaimed" (⏳ code). | Auto clean freed 2 GB | Auto clean: 2 GB cleaned |
-| T23 | Errors and states name the fact, not a guess or a question. No "right now", "usually", "likely" (⏳ code). | The microphone hears nothing: is the lid closed? | No sound from the microphone |
-| T24 | No em dash in UI text: " · " between facts, ";" before a reason (⏳ code). | Xcode is open — quit it first or allow anyway | Xcode is open |
+| T22 | One verb per result: Cleanup and Auto clean say "cleaned", Uninstaller and Disk Map "moved to the Trash", Dictation and model removal "deleted". Never "freed", "trimmed" or "reclaimed". | Auto clean freed 2 GB | Auto clean: 2 GB cleaned |
+| T23 | Errors and states name the fact, not a guess or a question. No "right now", "usually", "likely". | The microphone hears nothing: is the lid closed? | No sound from the microphone |
+| T24 | No em dash in UI text: " · " between facts, ";" before a reason. | Xcode is open — quit it first or allow anyway | Xcode is open |
 
 ## 13. Themes ✅
 
@@ -478,3 +478,5 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-27, Roman: SP25 day hover popover with Used / Week / Tokens / Cost / Requests / models (option A, canvas https://claude.ai/artifact/61GiWphDUShqkV8rc2zm2x).
 
 2026-11-27, Roman: T22 one verb per result, T23 facts not guesses, T24 no em dash (wording doc https://claude.ai/artifact/J7rxnfoCmksPSnhPEfn86n, section 10); SP27 notification text follows T22.
+
+2026-11-27: T22–T24 shipped (code in #451).
