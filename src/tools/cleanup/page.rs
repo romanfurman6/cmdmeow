@@ -1448,7 +1448,11 @@ fn unkeep_control(ui: &mut Ui, at: Pos2, key: &str, idx: &[usize], path: Option<
         p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.6, TEXT_DIM());
     }
     let mut act = None;
-    crate::kit::menu::popup(&resp).show(|ui| {
+    // near the bottom of the list it opens upward, clear of the footer
+    let up = r.bottom() + 2.0 * crate::kit::menu::ROW_H + 16.0 > ui.clip_rect().bottom();
+    let popup = crate::kit::menu::popup(&resp);
+    let popup = if up { popup.align(egui::RectAlign::TOP_END) } else { popup };
+    popup.show(|ui| {
         if !idx.is_empty() && crate::kit::menu::item(ui, ts!("cleanup.remove_from_kept")).clicked() {
             act = Some(Act::Unkeep(idx.to_vec()));
         }
