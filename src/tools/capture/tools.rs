@@ -5,7 +5,7 @@
 //! (Screenshot when it's on), so nothing runs twice.
 
 use super::{settings::Command, ui, Capture, VTab, CARD, ID, SHARING_ID, VIDEO_CARD, VIDEO_ID};
-use crate::core::tool::{Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM};
+use crate::core::tool::{Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, BUTTON_UP_TO_MEDIUM};
 use crate::kit::glass::{tint, Icon};
 use egui::{Rect, Ui};
 use std::cell::RefCell;
@@ -83,7 +83,7 @@ impl Tool for Screenshot {
         self.0.borrow_mut().set_parts(Some(on), None);
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: ts!("cap.screenshot"), about: ts!("cap.w_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("cap.screenshot"), about: ts!("cap.w_about"), sizes: BUTTON_UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(&mut self.0.borrow_mut(), size, ui, rect, cx);
@@ -151,7 +151,7 @@ impl Tool for Video {
         self.0.borrow_mut().set_parts(None, Some(on));
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: VIDEO_CARD, title: ts!("cap.video"), about: ts!("cap.vw_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: VIDEO_CARD, title: ts!("cap.video"), about: ts!("cap.vw_about"), sizes: BUTTON_UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::video_widget(&mut self.0.borrow_mut(), size, ui, rect, cx);

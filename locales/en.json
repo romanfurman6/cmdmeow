@@ -1543,7 +1543,8 @@
     "mode": {
       "area": "Area",
       "window": "Window",
-      "screen": "Screen"
+      "screen": "Screen",
+      "record": "Record"
     },
     "capturing": "Capturing…",
     "capture_an_area": "Capture an area",
@@ -2198,7 +2199,6 @@
     "theme": "Theme",
     "open_login": "Open at login",
     "show_dock": "Show in Dock",
-    "show_menu_bar": "Show in menu bar",
     "sounds": "Sounds",
     "keep_open": "Keep menu bar panel open",
     "send_crash": "Send crash reports",
@@ -2226,7 +2226,13 @@
     "finder_access": "Finder access",
     "finder": "Finder",
     "updated": "Updated",
-    "whats_new": "What's new"
+    "whats_new": "What's new",
+    "place": {
+      "title": "Where CmdMeow lives",
+      "menubar": "Menu bar",
+      "notch": "Notch"
+    },
+    "size_button": "Button"
   },
   "new": {
     "title": "What's new",

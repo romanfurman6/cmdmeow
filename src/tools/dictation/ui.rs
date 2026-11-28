@@ -179,6 +179,12 @@ pub fn widget(d: &mut Dictation, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
     let key = d.shortcut_label();
     let today = words(d.words_today());
     let resp = match size {
+        // the Button: the mic and the name, live red while it listens; the shortcut in the tip
+        Size::S05 => {
+            let label = if listening { ts!("dict.listening") } else { ts!("dict.name") };
+            let r = tile::button(ui, rect, id, Icon::Mic, if listening { LIVE } else { TEXT() }, label);
+            if key.is_empty() { r } else { r.on_hover_text(key.as_str()) }
+        }
         Size::S11 => {
             if listening {
                 let resp = tile::card(ui, rect, id, false);

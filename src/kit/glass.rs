@@ -1972,7 +1972,8 @@ pub fn text_fit(painter: &Painter, pos: Pos2, align: Align2, text: &str, font: F
         // the longest prefix (plus "…") that fits: binary search, not one
         // layout per dropped character
         let cut = |n: usize| painter.layout_no_wrap(chars[..n].iter().collect::<String>() + "…", font.clone(), color);
-        let (mut lo, mut hi) = (1usize, chars.len().min(cap));
+        // 0 keeps just "…": no width (a cell still growing) cuts it all
+        let (mut lo, mut hi) = (0usize, chars.len().min(cap));
         while lo < hi {
             let mid = (lo + hi).div_ceil(2);
             if cut(mid).size().x <= max_w {

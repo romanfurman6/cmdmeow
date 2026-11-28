@@ -48,6 +48,15 @@ const VIDEO_KEYS: [Command; 1] = [Command::Record];
 pub fn widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let id = ui.scope_id().with("w-capture");
     match size {
+        Size::S05 => {
+            // the Button: an area, the shortcut in the tip
+            let key = key_label(c, Command::Area);
+            let label = ts!("cap.mode.area");
+            let tip = if key.is_empty() { label.to_string() } else { format!("{label} · {key}") };
+            if tile::button_with(ui, rect, id, TEXT(), label, |p, r, col| icons::draw(p, command_icon(Command::Area), r, col)).on_hover_text(tip).clicked() {
+                c.queue.push((Command::Area, c.settings.delay));
+            }
+        }
         Size::S11 => {
             let sub = if c.busy { ts!("cap.capturing").to_string() } else { key_label(c, Command::Area) };
             let sub = if sub.is_empty() { ts!("cap.mode.area").to_string() } else { sub };
@@ -1372,6 +1381,16 @@ mod tests {
 pub fn video_widget(c: &mut Capture, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
     let id = ui.scope_id().with("w-video");
     match size {
+        Size::S05 => {
+            // the Button: Record, or Stop with the time while recording
+            let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
+            let key = key_label(c, Command::Record);
+            let label = live.clone().unwrap_or_else(|| ts!("cap.mode.record").to_string());
+            let tip = if live.is_some() { ts!("cap.stop_save").to_string() } else if key.is_empty() { label.clone() } else { format!("{label} · {key}") };
+            if tile::button_with(ui, rect, id, RED(), &label, |p, r, col| icons::draw(p, command_icon(Command::Record), r, col)).on_hover_text(tip).clicked() {
+                c.queue.push((Command::Record, 0));
+            }
+        }
         Size::S11 => {
             let live = c.rec.tray().map(|t| t.trim_start_matches(['●', '❚', ' ']).to_string());
             let sub = live.clone().unwrap_or_else(|| key_label(c, Command::Record));
