@@ -167,6 +167,26 @@ const MINI: f32 = 0.6;
 /// in the black island from the notch. Drawn for real (its own layer,
 /// scaled), but nothing on it takes a click.
 fn mini(app: &mut App, ui: &mut Ui, r: Rect, place: Place, a: f32, k: usize) {
+    // before Goals nothing is on yet: show a few everyday widgets for the
+    // picture, then put the user's (empty) set back
+    let saved = panel::place(app, panel::inner_width()).0.is_empty().then(|| {
+        let keep = (app.widgets.clone(), std::mem::take(&mut app.tools_off));
+        for e in app.widgets.iter_mut() {
+            e.on = SAMPLE.contains(&e.key.as_str());
+        }
+        keep
+    });
+    mini_panel(app, ui, r, place, a, k);
+    if let Some((widgets, off)) = saved {
+        app.widgets = widgets;
+        app.tools_off = off;
+    }
+}
+
+/// The widgets a card shows while the user has none on yet.
+const SAMPLE: &[&str] = &["system/overview", "cleanup/clean", "capture/capture", "keep_awake/card", "claude/limits"];
+
+fn mini_panel(app: &mut App, ui: &mut Ui, r: Rect, place: Place, a: f32, k: usize) {
     let ctx = ui.ctx().clone();
     let pw = m::PANEL_WIDTH;
     let content = panel::content_height(app);
