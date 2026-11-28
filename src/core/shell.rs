@@ -542,7 +542,7 @@ impl App {
                 let goal_view = matches!(view, "setup-clean" | "setup-capture" | "setup-voice" | "setup-watch" | "setup-dev") || std::env::var("CMDMEOW_PICK").is_ok();
                 if goal_view {
                     self.perm_watch.demo = Some([(Perm::Screen, Status::NotAsked), (Perm::Accessibility, Status::NotAsked), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::NotAsked), (Perm::Microphone, Status::Allowed), (Perm::Camera, Status::NotAsked)].into_iter().collect());
-                    let pick = std::env::var("CMDMEOW_PICK").unwrap_or_else(|_| "clean,capture,voice,dev".into());
+                    let pick = std::env::var("CMDMEOW_PICK").unwrap_or_else(|_| if view == "setup-watch" { "clean,capture,voice,watch,dev".into() } else { "clean,capture,voice,dev".into() });
                     let mut ids: Vec<&str> = Vec::new();
                     for g in pick.split(',') {
                         ids.extend_from_slice(match g {
