@@ -4,8 +4,10 @@
 pub mod editor;
 pub mod gate;
 pub mod layout;
+pub mod notch;
 pub mod onboard;
 pub mod panel;
+pub mod place;
 pub mod settings;
 pub mod shell;
 pub mod tool;

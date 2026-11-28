@@ -61,6 +61,9 @@ impl Key {
 /// Interact with a key-like control at `rect`: hover, press animation,
 /// click sound (`sound`, None = silent), pointer cursor, focus.
 pub fn press(ui: &mut Ui, rect: Rect, id: Id, enabled: bool, sound: Option<Click>) -> Key {
+    // a disabled copy (a preview drawn twice, e.g. the onboarding place cards)
+    // gets its own id per layer, so egui does not see one widget on two layers
+    let id = if ui.is_enabled() { id } else { id.with(ui.layer_id()) };
     let resp = ui.interact(rect, id, if enabled { Sense::click() } else { Sense::hover() });
     let ctx = ui.ctx().clone();
     let hover = ctx.animate_bool(id.with("key-h"), resp.hovered() && enabled);

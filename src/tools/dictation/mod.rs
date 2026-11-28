@@ -932,7 +932,7 @@ impl Tool for Dictation {
         }
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: ts!("dict.name"), about: ts!("dict.widget_about"), sizes: &[Size::S11, Size::S14, Size::S24], size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("dict.name"), about: ts!("dict.widget_about"), sizes: &[Size::S05, Size::S11, Size::S14, Size::S24], size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);

@@ -159,6 +159,8 @@ pub fn widget(c: &mut Clipboard, size: Size, ui: &mut Ui, rect: Rect, cx: &mut C
     let n = c.store.entries.len();
     let count = if c.pause_label().is_some() { ts!("clip.paused").to_string() } else { tn!("clip.items", n = n).into_owned() };
     let resp = match size {
+        // the Button: opens the history, the count in the tip
+        Size::S05 => tile::button(ui, rect, id, Icon::Clipboard, TEXT(), ts!("clip.name")).on_hover_text(count.as_str()),
         Size::S11 => tile::small(ui, rect, id, Icon::Clipboard, TINT(), ts!("clip.name"), &count, false),
         // W3: the name, the latest clip (13, fading), where and when it came from
         Size::S12 => match &latest {

@@ -29,7 +29,7 @@ pub mod share;
 pub mod video;
 mod windows;
 
-use crate::core::tool::{Action, Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, UP_TO_MEDIUM};
+use crate::core::tool::{Action, Badge, Cx, Recommendation, Size, Tool, ToolEnv, ToolId, View, WidgetSpec, BUTTON_UP_TO_MEDIUM};
 use crate::kit::glass::{tint, Icon};
 use editor::Editor;
 use egui::{Rect, Ui};
@@ -1292,7 +1292,7 @@ impl Tool for Capture {
         self.settings.shortcut(Command::Area).map(|s| s.display()).unwrap_or_default()
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: CARD, title: ts!("cap.capture"), about: ts!("cap.w_about"), sizes: UP_TO_MEDIUM, size: Size::S11, default_on: true }]
+        vec![WidgetSpec { id: CARD, title: ts!("cap.capture"), about: ts!("cap.w_about"), sizes: BUTTON_UP_TO_MEDIUM, size: Size::S11, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         ui::widget(self, size, ui, rect, cx);

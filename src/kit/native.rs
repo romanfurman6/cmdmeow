@@ -151,6 +151,43 @@ mod mac {
         out
     }
 
+    /// The Dock icon per theme (TH15): the keycap cat on the theme's ground.
+    /// Set while the app runs; the bundle icon (Finder, Launchpad, the Dock
+    /// after quit) stays the default one.
+    pub fn set_dock_theme(theme: crate::kit::glass::Theme) {
+        use crate::kit::glass::Theme;
+        let v = match theme {
+            Theme::Dark => 1,
+            Theme::Light => 2,
+            Theme::Miami => 3,
+        };
+        if DOCK_THEME.swap(v, std::sync::atomic::Ordering::Relaxed) != v {
+            apply_dock_theme();
+        }
+    }
+
+    /// Which Dock icon is set: 0 none yet, then Dark, Light, Miami.
+    static DOCK_THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+    fn apply_dock_theme() {
+        use objc2::AllocAnyThread;
+        use objc2_app_kit::NSImage;
+        use objc2_foundation::NSData;
+        const DARK: &[u8] = include_bytes!("../../assets/icon/Dock-dark.png");
+        const LIGHT: &[u8] = include_bytes!("../../assets/icon/Dock-light.png");
+        const MIAMI: &[u8] = include_bytes!("../../assets/icon/Dock-miami.png");
+        let png = match DOCK_THEME.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => DARK,
+            2 => LIGHT,
+            3 => MIAMI,
+            _ => return,
+        };
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let data = NSData::with_bytes(png);
+        let Some(img) = NSImage::initWithData(NSImage::alloc(), &data) else { return };
+        unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&img)) };
+    }
+
     /// Accessory = menu bar app with no Dock icon; Regular = normal app window.
     /// With Settings › General "Show in Dock" off it stays Accessory.
     pub fn set_dock_icon(visible: bool) {
@@ -165,6 +202,10 @@ mod mac {
             return;
         }
         let _ = app.setActivationPolicy(policy);
+        // the Dock shows the bundle icon again when the app comes back to it
+        if visible {
+            apply_dock_theme();
+        }
         // a menu bar app that turns into a Dock app while already active
         // keeps the previous app's menus in the menu bar until it's
         // activated anew (deactivate alone didn't do it): hand activation
@@ -752,8 +793,8 @@ pub fn show_in_dock() -> bool {
 }
 
 pub fn set_show_in_dock(on: bool) {
-    // never both off: the app would have no way back in
-    let on = on || !show_in_menu_bar();
+    // never both off: the app would have no way back in (the notch island is one)
+    let on = on || !(show_in_menu_bar() || NOTCH_WAY.load(std::sync::atomic::Ordering::Relaxed));
     SHOW_IN_DOCK.store(on, std::sync::atomic::Ordering::Relaxed);
     let wanted = DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed);
     set_dock_icon(wanted);
@@ -774,8 +815,18 @@ pub fn show_in_menu_bar() -> bool {
 }
 
 pub fn set_show_in_menu_bar(on: bool) {
+    set_show_in_menu_bar_for(on, NOTCH_WAY.load(std::sync::atomic::Ordering::Relaxed));
+}
+
+/// The notch island is a way into the app (core::place): with it the Dock
+/// icon can go even when the menu bar icon is hidden.
+static NOTCH_WAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// [`set_show_in_menu_bar`], saying whether the notch island is another way in.
+pub fn set_show_in_menu_bar_for(on: bool, notch: bool) {
     SHOW_IN_MENU_BAR.store(on, std::sync::atomic::Ordering::Relaxed);
-    if !on {
+    NOTCH_WAY.store(notch, std::sync::atomic::Ordering::Relaxed);
+    if !on && !notch {
         SHOW_IN_DOCK.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     set_dock_icon(DOCK_WANTED.load(std::sync::atomic::Ordering::Relaxed));
@@ -793,6 +844,7 @@ mod other {
         String::new()
     }
     pub fn set_dock_icon(_v: bool) {}
+    pub fn set_dock_theme(_t: crate::kit::glass::Theme) {}
     pub fn install_window_menu() {}
     pub fn bring_app_window_front() {}
     pub fn activate() {}

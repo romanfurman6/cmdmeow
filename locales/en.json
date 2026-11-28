@@ -295,6 +295,10 @@
   },
   "health": {
     "widget": {
+      "overview": {
+        "title": "Monitor",
+        "about": "CPU, memory, storage and battery in one card"
+      },
       "storage": {
         "title": "Storage",
         "about": "Free space on your startup disk"
@@ -1391,8 +1395,7 @@
       "left_n": "Remove what %{n} apps left?"
     },
     "sub": {
-      "reset": "Settings, caches and data go to the Trash. The app stays",
-      "all": "Everything goes to the Trash"
+      "reset": "Settings, caches and data go to the Trash. The app stays"
     },
     "open_now_line": "Open now · %{line}",
     "password_one": "%{n} item needs your password. macOS asks once.",
@@ -1540,7 +1543,8 @@
     "mode": {
       "area": "Area",
       "window": "Window",
-      "screen": "Screen"
+      "screen": "Screen",
+      "record": "Record"
     },
     "capturing": "Capturing…",
     "capture_an_area": "Capture an area",
@@ -2195,7 +2199,6 @@
     "theme": "Theme",
     "open_login": "Open at login",
     "show_dock": "Show in Dock",
-    "show_menu_bar": "Show in menu bar",
     "sounds": "Sounds",
     "keep_open": "Keep menu bar panel open",
     "send_crash": "Send crash reports",
@@ -2223,7 +2226,13 @@
     "finder_access": "Finder access",
     "finder": "Finder",
     "updated": "Updated",
-    "whats_new": "What's new"
+    "whats_new": "What's new",
+    "place": {
+      "title": "Where CmdMeow lives",
+      "menubar": "Menu bar",
+      "notch": "Notch"
+    },
+    "size_button": "Button"
   },
   "new": {
     "title": "What's new",
@@ -2246,7 +2255,6 @@
     "restart_open": "Restart and open",
     "open_panel": "Open panel",
     "later": "Later",
-    "tagline": "%{n} tools. One menu bar.",
     "set_up": "Set up",
     "crash_q": "Send crash reports?",
     "crash_what": "What went wrong and where in the app",
@@ -2270,19 +2278,15 @@
     "said1": "Ship it today",
     "said2": "Call me at 5",
     "said3": "Sounds good!",
-    "signins": "Sign-ins",
     "keychain": "Keychain",
     "keychain_what": "Limits from your account in AI Usage",
     "always_allow": "Choose Always Allow",
     "try_again": "Try again",
     "allow": "Allow",
     "denied": "Denied",
-    "ai_agents": "AI agents",
     "not_found": "Not found",
     "ai_check": "AI Check",
-    "ai_check_what": "Checks what's safe to remove",
     "ai_usage": "AI Usage",
-    "ai_usage_what": "Limits and tokens in your panel",
     "main_followed": "The AI Check agent is always followed",
     "ex_safari": "Safari cache",
     "ex_logs": "System logs",
@@ -2294,7 +2298,6 @@
     "checking": "Checking",
     "needs_ok": "Needs your OK",
     "safe": "Safe",
-    "download_models": "Download models",
     "on_mac": "On this Mac",
     "first_use": "Downloads on first use",
     "progress": "%{done} of %{total} · %{pct}%",

@@ -250,6 +250,10 @@ Approved by Roman 2026-11-17 (widget review canvas https://claude.ai/artifact/Gd
 | W11 | Empty. Header and buttons stay. Instead of data one centred line 12 TEXT_FAINT with icon: "No screenshots yet". No dashed frame. Action as ACCENT link: Resume, Connect. |
 | W12 | Hover. Only the whole card hovers (CARD → RAISED 50%). Nothing inside a widget highlights: no list rows, actions, segments or links. Every clickable shows the pointer cursor; bars, graphs and captions don't. Inner press feedback: the pressed action or row dims icon and label to 50% and drops 1 pt while held, no fill (B7/B10 exception for widgets). Pages and menus keep H1, H2, B8. |
 | W13 | AI Usage widgets: no ring. "% left" over a 4 bar of what is left; no even-pace tick (the tick lives on the page card, SP22). Small, half and wide show the first provider in the user's order (H10), named with its mark; tall 2×2 shows enabled providers in that order, up to 3. |
+| W14 | **Monitor** (Mac Health, 2:4 only). Header `tile::head` "Monitor" (the panel title line already names the Mac), right note the live download speed "↓ 20 KB/s". Body: 4 equal columns, CPU · Memory · Storage · Battery; each a ring r24, stroke 5 (the W2 ring, the reading's level colour) with its glyph 18 inside, then the value 13/600 and the name as a caption. Storage's ring shows used, its value free (as Storage 1:1). The columns sit centred vertically in the card body. A click anywhere opens Mac Health. |
+| W15 | **Defaults.** A fresh install shows only Monitor (W14) for Mac Health; Storage, Memory, CPU, Battery, Network, Devices and Startup are off by default and wait in the gallery, so onboarding "Watch my Mac" adds 1 widget. A new widget of a tool the user has already arranged starts hidden in the gallery, never as a duplicate on the panel. |
+| W16 | **Button 0.5:1**: one grid cell wide, half a cell tall (83 × 37.5 pt at panel width); two stack where one 1:1 goes, and a row of them is 37.5 pt. One action only: icon 14 + name 12·600 centred in one row, tinted in the action's colour (Clean lime, Record red); the shortcut only in the hover popover. Same card as every widget (W1, whole-card hover and press, W12). Offered by action widgets: Capture (Area, Window, Screen, Record), Cleanup (Clean), Keep Awake, Dictation, Clipboard. Works in the panel and the notch island (W17). The editor size chips and the gallery list 0.5:1 (⏳ code). |
+| W17 | **Notch island**: the pointer resting 0.15 s on the notch opens a black island under it: the panel's 4-column widget grid (same widgets, sizes and cards), on pure black #000, radius 26 at the bottom corners, no glow. Widgets inside always draw on the dark palette (Light Classic uses Dark Classic cards; Dark Miami stays Miami; TH9 exception). Leaving, Esc or a click outside closes it. Opens with a spring (Core Animation, R-anim); nothing repaints while closed. Macs without a notch: a thin 6 pt hint at top centre while the pointer is near, and the island drops from there. Off by default: Settings › General › Notch (⏳ code). |
 
 ## 12. Writing text ✅
 
@@ -310,12 +314,13 @@ Read this before §2: every colour rule there holds in each theme.
 | TH6 | Dark Miami backdrop (S1): a dusk sky top to bottom, not the radial glow: cobalt #0B1240 → violet #2A1452 → magenta #5E1D57 → burnt-orange horizon #70283C. It replaces the whole glow beam (no rx/ry). Every window (app window, menu bar panel, setup, window-open cover) shows the full sky over its own height. The horizon keeps `ACCENT` text at 5.3:1 and pink/red marks at 3.6:1 (C8). |
 | TH7 | Nothing from the game it is inspired by: no names, logos, fonts or art. The name is "Dark Miami". |
 | TH8 | Every new screen and PR is checked in all three themes (C8 contrast, M1 test). Screenshots: `CMDMEOW_THEME=light|dark|miami`. |
-| TH9 | Widgets follow the theme: the panel widget cards, the widget editor and the gallery draw with the same tokens, so Dark Miami changes them too. Fixed-colour surfaces stay as they are (C13, C16, L5). |
-| TH10 | The desktop cat follows the theme. Its lime fur, stripes and shading take the theme's `ACTION()` (Dark Classic #C8F05A as drawn, Light Classic #A8D83A, Dark Miami #FF5FA2), with lightness kept relative to the pack's lime. Outline: Dark Miami ink #1A0B2E; Light and Dark keep the drawn #0A1009. Eyes, nose, mouth, tongue, bed, bowl and yarn keep their colours. Recoloured once per theme switch (no idle cost). The menu bar cat stays a template icon; the app icon stays lime. |
+| TH9 | Widgets follow the theme: the panel widget cards, the widget editor and the gallery draw with the same tokens, so Dark Miami changes them too. Fixed-colour surfaces stay as they are (C13, C16, L5). Exception: the notch island (W17) always draws its widgets on the dark palette. |
+| TH10 | The desktop cat follows the theme. Its lime fur, stripes and shading take the theme's `ACTION()` (Dark Classic #C8F05A as drawn, Light Classic #A8D83A, Dark Miami #FF5FA2), with lightness kept relative to the pack's lime. Outline: Dark Miami ink #1A0B2E; Light and Dark keep the drawn #0A1009. Eyes, nose, mouth, tongue, bed, bowl and yarn keep their colours. Recoloured once per theme switch (no idle cost). The menu bar cat stays a template icon. |
 | TH11 | **Onboarding step "Pick a theme"**: right after Welcome, before Goals (one step dot). Title "Pick a theme" (bold 22). Three cards in one row, `sp::M` gap, 2:3, r12, filled by the theme's picture (cover), name top left (bold 17, dark ink on Light Classic, white on the dark two), check top right. The picked card gets the 1.5 action ring (H4), hover lifts 1 pt, and the cards fade in one by one like the Goal cards. The default pick is the theme drawn now (Dark Miami on a fresh install; Auto shows as Light or Dark Classic). A click sets Settings › Theme. |
 | TH12 | **Theme switch animation ("ripple through blur")**: the old theme is laid over the new one as a picture and blurs to 10 pt (0.48 s ease-out), then a soft round wave from the clicked card (feather 20% of its reach, 0.8 s ease-in-out) cuts it away. Core Animation only (R-anim), no egui frames. No animation with Reduce motion or in screenshots. Onboarding only for now; Settings switches at once. |
 | TH13 | **Theme pictures**: one flat series (same cat, size and place, empty top third). Light Classic: day rooftops with dark roofs. Dark Classic: night rooftops. Dark Miami: dusk beach. The cat is in the theme's action colour with a soft glow. Files `assets/themes/{light,dark,miami}.jpg`, 1024×1536. |
 | TH14 | The recording dot on an `ACTION` fill (Record screen hero, Video header Record pill, Start recording) uses `REC_ON_ACTION()`: Dark Classic #FF9B7A, Light Classic #C2391D (= `RED`), Dark Miami wine #8A0A26 (3.4:1 on the pink, C12). Every other recording mark keeps `RED`; the live HUD dot over the screen stays fixed (C13). |
+| TH15 | **Dock icon follows the theme** while the app runs. Same keycap cat. The ground is the theme's backdrop: Dark Classic moss glow #22401D→#070D07, Light Classic sage #E6F0D8→#BCD3A0 (deeper than the window so the cream keycap reads), Dark Miami dusk sky #0B1240→#70283C, top to bottom. ⌘ in the theme colour: #C8F05A, #7DB519 (darker than `ACTION` for contrast on cream), #FF5FA2. Swapped once per theme switch. The bundle icon (Finder, Launchpad, Dock after quit) stays the default ink icon. |
 
 Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glow pink. B6 `DANGER()`, P2 shadows and P4 `SCRIM()` use the dark values. C16 overlays and L5 HUD keep their fixed colours. L1–L8 are Light Classic rules.
 
@@ -482,3 +487,15 @@ Other rules in Dark Miami: B5 glow tint stays `ACTION()`, so Dark Miami keys glo
 2026-11-27: T22–T24 shipped (code in #451).
 
 2026-11-27: SP25 day hover shipped (✅, code in #450).
+
+2026-11-27, Roman: TH15 Dock icon follows the theme (canvas https://claude.ai/artifact/B7RVnaSUGL6BKVxQmBukyp, option A); TH10 drops "the app icon stays lime".
+
+2026-11-27, Roman: W14 Monitor widget and W15 widget defaults (canvas https://claude.ai/artifact/T47QsQUYGajsdkea2VsJjd, variant A).
+
+2026-11-27: TH15 Dock icon shipped (✅, code in #457).
+
+2026-11-27, Roman: W16 Button 0.5:1 widget size and W17 notch island (TH9 exception), from the notch canvas.
+
+2026-11-27: W14 Monitor and W15 defaults shipped (✅, code in #459).
+
+2026-11-27, Roman: no rim on the Dark Classic Dock icon for now (TH15 unchanged).

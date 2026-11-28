@@ -118,7 +118,7 @@ impl Tool for Cleanup {
         "Clean"
     }
     fn widgets(&self) -> Vec<WidgetSpec> {
-        vec![WidgetSpec { id: "clean", title: ts!("cleanup.short"), about: ts!("cleanup.widget_about"), sizes: &[Size::S12, Size::S14], size: Size::S12, default_on: true }]
+        vec![WidgetSpec { id: "clean", title: ts!("cleanup.short"), about: ts!("cleanup.widget_about"), sizes: &[Size::S05, Size::S12, Size::S14], size: Size::S12, default_on: true }]
     }
     fn widget_ui(&mut self, _widget: &str, size: Size, ui: &mut Ui, rect: Rect, cx: &mut Cx) {
         let g = self.clean.lock_ok().clone();
@@ -154,6 +154,8 @@ impl Tool for Cleanup {
         // W7: no lime button in the panel; never cleaned, the card itself opens Clean
         let (value, sub) = if never { (ts!("cleanup.w.not_cleaned").to_string(), String::new()) } else { (value, sub) };
         let resp = match size {
+            // the Button: Clean, lime like Clean everywhere; it opens Clean
+            Size::S05 => tile::button(ui, rect, id, Icon::Broom, ACCENT(), ts!("cleanup.short")).on_hover_text(value.as_str()),
             Size::S12 => tile::wide_full(ui, rect, id, Icon::Broom, col, ring_, ts!("cleanup.short"), &value, &sub, crate::kit::glass::ty::caption_color(), false),
             _ => {
                 let (resp, right) = tile::row_split_full(ui, rect, id, Icon::Broom, col, ring_, ts!("cleanup.short"), &value, &sub, crate::kit::glass::ty::caption_color(), false);
