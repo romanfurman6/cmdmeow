@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 pub const SETUP_W: f32 = 820.0;
 /// Most steps setup can have (with the crash reports step).
-const MAX_STEPS: usize = 8;
+const MAX_STEPS: usize = 14;
 const TOP_H: f32 = 44.0;
 const BOTTOM_H: f32 = 64.0;
 /// The centred column of the AI agents and Download models steps.
@@ -23,12 +23,12 @@ enum Kind {
     Welcome,
     /// Light Classic, Dark Classic or Dark Miami: a click switches the app live.
     Theme,
+    /// Where CmdMeow lives: menu bar or notch (every time, after Theme).
+    Place,
     Tools,
-    Agents,
-    /// 3a, right after Agents (no dot of its own): the picked agents whose
-    /// sign-in is in the Keychain, each asked for on a click.
-    SignIns,
-    Models,
+    /// One picked goal's own setup (index into [`GOALS`]): what it needs
+    /// from macOS, its shortcuts, models and AI agents, on one screen.
+    Feature(usize),
     Perms,
     Crash,
     Ready,
@@ -37,16 +37,14 @@ enum Kind {
 /// The steps in order. The crash reports question only exists in official
 /// builds (screenshots show it too).
 fn kinds(app: &App) -> Vec<Kind> {
-    let mut v = vec![Kind::Welcome, Kind::Theme, Kind::Tools, Kind::Agents];
-    if has_sign_ins(app) {
-        v.push(Kind::SignIns);
+    let mut v = vec![Kind::Welcome, Kind::Theme, Kind::Place, Kind::Tools];
+    // one screen per picked goal that has something to set up
+    v.extend((0..GOALS.len()).filter(|&g| has_feature(app, g)).map(Kind::Feature));
+    // required permissions no goal screen asked for (tools picked from
+    // the full list): one screen for those
+    if !leftover_rows(app).is_empty() {
+        v.push(Kind::Perms);
     }
-    // only when an enabled tool needs a download (Dictation's speech model)
-    // or already has one; models fetched on first use don't count
-    if has_models_step(app) {
-        v.push(Kind::Models);
-    }
-    v.push(Kind::Perms);
     if app.demo || crate::kit::crash_report::available() {
         v.push(Kind::Crash);
     }
@@ -58,10 +56,13 @@ fn kinds(app: &App) -> Vec<Kind> {
 pub fn view_step(app: &App, view: &str) -> usize {
     let k = match view {
         "setup-theme" => Kind::Theme,
+        "setup-place" => Kind::Place,
         "setup-tools" | "setup-tools-all" | "setup-tools-preview" => Kind::Tools,
-        "setup-ai" => Kind::Agents,
-        "setup-signins" => Kind::SignIns,
-        "setup-models" => Kind::Models,
+        "setup-clean" => Kind::Feature(0),
+        "setup-capture" => Kind::Feature(1),
+        "setup-voice" => Kind::Feature(3),
+        "setup-watch" => Kind::Feature(4),
+        "setup-dev" => Kind::Feature(5),
         "setup-perms" => Kind::Perms,
         "setup-crash" => Kind::Crash,
         "setup-ready" => Kind::Ready,
@@ -88,11 +89,13 @@ pub struct Setup {
     /// live ones would read the person's folders (Capture's Recent list
     /// lists ~/Desktop, and macOS asked about it on a hover).
     samples: Option<Vec<Box<dyn super::tool::Tool>>>,
+    /// A goal screen's shortcut being typed anew: (tool index, its id).
+    key_rec: Option<(usize, &'static str)>,
 }
 
 impl Setup {
     pub fn new(step: usize) -> Self {
-        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, samples: None }
+        Setup { step, clock: 0.0, last: f64::NAN, from: step, all_tools: false, samples: None, key_rec: None }
     }
 }
 
@@ -111,13 +114,20 @@ pub fn saved_step() -> usize {
     std::fs::read_to_string(step_file()).ok().and_then(|s| parse_step(&s)).unwrap_or(0).min(MAX_STEPS - 1)
 }
 
-/// A saved step: "v2:<n>" now; a bare number was saved before the Theme
-/// step (index 1) came in, so every step after Welcome moved one on.
+/// A saved step: "v3:<n>" now. Older ones are from before the goal
+/// screens: Welcome and Theme stay, anything later goes back to Goals (the
+/// steps after it differ now). "v2:<n>" came after the Theme step (index
+/// 1); a bare number is from before it.
 fn parse_step(s: &str) -> Option<usize> {
     let s = s.trim();
+    const GOALS_STEP: usize = 3;
+    let old = |n: usize| if n <= 1 { n } else { GOALS_STEP };
+    if let Some(n) = s.strip_prefix("v3:") {
+        return n.parse().ok();
+    }
     match s.strip_prefix("v2:") {
-        Some(n) => n.parse().ok(),
-        None => s.parse::<usize>().ok().map(|n| if n == 0 { 0 } else { n + 1 }),
+        Some(n) => n.parse().ok().map(old),
+        None => s.parse::<usize>().ok().map(|n| if n == 0 { 0 } else { old(n + 1) }),
     }
 }
 
@@ -200,6 +210,8 @@ pub struct Row {
     pub optional: bool,
     /// (tool index) of the enabled tools that need it.
     pub tools: Vec<usize>,
+    /// What it's for here, when a goal's screen says it its own way.
+    pub why: &'static str,
 }
 
 /// What the enabled tools need, required rows first, in a stable order.
@@ -215,7 +227,7 @@ pub fn rows(app: &App) -> Vec<Row> {
                     r.optional &= n.optional;
                     r.tools.push(i);
                 }
-                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i] }),
+                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i], why: "" }),
             }
         }
     }
@@ -499,10 +511,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
         ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
     }
     let from = app.setup.as_ref().map(|s| s.from).unwrap_or(step).min(steps - 1);
-    // Sign-ins is 3a: it shares the Agents dot
-    let dot = |i: usize| kinds[..=i].iter().filter(|k| **k != Kind::SignIns).count() - 1;
-    let dots = kinds.iter().filter(|k| **k != Kind::SignIns).count();
-    step_dots(&p, full, dots, dot(from), dot(step), t);
+    draw_dots(&p, full, &kinds, from, step, t);
     let body = Rect::from_min_max(Pos2::new(full.left() + 40.0, full.top() + TOP_H), Pos2::new(full.right() - 40.0, full.bottom() - BOTTOM_H));
     // the step slides in from the side it comes from
     let side = if from > step { -1.0 } else { 1.0 };
@@ -515,10 +524,9 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     match kind {
         Kind::Welcome => (next, native_welcome) = welcome(app, ui, body, t, seen),
         Kind::Theme => theme_step(app, ui, body, t),
+        Kind::Place => super::place::setup_place(app, ui, body, t),
         Kind::Tools => tools(app, ui, body, t),
-        Kind::Agents => agents(app, ui, body, t),
-        Kind::SignIns => sign_ins(app, ui, body, t),
-        Kind::Models => models_step(app, ui, body, t),
+        Kind::Feature(g) => feature_step(app, ui, body, t, now, g),
         Kind::Perms => permissions_step(app, ui, body, t, now),
         Kind::Crash => next = crash_step(app, ui, body, t),
         Kind::Ready => restart_now = ready(app, ui, body, t),
@@ -537,7 +545,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     let label = match kind {
         // these steps have their own buttons
         Kind::Welcome | Kind::Crash => None,
-        Kind::Theme | Kind::Tools | Kind::Agents | Kind::SignIns | Kind::Models | Kind::Perms => Some(ts!("setup.continue")),
+        Kind::Theme | Kind::Place | Kind::Tools | Kind::Feature(_) | Kind::Perms => Some(ts!("setup.continue")),
         Kind::Ready if needs_restart(app) => Some(ts!("setup.restart_open")),
         Kind::Ready => Some(ts!("setup.open_panel")),
     };
@@ -568,7 +576,7 @@ pub fn setup_ui(app: &mut App, ui: &mut Ui, full: Rect) -> Finish {
     // the old step until it was resized (first launch, M1)
     let busy_for = if kind == Kind::Welcome { WELCOME_END } else { 2.5 };
     // the Welcome animation on Core Animation needs no frames from egui
-    let animating = (seen && t < busy_for && !native_welcome) || app.perm_watch.busy(now) || (kind == Kind::SignIns && crate::tools::claude::keychain::busy()) || next;
+    let animating = (seen && t < busy_for && !native_welcome) || app.perm_watch.busy(now) || (kind == Kind::Feature(5) && crate::tools::claude::keychain::busy()) || next;
     if !seen && t < busy_for {
         // waiting to be seen: look again soon, without drawing flat out
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -606,13 +614,13 @@ fn go(app: &mut App, step: usize) {
             if let Some(d) = f.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
-            let _ = std::fs::write(f, format!("v2:{}", s.step));
+            let _ = std::fs::write(f, format!("v3:{}", s.step));
         }
     }
 }
 
 fn all_required(app: &App) -> bool {
-    rows(app).iter().filter(|r| !r.optional).all(|r| app.perm_watch.status(r.perm) == Status::Allowed)
+    leftover_rows(app).iter().filter(|r| !r.optional).all(|r| app.perm_watch.status(r.perm) == Status::Allowed)
 }
 
 fn ghost_button(ui: &mut Ui, r: Rect, label: &str) -> egui::Response {
@@ -1842,75 +1850,6 @@ fn rolling_count(p: &egui::Painter, left_bottom: Pos2, shown: f32, total: usize)
 /// Step 3a exists: AI Usage is on and a picked agent (Main or Track) keeps
 /// its sign-in in the Keychain. Only Claude Code does; Codex and Gemini
 /// keep theirs in files, read without asking.
-fn has_sign_ins(app: &App) -> bool {
-    let usage_on = (0..app.tools.len()).any(|i| app.tools[i].id() == crate::tools::claude::ID && app.tool_on(i));
-    usage_on && crate::tools::claude::keychain::wanted(app.demo)
-}
-
-/// Step 3a: Keychain sign-ins of the picked agents, so AI Usage shows
-/// limits from their accounts. Nothing is read before Allow is pressed;
-/// then macOS asks (Allow / Always Allow / Deny). Laid out like AI agents.
-fn sign_ins(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
-    use crate::kit::perms::Status;
-    use crate::tools::claude::keychain;
-    let p = ui.painter().clone();
-    let ctx = ui.ctx().clone();
-    let now = ctx.input(|i| i.time);
-    keychain::refocus(&ctx);
-    let w = body.width().min(640.0);
-    let x = body.center().x - w / 2.0;
-    let head = body.top() + 6.0;
-    p.text(Pos2::new(x, head), Align2::LEFT_TOP, ts!("setup.signins"), bold(22.0), TEXT());
-    // the section, as on AI agents: what it's for
-    let y = head + 22.0 + sp::XL;
-    let cr = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(42.0));
-    tool_chip(&p, cr, Icon::Lock, TEXT_SOFT());
-    p.text(Pos2::new(cr.right() + sp::M, cr.top() + 2.0), Align2::LEFT_TOP, ts!("setup.keychain"), bold(15.0), TEXT());
-    p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, ts!("setup.keychain_what"), ty::body(), TEXT_DIM());
-    // one tile per picked agent that keeps it there: today only Claude Code
-    let a = ease(t / 0.4);
-    // R2: 24 between what it's for and the cards, as on AI agents
-    let r = Rect::from_min_size(Pos2::new(x, cr.bottom() + sp::XL + (1.0 - a) * 8.0), Vec2::new(w, 84.0));
-    let st = if app.demo { Status::NotAsked } else { keychain::status() };
-    let ok = st == Status::Allowed;
-    let s = ctx.animate_bool_with_time(egui::Id::new("signin-tile"), ok, 0.18);
-    p.rect_filled(r, 12.0, lerp_color(CARD(), with_alpha(GREEN(), 0.10), s).gamma_multiply(a));
-    p.rect_stroke(r, 12.0, Stroke::new(1.0, lerp_color(CARD_EDGE(), with_alpha(GREEN(), 0.55), s).gamma_multiply(a)), StrokeKind::Inside);
-    agent_mark(&p, Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0)), "claude", false);
-    p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, "Claude Code", ty::title(), TEXT());
-    let right = r.right() - sp::L;
-    let busy = !app.demo && keychain::busy();
-    let err = if app.demo { String::new() } else { keychain::error() };
-    if ok {
-        let since = ctx.data(|d| d.get_temp::<f64>(egui::Id::new("signin-ok"))).unwrap_or(now - 10.0);
-        check_drawn(&p, Pos2::new(right - 13.0, r.center().y), 12.0, GREEN(), ease(((now - since) / 0.35) as f32));
-    } else if busy {
-        let c = Pos2::new(right - 8.0, r.center().y);
-        spinner(&p, c, 6.0, now, ACTION());
-        p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, ts!("setup.always_allow"), font(12.0), TEXT_FAINT());
-    } else {
-        let label = if st == Status::Denied || !err.is_empty() { ts!("setup.try_again") } else { ts!("setup.allow") };
-        let bw = button_width(&p, label, BTN_SECONDARY);
-        let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - 13.0), Vec2::new(bw, 26.0));
-        if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() && !app.demo {
-            keychain::connect(Some(ctx.clone()));
-        }
-        if !err.is_empty() {
-            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, err, font(12.0), RED());
-        } else if st == Status::Denied {
-            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, ts!("setup.denied"), font(12.0), AMBER());
-        }
-    }
-    // the check pops once when it turns allowed while shown
-    let id = egui::Id::new("signin-ok");
-    let was = ctx.data(|d| d.get_temp::<bool>(id.with("was"))).unwrap_or(ok);
-    if ok && !was {
-        ctx.data_mut(|d| d.insert_temp(id, now));
-        ctx.request_repaint();
-    }
-    ctx.data_mut(|d| d.insert_temp(id.with("was"), ok));
-}
-
 /// An AI agent's mark, in `r`: drawn here, no image files. Claude a
 /// sunburst, Codex a prompt, Gemini a four-point star, OpenCode braces.
 fn agent_mark(p: &egui::Painter, r: Rect, id: &str, dim: bool) {
@@ -1948,146 +1887,6 @@ fn agent_mark(p: &egui::Painter, r: Rect, id: &str, dim: bool) {
             p.rect_filled(r, s * 0.27, white(18).gamma_multiply(k));
             p.text(c, Align2::CENTER_CENTER, "{ }", mono(s * 0.38), TEXT().gamma_multiply(k));
         }
-    }
-}
-
-fn agents(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
-    use crate::kit::ai::{self, settings};
-    use crate::tools::*;
-    let p = ui.painter().clone();
-    let set = settings::get();
-    // a column in the middle of the step
-    let w = body.width().min(COL_W);
-    let x = body.center().x - w / 2.0;
-    let head = body.top() + 6.0;
-    p.text(Pos2::new(x, head), Align2::LEFT_TOP, ts!("setup.ai_agents"), bold(22.0), TEXT());
-    let n = ai::PROVIDERS.len();
-    let found: Vec<bool> = (0..n).map(|k| app.demo || ai::make(k).data_dir().is_some_and(|d| d.exists())).collect();
-    let tile_h = 84.0;
-    let gap = sp::S;
-    let tile_w = (w - gap * (n as f32 - 1.0)) / n as f32;
-    // a section: its tool, its name, what it's for, and where it shows (the
-    // tools' own chips); then one tile per agent
-    let section = |ui: &mut Ui, y: f32, chip_icon: Icon, chip_col: Color32, name: &str, what: &str, tools: &[&str]| -> f32 {
-        let cr = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(42.0));
-        tool_chip(&p, cr, chip_icon, chip_col);
-        p.text(Pos2::new(cr.right() + sp::M, cr.top() + 2.0), Align2::LEFT_TOP, name, bold(15.0), TEXT());
-        p.text(Pos2::new(cr.right() + sp::M, cr.bottom() - 2.0), Align2::LEFT_BOTTOM, what, ty::body(), TEXT_DIM());
-        let mut tx = x + w;
-        for id in tools.iter().rev() {
-            if let Some(i) = app.tool_index(id) {
-                let b = app.tools[i].badge();
-                let r = Rect::from_min_size(Pos2::new(tx - 26.0, cr.center().y - 13.0), Vec2::splat(26.0));
-                tool_chip(&p, r, b.icon, b.color);
-                tool_hint(ui, r, ui.scope_id().with(("setup-ai-tool", name, *id)), app.tools[i].name(), app.tools[i].id());
-                tx -= 26.0 + 6.0;
-            }
-        }
-        // room between what it's for and the agent cards (Roman, M5)
-        cr.bottom() + sp::XL
-    };
-    // a ping round the main agent's mark when it changes
-    let now = ui.ctx().input(|i| i.time);
-    let ping_id = ui.scope_id().with("setup-main-ping");
-    let (was, since) = ui.ctx().data(|d| d.get_temp::<(String, f64)>(ping_id)).unwrap_or_else(|| (set.main.clone(), f64::NEG_INFINITY));
-    let since = if was != set.main { now } else { since };
-    ui.ctx().data_mut(|d| d.insert_temp(ping_id, (set.main.clone(), since)));
-    let ping = ((now - since) / 0.55) as f32;
-    type Change = Box<dyn FnOnce(&mut settings::Settings)>;
-    let mut change: Option<Change> = None;
-    // one tile: the agent's mark and name, found or not; `on` lights it
-    let tile = |ui: &mut Ui, r: Rect, k: usize, on: bool, a: f32| -> egui::Response {
-        let m = &ai::PROVIDERS[k];
-        let resp = ui.interact(r, ui.scope_id().with(("setup-ai-tile", r.top() as i32, m.id)), if found[k] { Sense::click() } else { Sense::hover() });
-        // H7: the picked agent doesn't hover, a click on it does nothing
-        let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k] && !on);
-        let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
-        // H4: the picked card stays neutral and gets the 1.5 lime ring
-        let fill = lerp_color(CARD(), white(30), hov * 0.15);
-        p.rect_filled(r, 12.0, fill.gamma_multiply(a));
-        p.rect_stroke(r, 12.0, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
-        let mr = Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0));
-        agent_mark(&p, mr, m.id, !found[k]);
-        p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });
-        if !found[k] {
-            p.text(Pos2::new(r.right() - 12.0, r.bottom() - 12.0), Align2::RIGHT_BOTTOM, ts!("setup.not_found"), ty::caption(), TEXT_FAINT());
-        }
-        if resp.hovered() && found[k] && !on {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        resp
-    };
-    // AI Check: one agent
-    let mut y = head + 22.0 + sp::XL;
-    let cleanup_chip = app.tool_index(cleanup::ID).map(|i| app.tools[i].badge().color).unwrap_or(ACTION());
-    y = section(ui, y, Icon::Sparkle, cleanup_chip, ts!("setup.ai_check"), ts!("setup.ai_check_what"), &[]);
-    for k in 0..n {
-        let m = &ai::PROVIDERS[k];
-        let a = ease((t - 0.05 * k as f32) / 0.4);
-        let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
-        let main = set.main == m.id;
-        let resp = tile(ui, r, k, main, a);
-        let rr = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
-        if main && (0.0..1.0).contains(&ping) {
-            let e = ease(ping);
-            crate::kit::glass::stroke_circle(&p, rr.center(), 8.0 + 13.0 * e, Stroke::new(1.5, with_alpha(ACTION(), 0.7 * (1.0 - e))));
-            ui.ctx().request_repaint();
-        }
-        let dot = if found[k] { radio(ui, rr, ui.scope_id().with(("setup-main", m.id)), main, true).clicked() } else { false };
-        if (resp.clicked() || dot) && !main && found[k] {
-            let id = m.id.to_string();
-            change = Some(Box::new(move |s| {
-                s.off.retain(|x| *x != id);
-                s.provider = id.clone();
-                s.main = id;
-            }));
-        }
-    }
-    // AI Usage: every agent it follows; only when that tool was picked
-    // (ticking agents for a tool left off did nothing, M1)
-    let usage_on = app.demo || app.tool_index(claude::ID).is_some_and(|i| app.tool_on(i));
-    if usage_on {
-        // 24 like the step's other gaps: the AI Check sample below still
-        // fits with AI Usage on (M1)
-        y += tile_h + sp::XL;
-        let usage = app.tool_index(claude::ID).map(|i| app.tools[i].badge()).map(|b| (b.icon, b.color)).unwrap_or((Icon::Sparkle, ACTION()));
-        y = section(ui, y, usage.0, usage.1, ts!("setup.ai_usage"), ts!("setup.ai_usage_what"), &[]);
-        for k in 0..n {
-            let m = &ai::PROVIDERS[k];
-            let a = ease((t - 0.2 - 0.05 * k as f32) / 0.4);
-            let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
-            let main = set.main == m.id;
-            let on = set.is_on(m.id) || main;
-            let resp = tile(ui, r, k, on && found[k], a);
-            let cb = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
-            // the main agent is always followed; one not on this Mac has
-            // nothing to follow, so no box (a ticked one read as "on", M1)
-            if !found[k] {
-                continue;
-            }
-            let box_ = checkbox(ui, cb, ui.scope_id().with(("setup-track", m.id)), on, true);
-            let box_ = if main { box_.on_hover_text(ts!("setup.main_followed")) } else { box_ };
-            if (box_.clicked() || resp.clicked()) && !main {
-                let id = m.id.to_string();
-                let was_on = set.is_on(m.id);
-                change = Some(Box::new(move |s| {
-                    s.off.retain(|x| *x != id);
-                    if was_on {
-                        s.off.push(id);
-                    }
-                }));
-            }
-        }
-    }
-    // what AI Check does, shown: a short loop under the tiles, when it fits
-    let after = y + tile_h;
-    let demo_top = after + sp::XL;
-    let a = ease((t - 0.35) / 0.5);
-    if body.bottom() - demo_top >= AI_DEMO_H && a > 0.0 {
-        ai_check_demo(ui, &p, Pos2::new(x, demo_top + (1.0 - a) * 8.0), w, &set.main, a, t);
-    }
-    if let Some(f) = change {
-        settings::update(!app.demo, f);
     }
 }
 
@@ -2219,95 +2018,6 @@ fn models(app: &App) -> Vec<ModelRow> {
     rows
 }
 
-/// The step is there when a model needs a download now or is already here.
-fn has_models_step(app: &App) -> bool {
-    models(app).iter().any(|r| r.model.state != crate::core::tool::ModelState::OnFirstUse)
-}
-
-fn models_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32) {
-    use crate::core::tool::ModelState;
-    let p = ui.painter().clone();
-    // a column in the middle of the step (left-aligned it left the right half empty)
-    let w = body.width().min(COL_W);
-    let x = body.center().x - w / 2.0;
-    let head = body.top() + 6.0;
-    let g = p.text(Pos2::new(x, head), Align2::LEFT_TOP, ts!("setup.download_models"), bold(22.0), TEXT());
-    let list = models(app);
-    let mut y = g.bottom() + sp::XL;
-    let mut start: Option<(usize, &'static str)> = None;
-    for (k, row) in list.iter().enumerate() {
-        let (m, i) = (&row.model, row.tools[0].0);
-        let a = ease((t - 0.05 * k as f32) / 0.4);
-        // two lines (the model, then the tools it's for), a third for the bar or an error
-        let third = matches!(m.state, ModelState::Downloading { .. } | ModelState::Unpacking | ModelState::Failed(_));
-        let row_h = if third { 78.0 } else { 58.0 };
-        let r = Rect::from_min_size(Pos2::new(x, y + (1.0 - a) * 8.0), Vec2::new(w, row_h));
-        y += row_h + sp::S;
-        glass_card(&p, r, R_CARD, 0.0, false);
-        let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 14.0), Vec2::splat(30.0));
-        p.rect_filled(ib, 8.0, white(16));
-        icon(&p, app.tools[i].badge().icon, ib.shrink(7.0), if m.state == ModelState::Ready { GREEN() } else { TEXT_SOFT() });
-        tool_hint(ui, ib, ui.scope_id().with(("setup-model-tool", i)), app.tools[i].name(), app.tools[i].id());
-        let tx = ib.right() + 12.0;
-        let right = r.right() - 14.0;
-        let line1 = r.top() + 19.0;
-        let line2 = r.top() + 39.0;
-        // a two-line row's status or button sits on its middle; with a
-        // third line (the bar) it stays on the first
-        let side = if third { line1 } else { r.center().y };
-        let title = p.text(Pos2::new(tx, line1), Align2::LEFT_CENTER, m.name, bold(13.0), TEXT());
-        p.text(Pos2::new(title.right() + 8.0, line1), Align2::LEFT_CENTER, human_bytes(m.bytes), font(12.0), TEXT_FAINT());
-        // which tools use it, and for what
-        let uses = row.tools.iter().map(|(ti, what)| format!("{}: {}", app.tools[*ti].name(), what.to_lowercase())).collect::<Vec<_>>().join(" · ");
-        let status_w = 150.0;
-        text_fit(&p, Pos2::new(tx, line2), Align2::LEFT_CENTER, &uses, font(12.0), TEXT_DIM(), right - tx - status_w);
-        let bar = Rect::from_min_max(Pos2::new(tx, r.bottom() - 14.0), Pos2::new(right, r.bottom() - 8.0));
-        let mut button: Option<&str> = None;
-        match &m.state {
-            ModelState::Ready => {
-                let t = p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.on_mac"), font(12.0), GREEN());
-                check(&p, Pos2::new(t.left() - 12.0, side), 12.0, GREEN());
-            }
-            ModelState::OnFirstUse => {
-                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.first_use"), font(12.0), TEXT_FAINT());
-            }
-            ModelState::Downloading { done, total } => {
-                let total = if *total > 0 { *total } else { m.bytes };
-                let f = if total > 0 { (*done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
-                p.rect_filled(bar, 3.0, white(20));
-                // the bar fills smoothly between progress reports, at the
-                // decorative pace (egui's own easing asked for every frame)
-                let f = glide(ui.ctx(), ui.scope_id().with(("setup-model", m.id)), f, 0.25);
-                p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 3.0, ACTION());
-                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, t!("setup.progress", done = human_bytes(*done), total = human_bytes(total), pct = format!("{:.0}", f * 100.0)), font(12.0), TEXT_DIM());
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
-            }
-            ModelState::Unpacking => {
-                p.rect_filled(bar, 3.0, ACTION());
-                p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.unpacking"), font(12.0), TEXT_DIM());
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
-            }
-            ModelState::Failed(e) => {
-                text_fit(&p, Pos2::new(tx, bar.center().y), Align2::LEFT_CENTER, e, font(12.0), RED(), right - tx);
-                button = Some(ts!("setup.try_again"));
-            }
-            ModelState::Missing => button = Some(ts!("setup.download")),
-        }
-        if let Some(label) = button {
-            let bw = button_width(&p, label, BTN_SECONDARY);
-            let b = Rect::from_min_size(Pos2::new(right - bw, side - 13.0), Vec2::new(bw, 26.0));
-            if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() {
-                start = Some((i, m.id));
-            }
-        }
-    }
-    if let Some((i, id)) = start {
-        if !app.demo {
-            app.tools[i].download_model(id);
-        }
-    }
-}
-
 fn check(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
     let pts = vec![c + Vec2::new(-0.45, 0.0) * s, c + Vec2::new(-0.12, 0.33) * s, c + Vec2::new(0.45, -0.32) * s];
     p.add(egui::Shape::line(pts, Stroke::new((s * 0.22).max(1.2), col)));
@@ -2336,7 +2046,7 @@ fn check_drawn(p: &egui::Painter, c: Pos2, s: f32, col: Color32, k: f32) {
 
 fn permissions_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64) {
     let p = ui.painter().clone();
-    let list = rows(app);
+    let list = leftover_rows(app);
     {
         let (tools, watch) = (&app.tools, &mut app.perm_watch);
         watch.poll(tools, &list, now);
@@ -2503,8 +2213,9 @@ pub fn perm_list(app: &mut App, ui: &mut Ui, area: Rect, list: &[Row], t: f32, n
         // button or the waiting hint wider (never cut the reason, R10)
         let status_w = if ok { 40.0 } else if waiting { 230.0 } else { 150.0 };
         let why_w = right - status_w - why_x;
-        if why_w > 60.0 && !r.perm.why().is_empty() {
-            text_fit(&p, Pos2::new(why_x, rr.center().y), Align2::LEFT_CENTER, r.perm.why(), font(12.0), TEXT_FAINT().gamma_multiply(a), why_w);
+        let why = if r.why.is_empty() { r.perm.why() } else { r.why };
+        if why_w > 60.0 && !why.is_empty() {
+            text_fit(&p, Pos2::new(why_x, rr.center().y), Align2::LEFT_CENTER, why, font(12.0), TEXT_FAINT().gamma_multiply(a), why_w);
         }
         if ok {
             let c = Pos2::new(right - 13.0, rr.center().y);
@@ -2707,12 +2418,10 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
     let rows_top = y;
     // open at login: as tall as the shortcut rows under it
     let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
-    // one card under every row (S4), drawn first
-    let keys: Vec<(Icon, &'static str, String)> = (0..app.tools.len()).filter(|&i| app.tool_on(i)).flat_map(|i| {
-        let ic = app.tools[i].badge().icon;
-        app.tools[i].setup_shortcuts().into_iter().map(move |(l, k)| (if l == ts!("cap.sc.record") { Icon::ScreenRec } else { ic }, l, k))
-    }).collect();
-    let n_rows = 1 + keys.len() + needs_restart(app) as usize;
+    // one card under every row (S4), drawn first: Open at login, then a
+    // row per goal screen with what it set up (a click goes back to it)
+    let feats: Vec<(usize, usize)> = kinds(app).iter().enumerate().filter_map(|(k, kd)| if let Kind::Feature(g) = kd { Some((k, *g)) } else { None }).collect();
+    let n_rows = 1 + feats.len() + needs_restart(app) as usize;
     p.rect_filled(Rect::from_min_size(row.min, Vec2::new(row.width(), n_rows as f32 * sp::ROW_H)), R_CARD, CARD());
     icon(&p, Icon::Power, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT());
     p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, ts!("setup.open_login"), bold(13.0), TEXT());
@@ -2724,15 +2433,66 @@ fn ready(app: &mut App, ui: &mut Ui, body: Rect, t: f32) -> bool {
         app.perm_watch.set_login(!on);
     }
     y += sp::ROW_H;
-    // shortcuts of the enabled tools
-    for (k, (ic, label, keys)) in keys.iter().enumerate() {
-        let a = ease((t - 0.08 * (k + 1) as f32) / 0.4);
+    let mut back_to: Option<usize> = None;
+    for (n, (step_i, g)) in feats.iter().enumerate() {
+        let a = ease((t - 0.08 * (n + 1) as f32) / 0.4);
         let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
+        let resp = ui.interact(row, ui.scope_id().with(("ready-feature", *g)), Sense::click());
+        if resp.hovered() {
+            p.rect_filled(row, 0.0, white(ROW_HOVER));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if resp.clicked() {
+            back_to = Some(*step_i);
+        }
         hairline(&p, Pos2::new(row.left() + sp::L, row.top()), Pos2::new(row.right() - sp::L, row.top()));
-        icon(&p, *ic, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT().gamma_multiply(a));
-        p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, *label, font(13.0), TEXT().gamma_multiply(a));
-        keycaps(&p, Pos2::new(row.right() - 12.0, row.center().y), keys);
+        // the goal's first tool stands for it
+        let tools = feature_tools(app, *g);
+        if let Some(&i) = tools.first() {
+            let b = app.tools[i].badge();
+            icon(&p, b.icon, Rect::from_min_size(Pos2::new(row.left() + 14.0, row.center().y - 9.0), Vec2::splat(18.0)), TEXT_SOFT().gamma_multiply(a));
+        }
+        p.text(Pos2::new(row.left() + 44.0, row.center().y), Align2::LEFT_CENTER, goal_label(GOALS[*g].name), font(13.0), TEXT().gamma_multiply(a));
+        // on the right: each permission it asked for (green allowed, amber
+        // not yet), its first shortcut and how many more, its model
+        let mut x = row.right() - 12.0;
+        let cy = row.center().y;
+        let keys: Vec<_> = feature_keys(app, *g).into_iter().filter(|(_, k)| k.on).collect();
+        if let Some((_, k)) = keys.first() {
+            if keys.len() > 1 {
+                let r = p.text(Pos2::new(x, cy), Align2::RIGHT_CENTER, format!("+{}", keys.len() - 1), font(12.0), TEXT_FAINT());
+                x = r.left() - sp::S;
+            }
+            let w: f32 = caps(&k.keys).iter().map(|c| cap_w(&p, c) + 3.0).sum();
+            keycaps(&p, Pos2::new(x, cy), &k.keys);
+            x -= w + sp::S;
+        }
+        // the AI agents it uses
+        if let Some(part) = feature_ai(app, *g) {
+            use crate::kit::ai;
+            let set = ai::settings::get();
+            let no_cli = app.demo && std::env::var("CMDMEOW_NO_CLI").is_ok();
+            for k in (0..ai::PROVIDERS.len()).rev() {
+                let m = &ai::PROVIDERS[k];
+                let found = if app.demo { !no_cli } else { ai::make(k).data_dir().is_some_and(|d| d.exists()) };
+                let used = set.main == m.id || (part == AiPart::Usage && set.is_on(m.id));
+                if found && used {
+                    agent_mark(&p, Rect::from_min_size(Pos2::new(x - 20.0, cy - 10.0), Vec2::splat(20.0)), m.id, false);
+                    x -= 20.0 + sp::XS;
+                }
+            }
+            x -= sp::S - sp::XS;
+        }
+        for r in feature_rows(app, *g).iter().filter(|r| !r.optional).rev() {
+            let ok = app.perm_watch.status(r.perm) == Status::Allowed;
+            let ir = Rect::from_min_size(Pos2::new(x - 16.0, cy - 8.0), Vec2::splat(16.0));
+            icon(&p, r.perm.icon(), ir, if ok { GREEN() } else { AMBER() });
+            x -= 16.0 + sp::S;
+        }
         y += sp::ROW_H;
+    }
+    if let Some(k) = back_to {
+        go(app, k);
     }
     if needs_restart(app) {
         let row = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), sp::ROW_H));
@@ -2928,8 +2688,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_step_saved_before_the_theme_step_moves_one_on() {
-        assert_eq!(parse_step("v2:3"), Some(3));
+    fn a_step_saved_before_the_goal_screens_goes_back_to_goals() {
+        assert_eq!(parse_step("v3:5"), Some(5));
+        assert_eq!(parse_step("v2:1"), Some(1));
+        assert_eq!(parse_step("v2:4"), Some(3));
         assert_eq!(parse_step("0"), Some(0));
         assert_eq!(parse_step("2\n"), Some(3));
         assert_eq!(parse_step("x"), None);
@@ -2993,7 +2755,7 @@ mod tests {
     #[test]
     fn allowed_permissions_are_read_less_often() {
         let mut w = PermWatch::default();
-        let rows = [Row { perm: Perm::Screen, optional: false, tools: vec![] }, Row { perm: Perm::Accessibility, optional: true, tools: vec![] }];
+        let rows = [Row { perm: Perm::Screen, optional: false, tools: vec![], why: "" }, Row { perm: Perm::Accessibility, optional: true, tools: vec![], why: "" }];
         // nothing read yet, then one still missing: every second
         assert!(!w.settled(&rows));
         w.apply(Perm::Screen, Status::Allowed, 0.0);
@@ -3120,4 +2882,480 @@ mod tests {
         }
         assert!(twitch(0.25 * 0.36, 0.0) > 0.2);
     }
+}
+
+// ---- one screen per goal
+
+/// Indexes of goal `g`'s tools that are on.
+fn feature_tools(app: &App, g: usize) -> Vec<usize> {
+    goal_tools(app, &GOALS[g]).into_iter().filter(|&i| app.tool_on(i)).collect()
+}
+
+/// What goal `g`'s screen asks macOS for: the rows of its own tools, each
+/// saying what it's for in this goal's words.
+fn feature_rows(app: &App, g: usize) -> Vec<Row> {
+    let mine = feature_tools(app, g);
+    let mut out: Vec<Row> = Vec::new();
+    for &i in &mine {
+        for n in app.tools[i].needs() {
+            match out.iter_mut().find(|r| r.perm == n.perm) {
+                Some(r) => {
+                    r.optional &= n.optional;
+                    r.tools.push(i);
+                }
+                None => out.push(Row { perm: n.perm, optional: n.optional, tools: vec![i], why: feature_why(g, n.perm) }),
+            }
+        }
+    }
+    let rank = |p: Perm| Perm::SYSTEM.iter().position(|s| *s == p).unwrap_or(Perm::SYSTEM.len());
+    out.sort_by_key(|r| (r.optional, rank(r.perm)));
+    out
+}
+
+/// A permission's reason in goal `g`'s words ("" keeps the usual one).
+fn feature_why(g: usize, perm: Perm) -> &'static str {
+    match (GOALS[g].name, perm) {
+        ("Screenshots & video", Perm::Microphone) => ts!("setup.why_rec_voice"),
+        ("Screenshots & video", Perm::Camera) => ts!("setup.why_rec_camera"),
+        ("Voice typing", Perm::Microphone) => ts!("setup.why_dict_mic"),
+        ("Voice typing", Perm::Accessibility) => ts!("setup.why_dict_type"),
+        ("Watch my Mac", Perm::Accessibility) => ts!("setup.why_watch_keys"),
+        ("Watch my Mac", Perm::FullDisk) => ts!("setup.why_watch_disk"),
+        _ => "",
+    }
+}
+
+/// The AI agents part of goal `g`'s screen: AI Check for Clean my Mac,
+/// AI Usage (and its Keychain sign-in) for developers.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AiPart {
+    Check,
+    Usage,
+}
+
+fn feature_ai(app: &App, g: usize) -> Option<AiPart> {
+    use crate::tools::*;
+    let on = |id: &str| feature_tools(app, g).iter().any(|&i| app.tools[i].id() == id);
+    if on(cleanup::ID) {
+        Some(AiPart::Check)
+    } else if on(claude::ID) {
+        Some(AiPart::Usage)
+    } else {
+        None
+    }
+}
+
+fn feature_keys(app: &App, g: usize) -> Vec<(usize, crate::core::tool::SetupKey)> {
+    feature_tools(app, g).into_iter().flat_map(|i| app.tools[i].setup_keys().into_iter().map(move |k| (i, k))).collect()
+}
+
+fn feature_models(app: &App, g: usize) -> Vec<ModelRow> {
+    let mine = feature_tools(app, g);
+    models(app).into_iter().filter(|r| r.tools.iter().any(|(i, _)| mine.contains(i))).collect()
+}
+
+/// Goal `g` gets a screen: it's picked and asks for something that matters
+/// now. Only optional permissions (Watch my Mac) are asked when first needed.
+fn has_feature(app: &App, g: usize) -> bool {
+    if feature_tools(app, g).is_empty() {
+        return false;
+    }
+    // any permission, optional ones too (Watch my Mac has only those)
+    !feature_rows(app, g).is_empty() || !feature_keys(app, g).is_empty() || !feature_models(app, g).is_empty() || feature_ai(app, g).is_some()
+}
+
+/// Required permissions of tools no goal screen covers (picked from the full list).
+fn leftover_rows(app: &App) -> Vec<Row> {
+    let covered: Vec<usize> = (0..GOALS.len()).filter(|&g| has_feature(app, g)).flat_map(|g| feature_tools(app, g)).collect();
+    rows(app)
+        .into_iter()
+        .filter_map(|mut r| {
+            r.tools.retain(|i| !covered.contains(i));
+            (!r.tools.is_empty() && !r.optional).then_some(r)
+        })
+        .collect()
+}
+
+/// A section's title over its card, and on its right the chips of the
+/// tools it's for (named on hover): what is used where.
+fn feature_section(app: &App, ui: &Ui, p: &egui::Painter, x: f32, y: f32, w: f32, label: &str, tools: &[usize]) -> f32 {
+    card_title(p, Pos2::new(x, y), label);
+    let mut tx = x + w;
+    let mut seen: Vec<usize> = Vec::new();
+    for &i in tools.iter().rev() {
+        if seen.contains(&i) {
+            continue;
+        }
+        seen.push(i);
+        let b = app.tools[i].badge();
+        let r = Rect::from_min_size(Pos2::new(tx - 20.0, y - 3.0), Vec2::splat(20.0));
+        tool_chip(p, r, b.icon, b.color);
+        tool_hint(ui, r, ui.scope_id().with(("feature-tool", label, i)), app.tools[i].name(), app.tools[i].id());
+        tx -= 20.0 + 6.0;
+    }
+    y + CARD_TITLE_H
+}
+
+fn feature_step(app: &mut App, ui: &mut Ui, body: Rect, t: f32, now: f64, g: usize) {
+    let p = ui.painter().clone();
+    let w = body.width().min(COL_W);
+    let x = body.center().x - w / 2.0;
+    let head = body.top() + 6.0;
+    p.text(Pos2::new(x, head), Align2::LEFT_TOP, goal_label(GOALS[g].name), bold(22.0), TEXT());
+    let mut y = head + 22.0 + sp::XL;
+    let mut k = 0usize;
+    // 1. what macOS is asked for
+    let list = feature_rows(app, g);
+    {
+        let (tools, watch) = (&app.tools, &mut app.perm_watch);
+        watch.poll(tools, &list, now);
+    }
+    if !list.is_empty() {
+        let tools: Vec<usize> = list.iter().flat_map(|r| r.tools.clone()).collect();
+        y = feature_section(app, ui, &p, x, y, w, ts!("setup.permissions"), &tools);
+        let opt_head = if list.iter().any(|r| r.optional) && list.iter().any(|r| !r.optional) { PERM_HEAD } else { 0.0 };
+        let h = list.len() as f32 * sp::ROW_H + opt_head;
+        let area = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
+        y += perm_list(app, ui, area, &list, t, now) + sp::XL;
+        k += 1;
+    }
+    // 2. the shortcuts it turns on, each with a switch (defaults on)
+    let keys = feature_keys(app, g);
+    if !keys.is_empty() {
+        let tools: Vec<usize> = keys.iter().map(|(i, _)| *i).collect();
+        y = feature_section(app, ui, &p, x, y, w, ts!("setup.shortcuts"), &tools);
+        y += keys_card(app, ui, &p, Pos2::new(x, y), w, &keys, ease((t - 0.08 * k as f32) / 0.4)) + sp::XL;
+        k += 1;
+    }
+    // 3. models it downloads
+    let ms = feature_models(app, g);
+    let mut start: Option<(usize, &'static str)> = None;
+    if !ms.is_empty() {
+        let tools: Vec<usize> = ms.iter().flat_map(|r| r.tools.iter().map(|(i, _)| *i)).collect();
+        y = feature_section(app, ui, &p, x, y, w, ts!("setup.model"), &tools);
+        for row in &ms {
+            let (h, s) = model_card(app, ui, &p, Pos2::new(x, y), w, row, ease((t - 0.08 * k as f32) / 0.4));
+            if s.is_some() {
+                start = s;
+            }
+            y += h + sp::S;
+        }
+        y += sp::XL - sp::S;
+        k += 1;
+    }
+    if let Some((i, id)) = start {
+        if !app.demo {
+            app.tools[i].download_model(id);
+        }
+    }
+    // 4. AI agents
+    if let Some(part) = feature_ai(app, g) {
+        let ai_tool = app.tool_index(if part == AiPart::Check { crate::tools::cleanup::ID } else { crate::tools::claude::ID }).into_iter().collect::<Vec<_>>();
+        y = feature_section(app, ui, &p, x, y, w, if part == AiPart::Check { ts!("setup.ai_check") } else { ts!("setup.ai_usage") }, &ai_tool);
+        let (bottom, any) = ai_block(app, ui, &p, x, y, w, t - 0.08 * k as f32, part);
+        y = bottom;
+        if part == AiPart::Usage && any && crate::tools::claude::keychain::wanted(app.demo) {
+            y += sp::S;
+            keychain_row(app, ui, &p, Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, sp::ROW_H)), now);
+        }
+        // what AI Check does, shown under its tiles when it fits
+        let a = ease((t - 0.35) / 0.5);
+        if part == AiPart::Check && any && body.bottom() - (y + sp::XL) >= AI_DEMO_H && a > 0.0 {
+            let main = crate::kit::ai::settings::get().main;
+            ai_check_demo(ui, &p, Pos2::new(x, y + sp::XL + (1.0 - a) * 8.0), w, &main, a, t);
+        }
+    }
+}
+
+/// The goal's shortcuts in one card, two columns when there are several:
+/// icon, name, keys and a switch. Off leaves the keys free for other apps.
+fn keys_card(app: &mut App, ui: &mut Ui, p: &egui::Painter, top_left: Pos2, w: f32, keys: &[(usize, crate::core::tool::SetupKey)], a: f32) -> f32 {
+    let cols = if keys.len() > 2 { 2 } else { 1 };
+    let rows_n = keys.len().div_ceil(cols);
+    let h = rows_n as f32 * sp::ROW_H;
+    let card = Rect::from_min_size(top_left + Vec2::new(0.0, (1.0 - a) * 8.0), Vec2::new(w, h));
+    p.rect_filled(card, R_CARD, CARD().gamma_multiply(a));
+    let cw = w / cols as f32;
+    if cols == 2 {
+        let mx = card.left() + cw;
+        p.line_segment([Pos2::new(mx, card.top() + sp::M), Pos2::new(mx, card.bottom() - sp::M)], Stroke::new(1.0, white(18)));
+    }
+    let mut flip: Option<(usize, &'static str, bool)> = None;
+    let rec = app.setup.as_ref().and_then(|s| s.key_rec);
+    let mut rec_next = rec;
+    for (n, (i, key)) in keys.iter().enumerate() {
+        // down the first column, then the second
+        let (c, r) = (n / rows_n, n % rows_n);
+        let cell = Rect::from_min_size(Pos2::new(card.left() + c as f32 * cw, card.top() + r as f32 * sp::ROW_H), Vec2::new(cw, sp::ROW_H));
+        if r > 0 {
+            hairline(p, Pos2::new(cell.left() + sp::L, cell.top()), Pos2::new(cell.right() - sp::L, cell.top()));
+        }
+        let cy = cell.center().y;
+        let dim = if key.on { 1.0 } else { 0.45 };
+        let ir = Rect::from_center_size(Pos2::new(cell.left() + 22.0, cy), Vec2::splat(16.0));
+        if !app.tools[*i].setup_key_icon(key.id, p, ir, TEXT_SOFT().gamma_multiply(dim * a)) {
+            icon(p, app.tools[*i].badge().icon, ir, TEXT_SOFT().gamma_multiply(dim * a));
+        }
+        let sw = Rect::from_min_size(Pos2::new(cell.right() - sp::M - 30.0, cy - 9.0), Vec2::new(30.0, 18.0));
+        let caps_right = Pos2::new(sw.left() - sp::M, cy);
+        let recording = rec == Some((*i, key.id));
+        // the keys: a click types new ones (as in the tool's settings)
+        let caps_w: f32 = if recording {
+            p.layout_no_wrap(ts!("cap.type_shortcut").to_string(), font(12.0), TEXT()).size().x + 20.0
+        } else {
+            caps(&key.keys).iter().map(|c| cap_w(p, c) + 3.0).sum::<f32>()
+        };
+        let kr = Rect::from_min_max(Pos2::new(caps_right.x - caps_w - 2.0, cy - 13.0), Pos2::new(caps_right.x + 2.0, cy + 13.0));
+        let lx = cell.left() + 40.0;
+        text_fit(p, Pos2::new(lx, cy), Align2::LEFT_CENTER, key.label, font(13.0), TEXT().gamma_multiply(dim * a), kr.left() - sp::S - lx);
+        let kresp = ui.interact(kr, ui.scope_id().with(("setup-key-rec", *i, key.id)), Sense::click());
+        if recording {
+            let br = kr.shrink2(Vec2::new(2.0, 1.0));
+            p.rect_filled(br, 6.0, with_alpha(ACTION(), 0.22));
+            p.rect_stroke(br, 6.0, Stroke::new(1.0, ACCENT()), StrokeKind::Inside);
+            p.text(br.center(), Align2::CENTER_CENTER, ts!("cap.type_shortcut"), font(12.0), TEXT());
+        } else {
+            if kresp.hovered() {
+                p.rect_filled(kr, 6.0, white(ROW_HOVER));
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            keycaps_dim(p, caps_right, &key.keys, dim * a);
+        }
+        if kresp.on_hover_text(ts!("cap.shortcut_tip")).clicked() {
+            rec_next = if recording { None } else { Some((*i, key.id)) };
+        }
+        if switch(ui, sw, ui.scope_id().with(("setup-key", *i, key.id)), key.on, true).clicked() {
+            flip = Some((*i, key.id, !key.on));
+        }
+    }
+    // typing a shortcut: the next press with a modifier becomes it, Esc
+    // leaves it as it was, Delete turns it off
+    if let Some((i, id)) = rec_next {
+        use crate::kit::hotkeys::{listen, Heard};
+        let heard = if rec == rec_next { listen(ui.ctx()) } else { Heard::Nothing };
+        match heard {
+            Heard::Nothing => {
+                app.tools[i].record_setup_key(id, true);
+                ui.ctx().request_repaint();
+            }
+            Heard::Cancel => {
+                app.tools[i].record_setup_key(id, false);
+                rec_next = None;
+            }
+            Heard::Remove => {
+                app.tools[i].set_setup_key_to(id, None);
+                rec_next = None;
+            }
+            Heard::Set(k) => {
+                app.tools[i].set_setup_key_to(id, Some(k));
+                rec_next = None;
+            }
+        }
+    }
+    if let Some((i, id)) = rec.filter(|r| rec_next != Some(*r)) {
+        app.tools[i].record_setup_key(id, false);
+    }
+    if let Some(s) = app.setup.as_mut() {
+        s.key_rec = rec_next;
+    }
+    if let Some((i, id, on)) = flip {
+        app.tools[i].set_setup_key(id, on);
+    }
+    h
+}
+
+/// [`keycaps`] faded to `a` (an off shortcut).
+fn keycaps_dim(p: &egui::Painter, right: Pos2, keys: &str, a: f32) {
+    if a >= 0.99 {
+        keycaps(p, right, keys);
+        return;
+    }
+    let mut x = right.x;
+    for c in caps(keys).iter().rev() {
+        let w = cap_w(p, c);
+        let r = Rect::from_min_size(Pos2::new(x - w, right.y - 11.0), Vec2::new(w, 22.0));
+        dashed_rect(p, r, 5.0, white(50));
+        p.text(r.center(), Align2::CENTER_CENTER, c, font(13.0), TEXT_FAINT().gamma_multiply(a.max(0.6)));
+        x = r.left() - 3.0;
+    }
+}
+
+/// One model's card (as on the old Download models step). Returns its
+/// height and, when its button was pressed, the download to start.
+fn model_card(app: &App, ui: &mut Ui, p: &egui::Painter, top_left: Pos2, w: f32, row: &ModelRow, a: f32) -> (f32, Option<(usize, &'static str)>) {
+    use crate::core::tool::ModelState;
+    let (m, i) = (&row.model, row.tools[0].0);
+    let third = matches!(m.state, ModelState::Downloading { .. } | ModelState::Unpacking | ModelState::Failed(_));
+    let row_h = if third { 78.0 } else { 58.0 };
+    let r = Rect::from_min_size(top_left + Vec2::new(0.0, (1.0 - a) * 8.0), Vec2::new(w, row_h));
+    p.rect_filled(r, R_CARD, CARD().gamma_multiply(a));
+    let ib = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 14.0), Vec2::splat(30.0));
+    p.rect_filled(ib, 8.0, white(16));
+    icon(p, app.tools[i].badge().icon, ib.shrink(7.0), if m.state == ModelState::Ready { GREEN() } else { TEXT_SOFT() });
+    let tx = ib.right() + 12.0;
+    let right = r.right() - 14.0;
+    let line1 = r.top() + 19.0;
+    let line2 = r.top() + 39.0;
+    let side = if third { line1 } else { r.center().y };
+    let title = p.text(Pos2::new(tx, line1), Align2::LEFT_CENTER, m.name, bold(13.0), TEXT());
+    p.text(Pos2::new(title.right() + 8.0, line1), Align2::LEFT_CENTER, human_bytes(m.bytes), font(12.0), TEXT_FAINT());
+    let uses = row.tools.iter().map(|(_, what)| what.to_string()).collect::<Vec<_>>().join(" · ");
+    text_fit(p, Pos2::new(tx, line2), Align2::LEFT_CENTER, &uses, font(12.0), TEXT_DIM(), right - tx - 150.0);
+    let bar = Rect::from_min_max(Pos2::new(tx, r.bottom() - 14.0), Pos2::new(right, r.bottom() - 8.0));
+    let mut button: Option<&str> = None;
+    match &m.state {
+        ModelState::Ready => {
+            let t = p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.on_mac"), font(12.0), GREEN());
+            check(p, Pos2::new(t.left() - 12.0, side), 12.0, GREEN());
+        }
+        ModelState::OnFirstUse => {
+            p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.first_use"), font(12.0), TEXT_FAINT());
+        }
+        ModelState::Downloading { done, total } => {
+            let total = if *total > 0 { *total } else { m.bytes };
+            let f = if total > 0 { (*done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
+            p.rect_filled(bar, 3.0, white(20));
+            let f = glide(ui.ctx(), ui.scope_id().with(("setup-model", m.id)), f, 0.25);
+            p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * f, bar.height())), 3.0, ACTION());
+            p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, t!("setup.progress", done = human_bytes(*done), total = human_bytes(total), pct = format!("{:.0}", f * 100.0)), font(12.0), TEXT_DIM());
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        ModelState::Unpacking => {
+            p.rect_filled(bar, 3.0, ACTION());
+            p.text(Pos2::new(right, side), Align2::RIGHT_CENTER, ts!("setup.unpacking"), font(12.0), TEXT_DIM());
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+        }
+        ModelState::Failed(e) => {
+            text_fit(p, Pos2::new(tx, bar.center().y), Align2::LEFT_CENTER, e, font(12.0), RED(), right - tx);
+            button = Some(ts!("setup.try_again"));
+        }
+        ModelState::Missing => button = Some(ts!("setup.download")),
+    }
+    let mut start = None;
+    if let Some(label) = button {
+        let bw = button_width(p, label, BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(right - bw, side - 13.0), Vec2::new(bw, 26.0));
+        if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() {
+            start = Some((i, m.id));
+        }
+    }
+    (row_h, start)
+}
+
+/// The agent tiles of AI Check (pick one) or AI Usage (tick any). With no
+/// agent on this Mac every tile reads "Not found" and none is picked.
+fn ai_block(app: &mut App, ui: &mut Ui, p: &egui::Painter, x: f32, y: f32, w: f32, t: f32, part: AiPart) -> (f32, bool) {
+    use crate::kit::ai::{self, settings};
+    let set = settings::get();
+    let n = ai::PROVIDERS.len();
+    let no_cli = app.demo && std::env::var("CMDMEOW_NO_CLI").is_ok();
+    let found: Vec<bool> = (0..n).map(|k| if app.demo { !no_cli } else { ai::make(k).data_dir().is_some_and(|d| d.exists()) }).collect();
+    let tile_h = 84.0;
+    let gap = sp::S;
+    let tile_w = (w - gap * (n as f32 - 1.0)) / n as f32;
+    type Change = Box<dyn FnOnce(&mut settings::Settings)>;
+    let mut change: Option<Change> = None;
+    for k in 0..n {
+        let m = &ai::PROVIDERS[k];
+        let a = ease((t - 0.05 * k as f32) / 0.4);
+        let r = Rect::from_min_size(Pos2::new(x + k as f32 * (tile_w + gap), y + (1.0 - a) * 8.0), Vec2::new(tile_w, tile_h));
+        let main = set.main == m.id;
+        let on = found[k] && match part {
+            AiPart::Check => main,
+            AiPart::Usage => set.is_on(m.id) || main,
+        };
+        let resp = ui.interact(r, ui.scope_id().with(("feature-ai", m.id)), if found[k] { Sense::click() } else { Sense::hover() });
+        let hov = ui.ctx().animate_bool(resp.id.with("h"), resp.hovered() && found[k] && !on);
+        let s = ui.ctx().animate_bool_with_time(resp.id.with("on"), on, 0.18);
+        p.rect_filled(r, 12.0, lerp_color(CARD(), white(30), hov * 0.15).gamma_multiply(a));
+        p.rect_stroke(r, 12.0, Stroke::new(1.0 + 0.5 * s, lerp_color(CARD_EDGE(), ACTION(), s).gamma_multiply(a)), StrokeKind::Inside);
+        agent_mark(p, Rect::from_min_size(Pos2::new(r.left() + 12.0, r.top() + 12.0), Vec2::splat(28.0)), m.id, !found[k]);
+        p.text(Pos2::new(r.left() + 12.0, r.bottom() - 12.0), Align2::LEFT_BOTTOM, m.name, ty::title(), if found[k] { TEXT() } else { TEXT_FAINT() });
+        if !found[k] {
+            p.text(Pos2::new(r.right() - 12.0, r.bottom() - 12.0), Align2::RIGHT_BOTTOM, ts!("setup.not_found"), ty::caption(), TEXT_FAINT());
+            continue;
+        }
+        let cb = Rect::from_center_size(Pos2::new(r.right() - 20.0, r.top() + 20.0), Vec2::splat(16.0));
+        let id = m.id.to_string();
+        match part {
+            AiPart::Check => {
+                let dot = radio(ui, cb, ui.scope_id().with(("feature-main", m.id)), main, true).clicked();
+                if (resp.clicked() || dot) && !main {
+                    change = Some(Box::new(move |s| {
+                        s.off.retain(|x| *x != id);
+                        s.provider = id.clone();
+                        s.main = id;
+                    }));
+                }
+            }
+            AiPart::Usage => {
+                let b = checkbox(ui, cb, ui.scope_id().with(("feature-track", m.id)), on, true);
+                let b = if main { b.on_hover_text(ts!("setup.main_followed")) } else { b };
+                if (b.clicked() || resp.clicked()) && !main {
+                    let was_on = set.is_on(m.id);
+                    change = Some(Box::new(move |s| {
+                        s.off.retain(|x| *x != id);
+                        if was_on {
+                            s.off.push(id);
+                        }
+                    }));
+                }
+            }
+        }
+        if resp.hovered() && !on {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    }
+    if let Some(f) = change {
+        settings::update(!app.demo, f);
+    }
+    (y + tile_h, found.iter().any(|f| *f))
+}
+
+/// AI Usage's Keychain sign-in as one row under the agent tiles: limits
+/// from the account. Nothing is read before Allow.
+fn keychain_row(app: &mut App, ui: &mut Ui, p: &egui::Painter, r: Rect, now: f64) {
+    use crate::tools::claude::keychain;
+    let ctx = ui.ctx().clone();
+    keychain::refocus(&ctx);
+    p.rect_filled(r, R_CARD, CARD());
+    let ib = Rect::from_min_size(Pos2::new(r.left() + 12.0, r.center().y - 15.0), Vec2::splat(30.0));
+    let st = if app.demo { Status::NotAsked } else { keychain::status() };
+    p.rect_filled(ib, 8.0, white(16));
+    icon(p, Icon::Lock, ib.shrink(7.0), if st == Status::Allowed { GREEN() } else { TEXT_SOFT() });
+    let name = p.text(Pos2::new(ib.right() + 12.0, r.center().y), Align2::LEFT_CENTER, ts!("setup.keychain"), bold(13.0), TEXT());
+    let why_x = (ib.right() + 190.0).max(name.right() + sp::L);
+    let right = r.right() - 12.0;
+    text_fit(p, Pos2::new(why_x, r.center().y), Align2::LEFT_CENTER, ts!("setup.keychain_what"), font(12.0), TEXT_FAINT(), right - 150.0 - why_x);
+    let busy = !app.demo && keychain::busy();
+    let err = if app.demo { String::new() } else { keychain::error() };
+    if st == Status::Allowed {
+        check(p, Pos2::new(right - 13.0, r.center().y), 12.0, GREEN());
+    } else if busy {
+        let c = Pos2::new(right - 8.0, r.center().y);
+        spinner(p, c, 6.0, now, ACTION());
+        p.text(Pos2::new(c.x - 16.0, c.y), Align2::RIGHT_CENTER, ts!("setup.always_allow"), font(12.0), TEXT_FAINT());
+    } else {
+        let label = if st == Status::Denied || !err.is_empty() { ts!("setup.try_again") } else { ts!("setup.allow") };
+        let bw = button_width(p, label, BTN_SECONDARY);
+        let b = Rect::from_min_size(Pos2::new(right - bw, r.center().y - sp::CONTROL_H / 2.0), Vec2::new(bw, sp::CONTROL_H));
+        if pill_button(ui, b, label, BTN_SECONDARY, true).clicked() && !app.demo {
+            keychain::connect(Some(ctx.clone()));
+        }
+        if !err.is_empty() {
+            text_fit(p, Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, &err, font(12.0), RED(), 200.0);
+        } else if st == Status::Denied {
+            p.text(Pos2::new(b.left() - sp::M, r.center().y), Align2::RIGHT_CENTER, ts!("setup.denied"), font(12.0), AMBER());
+        }
+    }
+}
+
+/// The step dots. Goal screens come and go with the goals picked, so the
+/// count must not jump while the person picks: up to Goals only the steps
+/// every setup has show; the goal screens' dots join once Goals is left.
+fn draw_dots(p: &egui::Painter, full: Rect, kinds: &[Kind], from: usize, step: usize, t: f32) {
+    let tools_at = kinds.iter().position(|k| *k == Kind::Tools).unwrap_or(0);
+    let shown: Vec<usize> = (0..kinds.len()).filter(|&i| !matches!(kinds[i], Kind::Feature(_)) || step > tools_at).collect();
+    let pos = |i: usize| shown.iter().position(|&x| x >= i).unwrap_or(shown.len() - 1);
+    step_dots(p, full, shown.len(), pos(from), pos(step), t);
 }

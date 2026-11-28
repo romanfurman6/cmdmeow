@@ -910,6 +910,27 @@ impl Tool for Dictation {
     fn setup_shortcuts(&self) -> Vec<(&'static str, String)> {
         self.settings.shortcut.as_ref().map(|s| vec![(ts!("dict.dictate"), s.display())]).unwrap_or_default()
     }
+    fn setup_keys(&self) -> Vec<crate::core::tool::SetupKey> {
+        let keys = self.settings.shortcut.clone().unwrap_or_else(settings::default_shortcut).display();
+        vec![crate::core::tool::SetupKey { id: "dictate", label: ts!("dict.dictate"), keys, on: self.settings.shortcut.is_some() }]
+    }
+    fn set_setup_key_to(&mut self, _id: &str, keys: Option<Shortcut>) {
+        self.settings.shortcut = keys;
+        self.save_settings();
+        self.recording_key = false;
+    }
+    fn record_setup_key(&mut self, _id: &str, on: bool) {
+        self.recording_key = on;
+        if on {
+            self.recording_seen = Instant::now();
+        }
+    }
+    fn set_setup_key(&mut self, _id: &str, on: bool) {
+        if on != self.settings.shortcut.is_some() {
+            self.settings.shortcut = if on { Some(settings::default_shortcut()) } else { None };
+            self.save_settings();
+        }
+    }
     fn widgets(&self) -> Vec<WidgetSpec> {
         vec![WidgetSpec { id: CARD, title: ts!("dict.name"), about: ts!("dict.widget_about"), sizes: &[Size::S05, Size::S11, Size::S14, Size::S24], size: Size::S11, default_on: true }]
     }

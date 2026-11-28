@@ -525,7 +525,7 @@ impl App {
                 return;
             }
             // first-run setup, one step each
-            "setup" | "setup-theme" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-ai" | "setup-signins" | "setup-models" | "setup-perms" | "setup-crash" | "setup-ready" => {
+            "setup" | "setup-theme" | "setup-place" | "setup-tools" | "setup-tools-all" | "setup-tools-preview" | "setup-clean" | "setup-capture" | "setup-voice" | "setup-watch" | "setup-dev" | "setup-perms" | "setup-crash" | "setup-ready" => {
                 self.mode = Mode::Setup;
                 use crate::kit::perms::{Perm, Status};
                 self.perm_watch.demo = Some([(Perm::Screen, Status::Allowed), (Perm::Accessibility, Status::Allowed), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::Denied), (Perm::Microphone, Status::Allowed)].into_iter().collect());
@@ -537,13 +537,39 @@ impl App {
                 if std::env::var("CMDMEOW_DEMO_PICK").as_deref() == Ok("watch") {
                     picked = vec![system::ID, startup::ID, displays::ID];
                 }
+                // the goal screens: every goal picked, so each has its screen
+                // (and the dots show them all); CMDMEOW_PICK=clean,capture… narrows it
+                let goal_view = matches!(view, "setup-clean" | "setup-capture" | "setup-voice" | "setup-watch" | "setup-dev") || std::env::var("CMDMEOW_PICK").is_ok();
+                if goal_view {
+                    self.perm_watch.demo = Some([(Perm::Screen, Status::NotAsked), (Perm::Accessibility, Status::NotAsked), (Perm::FullDisk, Status::NotAsked), (Perm::SystemEvents, Status::NotAsked), (Perm::Microphone, Status::Allowed), (Perm::Camera, Status::NotAsked)].into_iter().collect());
+                    let pick = std::env::var("CMDMEOW_PICK").unwrap_or_else(|_| if view == "setup-watch" { "clean,capture,voice,watch,dev".into() } else { "clean,capture,voice,dev".into() });
+                    let mut ids: Vec<&str> = Vec::new();
+                    for g in pick.split(',') {
+                        ids.extend_from_slice(match g {
+                            "clean" => &[cleanup::ID, lens::ID, uninstaller::ID][..],
+                            "capture" => &[capture::ID, capture::VIDEO_ID, capture::SHARING_ID][..],
+                            "clip" => &[clipboard::ID][..],
+                            "voice" => &[dictation::ID][..],
+                            "watch" => &[system::ID, startup::ID, displays::ID][..],
+                            "dev" => &[claude::ID, keep_awake::ID][..],
+                            _ => &[][..],
+                        });
+                    }
+                    for i in 0..self.tools.len() {
+                        let id = self.tools[i].id();
+                        self.set_tool_on(i, ids.contains(&id));
+                    }
+                    let step = super::onboard::view_step(self, view);
+                    self.setup = Some(super::onboard::Setup::new(step));
+                    return;
+                }
                 let all = view == "setup-tools-all";
                 let more = [dictation::ID, system::ID];
                 for i in 0..self.tools.len() {
                     let id = self.tools[i].id();
                     // the models step only exists with Dictation on
                     // AI Usage on: the Sign-ins step (3a) shows
-                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id)) || (view == "setup-models" && id == dictation::ID) || (view == "setup-signins" && id == claude::ID);
+                    let on = (view != "setup-tools" && picked.contains(&id)) || (all && more.contains(&id));
                     self.set_tool_on(i, on);
                 }
                 // which steps exist depends on the tools just switched on
