@@ -532,7 +532,11 @@ impl App {
                 // a few goals picked ("setup-tools" shows none, as a fresh install);
                 // the full list with a few more
                 use crate::tools::*;
-                let picked = [cleanup::ID, lens::ID, uninstaller::ID, clipboard::ID, capture::ID, capture::VIDEO_ID, capture::SHARING_ID];
+                let mut picked = vec![cleanup::ID, lens::ID, uninstaller::ID, clipboard::ID, capture::ID, capture::VIDEO_ID, capture::SHARING_ID];
+                // CMDMEOW_DEMO_PICK=watch: only "Watch my Mac" picked
+                if std::env::var("CMDMEOW_DEMO_PICK").as_deref() == Ok("watch") {
+                    picked = vec![system::ID, startup::ID, displays::ID];
+                }
                 let all = view == "setup-tools-all";
                 let more = [dictation::ID, system::ID];
                 for i in 0..self.tools.len() {

@@ -11,6 +11,7 @@
 //! setup-crash, setup-ready, settings-general, settings-cat, locked-<view>, tools-off-<view>,
 //! rows or all-s11 / all-s12 / all-s24 / all-s44 for every widget at one size,
 //! or widget-<tool>/<widget>@<size> for one widget alone (widget-system/devices@4:4).
+//! CMDMEOW_DEMO_PICK=watch shows setup-tools-preview with only "Watch my Mac" picked.
 //! CMDMEOW_DEMO_LONG=1 and CMDMEOW_DEMO_DEVICES=one|long fill them with the
 //! longest texts they meet. CMDMEOW_DEMO_UPDATE=available|downloading|failed
 //! shows the panel's update notice in that state.
